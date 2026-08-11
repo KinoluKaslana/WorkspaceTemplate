@@ -1,5 +1,7 @@
 <div align="center">
 
+**简体中文** | [English](README_EN.md)
+
 # WorkspaceTemplate
 
 **一个不预设业务、不绑定单一 Agent 客户端的 Workspace 治理模板。**
@@ -163,7 +165,8 @@ Agent 将自动完成：
 ├── CLAUDE.md                # Claude Code 入口
 ├── TOOLS.md                 # 环境与工具事实
 ├── WORKSPACE.md             # 业务轮廓
-└── README.md                # GitHub 展示与上手说明
+├── README.md                # 中文 GitHub 展示与上手说明
+└── README_EN.md             # English README
 ```
 
 任务执行后，旁路证据、导出、一次性脚本和报告默认进入 `<task-slug>-<yy-mm-dd>/`；实际业务源码、测试和配置仍可按项目结构原位维护。
