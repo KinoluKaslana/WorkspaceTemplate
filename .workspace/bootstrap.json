@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "workspace_status": "template",
+  "python": {
+    "mode": "unconfigured",
+    "runtime": {
+      "identifier": null,
+      "base_interpreter": null,
+      "mcp_server": null,
+      "mcp_tool": null
+    },
+    "version": null,
+    "capabilities": {
+      "workspace_file_access": null,
+      "network_access": null,
+      "dependency_persistence": null
+    },
+    "decision_source": null,
+    "configured_at": null
+  },
+  "skills": {
+    "registered_roots": []
+  }
+}
