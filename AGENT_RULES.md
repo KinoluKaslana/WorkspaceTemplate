@@ -1,8 +1,9 @@
 # 通用 Workspace Agent 规则
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`1.1.0`。** 规范性变更必须更新版本；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`1.2.0`。** 规范性变更必须更新版本；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > 2026-08-31：新增 `HERMES.md` 客户端入口与 §9.1「记忆边界」；§2 新增入口防分叉条款；§7 新增版本控制操作授权要求；§8 中央文件清单纳入全部客户端入口。
+> 2026-08-31：新增 §9.2「notes 索引分层与策展节奏」；§9 新增记忆卫生规则（合并优先与 superseded 归档）；索引改为 INDEX.md（路由）+ `_INVERTED.md`（按需详情）双层。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -115,6 +116,7 @@
 - 默认按用户的语言交付。最终答复按“结果 → 决定性证据 → 验证 → 限制/未决项 → 下一步”组织，不用冗长日志淹没结论。
 - 只有形成可跨任务复用的正/负经验、完成重要业务结论或修改 Workspace 规则/环境/工具时强制新建 note。纯机械低价值改动可记录理由后跳过；用户明确要求不写 note 时遵循。
 - 需要 note 时从 `notes/_TEMPLATE.md` 创建，只更新实质受影响的双向 `related`，用已配置 Python 运行时执行 `notes/rebuild_index.py`。MCP Python 若不能访问 Workspace 文件，由 Agent 用本地文件工具按同一确定格式维护索引，并记录未运行脚本的限制。
+- **记忆卫生（合并优先）**：新建 note 前先查 `notes/INDEX.md`；当新经验与既有 note 实质重叠时，合并更新既有 note（或以新 note 取代并在旧 note frontmatter 写 `superseded_by: <新note名>`），不平行新增碎片。被取代的 note 不删除——索引脚本会把它移入归档区并保留正文可读。
 
 ### 9.1 记忆边界（客户端全局记忆与 Workspace notes 分工）
 
@@ -124,6 +126,17 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 2. **客户端全局记忆中关于本 Workspace 至多保留一条指针**（指向 `notes/INDEX.md` 的检索入口与本节规则），不保存 Workspace 业务知识的实质内容。
 3. 环境事实（工具路径、版本、技能库 revision）归 `TOOLS.md`，不进客户端全局记忆，也不进 note 正文（note 只在「环境」节记录当时快照）。
 4. 委派子 Agent 时，父 Agent 按 §8 传递本节规则，子 Agent 同样只写 notes，不写客户端全局记忆。
+
+### 9.2 notes 索引分层与策展节奏
+
+`notes/` 采用双层索引：`INDEX.md` 是紧凑路由表（任务开始时必读），`_INVERTED.md` 是关键词倒排索引与关联图（仅在路由未命中或需要扩展检索时才读）。两个文件均由 `notes/rebuild_index.py` 自动生成，禁止手改。
+
+**策展触发**（`rebuild_index.py` 每次运行会报告状态，`.workspace/bootstrap.json` 的 `notes.curation` 保存配置与上次策展日期）：
+
+1. 活跃 note 数量 ≥ `count_threshold`（默认 25），**或** 距 `last_curated_at` ≥ `interval_days`（默认 90 天）时，策展到期。
+2. 到期后，Agent 在**执行本次对话任务之前**先做一轮策展：审查活跃 notes，合并实质重叠项（旧 note 标 `superseded_by`），清理过时经验（过期事实改归档或更新），完成后把当天日期写回 `notes.curation.last_curated_at`，并重跑 `notes/rebuild_index.py` 验证。
+3. 策展属于低风险只读+合并操作，不需要额外授权；但涉及删除文件或改写正文结论时，按 §7 高影响动作处理。
+4. 阈值与间隔可在 `.workspace/bootstrap.json` 中由用户调整；两个条件是“或”关系，任一到期即触发。
 
 只有以下条件均满足时才声明任务完成：
 

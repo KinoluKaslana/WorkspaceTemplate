@@ -20,5 +20,12 @@
   },
   "skills": {
     "registered_roots": []
+  },
+  "notes": {
+    "curation": {
+      "count_threshold": 25,
+      "interval_days": 90,
+      "last_curated_at": null
+    }
   }
 }

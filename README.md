@@ -42,7 +42,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 业务无关 | [`WORKSPACE.md`](WORKSPACE.md) 初始为空，由用户的稳定需求定义目标、范围与验收 |
 | Skills 单路径接入 | 用户只提供根目录，Agent 自动发现入口、记录指纹并处理同名冲突 |
 | 环境事实可追溯 | [`TOOLS.md`](TOOLS.md) 记录实测运行时、MCP、工具、来源和副作用，不承担授权职责 |
-| 渐进式知识复用 | [`notes/`](notes/) 保存有长期价值的经验，并由脚本生成索引 |
+| 渐进式知识复用 | [`notes/`](notes/) 保存有长期价值的经验，双层索引（紧凑路由 + 按需倒排）加策展节奏防碎片化 |
 | 安全默认值 | 外部 skills 默认只读；不自动执行 Hook、安装依赖、联网或发送用户数据 |
 
 ## 快速开始
@@ -153,9 +153,10 @@ Agent 将自动完成：
 ├── .workspace/
 │   └── bootstrap.json       # 首次运行状态机
 ├── notes/
-│   ├── INDEX.md             # 自动经验索引
+│   ├── INDEX.md             # 自动经验索引（紧凑路由）
+│   ├── _INVERTED.md         # 倒排索引/关联图（按需加载）
 │   ├── _TEMPLATE.md         # Note 模板
-│   └── rebuild_index.py     # 标准库索引器
+│   └── rebuild_index.py     # 标准库索引器（双层索引 + 策展状态）
 ├── scripts/
 │   └── inspect_skills.py    # Skills 只读盘点器
 ├── skills/

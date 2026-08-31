@@ -7,6 +7,7 @@ techniques:
   - <技术或方法 B>
 related:
   - <other-note-name>
+# superseded_by: <note-name>   # 可选：本 note 已被哪篇取代（被取代后索引移入归档区，正文保留）
 ---
 
 <!--

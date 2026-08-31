@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
-"""Rebuild notes/INDEX.md using only the Python standard library.
+"""Rebuild notes/INDEX.md (compact routing) and notes/_INVERTED.md (on-demand detail).
 
 The parser intentionally accepts only the small YAML-like frontmatter subset
 documented in notes/_TEMPLATE.md: one-line scalar fields and indented dash
 lists. This keeps the fresh workspace independent of third-party packages.
+
+Layered output (v2):
+- INDEX.md  — compact routing table only, kept small for startup loading.
+- _INVERTED.md — full technique inverted index and related graph, loaded on demand.
+- Notes with a non-empty `superseded_by` frontmatter field are archived:
+  they leave the active routing table and are listed in a compact archive
+  section instead (never silently deleted).
+- The script also reports curation status from .workspace/bootstrap.json
+  (count threshold / days since last curation) so agents can see whether
+  AGENT_RULES.md §9.2 curation is due.
 """
 
 from __future__ import annotations
 
 import ast
 import datetime as dt
+import json
 import re
 import sys
 from pathlib import Path
@@ -17,9 +28,12 @@ from typing import Any
 
 
 NOTES_DIR = Path(__file__).resolve().parent
-SKIP = {"INDEX.md", "_TEMPLATE.md"}
+BOOTSTRAP = NOTES_DIR.parent / ".workspace" / "bootstrap.json"
+SKIP = {"INDEX.md", "_TEMPLATE.md", "_INVERTED.md"}
 REQUIRED = ("name", "description", "category", "techniques")
 LIST_FIELDS = {"techniques", "related"}
+DEFAULT_THRESHOLD = 25
+DEFAULT_INTERVAL_DAYS = 90
 
 
 def scalar(value: str) -> str:
@@ -74,12 +88,58 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
 
 
 def note_date(filename: str) -> str:
+    """Extract a sortable YY-MM-DD string from a note filename.
+
+    Accepts both hyphenated (``*-26-08-17.md``) and compact (``*-260817.md``)
+    suffixes; compact 6-digit dates are treated as yyMMdd.
+    """
     match = re.search(r"(\d{2}-\d{2}-\d{2})\.md$", filename)
-    return match.group(1) if match else "00-00-00"
+    if match:
+        return match.group(1)
+    match = re.search(r"(\d{2})(\d{2})(\d{2})\.md$", filename)
+    if match:
+        return "-".join(match.groups())
+    return "00-00-00"
+
+
+def display_date(filename: str) -> str:
+    date = note_date(filename)
+    return "20" + date if date != "00-00-00" else "—"
 
 
 def escape_table(value: str) -> str:
     return " ".join(value.split()).replace("|", "\\|")
+
+
+def load_curation(active_count: int) -> tuple[str, bool]:
+    """Read curation config from bootstrap.json; return (status_line, due)."""
+    threshold = DEFAULT_THRESHOLD
+    interval = DEFAULT_INTERVAL_DAYS
+    last: str | None = None
+    if BOOTSTRAP.is_file():
+        try:
+            cfg = json.loads(BOOTSTRAP.read_text(encoding="utf-8"))
+            cur = (cfg.get("notes") or {}).get("curation") or {}
+            threshold = int(cur.get("count_threshold") or DEFAULT_THRESHOLD)
+            interval = int(cur.get("interval_days") or DEFAULT_INTERVAL_DAYS)
+            last = cur.get("last_curated_at") or None
+        except (ValueError, OSError, TypeError):
+            return "策展状态：bootstrap.json 解析失败，按默认阈值判断", active_count >= DEFAULT_THRESHOLD
+    due = active_count >= threshold
+    if last is None:
+        if active_count > 0:
+            due = True
+            return f"策展状态：{active_count} 篇活跃 / 阈值 {threshold}；从未策展 → **已到期**", True
+        return f"策展状态：{active_count} 篇活跃 / 阈值 {threshold}；尚未策展（无 note，不触发）", False
+    try:
+        last_day = dt.date.fromisoformat(str(last)[:10])
+    except ValueError:
+        return f"策展状态：last_curated_at 无法解析（{last}），请人工核对", True
+    days = (dt.date.today() - last_day).days
+    if days >= interval:
+        due = True
+    state = "**已到期**" if due else f"{interval - days} 天后到期"
+    return f"策展状态：{active_count} 篇活跃 / 阈值 {threshold}；上次策展 {last}（距今 {days} 天，{state}）", due
 
 
 def main() -> int:
@@ -103,6 +163,7 @@ def main() -> int:
                 "category": str(data.get("category") or "未分类").strip(),
                 "techniques": [str(item).strip() for item in data.get("techniques", []) if str(item).strip()],
                 "related": [str(item).strip() for item in data.get("related", []) if str(item).strip()],
+                "superseded_by": str(data.get("superseded_by") or "").strip(),
             }
         )
 
@@ -120,49 +181,91 @@ def main() -> int:
                 warnings.append(
                     f"related 不是双向: {note['name']} 列了 {related}，但对方未回链"
                 )
+        if note["superseded_by"] and note["superseded_by"] not in by_name:
+            warnings.append(
+                f"{note['file']}: superseded_by 指向不存在的 note '{note['superseded_by']}'"
+            )
+
+    active = [note for note in notes if not note["superseded_by"]]
+    archived = [note for note in notes if note["superseded_by"]]
 
     tech_map: dict[str, list[dict[str, Any]]] = {}
-    for note in notes:
+    for note in active:
         for technique in note["techniques"]:
             tech_map.setdefault(technique, []).append(note)
 
+    curation_line, curation_due = load_curation(len(active))
     timestamp = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %z")
+
+    # ---- INDEX.md: compact routing table -------------------------------------
     lines = [
-        "# Notes Index — Workspace 经验索引",
+        "# Notes Index — Workspace 经验索引（紧凑路由）",
         "",
         f"> **本文件由 `notes/rebuild_index.py` 自动生成**（{timestamp}），禁止手改。",
-        "> 修改索引 = 修改 note 的最小 frontmatter 后重跑脚本。",
+        "> 只做路由：按 name+摘要定位 note；关键词倒排索引与关联图在 `_INVERTED.md`（按需加载）。",
         "",
-        f"共 **{len(notes)}** 篇 note，**{len(tech_map)}** 个技术/方法关键词。",
+        f"共 **{len(active)}** 篇活跃 note，**{len(archived)}** 篇已归档，**{len(tech_map)}** 个关键词（详见 `_INVERTED.md`）。",
+        f"> {curation_line}",
         "",
-        "## 笔记清单（按日期倒序）",
+        "## 活跃 notes（按日期倒序）",
+        "",
+        "| 日期 | 类别 | Note | 摘要 |",
+        "|---|---|---|---|",
+    ]
+    if not active:
+        lines.append("| — | — | 尚无 note | — |")
+    for note in active:
+        lines.append(
+            f"| {display_date(note['file'])} | {escape_table(note['category'])} | "
+            f"[{escape_table(note['name'])}]({note['file']}) | "
+            f"{escape_table(note['description']) or '—'} |"
+        )
+
+    if archived:
+        lines.extend(
+            [
+                "",
+                "## 已归档（superseded，正文仍可读）",
+                "",
+                "| Note | 被取代于 |",
+                "|---|---|",
+            ]
+        )
+        for note in archived:
+            target = by_name.get(note["superseded_by"])
+            target_link = (
+                f"[{escape_table(target['name'])}]({target['file']})" if target else f"`{note['superseded_by']}`（缺失）"
+            )
+            lines.append(f"| [{escape_table(note['name'])}]({note['file']}) | {target_link} |")
+    lines.append("")
+    (NOTES_DIR / "INDEX.md").write_text("\n".join(lines), encoding="utf-8")
+
+    # ---- _INVERTED.md: on-demand detail --------------------------------------
+    detail = [
+        "# Notes Detail — 倒排索引与关联图（按需加载）",
+        "",
+        f"> **本文件由 `notes/rebuild_index.py` 自动生成**（{timestamp}），禁止手改。",
+        "> 任务命中关键词或需要关联扩展时才读取本文件；启动检索走 `INDEX.md`。",
+        "",
+        "## 全量清单（含技术/方法，† = 已归档）",
         "",
         "| 日期 | 类别 | Note | 技术/方法 | 摘要 |",
         "|---|---|---|---|---|",
     ]
     if not notes:
-        lines.append("| — | — | 尚无 note | — | — |")
+        detail.append("| — | — | 尚无 note | — | — |")
     for note in notes:
-        date = note_date(note["file"])
-        display_date = "20" + date if date != "00-00-00" else "—"
+        mark = "†" if note["superseded_by"] else ""
         techniques = "、".join(note["techniques"]) or "—"
-        lines.append(
-            f"| {display_date} | {escape_table(note['category'])} | "
-            f"[{escape_table(note['name'])}]({note['file']}) | "
+        detail.append(
+            f"| {display_date(note['file'])} | {escape_table(note['category'])} | "
+            f"[{escape_table(note['name'])}]({note['file']}){mark} | "
             f"{escape_table(techniques)} | {escape_table(note['description']) or '—'} |"
         )
 
-    lines.extend(
-        [
-            "",
-            "## 技术/方法倒排索引",
-            "",
-            "| 关键词 | 相关 notes |",
-            "|---|---|",
-        ]
-    )
+    detail.extend(["", "## 技术/方法倒排索引（活跃 note）", "", "| 关键词 | 相关 notes |", "|---|---|"])
     if not tech_map:
-        lines.append("| — | 尚无 |")
+        detail.append("| — | 尚无 |")
     for technique in sorted(tech_map, key=lambda value: (-len(tech_map[value]), value)):
         hits = sorted(
             tech_map[technique],
@@ -170,9 +273,9 @@ def main() -> int:
             reverse=True,
         )
         refs = "、".join(f"[{item['name']}]({item['file']})" for item in hits)
-        lines.append(f"| {escape_table(technique)} | {refs} |")
+        detail.append(f"| {escape_table(technique)} | {refs} |")
 
-    lines.extend(["", "## Note 关联图（related 双向链接）", ""])
+    detail.extend(["", "## Note 关联图（related 双向链接，含归档）", ""])
     edges = False
     for note in notes:
         if not note["related"]:
@@ -182,13 +285,17 @@ def main() -> int:
             f"[{by_name[name]['name']}]({by_name[name]['file']})" if name in by_name else f"`{name}`（缺失）"
             for name in note["related"]
         )
-        lines.append(f"- **{note['name']}** ↔ {refs}")
+        detail.append(f"- **{note['name']}** ↔ {refs}")
     if not edges:
-        lines.append("- 暂无关联")
-    lines.append("")
+        detail.append("- 暂无关联")
+    detail.append("")
+    (NOTES_DIR / "_INVERTED.md").write_text("\n".join(detail), encoding="utf-8")
 
-    (NOTES_DIR / "INDEX.md").write_text("\n".join(lines), encoding="utf-8")
-    print(f"OK: INDEX.md 已生成 — {len(notes)} 篇 note, {len(tech_map)} 个关键词")
+    print(
+        f"OK: INDEX.md（路由）+ _INVERTED.md（详情）已生成 — "
+        f"{len(active)} 活跃 / {len(archived)} 归档 / {len(tech_map)} 关键词"
+    )
+    print(curation_line + (" → 按 AGENT_RULES §9.2 执行策展" if curation_due else ""))
     if warnings:
         print(f"共 {len(warnings)} 条警告：", file=sys.stderr)
         for warning in warnings:

@@ -42,7 +42,7 @@ WorkspaceTemplate turns those principles into a small, explicit set of files. It
 | Business-agnostic foundation | [`WORKSPACE.md`](WORKSPACE.md) starts undefined and is shaped by the user's stable goals, scope, and acceptance criteria |
 | One-path skills onboarding | The user provides a root directory; the Agent discovers entries, records fingerprints, and resolves duplicate names |
 | Traceable environment facts | [`TOOLS.md`](TOOLS.md) records verified runtimes, MCP services, tools, sources, and side effects without granting authority |
-| Progressive knowledge reuse | [`notes/`](notes/) stores reusable experience and exposes it through a generated index |
+| Progressive knowledge reuse | [`notes/`](notes/) stores reusable experience with a layered index (compact routing + on-demand inverted index) and a curation cadence against fragmentation |
 | Safe defaults | External skills are read-only by default; Hooks, dependency installation, networking, and data transfer are never automatic |
 
 ## Quick Start
@@ -153,9 +153,10 @@ Inventory is not installation. External skills remain read-only technical refere
 ├── .workspace/
 │   └── bootstrap.json       # First-run state machine
 ├── notes/
-│   ├── INDEX.md             # Generated experience index
+│   ├── INDEX.md             # Generated experience index (compact routing)
+│   ├── _INVERTED.md         # Inverted index / related graph (on demand)
 │   ├── _TEMPLATE.md         # Note template
-│   └── rebuild_index.py     # Standard-library index builder
+│   └── rebuild_index.py     # Standard-library index builder (layered + curation status)
 ├── scripts/
 │   └── inspect_skills.py    # Read-only skills inventory
 ├── skills/

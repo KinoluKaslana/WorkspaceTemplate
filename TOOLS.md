@@ -101,13 +101,14 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 
 | 项 | 内容 |
 |---|---|
-| 入口 | `notes/INDEX.md` |
+| 入口 | `notes/INDEX.md`（紧凑路由）+ `notes/_INVERTED.md`（倒排索引/关联图，按需加载） |
 | 模板 | `notes/_TEMPLATE.md` |
 | 重建 | `<configured-python> notes/rebuild_index.py` |
 | 依赖 | Python 标准库；脚本只支持模板文档中定义的最小 YAML-like frontmatter 子集 |
 | Python 最低版本 | 3.10 |
-| 重建脚本 SHA-256 | `878cd4926911c61ac0982cacbb258b5a74591961899b51330546d4cdb6f4e57e` |
-| 来源/副作用 | 模板内置、本 Workspace 维护；只读 note frontmatter 并覆写自动生成的 `notes/INDEX.md`，不联网 |
+| 重建脚本 SHA-256 | `ab58ae0cfef26b282f998274db3f8199713cc29f99198a80d1f05946b2a561e8` |
+| 来源/副作用 | 模板内置、本 Workspace 维护；只读 note frontmatter 与 `.workspace/bootstrap.json`，覆写自动生成的 `notes/INDEX.md` 与 `notes/_INVERTED.md`，不联网 |
+| 策展状态 | 每次重建输出策展状态行；阈值/间隔/上次策展日期在 `.workspace/bootstrap.json` 的 `notes.curation` |
 
 `notes/INDEX.md` 是自动索引，不手改。MCP Python 不可访问本地文件时，按 `AGENT_RULES.md` §9 记录限制并使用 Agent 文件工具维护确定性索引。
 
