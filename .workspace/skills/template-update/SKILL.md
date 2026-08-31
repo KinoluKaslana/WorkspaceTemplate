@@ -101,6 +101,7 @@ cd "$TEMPLATE_DIR" && cp --parents AGENT_RULES.md AGENTS.md CLAUDE.md HERMES.md 
 ## 陷阱
 
 - 条款 ID 标记是注册表的锚：**任何人不得手改 `<!-- id:Rn -->`**；模板侧 ID 重排由 mark_rules.py 在模板仓库内完成，实例侧只消费。
+- **`skills/REGISTRY.md` 属工作区所有**：同步时只允许**增补/更新 workspace-skills 命名空间条目**，绝不整文件覆盖——本地 skills/localskills 登记行是用户资产，覆盖即数据丢失（已发生过一次事故）。
 - `check_template.py`（v1 时代的判定脚本）仍用于文件级对比，但混合文件不再做行级合并；判定为 `drift` 的模板层文件在 v2.0 语义下就是"待恢复"，不是"待合并"。
 - custom 文件里的 `overrides:` 必须指向当前注册表存在的 ID；写 custom 时先查 `rule-clauses.json`。
 - README 已替换为本地首页的工作区，同步时跳过 README（报告注明），否则会覆盖用户首页。
