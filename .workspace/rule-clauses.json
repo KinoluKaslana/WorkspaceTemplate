@@ -94,10 +94,12 @@
       "R91": "2. **custom 层（本地所有）**：用户自定义规则、Agent 在本工作区新增的规则性约定，一律写入同名 `.custom.md` 文件（如 `AGENT_RULES.custom.md`）。custom 文件属工作区所有，模板同步永不触碰；无内容时可不创建。",
       "R92": "3. **覆写优先级**：custom 层规则与模板层冲突时，**以 custom 层为准**（更近、更具体的作用域优先）。custom 文件中每个条款应注明 `overrides: R<id>`（指向被覆写的模板条款 ID）或 `extends:`（纯新增）；引用失效（模板条款已不存在）时校验脚本会报告。",
       "R93": "4. **双级校验**：`scripts/verify_rules.py` 提供（a）文件级——模板层文件哈希与注册表比对，检测任何直接改动；（b）条款级——逐条款 ID 比对注册表，检测新增/删除/改写/乱序，防止\"用户直接在模板文件里增删条款或调序\"被误判为同步冲突。校验失败时先修复工作区文件（从模板克隆恢复），不得带着漂移做同步。",
-      "R94": "5. **模板层条款演进**：模板新版本若删除/改写某条款 ID，同步后 `verify_rules.py` 会列出受影响的 custom `overrides` 引用，由 Agent 逐条向用户报告并改写 custom 条款指向；不得静默丢弃 custom 语义。"
+      "R94": "5. **模板层条款演进**：模板新版本若删除/改写某条款 ID，同步后 `verify_rules.py` 会列出受影响的 custom `overrides` 引用，由 Agent 逐条向用户报告并改写 custom 条款指向；不得静默丢弃 custom 语义。",
+      "R95": "## 11. 交付闭环 skill 指针",
+      "R96": "1. 任务模式交付物声明完成之前，必须执行 `.workspace/skills/delivery-closure/` skill 定义的机械闭环流程（产物清点 → note 判定（合并/新建/豁免）→ 索引回写 → 外部动作与机械验证 → 完成声明格式）；§9 末尾完成标准中「需要的 note 和索引写回已完成」的具体执行含义以该 skill 正文为准。"
     },
-    "file_sha256": "ae8d99d9f7303bbbc5ce5bd0c6322b3874fb5e3d5fc23e0d67019156b63902f3",
-    "marked": 94
+    "file_sha256": "d99614cac611452c11faec4b7767641f1727b8356bc04e3a92debe5bb1fb495c",
+    "marked": 96
   },
   "AGENTS.md": {
     "clauses": {},
@@ -116,12 +118,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "28a032116a2612c735f70ded42890c553b27df1745fef6758669cd9465060834",
+    "file_sha256": "d52cef4d41b65183f71cf16d137ce9180bafb6a40a0a3f028cda1ced77a919fb",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "b547ac02f446f1f35c175188357710566ab406f3d2581d148d0af98cdb919e26",
+    "file_sha256": "083a6c02526984f79b82965d0e7985cc8b05a9cf8ccddea98608308ea07376d3",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -146,12 +148,12 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "5a193e9d74b8115a77d52e83eee818fb98adc72ed7d4c65fd7735b64009c0e10",
+    "file_sha256": "4fcff8902da2fb428104197eb8f4f1026428a2b520ca6530d06b52c548a0472f",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "9d636d2c8769822ab9d7252b5ebc271f63155785c030f7efadfc1bc5233c539c",
+    "file_sha256": "fdc8805c82cefffe863c187c25d170c4d5f5f10fe0d032dd547d7fe03ca73a06",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -161,12 +163,17 @@
   },
   ".workspace/skills/workspace-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "62e103586254d9ee8e60b0decc90826a8c6512efdd9116ca7c5393d29dd065d1",
+    "file_sha256": "5205fb4c0d11234d6ee56a2f7079c73f5044b630f7e2155c6bd7283ea7f30ab2",
     "marked": 0
   },
   ".workspace/skills/git-init/SKILL.md": {
     "clauses": {},
     "file_sha256": "e13ce30f5f38ca020f51efee743b90022f4a8d420d07a7570c22204d42673a4a",
+    "marked": 0
+  },
+  ".workspace/skills/delivery-closure/SKILL.md": {
+    "clauses": {},
+    "file_sha256": "cdbb49aa6058105ab2109b5a5d031f9bafff0af2645ce4490a3234b522d59f26",
     "marked": 0
   }
 }

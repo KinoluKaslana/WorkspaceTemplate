@@ -8,7 +8,7 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v2.0.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.1.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -42,7 +42,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 单一政策源 | [`AGENT_RULES.md`](AGENT_RULES.md) 统一约束主 Agent 与子 Agent；客户端入口只负责定位它 |
 | 规则分层 | 模板层文件**锁定只读**（同步=整文件替换）；本地规则全部外置到 `<file>.custom.md`，**custom 优先**（§10） |
 | 完整性校验 | 条款带稳定 ID（`<!-- id:Rn -->`）+ 注册表双级校验；`--vs-template` 对模板克隆做**字节级比对 + git 信任锚**，堵死"改文件再重生成注册表"的自我作证漏洞 |
-| 生命周期 skills | `template-update`（同步新模板）、`workspace-init`（接管老版本工作区）、`git-init`（后补建仓）随模板分发到 `.workspace/skills/` |
+| 生命周期 skills | `template-update`（同步新模板）、`workspace-init`（接管老版本工作区）、`git-init`（后补建仓）、`delivery-closure`（交付闭环六步检查）随模板分发到 `.workspace/skills/` |
 | 首次初始化协议 | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) 持久化 `python.mode`（**必须**：local-venv / mcp）与 `git.status`（**可选**：initialized / declined） |
 | 业务无关 | [`WORKSPACE.md`](WORKSPACE.md) 初始为空，由用户的稳定需求定义目标、范围与验收 |
 | Skills 单路径接入 | 用户只提供根目录，Agent 自动发现入口、记录指纹并处理同名冲突 |
@@ -144,6 +144,7 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 | [template-update](.workspace/skills/template-update/SKILL.md) | v2.0 | "同步模板/更新到最新模板"，或检测到版本落后 | 七步锁定替换式同步：模板源 → 校验 → 备份 → 整文件替换 → custom 引用迁移 → bootstrap 回写 → `--vs-template` 权威验证 |
 | [workspace-init](.workspace/skills/workspace-init/SKILL.md) | v1.0 | "初始化/接管这个工作区"，或检测到无 template 血缘/无条款标记/.git 指向模板库 | 九步接管老工作区：盘点 → 差异判定 → pre-v2.0 迁移（本地语义外置进 custom）→ venv → git 抹除与决策 → 登记 → 验证 → 报告 |
 | [git-init](.workspace/skills/git-init/SKILL.md) | v1.0 | "建 git 仓库"，或 bootstrap `git.status=declined` 后用户改主意 | 五步建仓：决策 → `git init` + 首提交 → .gitignore 核验 → bootstrap git 节登记 → 验证 |
+| [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | v1.0 | 任务模式产生持久化产物、准备声明完成之前 | 六步交付闭环：产物清点 → 查 INDEX → note 三选一（合并/新建/豁免）→ `rebuild_index` 回写 → 部署与机械验证 → 固定格式完成声明 |
 
 ## 工作原理
 
@@ -189,7 +190,8 @@ Agent 将自动完成：
 │   └── skills/              # 工作区生命周期 skills（workspace-skills 命名空间）
 │       ├── template-update/ # 同步最新模板（SKILL.md + check_template.py）
 │       ├── workspace-init/  # 接管老版本工作区（九步迁移）
-│       └── git-init/        # 后补创建 git 仓库（五步 + bootstrap 登记）
+│       ├── git-init/        # 后补创建 git 仓库（五步 + bootstrap 登记）
+│       └── delivery-closure/ # 交付闭环六步检查（声明完成前必走）
 ├── notes/
 │   ├── INDEX.md             # 自动经验索引（紧凑路由）
 │   ├── _INVERTED.md         # 倒排索引/关联图（按需加载）

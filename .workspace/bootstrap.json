@@ -39,7 +39,7 @@
   },
   "template": {
     "source_repo": "https://github.com/KinoluKaslana/WorkspaceTemplate",
-    "current_policy_version": "2.0.0",
+    "current_policy_version": "2.1.0",
     "last_synced_at": null
   }
 }

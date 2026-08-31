@@ -56,6 +56,7 @@ TEMPLATE_FILES = [
     ".workspace/skills/template-update/check_template.py",
     ".workspace/skills/workspace-init/SKILL.md",
     ".workspace/skills/git-init/SKILL.md",
+    ".workspace/skills/delivery-closure/SKILL.md",
     ".workspace/rule-clauses.json",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}

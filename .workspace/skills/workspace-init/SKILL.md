@@ -88,7 +88,7 @@ remote 指向他处 / 历史无法确认 → **暂停，向用户展示发现并
 
 ### 第 7 步：skills 登记核验
 
-确认 `skills/REGISTRY.md` 有 `workspace-skills` 命名空间（template-update / workspace-init / git-init 三个入口）；`bootstrap.json` 的 `skills.registered_roots` 含 `workspace-skills`。缺则补登记（TOOLS.md 同步「workspace-skills」小节条目）。
+确认 `skills/REGISTRY.md` 有 `workspace-skills` 命名空间（template-update / workspace-init / git-init / delivery-closure 四个入口）；`bootstrap.json` 的 `skills.registered_roots` 含 `workspace-skills`。缺则补登记（TOOLS.md 同步「workspace-skills」小节条目）。
 
 ### 第 8 步：全量验证
 

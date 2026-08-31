@@ -21,7 +21,7 @@ version: 2.0.0
 1. 模板正主在 GitHub 仓库 `KinoluKaslana/WorkspaceTemplate`；实例的模板层文件 = 模板原件（逐字节一致），custom 层文件（`*.custom.md`）属工作区所有、同步永不触碰。
 2. 模板升级按语义化版本处理：PATCH = 修复（静默合并）；MINOR = 新增（报告后合并）；MAJOR = 破坏性变更（逐项确认）。版本语义只影响**报告详略与确认粒度**，同步动作本身是同一个机械流程。
 3. **文件分类（v2.0）**：
-   - **模板层·锁定替换**：`AGENT_RULES.md`（含条款 ID 标记）、`AGENTS.md`、`CLAUDE.md`、`HERMES.md`、`README.md`、`README_EN.md`、`notes/rebuild_index.py`、`notes/_TEMPLATE.md`、`scripts/inspect_skills.py`、`scripts/mark_rules.py`、`scripts/verify_rules.py`、`.workspace/skills/template-update/`、`.workspace/skills/workspace-init/`、`.workspace/skills/git-init/`、`.workspace/rule-clauses.json`。**该清单的唯一事实源是 `scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 16 项）；第 4 步替换命令直接由它驱动，禁止另维护一份手工清单（手工清单漂移是「校验失败 → 回滚」死循环的根因，见「陷阱」）。**
+   - **模板层·锁定替换**：`AGENT_RULES.md`（含条款 ID 标记）、`AGENTS.md`、`CLAUDE.md`、`HERMES.md`、`README.md`、`README_EN.md`、`notes/rebuild_index.py`、`notes/_TEMPLATE.md`、`scripts/inspect_skills.py`、`scripts/mark_rules.py`、`scripts/verify_rules.py`、`.workspace/skills/template-update/`、`.workspace/skills/workspace-init/`、`.workspace/skills/git-init/`、`.workspace/skills/delivery-closure/`、`.workspace/rule-clauses.json`。**该清单的唯一事实源是 `scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 17 项）；第 4 步替换命令直接由它驱动，禁止另维护一份手工清单（手工清单漂移是「校验失败 → 回滚」死循环的根因，见「陷阱」）。**
    - **custom 层·永不触碰**：`*.custom.md`（AGENT_RULES.custom.md、HERMES.custom.md 等）。
    - **工作区所有·永不触碰**：`WORKSPACE.md`、`TOOLS.md`（本地登记为主；模板仅提供格式节）、`notes/*.md` 笔记正文、`skills/REGISTRY.md`、`.workspace/bootstrap.json` 的本地值、`<task-slug>-*/`、一切用户文件。
 4. **条款 ID**：模板层条款带 `<!-- id:Rn -->` 标记；`.workspace/rule-clauses.json` 是条款注册表（随模板分发）。custom 条款用 `overrides: R<id>` 覆写或 `extends: R<id>` 扩展模板条款。
@@ -54,7 +54,7 @@ mkdir -p .workspace/backup-<yy-mm-dd> && cp AGENT_RULES.md *.custom.md AGENTS.md
 
 ### 第 4 步：锁定替换（机械，无合并）
 
-替换清单的唯一事实源 = `scripts/verify_rules.py` 的 `TEMPLATE_FILES`（16 项）。**由它直接驱动拷贝，不要手写文件清单**：
+替换清单的唯一事实源 = `scripts/verify_rules.py` 的 `TEMPLATE_FILES`（17 项）。**由它直接驱动拷贝，不要手写文件清单**：
 
 ```bash
 cd "$TEMPLATE_DIR" && <py> - "$OLDPWD" <<'PY'

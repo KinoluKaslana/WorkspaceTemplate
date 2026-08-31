@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`2.0.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`2.1.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -162,3 +162,7 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 3. **覆写优先级**：custom 层规则与模板层冲突时，**以 custom 层为准**（更近、更具体的作用域优先）。custom 文件中每个条款应注明 `overrides: R<id>`（指向被覆写的模板条款 ID）或 `extends:`（纯新增）；引用失效（模板条款已不存在）时校验脚本会报告。 <!-- id:R92 -->
 4. **双级校验**：`scripts/verify_rules.py` 提供（a）文件级——模板层文件哈希与注册表比对，检测任何直接改动；（b）条款级——逐条款 ID 比对注册表，检测新增/删除/改写/乱序，防止"用户直接在模板文件里增删条款或调序"被误判为同步冲突。校验失败时先修复工作区文件（从模板克隆恢复），不得带着漂移做同步。 <!-- id:R93 -->
 5. **模板层条款演进**：模板新版本若删除/改写某条款 ID，同步后 `verify_rules.py` 会列出受影响的 custom `overrides` 引用，由 Agent 逐条向用户报告并改写 custom 条款指向；不得静默丢弃 custom 语义。 <!-- id:R94 -->
+
+## 11. 交付闭环 skill 指针 <!-- id:R95 -->
+
+1. 任务模式交付物声明完成之前，必须执行 `.workspace/skills/delivery-closure/` skill 定义的机械闭环流程（产物清点 → note 判定（合并/新建/豁免）→ 索引回写 → 外部动作与机械验证 → 完成声明格式）；§9 末尾完成标准中「需要的 note 和索引写回已完成」的具体执行含义以该 skill 正文为准。 <!-- id:R96 -->

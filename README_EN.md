@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v2.0.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.1.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -42,7 +42,7 @@ WorkspaceTemplate turns those principles into a small, explicit set of files. It
 | One policy source | [`AGENT_RULES.md`](AGENT_RULES.md) governs primary and delegated Agents; client entry files only point to it |
 | Rule layering | Template-layer files are **locked read-only** (sync = whole-file replacement); local rules live in `<file>.custom.md` and **custom takes precedence** (§10) |
 | Integrity verification | Stable clause IDs (`<!-- id:Rn -->`) + registry-based two-level verification; `--vs-template` byte-compares against the template clone with a **git trust anchor**, closing the "edit the file then regenerate the registry" self-attestation hole |
-| Lifecycle skills | `template-update` (sync new templates), `workspace-init` (adopt legacy workspaces), and `git-init` (create a repo later) ship in `.workspace/skills/` |
+| Lifecycle skills | `template-update` (sync new templates), `workspace-init` (adopt legacy workspaces), `git-init` (create a repo later), and `delivery-closure` (six-step delivery closure check) ship in `.workspace/skills/` |
 | First-init protocol | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) persists `python.mode` (**mandatory**: local-venv / mcp) and `git.status` (**optional**: initialized / declined) |
 | Business-agnostic foundation | [`WORKSPACE.md`](WORKSPACE.md) starts undefined and is shaped by the user's stable goals, scope, and acceptance criteria |
 | One-path skills onboarding | The user provides a root directory; the Agent discovers entries, records fingerprints, and resolves duplicate names |
@@ -145,6 +145,7 @@ Three skills ship with the template in `.workspace/skills/` (workspace-skills na
 | [template-update](.workspace/skills/template-update/SKILL.md) | v2.0 | "sync the template / update to the latest template", or detecting a version lag | Seven-step locked-replacement sync: template source → verify → backup → whole-file replacement → custom-reference migration → bootstrap write-back → `--vs-template` authoritative verification |
 | [workspace-init](.workspace/skills/workspace-init/SKILL.md) | v1.0 | "initialize / adopt this workspace", or detecting no template lineage / no clause markers / `.git` pointing at the template | Nine-step adoption of a legacy workspace: inventory → diff verdict → pre-v2.0 migration (externalize local semantics into custom) → venv → git wipe and decision → registry → verify → report |
 | [git-init](.workspace/skills/git-init/SKILL.md) | v1.0 | "create a git repo", or the user changes their mind after bootstrap `git.status=declined` | Five-step repo creation: decision → `git init` + first commit → .gitignore check → bootstrap git-node record → verify |
+| [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | v1.0 | Before declaring any task-mode deliverable with persistent artifacts complete | Six-step delivery closure: artifact inventory → INDEX lookup → note decision (merge/create/waive) → `rebuild_index` write-back → deploy + mechanical verification → fixed-format completion report |
 
 ## How It Works
 
@@ -190,7 +191,8 @@ Inventory is not installation. External skills remain read-only technical refere
 │   └── skills/              # Workspace lifecycle skills (workspace-skills namespace)
 │       ├── template-update/ # Sync the latest template (SKILL.md + check_template.py)
 │       ├── workspace-init/  # Adopt a legacy workspace (nine-step migration)
-│       └── git-init/        # Create a git repo later (five steps + bootstrap record)
+│       ├── git-init/        # Create a git repo later (five steps + bootstrap record)
+│       └── delivery-closure/ # Six-step delivery closure (mandatory before declaring done)
 ├── notes/
 │   ├── INDEX.md             # Generated experience index (compact routing)
 │   ├── _INVERTED.md         # Inverted index / related graph (on demand)
