@@ -72,7 +72,7 @@ git remote rename origin template
 git remote add origin <your-repository-url>
 ```
 
-Then open `my-workspace` with your Agent. Codex reads [`AGENTS.md`](AGENTS.md), and Claude Code reads [`CLAUDE.md`](CLAUDE.md). Other clients should be explicitly instructed to read [`AGENT_RULES.md`](AGENT_RULES.md) and [`.workspace/bootstrap.json`](.workspace/bootstrap.json) in full before working.
+Then open `my-workspace` with your Agent. Codex reads [`AGENTS.md`](AGENTS.md), Claude Code reads [`CLAUDE.md`](CLAUDE.md), and Hermes reads [`HERMES.md`](HERMES.md). Other clients should be explicitly instructed to read [`AGENT_RULES.md`](AGENT_RULES.md) and [`.workspace/bootstrap.json`](.workspace/bootstrap.json) in full before working.
 
 ## What Happens on First Open
 
@@ -113,7 +113,7 @@ The template separates entry points, policy, business context, state, facts, rou
 
 | Layer | File | Responsibility |
 |---|---|---|
-| Client entry points | [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md) | Direct different clients to the shared policy without copying it |
+| Client entry points | [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md), [`HERMES.md`](HERMES.md) | Direct different clients to the shared policy without copying it |
 | Authoritative policy | [`AGENT_RULES.md`](AGENT_RULES.md) | Modes, scope, trust, safety, multi-Agent collaboration, delivery, and completion criteria |
 | Business profile | [`WORKSPACE.md`](WORKSPACE.md) | Long-lived goals, scope, assets, constraints, and acceptance criteria |
 | Bootstrap state | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) | Python mode, capability boundaries, configuration time, and compact skills-root state |
@@ -163,6 +163,7 @@ Inventory is not installation. External skills remain read-only technical refere
 ├── AGENT_RULES.md           # Sole authoritative shared policy
 ├── AGENTS.md                # Codex entry point
 ├── CLAUDE.md                # Claude Code entry point
+├── HERMES.md                # Hermes entry point (global-memory boundary + optional persona slot)
 ├── TOOLS.md                 # Environment and tool facts
 ├── WORKSPACE.md             # Business profile
 ├── README.md                # Chinese GitHub landing page
@@ -234,7 +235,14 @@ No. The default workflow only reads entry metadata, computes fingerprints, and b
 <details>
 <summary><strong>Is this limited to Codex or Claude Code?</strong></summary>
 
-No. The repository provides thin entry points for those clients. Any Agent that can read Workspace files and is instructed to follow `AGENT_RULES.md` can use the same governance structure. Automatic loading behavior still depends on the client.
+No. The repository provides thin entry points for Codex, Claude Code, and Hermes. Any Agent that can read Workspace files and is instructed to follow `AGENT_RULES.md` can use the same governance structure. Automatic loading behavior still depends on the client.
+
+</details>
+
+<details>
+<summary><strong>How do Hermes global memories relate to Workspace notes?</strong></summary>
+
+Per the memory boundary in `AGENT_RULES.md` §9.1: reusable experience produced inside the Workspace goes to `notes/` only. Hermes does not proactively write such experience to its global persistent memory (`~/.hermes/memories/`); at most one pointer entry referencing `notes/INDEX.md` may remain there. Each Workspace's knowledge therefore stays in its own repository — versioned, auditable, and free of cross-workspace drift. The same boundary applies to any other client's global memory or preference mechanism.
 
 </details>
 

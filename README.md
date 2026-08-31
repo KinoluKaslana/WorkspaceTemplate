@@ -72,7 +72,7 @@ git remote rename origin template
 git remote add origin <your-repository-url>
 ```
 
-然后用 Agent 打开 `my-workspace`。Codex 读取 [`AGENTS.md`](AGENTS.md)，Claude Code 读取 [`CLAUDE.md`](CLAUDE.md)；其他客户端应先被明确要求完整读取 [`AGENT_RULES.md`](AGENT_RULES.md) 与 [`.workspace/bootstrap.json`](.workspace/bootstrap.json)。
+然后用 Agent 打开 `my-workspace`。Codex 读取 [`AGENTS.md`](AGENTS.md)，Claude Code 读取 [`CLAUDE.md`](CLAUDE.md)，Hermes 读取 [`HERMES.md`](HERMES.md)；其他客户端应先被明确要求完整读取 [`AGENT_RULES.md`](AGENT_RULES.md) 与 [`.workspace/bootstrap.json`](.workspace/bootstrap.json)。
 
 ## 第一次打开会发生什么
 
@@ -113,7 +113,7 @@ flowchart LR
 
 | 层 | 文件 | 职责 |
 |---|---|---|
-| 客户端入口 | [`AGENTS.md`](AGENTS.md)、[`CLAUDE.md`](CLAUDE.md) | 让不同客户端定位共同规则，不复制规则正文 |
+| 客户端入口 | [`AGENTS.md`](AGENTS.md)、[`CLAUDE.md`](CLAUDE.md)、[`HERMES.md`](HERMES.md) | 让不同客户端定位共同规则，不复制规则正文 |
 | 权威政策 | [`AGENT_RULES.md`](AGENT_RULES.md) | 模式、作用域、信任、安全、多 Agent、交付与完成标准 |
 | 业务轮廓 | [`WORKSPACE.md`](WORKSPACE.md) | 长期目标、范围、资产、约束与验收方式 |
 | 启动状态 | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) | Python 模式、能力边界、配置时间与 skills 根精简状态 |
@@ -163,6 +163,7 @@ Agent 将自动完成：
 ├── AGENT_RULES.md           # 唯一权威通用政策
 ├── AGENTS.md                # Codex 入口
 ├── CLAUDE.md                # Claude Code 入口
+├── HERMES.md                # Hermes 入口（含全局记忆边界与可选人格位）
 ├── TOOLS.md                 # 环境与工具事实
 ├── WORKSPACE.md             # 业务轮廓
 ├── README.md                # 中文 GitHub 展示与上手说明
@@ -234,7 +235,14 @@ Agent 将自动完成：
 <details>
 <summary><strong>它只能用于 Codex 或 Claude Code 吗？</strong></summary>
 
-不是。仓库为这两类客户端提供了薄入口；其他 Agent 只要能够读取 Workspace 文件，并被要求遵守 `AGENT_RULES.md`，也可以使用同一治理结构。具体自动加载行为仍取决于客户端本身。
+不是。仓库为 Codex、Claude Code 与 Hermes 提供了薄入口；其他 Agent 只要能够读取 Workspace 文件，并被要求遵守 `AGENT_RULES.md`，也可以使用同一治理结构。具体自动加载行为仍取决于客户端本身。
+
+</details>
+
+<details>
+<summary><strong>Hermes 的全局记忆和 Workspace notes 是什么关系？</strong></summary>
+
+按 `AGENT_RULES.md` §9.1 的记忆边界：Workspace 内产生的可复用经验唯一归宿是 `notes/`，Hermes 不主动把这类经验写入自己的全局持久记忆（`~/.hermes/memories/`）；全局记忆中关于本 Workspace 至多保留一条指向 `notes/INDEX.md` 的指针。这样每个 Workspace 的知识留在本仓库内，可版本化、可审计，也不会在多个 Workspace 之间漂移。其他客户端的全局记忆/偏好机制同理适用该边界。
 
 </details>
 
