@@ -8,13 +8,15 @@
 
 | 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |
 |---|---|---|---|---|
-| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（1 入口：template-update） | `TOOLS.md` §4.5 |
+| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（3 入口：template-update / workspace-init / git-init） | `TOOLS.md` §4.5 |
 
 ## Skill 入口
 
 | 路由 ID | 触发摘要 | 入口 | 所属命名空间 |
 |---|---|---|---|
 | template-update | 同步模板更新到本工作区（"同步模板/更新工作区到最新模板"或检测到模板版本落后） | `.workspace/skills/template-update/SKILL.md` | workspace-skills |
+| workspace-init | 初始化/接管老版本模板工作区（无 template 血缘、无条款标记、.git 指向模板库、pre-v2.0 结构迁移） | `.workspace/skills/workspace-init/SKILL.md` | workspace-skills |
+| git-init | 为工作区创建 git 仓库并登记 bootstrap（"建 git 仓库"；bootstrap git.status=declined 后翻转为 initialized） | `.workspace/skills/git-init/SKILL.md` | workspace-skills |
 
 ## 更新约定
 

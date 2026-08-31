@@ -29,5 +29,12 @@
       "interval_days": 90,
       "last_curated_at": null
     }
+  },
+  "git": {
+    "status": "unconfigured",
+    "remote": null,
+    "default_branch": null,
+    "initialized_at": null,
+    "note": "venv 必须(§0.1/0.2)，git 可选(§0.3)：初始化时抹除模板 .git 后由用户决策；declined 可经 git-init skill 翻转为 initialized"
   }
 }

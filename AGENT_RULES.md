@@ -1,10 +1,11 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`1.3.0`。** 规范性变更必须更新版本；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
-> 2026-08-31：新增 `HERMES.md` 客户端入口与 §9.1「记忆边界」；§2 新增入口防分叉条款；§7 新增版本控制操作授权要求；§8 中央文件清单纳入全部客户端入口。
-> 2026-08-31：新增 §9.2「notes 索引分层与策展节奏」；§9 新增记忆卫生规则（合并优先与 superseded 归档）；索引改为 INDEX.md（路由）+ `_INVERTED.md`（按需详情）双层。
-> 2026-08-31：新增 §11「规则分层与 custom 覆写」——模板规则文件锁定只读，本地规则一律写入 `<file>.custom.md` 并以 custom 优先；配套条款 ID 标记与双级校验（`scripts/mark_rules.py`、`scripts/verify_rules.py`）。
+> **模板政策版本：`1.4.0`。** 规范性变更必须更新版本；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。 <!-- id:R2 -->
+> 2026-08-31：新增 `HERMES.md` 客户端入口与 §9.1「记忆边界」；§2 新增入口防分叉条款；§7 新增版本控制操作授权要求；§8 中央文件清单纳入全部客户端入口。 <!-- id:R3 -->
+> 2026-08-31：新增 §9.2「notes 索引分层与策展节奏」；§9 新增记忆卫生规则（合并优先与 superseded 归档）；索引改为 INDEX.md（路由）+ `_INVERTED.md`（按需详情）双层。 <!-- id:R4 -->
+> 2026-08-31：新增 §10「规则分层与 custom 覆写」——模板规则文件锁定只读，本地规则一律写入 `<file>.custom.md` 并以 custom 优先；配套条款 ID 标记与双级校验（`scripts/mark_rules.py`、`scripts/verify_rules.py`）。 <!-- id:R5 -->
+> 2026-08-31：新增 §0.3「git 仓库决策」与 workspace-init / git-init skills——首次初始化须抹除指向模板库的 `.git` 并询问用户是否建仓；venv 为必须项，git 为可选项，决策记录于 bootstrap。 <!-- id:R6 -->
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -35,6 +36,15 @@
 4. 若当前会话没有可用 MCP Python，不伪装已配置；请用户接入对应 MCP，或确认回退到本地 venv。 <!-- id:R13 -->
 
 完成任一模式配置后，将 `workspace_status` 从 `template` 改为 `active`。之后的 Agent 只核验已选运行时，不重复提问；切换模式必须由用户明确要求并同步两个状态文件。
+
+### 0.3 git 仓库决策（可选初始化项） <!-- id:R90 -->
+
+模板仓库通常自带 `.git`（指向模板库）。工作区开通后，git 与 venv 一起进入初始化流程，但两者地位不同：**venv 是必须项（§0.1/§0.2），git 是可选项**。首次初始化时 Agent 必须：
+
+1. **抹除模板 git 标记**：确认 `.git` 的 remote 指向模板库（`KinoluKaslana/WorkspaceTemplate`）后，先导出本地独有 commit 为 patch 备份（若有），再删除 `.git`。remote 指向他处或存在无法确认的提交历史时，**暂停并请用户裁决**，不得擅自删除。 <!-- id:R91 -->
+2. **询问建仓决策**：用户选择（a）立即建仓——Agent 引导 `git init` + 首次提交 + 用户自己的 remote（多设备同步）；或（b）暂不建仓——保持纯文件工作区，后续用户可随时要求执行 git-init skill。 <!-- id:R92 -->
+3. **记录到 bootstrap**：`git` 节记录 `status`（`initialized` / `declined`）、remote、初始化日期；`declined` 不是终态，后续执行 git-init skill 时翻转为 `initialized`。 <!-- id:R93 -->
+4. 本节流程由 `.workspace/skills/workspace-init/`（首次初始化）与 `.workspace/skills/git-init/`（后补建仓）两个 skill 承载；详细步骤以 skill 正文为准。 <!-- id:R94 -->
 
 ## 1. 角色、业务与工作模式 <!-- id:R14 -->
 

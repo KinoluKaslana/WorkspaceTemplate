@@ -103,6 +103,8 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 |---|---|
 | **命名空间** | `workspace-skills`（`.workspace/skills/`，无路由器，逐 skill 登记） |
 | **template-update** | 同步 WorkspaceTemplate 最新版到本工作区。入口 `.workspace/skills/template-update/SKILL.md`（v1.0.0）；配套只读判定脚本 `check_template.py`（SHA-256 见下）。触发：用户要求同步模板，或检测到 bootstrap `template.current_policy_version` 落后于模板仓库 |
+| **workspace-init** | 初始化/接管老版本模板工作区（九步：盘点→模板源→差异判定→pre-v2.0 迁移→venv→git 抹除与决策→登记→验证→报告）。入口 `.workspace/skills/workspace-init/SKILL.md`（v1.0.0）。触发：用户要求初始化，或检测到无 template 血缘/无条款标记/.git 指向模板库 |
+| **git-init** | 为工作区创建 git 仓库并登记 bootstrap git 节（五步：决策→建仓→gitignore 核验→bootstrap 登记→验证）。入口 `.workspace/skills/git-init/SKILL.md`（v1.0.0）。触发："建 git 仓库"或 bootstrap git.status=declined 翻转 |
 | **check_template.py SHA-256** | `bbfa379269a3a3982a3d65997f9dac31f30b0cb939167e98cdc09959bfccd489` |
 | **来源与信任边界** | 模板内置（正主在 WorkspaceTemplate 仓库 `.workspace/skills/`，随模板版本化）；本地副本由同步流程自举刷新，分叉以模板为准 |
 | **副作用/数据外发** | 只读判定 + 本地文件合并与备份（`.workspace/backup-<date>/`）；不联网（模板克隆已存在时），临时克隆仅在用户指定时 |
