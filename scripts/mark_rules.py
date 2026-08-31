@@ -8,6 +8,10 @@ HTML comments, an adjacent marker line). The registry
 so verify_rules.py can detect reordering, edits, deletions, and
 insertions without running a diff.
 
+Clause IDs form a SINGLE global namespace across all marked files: new
+markers are assigned from one global high-water mark, so a second marked
+file never restarts at R1 and cross-file collisions are impossible.
+
 Stdlib only. Modes:
   mark      add/refresh markers in-place (writes files; make a backup first)
   registry  scan markers and (re)build .workspace/rule-clauses.json
@@ -35,12 +39,15 @@ def strip_marker(line: str) -> str:
 
 
 def next_free_id(used: set[str]) -> str:
-    """Next clause ID as a high-water mark: max existing + 1.
+    """Next clause ID from a GLOBAL high-water mark: max existing + 1.
 
-    IDs are never reused — once a clause is deleted, its ID stays retired.
-    This keeps `overrides:` / `extends:` references in custom files stable:
-    a freed ID is never silently re-assigned to a semantically different
-    clause.
+    Clause IDs form a single global namespace across ALL marked files
+    (currently only AGENT_RULES.md carries markers). IDs are never
+    reused — once a clause is deleted, its ID stays retired — and a
+    second file marked later continues from the global max instead of
+    restarting at R1. This keeps `overrides:` / `extends:` references in
+    custom files unambiguous even when more than one governance file
+    carries markers.
     """
     if not used:
         return "R1"
@@ -68,9 +75,13 @@ def is_trackable(line: str) -> bool:
     return bool(CLAUSE_RE.match(s) or HEADING_RE.match(s))
 
 
-def mark_file(path: Path, dry: bool = False) -> tuple[int, dict[str, str]]:
+def mark_file(path: Path, used: set[str] | None = None, dry: bool = False) -> tuple[int, dict[str, str]]:
     lines, reg = scan(path)
-    used = set(reg)
+    if used is None:
+        used = set(reg)
+    else:
+        # fold this file's existing IDs into the shared global namespace
+        used.update(reg)
     out: list[str] = []
     added = 0
     for ln in lines:
@@ -130,9 +141,20 @@ def main() -> int:
         return 2
 
     if args.mode == "mark":
+        # Global ID namespace: seed from all existing markers across
+        # TEMPLATE_FILES so new markers continue the single high-water
+        # mark (never reused, never colliding across files).
+        global_used: set[str] = set()
+        for rel in TEMPLATE_FILES:
+            if rel == ".workspace/rule-clauses.json":
+                continue
+            f = root / rel
+            if f.is_file():
+                _, reg = scan(f)
+                global_used.update(reg)
         total = 0
         for p in paths:
-            added, _ = mark_file(p)
+            added, _ = mark_file(p, used=global_used)
             total += added
         regs = build_registry(root)
         out = Path(args.out)

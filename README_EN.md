@@ -134,7 +134,7 @@ python3 scripts/verify_rules.py --workspace .
 python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTemplate
 ```
 
-Clause IDs (`<!-- id:Rn -->`, maintained by [`scripts/mark_rules.py`](scripts/mark_rules.py), registry at `.workspace/rule-clauses.json`) make "the user added a clause or reordered clauses in a template file" show up as precise drift instead of a sync conflict later. The local registry can be regenerated, so **the authoritative verdict only trusts `--vs-template`**. `--vs-template` requires a local `git` (it runs `git status` / `rev-parse` on the template clone as the trust anchor); without git, use the fast self-check path.
+Clause IDs (`<!-- id:Rn -->`, maintained by [`scripts/mark_rules.py`](scripts/mark_rules.py), registry at `.workspace/rule-clauses.json`; IDs are **globally unique and never reused** across files) make "the user added a clause or reordered clauses in a template file" show up as precise drift instead of a sync conflict later. The local registry can be regenerated, so **the authoritative verdict only trusts `--vs-template`**. `--vs-template` requires a local `git` (it runs `git status` / `rev-parse` on the template clone as the trust anchor); without git, use the fast self-check path.
 
 ## Workspace Lifecycle Skills
 
@@ -209,7 +209,7 @@ Inventory is not installation. External skills remain read-only technical refere
 ├── AGENTS.custom.md         # Codex-specific rules (created on demand)
 ├── AGENTS.md                # Codex entry point
 ├── CLAUDE.md                # Claude Code entry point
-├── HERMES.md                # Hermes entry point (global-memory boundary + optional persona slot)
+├── HERMES.md                # Hermes entry point (global-memory boundary; persona in HERMES.custom.md)
 ├── TOOLS.md                 # Environment and tool facts
 ├── WORKSPACE.md             # Business profile
 ├── README.md                # Chinese GitHub landing page
@@ -225,7 +225,7 @@ After work begins, sidecar evidence, exports, one-off scripts, and reports go in
 3. **Write local rules:** deviations from the template go into `AGENT_RULES.custom.md` (`overrides:` / `extends:`), never into template-layer files.
 4. **Connect domain capabilities:** give the Agent one or more skills root directories.
 5. **Add the project structure:** create source, data, documentation, design, or operations directories as required.
-6. **Replace the landing page:** once the business is established, replace these READMEs with project-specific documentation (the verification script has an explicit README-replacement exemption).
+6. **Replace the landing page:** once the business is established, replace these READMEs with project-specific documentation (the verification script has an explicit README-replacement exemption — reported in `info`, **not affecting `clean`**).
 
 Do not put one-off task details, temporary tool facts, or secrets into the governance files. Long-lived policy, business facts, and environment facts should each have one source of truth.
 
@@ -268,7 +268,7 @@ Yes. The policy and business files do not depend on Python. Only the skills inve
 <details>
 <summary><strong>Can I delete or replace the READMEs?</strong></summary>
 
-Yes. They are human-facing landing pages and are not part of the Agent startup chain. `verify_rules.py` grants the READMEs an explicit replacement exemption (reported as `REPLACED`, not `TAMPERED`). Keep `AGENT_RULES.md`, the client entry points, and `.workspace/bootstrap.json` to preserve policy loading and first-run state detection.
+Yes. They are human-facing landing pages and are not part of the Agent startup chain. `verify_rules.py` grants the READMEs an explicit replacement exemption (reported as `REPLACED` in `info`, **not affecting `clean`**, rather than `TAMPERED`). Keep `AGENT_RULES.md`, the client entry points, and `.workspace/bootstrap.json` to preserve policy loading and first-run state detection.
 
 </details>
 
@@ -282,7 +282,7 @@ No. The default workflow only reads entry metadata, computes fingerprints, and b
 <details>
 <summary><strong>Is this limited to Codex, Claude Code, or Hermes?</strong></summary>
 
-No. The repository provides thin entry points for those three clients. Any Agent that can read Workspace files and is instructed to follow `AGENT_RULES.md` can use the same governance structure. Automatic loading behavior still depends on the client. Note: the Workspace-level persona definition lives only in `HERMES.md`'s dedicated slot (binding Hermes alone) and never goes into `AGENT_RULES.md`, which governs every client.
+No. The repository provides thin entry points for those three clients. Any Agent that can read Workspace files and is instructed to follow `AGENT_RULES.md` can use the same governance structure. Automatic loading behavior still depends on the client. Note: the Workspace-level persona definition lives only in `HERMES.custom.md` (binding Hermes alone) and never goes into `AGENT_RULES.md`, which governs every client.
 
 </details>
 

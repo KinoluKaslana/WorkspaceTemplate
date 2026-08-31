@@ -21,7 +21,7 @@ version: 2.0.0
 1. 模板正主在 GitHub 仓库 `KinoluKaslana/WorkspaceTemplate`；实例的模板层文件 = 模板原件（逐字节一致），custom 层文件（`*.custom.md`）属工作区所有、同步永不触碰。
 2. 模板升级按语义化版本处理：PATCH = 修复（静默合并）；MINOR = 新增（报告后合并）；MAJOR = 破坏性变更（逐项确认）。版本语义只影响**报告详略与确认粒度**，同步动作本身是同一个机械流程。
 3. **文件分类（v2.0）**：
-   - **模板层·锁定替换**：`AGENT_RULES.md`（含条款 ID 标记）、`AGENTS.md`、`CLAUDE.md`、`HERMES.md`、`README.md`、`README_EN.md`、`notes/rebuild_index.py`、`notes/_TEMPLATE.md`、`scripts/inspect_skills.py`、`scripts/mark_rules.py`、`scripts/verify_rules.py`、`.workspace/skills/template-update/`、`.workspace/rule-clauses.json`。
+   - **模板层·锁定替换**：`AGENT_RULES.md`（含条款 ID 标记）、`AGENTS.md`、`CLAUDE.md`、`HERMES.md`、`README.md`、`README_EN.md`、`notes/rebuild_index.py`、`notes/_TEMPLATE.md`、`scripts/inspect_skills.py`、`scripts/mark_rules.py`、`scripts/verify_rules.py`、`.workspace/skills/template-update/`、`.workspace/skills/workspace-init/`、`.workspace/skills/git-init/`、`.workspace/rule-clauses.json`。**该清单的唯一事实源是 `scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 16 项）；第 4 步替换命令直接由它驱动，禁止另维护一份手工清单（手工清单漂移是「校验失败 → 回滚」死循环的根因，见「陷阱」）。**
    - **custom 层·永不触碰**：`*.custom.md`（AGENT_RULES.custom.md、HERMES.custom.md 等）。
    - **工作区所有·永不触碰**：`WORKSPACE.md`、`TOOLS.md`（本地登记为主；模板仅提供格式节）、`notes/*.md` 笔记正文、`skills/REGISTRY.md`、`.workspace/bootstrap.json` 的本地值、`<task-slug>-*/`、一切用户文件。
 4. **条款 ID**：模板层条款带 `<!-- id:Rn -->` 标记；`.workspace/rule-clauses.json` 是条款注册表（随模板分发）。custom 条款用 `overrides: R<id>` 覆写或 `extends: R<id>` 扩展模板条款。
@@ -54,10 +54,24 @@ mkdir -p .workspace/backup-<yy-mm-dd> && cp AGENT_RULES.md *.custom.md AGENTS.md
 
 ### 第 4 步：锁定替换（机械，无合并）
 
+替换清单的唯一事实源 = `scripts/verify_rules.py` 的 `TEMPLATE_FILES`（16 项）。**由它直接驱动拷贝，不要手写文件清单**：
+
 ```bash
-cd "$TEMPLATE_DIR" && cp --parents AGENT_RULES.md AGENTS.md CLAUDE.md HERMES.md README.md README_EN.md \
-  notes/rebuild_index.py notes/_TEMPLATE.md scripts/inspect_skills.py scripts/mark_rules.py scripts/verify_rules.py \
-  .workspace/skills/template-update .workspace/rule-clauses.json "$OLDPWD/"
+cd "$TEMPLATE_DIR" && <py> - "$OLDPWD" <<'PY'
+import shutil, sys
+from pathlib import Path
+sys.path.insert(0, "scripts")
+from verify_rules import TEMPLATE_FILES
+dst = Path(sys.argv[1])
+copied = []
+for rel in TEMPLATE_FILES:
+    src = Path(rel)
+    if src.is_file():
+        (dst / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst / rel)
+        copied.append(rel)
+print(f"replaced {len(copied)}/{len(TEMPLATE_FILES)} files per TEMPLATE_FILES")
+PY
 ```
 
 写盘后立即 `diff` 每个文件与模板原件——必须全空，否则回滚重做。（README 仅当工作区未替换为自己的首页；已替换则跳过并在报告注明。）
@@ -81,7 +95,7 @@ cd "$TEMPLATE_DIR" && cp --parents AGENT_RULES.md AGENTS.md CLAUDE.md HERMES.md 
 <py> notes/rebuild_index.py                                                                      # 索引脚本跑通
 ```
 
-- `verify_rules.py` 必须 `clean: true`——**必须带 `--vs-template`**：本地注册表可被重生成（自我作证漏洞），只有对模板克隆的字节级比对 + 克隆自身的 git 干净状态（信任锚：GitHub 对象哈希 → 克隆 HEAD → 工作区逐字节相等）才是权威判定。克隆脏（含未提交改动）时 `[trust]` 发现即视为校验失败。README 豁免：工作区替换为自己的首页时报 `REPLACED` 而非 `TAMPERED`，属允许状态。
+- `verify_rules.py` 必须 `clean: true`——**必须带 `--vs-template`**：本地注册表可被重生成（自我作证漏洞），只有对模板克隆的字节级比对 + 克隆自身的 git 干净状态（信任锚：GitHub 对象哈希 → 克隆 HEAD → 工作区逐字节相等）才是权威判定。克隆脏（含未提交改动）时 `[trust]` 发现即视为校验失败。README 豁免：工作区替换为自己的首页时报 `[vs-template] REPLACED`（进入 `info`，**不计入 `clean`**）；`clean` 只看 `findings`。
 - 任一不过 → 用备份回滚全部替换文件，回到第 2 步。
 
 ### 第 7 步：报告
@@ -100,6 +114,7 @@ cd "$TEMPLATE_DIR" && cp --parents AGENT_RULES.md AGENTS.md CLAUDE.md HERMES.md 
 ## 陷阱
 
 - 条款 ID 标记是注册表的锚：**任何人不得手改 `<!-- id:Rn -->`**；模板侧 ID 重排由 mark_rules.py 在模板仓库内完成，实例侧只消费。
+- **模板层文件清单唯一事实源 = `TEMPLATE_FILES`**：第 4 步拷贝、§3 分类、`verify_rules.py` 三者共用这一份清单。给模板新增/删除模板层文件时，只改 `scripts/verify_rules.py` 的 `TEMPLATE_FILES`，然后重跑 `mark_rules.py mark AGENT_RULES.md` 刷新注册表——第 4 步会自动跟着变，无需（也不允许）再改 skill 正文里的清单。
 - **`skills/REGISTRY.md` 属工作区所有**：同步时只允许**增补/更新 workspace-skills 命名空间条目**，绝不整文件覆盖——本地 skills/localskills 登记行是用户资产，覆盖即数据丢失（已发生过一次事故）。
 - `check_template.py`（v1 时代的判定脚本）仍用于文件级对比，但混合文件不再做行级合并；判定为 `drift` 的模板层文件在 v2.0 语义下就是"待恢复"，不是"待合并"。
 - custom 文件里的 `overrides:` 必须指向当前注册表存在的 ID；写 custom 时先查 `rule-clauses.json`。

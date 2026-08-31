@@ -8,7 +8,7 @@
 
 | 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |
 |---|---|---|---|---|
-| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（3 入口：template-update / workspace-init / git-init） | `TOOLS.md` §4.5 |
+| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（3 入口：template-update / workspace-init / git-init） | `TOOLS.md`「workspace-skills」小节 |
 
 ## Skill 入口
 

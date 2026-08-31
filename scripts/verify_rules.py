@@ -8,7 +8,13 @@ use --vs-template (byte-compare against the template clone).
 Level 2 (clause): per-clause ID comparison vs registry — detects added,
 deleted, edited, or reordered clauses even when the file hash was going
 to be updated anyway. Also validates custom-file override references
-(overrides: R<id>) against the current registry.
+(overrides: R<id>) against the current registry, and enforces that clause
+IDs stay globally unique across files.
+
+README exemption: README.md / README_EN.md may be replaced with a user
+homepage. A differing README is reported in the ``info`` list (REPLACED /
+HASH-DIFF) and does NOT affect ``clean`` — the exemption enters the pass
+verdict, not just the finding wording.
 
 Trust chain with --vs-template: GitHub repo (git object hashes) ->
 template clone (git status clean + HEAD) -> workspace file (byte equal).
@@ -53,6 +59,8 @@ TEMPLATE_FILES = [
     ".workspace/rule-clauses.json",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
+# The registry cannot meaningfully hash itself; build_registry skips it.
+REGISTRY_SELF = ".workspace/rule-clauses.json"
 
 
 def strip_marker(line: str) -> str:
@@ -72,28 +80,41 @@ def scan_clauses(path: Path) -> dict[str, str]:
     return reg
 
 
-def verify_file_level(ws_files: dict[str, Path], registry: dict) -> list[str]:
+def verify_file_level(ws: Path, registry: dict) -> tuple[list[str], list[str]]:
+    """File-hash comparison plus EXTRA detection.
+
+    Returns (findings, info). README diffs land in info (exempt — they do
+    not affect clean). EXTRA flags template-layer files that exist on disk
+    but are missing from the registry (registry not regenerated after
+    TEMPLATE_FILES gained an entry).
+    """
     findings: list[str] = []
+    info: list[str] = []
     for rel, entry in registry.items():
-        p = ws_files.get(rel)
-        if p is None or not p.is_file():
+        p = ws / rel
+        if not p.is_file():
             findings.append(f"[file] MISSING {rel}")
             continue
         actual = sha256(p)
         if actual != entry.get("file_sha256"):
-            findings.append(f"[file] HASH-DIFF {rel} (direct edit or newer template version)")
-    for rel in ws_files:
-        if rel not in registry:
-            findings.append(f"[file] EXTRA {rel} (not in registry)")
-    return findings
+            if rel in README_EXEMPT:
+                info.append(f"[file] HASH-DIFF {rel} (README exemption: user homepage allowed)")
+            else:
+                findings.append(f"[file] HASH-DIFF {rel} (direct edit or newer template version)")
+    for rel in TEMPLATE_FILES:
+        if rel == REGISTRY_SELF:
+            continue  # never registered
+        if rel not in registry and (ws / rel).exists():
+            findings.append(f"[file] EXTRA {rel} (present on disk but not in registry)")
+    return findings, info
 
 
-def verify_clause_level(ws_files: dict[str, Path], registry: dict) -> list[str]:
+def verify_clause_level(ws: Path, registry: dict) -> list[str]:
     findings: list[str] = []
     for rel, entry in registry.items():
         reg_clauses: dict[str, str] = entry.get("clauses", {})
-        p = ws_files.get(rel)
-        if p is None or not p.is_file():
+        p = ws / rel
+        if not p.is_file():
             continue  # already reported at file level
         cur = scan_clauses(p)
         for cid, text in reg_clauses.items():
@@ -114,6 +135,28 @@ def verify_clause_level(ws_files: dict[str, Path], registry: dict) -> list[str]:
     return findings
 
 
+def verify_cross_file_ids(ws: Path, registry: dict) -> list[str]:
+    """Enforce globally-unique clause IDs across all marked files.
+
+    Clause IDs are a single global namespace (mark_rules.py assigns them
+    from one global high-water mark), so the same ID must never appear in
+    two different files. The per-file DUPLICATE check cannot see a
+    collision that spans files; this closes that gap.
+    """
+    findings: list[str] = []
+    owner: dict[str, str] = {}
+    for rel, entry in registry.items():
+        p = ws / rel
+        if not p.is_file():
+            continue
+        for cid in entry.get("clauses", {}):
+            if cid in owner:
+                findings.append(f"[clause] CROSS-FILE-DUP {cid}: {owner[cid]} vs {rel}")
+            else:
+                owner[cid] = rel
+    return findings
+
+
 def verify_custom_refs(ws_root: Path, registry: dict, custom_glob: str) -> list[str]:
     findings: list[str] = []
     all_ids: set[str] = set()
@@ -131,16 +174,21 @@ def verify_custom_refs(ws_root: Path, registry: dict, custom_glob: str) -> list[
     return findings
 
 
-def verify_vs_template(ws: Path, tpl: Path) -> tuple[list[str], dict]:
+def verify_vs_template(ws: Path, tpl: Path) -> tuple[list[str], list[str], dict]:
     """Authoritative comparison: workspace template-layer files must be
     byte-identical to the template clone. Trust anchors the clone itself
-    via git (status clean + HEAD sha) before trusting the comparison."""
+    via git (status clean + HEAD sha) before trusting the comparison.
+
+    Returns (findings, info, meta). A differing README lands in info
+    (exemption) and does not affect clean.
+    """
     findings: list[str] = []
+    info: list[str] = []
     meta: dict = {}
     # anchor 1: clone must be a git repo
     if not (tpl / ".git").exists():
         findings.append("[trust] template clone has no .git — cannot anchor trust")
-        return findings, meta
+        return findings, info, meta
     # anchor 2: clone must be clean (no local edits to the reference itself)
     import subprocess
 
@@ -149,10 +197,10 @@ def verify_vs_template(ws: Path, tpl: Path) -> tuple[list[str], dict]:
         head = subprocess.run(["git", "-C", str(tpl), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired) as exc:
         findings.append(f"[trust] git check failed on template clone: {exc}")
-        return findings, meta
+        return findings, info, meta
     if st.returncode != 0 or head.returncode != 0:
         findings.append("[trust] git command failed on template clone")
-        return findings, meta
+        return findings, info, meta
     meta["template_head"] = head.stdout.strip()
     meta["template_clean"] = not st.stdout.strip()
     if st.stdout.strip():
@@ -170,10 +218,10 @@ def verify_vs_template(ws: Path, tpl: Path) -> tuple[list[str], dict]:
             findings.append(f"[vs-template] MISSING {rel}")
         elif t.read_bytes() != w.read_bytes():
             if rel in README_EXEMPT:
-                findings.append(f"[vs-template] REPLACED {rel} (README exemption: user homepage allowed)")
+                info.append(f"[vs-template] REPLACED {rel} (README exemption: user homepage allowed)")
             else:
                 findings.append(f"[vs-template] TAMPERED {rel} (differs from template original)")
-    return findings, meta
+    return findings, info, meta
 
 
 def main() -> int:
@@ -192,21 +240,25 @@ def main() -> int:
         return 2
     registry = json.loads(reg_path.read_text(encoding="utf-8"))
 
-    ws_files = {rel: ws / rel for rel in registry}
-    findings = []
+    findings: list[str] = []
+    info: list[str] = []
     template_meta = {}
     if args.vs_template:
         tpl = Path(args.vs_template).resolve()
         if not tpl.is_dir():
             print(json.dumps({"error": f"--vs-template dir not found: {tpl}"}))
             return 2
-        vs_findings, template_meta = verify_vs_template(ws, tpl)
+        vs_findings, vs_info, template_meta = verify_vs_template(ws, tpl)
         findings += vs_findings
-    findings += verify_file_level(ws_files, registry)
-    findings += verify_clause_level(ws_files, registry)
+        info += vs_info
+    ff, fi = verify_file_level(ws, registry)
+    findings += ff
+    info += fi
+    findings += verify_clause_level(ws, registry)
+    findings += verify_cross_file_ids(ws, registry)
     findings += verify_custom_refs(ws, registry, args.custom_glob)
 
-    report = {"clean": not findings, "findings": findings, "checked_files": list(registry), "workspace": str(ws)}
+    report = {"clean": not findings, "findings": findings, "info": info, "checked_files": list(registry), "workspace": str(ws)}
     if template_meta:
         report["template_anchor"] = template_meta
     print(json.dumps(report, ensure_ascii=False, indent=2))

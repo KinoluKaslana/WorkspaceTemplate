@@ -18,6 +18,4 @@
 
 ## Workspace 级人格（可选，仅约束 Hermes）
 
-本模板默认不定义人格，Hermes 使用其全局人格（`$HERMES_HOME/SOUL.md`）。若用户需要 Workspace 级人格/语气定义，**只写在下面的引用块中（或此节引用的单独文件）**——它经 Hermes 的项目上下文机制（`.hermes.md`/`HERMES.md` 向上遍历至 git 根）只对 Hermes 生效；**禁止写入 `AGENT_RULES.md`**：该文件约束所有客户端，人格定义会造成跨客户端越权。与全局人格冲突时，以用户当前明确指定为准。
-
-<!-- 如需 Workspace 级 Hermes 人格，在此定义；不需要时保持本节为空。 -->
+本模板默认不定义人格，Hermes 使用其全局人格（`$HERMES_HOME/SOUL.md`）。若用户需要 Workspace 级人格/语气定义，**只写入 [`HERMES.custom.md`](HERMES.custom.md)**（按需创建，属工作区所有，模板同步永不触碰）——它经 Hermes 的项目上下文机制（`.hermes.md`/`HERMES.md` 向上遍历至 git 根）只对 Hermes 生效。**禁止写入 `AGENT_RULES.md`**（该文件约束所有客户端，人格定义会造成跨客户端越权），**也禁止写入本文件正文**（本文件属模板层锁定文件，直接改动会被 `verify_rules.py` 报为 TAMPERED 并在同步时被覆盖）。与全局人格冲突时，以用户当前明确指定为准。

@@ -111,17 +111,17 @@
   },
   "HERMES.md": {
     "clauses": {},
-    "file_sha256": "d1a7643625ae583defefec0f8fd1332320074b8e444e83a386a7766c25046677",
+    "file_sha256": "e0e29dfdeeb53780aa9a8554d90168d5afd7ea609d17e0c79a5139a47971f974",
     "marked": 0
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "6bab107b20d905c1bac854fec5c0d75eb008129b6239bda4029ea2977912bba2",
+    "file_sha256": "28a032116a2612c735f70ded42890c553b27df1745fef6758669cd9465060834",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "adbe3dea46ca7905e14a099194f3fd2cdc4aa0f6e7a2258a3e05fa5933182926",
+    "file_sha256": "b547ac02f446f1f35c175188357710566ab406f3d2581d148d0af98cdb919e26",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -141,17 +141,17 @@
   },
   "scripts/mark_rules.py": {
     "clauses": {},
-    "file_sha256": "634b0dc331980954d54d2d53b6efd000db33230cfe8e404eff5667e93d503f06",
+    "file_sha256": "d5a268b041dfcfddfe455475e1a04a7df40fcf78f8845c06890666e2b2b93f3c",
     "marked": 0
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "7bba01922fa64e937e94a4dee7e1d2aef308b92e051843b3e2c0d11aeaa45c9c",
+    "file_sha256": "5a193e9d74b8115a77d52e83eee818fb98adc72ed7d4c65fd7735b64009c0e10",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "3feb9cc6bf1412972502ab0593a06ad4049f9b5ca430e7d867d8f4c30704952f",
+    "file_sha256": "9d636d2c8769822ab9d7252b5ebc271f63155785c030f7efadfc1bc5233c539c",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -161,7 +161,7 @@
   },
   ".workspace/skills/workspace-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "d934dfc3785c4150d8cc5e2a5b62705f225ef4b2155076e37d60b8ab5398f963",
+    "file_sha256": "62e103586254d9ee8e60b0decc90826a8c6512efdd9116ca7c5393d29dd065d1",
     "marked": 0
   },
   ".workspace/skills/git-init/SKILL.md": {

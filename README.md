@@ -133,7 +133,7 @@ python3 scripts/verify_rules.py --workspace .
 python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTemplate
 ```
 
-条款 ID（`<!-- id:Rn -->`，由 [`scripts/mark_rules.py`](scripts/mark_rules.py) 维护，注册表在 `.workspace/rule-clauses.json`）让"用户在模板文件里加了条款/调了顺序"被精确识别为漂移，而不是等到同步时变成一锅冲突。本地注册表可被重生成，所以**权威判定只认 `--vs-template`**。`--vs-template` 依赖本机 `git`（对模板克隆做 `git status` / `rev-parse` 信任锚定）；没有 git 时用快速自查路径即可。
+条款 ID（`<!-- id:Rn -->`，由 [`scripts/mark_rules.py`](scripts/mark_rules.py) 维护，注册表在 `.workspace/rule-clauses.json`；ID 跨文件**全局唯一、永不复用**）让"用户在模板文件里加了条款/调了顺序"被精确识别为漂移，而不是等到同步时变成一锅冲突。本地注册表可被重生成，所以**权威判定只认 `--vs-template`**。`--vs-template` 依赖本机 `git`（对模板克隆做 `git status` / `rev-parse` 信任锚定）；没有 git 时用快速自查路径即可。
 
 ## 工作区生命周期 skills
 
@@ -208,7 +208,7 @@ Agent 将自动完成：
 ├── AGENTS.custom.md         # Codex 专属规则（按需创建）
 ├── AGENTS.md                # Codex 入口
 ├── CLAUDE.md                # Claude Code 入口
-├── HERMES.md                # Hermes 入口（含全局记忆边界与可选人格位）
+├── HERMES.md                # Hermes 入口（全局记忆边界；人格见 HERMES.custom.md）
 ├── TOOLS.md                 # 环境与工具事实
 ├── WORKSPACE.md             # 业务轮廓
 ├── README.md                # 中文 GitHub 展示与上手说明
@@ -224,7 +224,7 @@ Agent 将自动完成：
 3. **写本地规则**：需要偏离模板的地方写进 `AGENT_RULES.custom.md`（`overrides:`/`extends:`），不改模板层文件。
 4. **接入领域能力**：把一个或多个 skills 根目录交给 Agent。
 5. **加入项目结构**：创建源码、数据、文档、设计或运维目录。
-6. **替换展示文档**：新业务稳定后，可以把本 README 改成项目自己的首页（校验脚本对 README 有替换豁免）。
+6. **替换展示文档**：新业务稳定后，可以把本 README 改成项目自己的首页（校验脚本对 README 有替换豁免，报告进入 `info`、**不影响 `clean` 判定**）。
 
 不要把一次性任务细节、临时工具事实或秘密堆进治理文件。长期政策、业务事实和环境事实各自只维护一份。
 
@@ -267,7 +267,7 @@ Agent 将自动完成：
 <details>
 <summary><strong>README 可以删除或替换吗？</strong></summary>
 
-可以。README 是面向人的展示页，不在 Agent 启动链中。`verify_rules.py` 对 README 有显式替换豁免（报告 `REPLACED` 而非 `TAMPERED`）。保留 `AGENT_RULES.md`、各客户端入口与 `.workspace/bootstrap.json` 即可维持规则加载和首次状态判断。
+可以。README 是面向人的展示页，不在 Agent 启动链中。`verify_rules.py` 对 README 有显式替换豁免（报告 `REPLACED`，进入 `info`、**不计入 `clean`**，而非 `TAMPERED`）。保留 `AGENT_RULES.md`、各客户端入口与 `.workspace/bootstrap.json` 即可维持规则加载和首次状态判断。
 
 </details>
 
@@ -281,7 +281,7 @@ Agent 将自动完成：
 <details>
 <summary><strong>它只能用于 Codex、Claude Code 或 Hermes 吗？</strong></summary>
 
-不是。仓库为这三类客户端提供了薄入口；其他 Agent 只要能够读取 Workspace 文件，并被要求遵守 `AGENT_RULES.md`，也可以使用同一治理结构。具体自动加载行为仍取决于客户端本身。注意：Workspace 级人格定义只放在 `HERMES.md` 的专属节（仅约束 Hermes），不进入约束所有客户端的 `AGENT_RULES.md`。
+不是。仓库为这三类客户端提供了薄入口；其他 Agent 只要能够读取 Workspace 文件，并被要求遵守 `AGENT_RULES.md`，也可以使用同一治理结构。具体自动加载行为仍取决于客户端本身。注意：Workspace 级人格定义只放在 `HERMES.custom.md`（仅约束 Hermes），不进入约束所有客户端的 `AGENT_RULES.md`。
 
 </details>
 
