@@ -2,6 +2,10 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 2.0.0（2026-08-31）
+
+- **破坏性变更**：全部条款 ID 按物理顺序重排（原 `§0.3` 的 `R90–R94` 现为 `R14–R18`，其后条款顺延）。工作区 custom 文件中的 `overrides:`/`extends:` 引用需按新 ID 迁移。
+
 ## 1.5.0（2026-08-31）
 
 - 三个客户端入口（`HERMES.md` / `CLAUDE.md` / `AGENTS.md`）新增对各自 `.custom.md` 的读取约束——读完 `AGENT_RULES.md` 及 `AGENT_RULES.custom.md` 后，须继续读取对应客户端的 `.custom.md`；规则冲突时 `AGENT_RULES.md` 及其 custom 文件优先级永远最高。
