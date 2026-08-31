@@ -6,6 +6,8 @@
 
 在做任何操作前，必须**完整读取 [AGENT_RULES.md](AGENT_RULES.md)**，并检查 `.workspace/bootstrap.json` 是否要求执行首次 Python 选择协议。
 
+读完 `AGENT_RULES.md` 后，按序读取并遵守：① [`AGENT_RULES.custom.md`](AGENT_RULES.custom.md)（若存在）→ ② 本客户端专属的 [`CLAUDE.custom.md`](CLAUDE.custom.md)（若存在）。**规则冲突时，`AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）的优先级永远最高。**
+
 ## Claude Code 专属补充
 
 - 本文件只负责定位共同政策，不复制模式、Python、skills、工具、notes 或交付规则。

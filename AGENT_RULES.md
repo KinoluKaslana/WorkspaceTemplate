@@ -1,11 +1,12 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`1.4.0`。** 规范性变更必须更新版本；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。 <!-- id:R2 -->
+> **模板政策版本：`1.5.0`。** 规范性变更必须更新版本；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。 <!-- id:R2 -->
 > 2026-08-31：新增 `HERMES.md` 客户端入口与 §9.1「记忆边界」；§2 新增入口防分叉条款；§7 新增版本控制操作授权要求；§8 中央文件清单纳入全部客户端入口。 <!-- id:R3 -->
 > 2026-08-31：新增 §9.2「notes 索引分层与策展节奏」；§9 新增记忆卫生规则（合并优先与 superseded 归档）；索引改为 INDEX.md（路由）+ `_INVERTED.md`（按需详情）双层。 <!-- id:R4 -->
 > 2026-08-31：新增 §10「规则分层与 custom 覆写」——模板规则文件锁定只读，本地规则一律写入 `<file>.custom.md` 并以 custom 优先；配套条款 ID 标记与双级校验（`scripts/mark_rules.py`、`scripts/verify_rules.py`）。 <!-- id:R5 -->
 > 2026-08-31：新增 §0.3「git 仓库决策」与 workspace-init / git-init skills——首次初始化须抹除指向模板库的 `.git` 并询问用户是否建仓；venv 为必须项，git 为可选项，决策记录于 bootstrap。 <!-- id:R6 -->
+> 2026-08-31：三个客户端入口（`HERMES.md`/`CLAUDE.md`/`AGENTS.md`）新增对各自 `.custom.md` 的读取约束——读完 `AGENT_RULES.md` 及 `AGENT_RULES.custom.md` 后，须继续读取对应客户端的 `.custom.md`；规则冲突时 `AGENT_RULES.md` 及其 custom 文件优先级永远最高。 <!-- id:R7 -->
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---

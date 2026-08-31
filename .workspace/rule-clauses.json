@@ -14,6 +14,11 @@
       "R11": "2. 不创建本地 venv，不假设 shell 中的 `python` 与 MCP 运行时等价。本地文件编辑仍使用 Agent 的文件工具；计算才交给已登记的 MCP Python。",
       "R12": "3. 将 `python.mode` 更新为 `mcp`，把工具标识、能力边界和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。",
       "R13": "4. 若当前会话没有可用 MCP Python，不伪装已配置；请用户接入对应 MCP，或确认回退到本地 venv。",
+      "R90": "### 0.3 git 仓库决策（可选初始化项）",
+      "R91": "1. **抹除模板 git 标记**：确认 `.git` 的 remote 指向模板库（`KinoluKaslana/WorkspaceTemplate`）后，先导出本地独有 commit 为 patch 备份（若有），再删除 `.git`。remote 指向他处或存在无法确认的提交历史时，**暂停并请用户裁决**，不得擅自删除。",
+      "R92": "2. **询问建仓决策**：用户选择（a）立即建仓——Agent 引导 `git init` + 首次提交 + 用户自己的 remote（多设备同步）；或（b）暂不建仓——保持纯文件工作区，后续用户可随时要求执行 git-init skill。",
+      "R93": "3. **记录到 bootstrap**：`git` 节记录 `status`（`initialized` / `declined`）、remote、初始化日期；`declined` 不是终态，后续执行 git-init skill 时翻转为 `initialized`。",
+      "R94": "4. 本节流程由 `.workspace/skills/workspace-init/`（首次初始化）与 `.workspace/skills/git-init/`（后补建仓）两个 skill 承载；详细步骤以 skill 正文为准。",
       "R14": "## 1. 角色、业务与工作模式",
       "R15": "- **问答/只读模式**：仅在对话中解答、评审或给出片段；可做范围内的只读检查，但不写文件、不安装依赖、不改变外部状态、不向第三方发送用户数据。",
       "R16": "- **任务模式**：需要创建/修改/删除文件、安装依赖、调用会改变外部状态的服务、运行未知工件或交付持久化结果。",
@@ -89,14 +94,9 @@
       "R86": "2. **custom 层（本地所有）**：用户自定义规则、Agent 在本工作区新增的规则性约定，一律写入同名 `.custom.md` 文件（如 `AGENT_RULES.custom.md`）。custom 文件属工作区所有，模板同步永不触碰；无内容时可不创建。",
       "R87": "3. **覆写优先级**：custom 层规则与模板层冲突时，**以 custom 层为准**（更近、更具体的作用域优先）。custom 文件中每个条款应注明 `overrides: R<id>`（指向被覆写的模板条款 ID）或 `extends:`（纯新增）；引用失效（模板条款已不存在）时校验脚本会报告。",
       "R88": "4. **双级校验**：`scripts/verify_rules.py` 提供（a）文件级——模板层文件哈希与注册表比对，检测任何直接改动；（b）条款级——逐条款 ID 比对注册表，检测新增/删除/改写/乱序，防止\"用户直接在模板文件里增删条款或调序\"被误判为同步冲突。校验失败时先修复工作区文件（从模板克隆恢复），不得带着漂移做同步。",
-      "R89": "5. **模板层条款演进**：模板新版本若删除/改写某条款 ID，同步后 `verify_rules.py` 会列出受影响的 custom `overrides` 引用，由 Agent 逐条向用户报告并改写 custom 条款指向；不得静默丢弃 custom 语义。",
-      "R90": "### 0.3 git 仓库决策（可选初始化项）",
-      "R91": "1. **抹除模板 git 标记**：确认 `.git` 的 remote 指向模板库（`KinoluKaslana/WorkspaceTemplate`）后，先导出本地独有 commit 为 patch 备份（若有），再删除 `.git`。remote 指向他处或存在无法确认的提交历史时，**暂停并请用户裁决**，不得擅自删除。",
-      "R92": "2. **询问建仓决策**：用户选择（a）立即建仓——Agent 引导 `git init` + 首次提交 + 用户自己的 remote（多设备同步）；或（b）暂不建仓——保持纯文件工作区，后续用户可随时要求执行 git-init skill。",
-      "R93": "3. **记录到 bootstrap**：`git` 节记录 `status`（`initialized` / `declined`）、remote、初始化日期；`declined` 不是终态，后续执行 git-init skill 时翻转为 `initialized`。",
-      "R94": "4. 本节流程由 `.workspace/skills/workspace-init/`（首次初始化）与 `.workspace/skills/git-init/`（后补建仓）两个 skill 承载；详细步骤以 skill 正文为准。"
+      "R89": "5. **模板层条款演进**：模板新版本若删除/改写某条款 ID，同步后 `verify_rules.py` 会列出受影响的 custom `overrides` 引用，由 Agent 逐条向用户报告并改写 custom 条款指向；不得静默丢弃 custom 语义。"
     },
-    "file_sha256": "32c40d7791eca125b6f0ed3db32d479309f5378c5cb867286b7b5b0215ceace3",
+    "file_sha256": "535d21093e173975c35678ceacea7f32d8fe0fcdcf0a03fef032cf054aa97118",
     "marked": 94
   }
 }
