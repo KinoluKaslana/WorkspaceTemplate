@@ -103,7 +103,7 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 |---|---|
 | **命名空间** | `workspace-skills`（`.workspace/skills/`，无路由器，逐 skill 登记） |
 | **template-update** | 同步 WorkspaceTemplate 最新版到本工作区。入口 `.workspace/skills/template-update/SKILL.md`（v1.0.0）；配套只读判定脚本 `check_template.py`（SHA-256 见下）。触发：用户要求同步模板，或检测到 bootstrap `template.current_policy_version` 落后于模板仓库 |
-| **check_template.py SHA-256** | `2a40e55c81273f02873c15632179aae5a5dd288696f19aa01c739432ca4f491a` |
+| **check_template.py SHA-256** | `e4dd6c035a8156df62645cf3a93593ff32d576ca46442c74db20dd6ea26e93ae` |
 | **来源与信任边界** | 模板内置（正主在 WorkspaceTemplate 仓库 `.workspace/skills/`，随模板版本化）；本地副本由同步流程自举刷新，分叉以模板为准 |
 | **副作用/数据外发** | 只读判定 + 本地文件合并与备份（`.workspace/backup-<date>/`）；不联网（模板克隆已存在时），临时克隆仅在用户指定时 |
 | **核验日期** | 2026-08-31 |
