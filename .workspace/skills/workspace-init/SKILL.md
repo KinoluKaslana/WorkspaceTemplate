@@ -93,12 +93,11 @@ remote 指向他处 / 历史无法确认 → **暂停，向用户展示发现并
 ### 第 8 步：全量验证
 
 ```bash
-<py> "$WS/scripts/verify_rules.py" --workspace "$WS" --json /tmp/init-verify.json   # clean: true
-<py> "$WS/notes/rebuild_index.py"                                                    # 索引跑通
-<py> "$TEMPLATE_DIR/.workspace/skills/template-update/check_template.py" --template "$TEMPLATE_DIR" --workspace "$WS"   # template_new 为空
+<py> "$WS/scripts/verify_rules.py" --workspace "$WS" --vs-template "$TEMPLATE_DIR" --json /tmp/init-verify.json   # 权威校验（含信任锚）
+<py> "$WS/notes/rebuild_index.py"                                                                                   # 索引跑通
 ```
 
-三项任一不过 → 按备份回滚对应文件，报告后停。
+两项任一不过 → 按备份回滚对应文件，报告后停。注意：验证用的 scripts 与注册表以**模板最新版**为准（第 4 步已随模板层替换）。
 
 ### 第 9 步：初始化报告
 

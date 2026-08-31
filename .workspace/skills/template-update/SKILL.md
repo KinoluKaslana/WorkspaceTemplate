@@ -77,12 +77,11 @@ cd "$TEMPLATE_DIR" && cp --parents AGENT_RULES.md AGENTS.md CLAUDE.md HERMES.md 
 ### 第 6 步：同步后验证（三项全过）
 
 ```bash
-<py> scripts/verify_rules.py --workspace . --json /tmp/post.json   # 必须 clean（含 custom 引用）
-<py> notes/rebuild_index.py                                         # 索引脚本跑通
-<py> "$TEMPLATE_DIR/.workspace/skills/template-update/check_template.py" --template "$TEMPLATE_DIR" --workspace .
+<py> scripts/verify_rules.py --workspace . --vs-template "$TEMPLATE_DIR" --json /tmp/post.json   # 权威校验：字节级比对+git 信任锚
+<py> notes/rebuild_index.py                                                                      # 索引脚本跑通
 ```
 
-- `verify_rules.py` 必须 `clean: true`；`check_template.py` 的 `template_new` 必须为空。
+- `verify_rules.py` 必须 `clean: true`——**必须带 `--vs-template`**：本地注册表可被重生成（自我作证漏洞），只有对模板克隆的字节级比对 + 克隆自身的 git 干净状态（信任锚：GitHub 对象哈希 → 克隆 HEAD → 工作区逐字节相等）才是权威判定。克隆脏（含未提交改动）时 `[trust]` 发现即视为校验失败。README 豁免：工作区替换为自己的首页时报 `REPLACED` 而非 `TAMPERED`，属允许状态。
 - 任一不过 → 用备份回滚全部替换文件，回到第 2 步。
 
 ### 第 7 步：报告
