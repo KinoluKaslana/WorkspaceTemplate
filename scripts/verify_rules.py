@@ -104,10 +104,12 @@ def verify_clause_level(ws_files: dict[str, Path], registry: dict) -> list[str]:
         for cid in cur:
             if cid not in reg_clauses:
                 findings.append(f"[clause] ADDED {rel}#{cid}: {cur[cid][:60]}")
-        # reorder detection: ID sequence should be non-decreasing in file order
+        # duplicate + reorder detection over the file's marker sequence
         ids = [m.group(1) for ln in p.read_text(encoding="utf-8").splitlines() if (m := MARKER_RE.search(ln))]
-        nums = [int(i[1:]) for i in ids]
-        if nums != sorted(nums) and len(set(nums)) == len(nums):
+        if len(ids) != len(set(ids)):
+            dupes = sorted({i for i in ids if ids.count(i) > 1})
+            findings.append(f"[clause] DUPLICATE {rel}: {dupes}")
+        elif [int(i[1:]) for i in ids] != sorted(int(i[1:]) for i in ids):
             findings.append(f"[clause] REORDERED {rel}: file order {ids[:12]}...")
     return findings
 

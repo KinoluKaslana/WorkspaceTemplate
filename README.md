@@ -8,7 +8,7 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v1.4.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.0.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -133,7 +133,7 @@ python3 scripts/verify_rules.py --workspace .
 python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTemplate
 ```
 
-条款 ID（`<!-- id:Rn -->`，由 [`scripts/mark_rules.py`](scripts/mark_rules.py) 维护，注册表在 `.workspace/rule-clauses.json`）让"用户在模板文件里加了条款/调了顺序"被精确识别为漂移，而不是等到同步时变成一锅冲突。本地注册表可被重生成，所以**权威判定只认 `--vs-template`**。
+条款 ID（`<!-- id:Rn -->`，由 [`scripts/mark_rules.py`](scripts/mark_rules.py) 维护，注册表在 `.workspace/rule-clauses.json`）让"用户在模板文件里加了条款/调了顺序"被精确识别为漂移，而不是等到同步时变成一锅冲突。本地注册表可被重生成，所以**权威判定只认 `--vs-template`**。`--vs-template` 依赖本机 `git`（对模板克隆做 `git status` / `rev-parse` 信任锚定）；没有 git 时用快速自查路径即可。
 
 ## 工作区生命周期 skills
 
@@ -203,6 +203,9 @@ Agent 将自动完成：
 │   └── REGISTRY.md          # Skills 路由表
 ├── AGENT_RULES.md           # 唯一权威通用政策（锁定只读，条款带 ID）
 ├── AGENT_RULES.custom.md    # 本地规则覆写层（custom 优先；按需创建，不随模板分发）
+├── HERMES.custom.md         # Hermes 专属规则/人格（按需创建）
+├── CLAUDE.custom.md         # Claude Code 专属规则（按需创建）
+├── AGENTS.custom.md         # Codex 专属规则（按需创建）
 ├── AGENTS.md                # Codex 入口
 ├── CLAUDE.md                # Claude Code 入口
 ├── HERMES.md                # Hermes 入口（含全局记忆边界与可选人格位）

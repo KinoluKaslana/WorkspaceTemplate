@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v1.4.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.0.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -134,7 +134,7 @@ python3 scripts/verify_rules.py --workspace .
 python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTemplate
 ```
 
-Clause IDs (`<!-- id:Rn -->`, maintained by [`scripts/mark_rules.py`](scripts/mark_rules.py), registry at `.workspace/rule-clauses.json`) make "the user added a clause or reordered clauses in a template file" show up as precise drift instead of a sync conflict later. The local registry can be regenerated, so **the authoritative verdict only trusts `--vs-template`**.
+Clause IDs (`<!-- id:Rn -->`, maintained by [`scripts/mark_rules.py`](scripts/mark_rules.py), registry at `.workspace/rule-clauses.json`) make "the user added a clause or reordered clauses in a template file" show up as precise drift instead of a sync conflict later. The local registry can be regenerated, so **the authoritative verdict only trusts `--vs-template`**. `--vs-template` requires a local `git` (it runs `git status` / `rev-parse` on the template clone as the trust anchor); without git, use the fast self-check path.
 
 ## Workspace Lifecycle Skills
 
@@ -204,6 +204,9 @@ Inventory is not installation. External skills remain read-only technical refere
 │   └── REGISTRY.md          # Skills routing table
 ├── AGENT_RULES.md           # Sole authoritative shared policy (locked read-only, clauses tagged with IDs)
 ├── AGENT_RULES.custom.md    # Local rule override layer (custom precedence; created on demand, not shipped)
+├── HERMES.custom.md         # Hermes-specific rules / persona (created on demand)
+├── CLAUDE.custom.md         # Claude Code-specific rules (created on demand)
+├── AGENTS.custom.md         # Codex-specific rules (created on demand)
 ├── AGENTS.md                # Codex entry point
 ├── CLAUDE.md                # Claude Code entry point
 ├── HERMES.md                # Hermes entry point (global-memory boundary + optional persona slot)

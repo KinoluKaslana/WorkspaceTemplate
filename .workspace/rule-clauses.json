@@ -98,5 +98,75 @@
     },
     "file_sha256": "ae8d99d9f7303bbbc5ce5bd0c6322b3874fb5e3d5fc23e0d67019156b63902f3",
     "marked": 94
+  },
+  "AGENTS.md": {
+    "clauses": {},
+    "file_sha256": "ebdc1b47abfdc5c082d2179547103c07e106ed899f031e5f91e9a0f86943e173",
+    "marked": 0
+  },
+  "CLAUDE.md": {
+    "clauses": {},
+    "file_sha256": "1c15ad990ceeae190261924fc705b347a884cc7ff03c53bd0eb88c81a5f19531",
+    "marked": 0
+  },
+  "HERMES.md": {
+    "clauses": {},
+    "file_sha256": "d1a7643625ae583defefec0f8fd1332320074b8e444e83a386a7766c25046677",
+    "marked": 0
+  },
+  "README.md": {
+    "clauses": {},
+    "file_sha256": "6bab107b20d905c1bac854fec5c0d75eb008129b6239bda4029ea2977912bba2",
+    "marked": 0
+  },
+  "README_EN.md": {
+    "clauses": {},
+    "file_sha256": "adbe3dea46ca7905e14a099194f3fd2cdc4aa0f6e7a2258a3e05fa5933182926",
+    "marked": 0
+  },
+  "notes/rebuild_index.py": {
+    "clauses": {},
+    "file_sha256": "ab58ae0cfef26b282f998274db3f8199713cc29f99198a80d1f05946b2a561e8",
+    "marked": 0
+  },
+  "notes/_TEMPLATE.md": {
+    "clauses": {},
+    "file_sha256": "66c1014d965a530e740645ebc6aa77884005302eabf823054e0825a1eeb2e82b",
+    "marked": 0
+  },
+  "scripts/inspect_skills.py": {
+    "clauses": {},
+    "file_sha256": "7b6bf9c6fe0316edeb3b0886b1aabcc79f0114bdbcab64886b5db095e52f1fb1",
+    "marked": 0
+  },
+  "scripts/mark_rules.py": {
+    "clauses": {},
+    "file_sha256": "634b0dc331980954d54d2d53b6efd000db33230cfe8e404eff5667e93d503f06",
+    "marked": 0
+  },
+  "scripts/verify_rules.py": {
+    "clauses": {},
+    "file_sha256": "7bba01922fa64e937e94a4dee7e1d2aef308b92e051843b3e2c0d11aeaa45c9c",
+    "marked": 0
+  },
+  ".workspace/skills/template-update/SKILL.md": {
+    "clauses": {},
+    "file_sha256": "3feb9cc6bf1412972502ab0593a06ad4049f9b5ca430e7d867d8f4c30704952f",
+    "marked": 0
+  },
+  ".workspace/skills/template-update/check_template.py": {
+    "clauses": {},
+    "file_sha256": "bbfa379269a3a3982a3d65997f9dac31f30b0cb939167e98cdc09959bfccd489",
+    "marked": 0
+  },
+  ".workspace/skills/workspace-init/SKILL.md": {
+    "clauses": {},
+    "file_sha256": "d934dfc3785c4150d8cc5e2a5b62705f225ef4b2155076e37d60b8ab5398f963",
+    "marked": 0
+  },
+  ".workspace/skills/git-init/SKILL.md": {
+    "clauses": {},
+    "file_sha256": "e13ce30f5f38ca020f51efee743b90022f4a8d420d07a7570c22204d42673a4a",
+    "marked": 0
   }
 }

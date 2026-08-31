@@ -23,11 +23,11 @@ import re
 import sys
 from pathlib import Path
 
+from verify_rules import TEMPLATE_FILES
+
 MARKER_RE = re.compile(r"\s*<!--\s*id:(R\d+)\s*-->\s*$")
-CLAUSE_RE = re.compile(r"^(\d+\.|[-*]\s|\d+[).、])")
+CLAUSE_RE = re.compile(r"^(\d+\.|[-*]\s|\d+[)、.])")
 HEADING_RE = re.compile(r"^#{1,6}\s")
-# lines that are pure policy content worth tracking (clauses, headings)
-TRACKED_RE = re.compile(r"^(\d+\.|[-*]\s|#{1,6}\s|>\s*\*\*|.*[:：]$)")
 
 
 def strip_marker(line: str) -> str:
@@ -35,10 +35,17 @@ def strip_marker(line: str) -> str:
 
 
 def next_free_id(used: set[str]) -> str:
-    n = 1
-    while f"R{n}" in used:
-        n += 1
-    return f"R{n}"
+    """Next clause ID as a high-water mark: max existing + 1.
+
+    IDs are never reused — once a clause is deleted, its ID stays retired.
+    This keeps `overrides:` / `extends:` references in custom files stable:
+    a freed ID is never silently re-assigned to a semantically different
+    clause.
+    """
+    if not used:
+        return "R1"
+    max_n = max(int(i[1:]) for i in used)
+    return f"R{max_n + 1}"
 
 
 def scan(path: Path) -> tuple[list[str], dict[str, str]]:
@@ -83,11 +90,22 @@ def mark_file(path: Path, dry: bool = False) -> tuple[int, dict[str, str]]:
     return added, reg
 
 
-def build_registry(files: list[Path], root: Path) -> dict:
+def build_registry(root: Path) -> dict:
+    """Register every template-layer file in TEMPLATE_FILES.
+
+    `file_sha256` is recorded for every file so the fast self-check
+    (`verify_rules.py --workspace .` without `--vs-template`) hashes all
+    governance files; `clauses` / `marked` are recorded only for files that
+    actually carry `<!-- id:Rn -->` markers (currently AGENT_RULES.md).
+    """
     registry: dict[str, dict] = {}
-    for f in files:
+    for rel in TEMPLATE_FILES:
+        if rel == ".workspace/rule-clauses.json":
+            continue  # the registry cannot meaningfully hash itself
+        f = root / rel
+        if not f.is_file():
+            continue
         _, reg = scan(f)
-        rel = f.resolve().relative_to(root).as_posix()
         registry[rel] = {
             "clauses": reg,
             "file_sha256": hashlib.sha256(f.read_bytes()).hexdigest(),
@@ -113,15 +131,10 @@ def main() -> int:
 
     if args.mode == "mark":
         total = 0
-        regs: dict[str, dict] = {}
         for p in paths:
-            added, reg = mark_file(p)
+            added, _ = mark_file(p)
             total += added
-            regs[p.resolve().relative_to(root).as_posix()] = {
-                "clauses": reg,
-                "file_sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
-                "marked": len(reg),
-            }
+        regs = build_registry(root)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -139,7 +152,7 @@ def main() -> int:
         return 1 if unmarked else 0
 
     if args.mode == "registry":
-        regs = build_registry(paths, root)
+        regs = build_registry(root)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -97,7 +97,7 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 
 存在根 `SKILL.md` 时默认只盘点根路由。先完整读路由器，再决定是否需要对它允许的分支显式扩展。
 
-### 4.5 workspace-skills（工作区自维护技能）
+### 4.3 workspace-skills（工作区自维护技能）
 
 | 项 | 内容 |
 |---|---|
@@ -108,6 +108,16 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | **check_template.py SHA-256** | `bbfa379269a3a3982a3d65997f9dac31f30b0cb939167e98cdc09959bfccd489` |
 | **来源与信任边界** | 模板内置（正主在 WorkspaceTemplate 仓库 `.workspace/skills/`，随模板版本化）；本地副本由同步流程自举刷新，分叉以模板为准 |
 | **副作用/数据外发** | 只读判定 + 本地文件合并与备份（`.workspace/backup-<date>/`）；不联网（模板克隆已存在时），临时克隆仅在用户指定时 |
+| **核验日期** | 2026-08-31 |
+
+### 4.4 规则条款标记与校验工具
+
+| 项 | 内容 |
+|---|---|
+| **mark_rules.py** | 给治理文件条款打稳定 ID（`<!-- id:Rn -->`）并生成注册表 `.workspace/rule-clauses.json`。ID 只增不重用（高水位），见脚本 docstring |
+| **verify_rules.py** | 双级校验：文件级（sha256 vs 注册表）+ 条款级（增/删/改/乱序/重复 ID）+ custom 引用（overrides/extends 失效检测）；`--vs-template` 权威字节比对 + git 信任锚（需 git） |
+| **用法** | `python3 scripts/mark_rules.py mark AGENT_RULES.md`；`python3 scripts/verify_rules.py --workspace .`；`python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTemplate` |
+| **来源/副作用** | 模板内置；mark 写入目标 md 与注册表，verify 只读（`--json` 落盘报告） |
 | **核验日期** | 2026-08-31 |
 
 ## 5. Notes 索引
@@ -155,13 +165,3 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 3. 失效条目标记原因和日期，不静默删除。事实变化不需改 `AGENT_RULES.md`。
 4. `TOOLS.md`、`skills/REGISTRY.md` 和 `.workspace/bootstrap.json` 由父 Agent 或唯一集成 Agent 串行更新。
 5. 任何工具条目都不是对外部写入、联网、上传、提权或破坏性动作的预授权。
-
-### 4.6 规则条款标记与校验工具（模板 v1.3.0）
-
-| 项 | 内容 |
-|---|---|
-| **mark_rules.py** | 给治理文件条款打稳定 ID（`<!-- id:Rn -->`）并生成注册表 `.workspace/rule-clauses.json`。SHA-256 待模板侧首次标记后登记 |
-| **verify_rules.py** | 双级校验：文件级（sha256 vs 注册表）+ 条款级（增/删/改/乱序）+ custom 引用（overrides/extends 失效检测） |
-| **用法** | `python3 scripts/mark_rules.py mark AGENT_RULES.md`；`python3 scripts/verify_rules.py --workspace .` |
-| **来源/副作用** | 模板内置；mark 写入目标 md 与注册表，verify 只读（`--json` 落盘报告） |
-| **核验日期** | 2026-08-31 |
