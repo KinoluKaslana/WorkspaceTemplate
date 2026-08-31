@@ -8,13 +8,13 @@
 
 | 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |
 |---|---|---|---|---|
-| — | — | — | 尚未引入 | — |
+| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（1 入口：template-update） | `TOOLS.md` §4.5 |
 
 ## Skill 入口
 
 | 路由 ID | 触发摘要 | 入口 | 所属命名空间 |
 |---|---|---|---|
-| — | 尚未引入 | — | — |
+| template-update | 同步模板更新到本工作区（"同步模板/更新工作区到最新模板"或检测到模板版本落后） | `.workspace/skills/template-update/SKILL.md` | workspace-skills |
 
 ## 更新约定
 

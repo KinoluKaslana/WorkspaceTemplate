@@ -19,7 +19,9 @@
     "configured_at": null
   },
   "skills": {
-    "registered_roots": []
+    "registered_roots": [
+      "workspace-skills"
+    ]
   },
   "notes": {
     "curation": {

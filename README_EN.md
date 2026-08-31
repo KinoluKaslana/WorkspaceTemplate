@@ -151,7 +151,9 @@ Inventory is not installation. External skills remain read-only technical refere
 ```text
 .
 ├── .workspace/
-│   └── bootstrap.json       # First-run state machine
+│   ├── bootstrap.json       # First-run state machine
+│   └── skills/              # Workspace-maintained skills (workspace-skills namespace)
+│       └── template-update/ # Template sync skill (SKILL.md + check_template.py)
 ├── notes/
 │   ├── INDEX.md             # Generated experience index (compact routing)
 │   ├── _INVERTED.md         # Inverted index / related graph (on demand)

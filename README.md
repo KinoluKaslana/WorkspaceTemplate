@@ -151,7 +151,9 @@ Agent 将自动完成：
 ```text
 .
 ├── .workspace/
-│   └── bootstrap.json       # 首次运行状态机
+│   ├── bootstrap.json       # 首次运行状态机
+│   └── skills/              # 工作区自维护技能（workspace-skills 命名空间）
+│       └── template-update/ # 模板同步 skill（SKILL.md + check_template.py）
 ├── notes/
 │   ├── INDEX.md             # 自动经验索引（紧凑路由）
 │   ├── _INVERTED.md         # 倒排索引/关联图（按需加载）
