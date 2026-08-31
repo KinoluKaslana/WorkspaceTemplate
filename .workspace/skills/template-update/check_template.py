@@ -120,16 +120,74 @@ def analyze_three_way(base: list[str], local: list[str], template: list[str]) ->
     }
 
 
+NUM_PREFIX_RE = re.compile(r"^(\d+)[.、)]\s+")
+
+
+def _strip_num(line: str) -> str:
+    return NUM_PREFIX_RE.sub("", line, count=1)
+
+
 def dropped_local_lines(backup: list[str], current: list[str]) -> tuple[list[str], list[str]]:
     """Lines present in backup (pre-merge local state) but absent after merge.
 
     Returns (dropped, expected) where expected are template-version-line
-    replacements that the skill rules anticipate.
+    replacements the skill rules anticipate. Renumbered ordered-list lines
+    (same content, different leading number) are reported separately as
+    'renumbered' inside the entry by the caller-friendly tuple: the second
+    element also includes renumbered matches, and each entry dict gains
+    'renumbered_lines' — see main().
     """
     cur_set = set(current)
+    cur_stripped = {_strip_num(x) for x in current}
     dropped = [ln for ln in backup if ln not in cur_set]
     expected = [ln for ln in dropped if VERSION_LINE_RE.match(ln)]
     return dropped, expected
+
+
+TOKEN_RE = re.compile(r"[A-Za-z0-9_.\-/]{10,}")
+
+
+def classify_drops(backup: list[str], current: list[str], base: list[str] | None = None) -> dict:
+    """Classify missing backup lines.
+
+    Categories:
+    - expected_drops: template version-line replacements.
+    - renumbered_lines: ordered-list lines whose number-stripped content survives.
+    - template_replaced: lines identical to BASE that the template updated.
+    - locally_revised: dropped lines whose distinctive long token(s) survive in
+      a current line (the line was reworded/updated, content preserved).
+    - dropped_local_lines: REAL drops with no surviving trace. Must be empty
+      (or explained) to pass step 6. NOTE: on the FIRST sync after adopting
+      BASE, pre-BASE template lines superseded by this sync can also land
+      here; review and explain them in the report.
+    """
+    cur_set = set(current)
+    cur_stripped = {_strip_num(x) for x in current}
+    cur_text = "\n".join(current)
+    base_set = set(base) if base is not None else None
+    real, renumbered, expected, replaced, revised = [], [], [], [], []
+    for ln in backup:
+        if ln in cur_set:
+            continue
+        if VERSION_LINE_RE.match(ln):
+            expected.append(ln)
+        elif _strip_num(ln) != ln and _strip_num(ln) in cur_stripped:
+            renumbered.append(ln)
+        elif base_set is not None and ln in base_set:
+            replaced.append(ln)
+        else:
+            tokens = TOKEN_RE.findall(ln)
+            if tokens and all(t in cur_text for t in tokens[:2] if len(t) >= 12) and any(len(t) >= 12 for t in tokens):
+                revised.append(ln)
+            else:
+                real.append(ln)
+    return {
+        "dropped_local_lines": real,
+        "expected_drops": expected,
+        "renumbered_lines": renumbered,
+        "template_replaced": replaced,
+        "locally_revised": revised,
+    }
 
 
 def main() -> int:
@@ -209,12 +267,14 @@ def main() -> int:
             bk = backup_dir / Path(rel).name
             cur = ws / rel
             if bk.is_file() and cur.is_file():
-                dropped, expected = dropped_local_lines(
-                    bk.read_text(encoding="utf-8").splitlines(),
-                    cur.read_text(encoding="utf-8").splitlines(),
+                base_src = (base_dir / rel) if (base_dir is not None and (base_dir / rel).is_file()) else None
+                entry.update(
+                    classify_drops(
+                        bk.read_text(encoding="utf-8").splitlines(),
+                        cur.read_text(encoding="utf-8").splitlines(),
+                        base_src.read_text(encoding="utf-8").splitlines() if base_src else None,
+                    )
                 )
-                entry["dropped_local_lines"] = dropped
-                entry["expected_drops"] = expected
             elif bk.exists():
                 pass  # e.g. bootstrap.json handled by name
         files[rel] = entry
