@@ -1,0 +1,8 @@
+name: workspace-gate
+version: "1.2.1"
+description: WorkspaceTemplate 工作区级治理 hook —— 强制先读治理文件再写工作区文件
+provides_hooks:
+  - pre_tool_call
+  - post_tool_call
+  - pre_llm_call
+  - on_session_end

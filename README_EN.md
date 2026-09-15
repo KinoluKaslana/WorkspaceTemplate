@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v2.1.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.2.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -136,6 +136,32 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 
 Clause IDs (`<!-- id:Rn -->`, maintained by [`scripts/mark_rules.py`](scripts/mark_rules.py), registry at `.workspace/rule-clauses.json`; IDs are **globally unique and never reused** across files) make "the user added a clause or reordered clauses in a template file" show up as precise drift instead of a sync conflict later. The local registry can be regenerated, so **the authoritative verdict only trusts `--vs-template`**. `--vs-template` requires a local `git` (it runs `git status` / `rev-parse` on the template clone as the trust anchor); without git, use the fast self-check path.
 
+## Hook Governance (Workspace-Level Mechanical Gate)
+
+The template ships a **Hermes project-level plugin** (`.hermes/plugins/workspace-gate/`) that turns "read the governance files before writing workspace files" from a soft reminder into a **mechanical block** — see `AGENT_RULES.md` §12:
+
+| Item | Fact |
+|---|---|
+| Location | `.hermes/plugins/workspace-gate/` (`plugin.yaml` + `__init__.py` + `selfcheck.py`; template-layer locked files, hash-verified) |
+| Gate rule | The write target path resolves inside the workspace **and** this session has not `read_file`-ed `AGENT_RULES.md` yet → the call is blocked with a reason; writes outside the workspace are unaffected |
+| Events | `pre_tool_call` gate (internal errors block too — fail-closed), `post_tool_call` bookkeeping (`status=ok` only), `pre_llm_call` reminder (at most once per session), `on_session_end` audit (bounded, per turn) |
+| Enabling it | `HERMES_ENABLE_PROJECT_PLUGINS=true` (allows project-plugin discovery) **and** `plugins.enabled: [workspace-gate]` in `~/.hermes/config.yaml` (loads it) — both are required |
+| Tuning | Write the workspace-owned override `.hermes/plugins/workspace-gate/plugin.custom.json` (`enabled` / `gate_files` / `write_tools`); **do not edit the script itself** (locked layer — a template sync replaces it wholesale) |
+| Self-check | `<configured-python> .hermes/plugins/workspace-gate/selfcheck.py` (synthetic-payload assertions; all green means the gate logic has not regressed) |
+| Trust boundary | Prevents "accidental skipping", not "deliberate bypass": state files live in `.workspace/.hook-state/` (gitignored), and an agent holding `terminal`/`execute_code` can step outside the tool layer — defending against that needs a sandbox/OS permission layer |
+
+The block is a **safety net, not a substitute**: the rules themselves still come from `AGENT_RULES.md` §2/§9/§11 plus the `delivery-closure` skill (**skill treats the will, hook treats the hand**). Obligations are unchanged when the hook is not enabled.
+
+**How to confirm the gate is actually present** (do *not* use `hermes plugins list` — measured: it only lists bundled plugins, and a working project plugin never shows up there):
+
+```bash
+# (1) presence signal: the plugin logs one line every time it loads (v1.2.0+)
+tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # expect: workspace-gate active (v1.2.0, hermes_home=…)
+# (2) behavioural check: inside the workspace, write a file before reading the rules — it must be blocked
+#     with the workspace path and the resolved target in the message
+# (3) state file: <workspace>/.workspace/.hook-state/<session_id>.json records what the session read
+```
+
 ## Workspace Lifecycle Skills
 
 Three skills ship with the template in `.workspace/skills/` (workspace-skills namespace) and are registered in `skills/REGISTRY.md` and `TOOLS.md`:
@@ -198,6 +224,12 @@ Inventory is not installation. External skills remain read-only technical refere
 │   ├── _INVERTED.md         # Inverted index / related graph (on demand)
 │   ├── _TEMPLATE.md         # Note template
 │   └── rebuild_index.py     # Standard-library index builder (layered + curation status)
+├── .hermes/
+│   └── plugins/
+│       └── workspace-gate/  # Workspace-level governance hook (read rules before writing; §12)
+│           ├── plugin.yaml  # Plugin manifest (provides_hooks)
+│           ├── __init__.py  # Gate implementation (template-layer locked)
+│           └── selfcheck.py # Synthetic-payload self-check (no Hermes runtime needed)
 ├── scripts/
 │   ├── inspect_skills.py    # Read-only skills inventory
 │   ├── mark_rules.py        # Clause-ID tagging + registry generation

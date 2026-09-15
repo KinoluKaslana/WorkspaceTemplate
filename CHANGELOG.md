@@ -2,6 +2,14 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 2.2.0（2026-09-15）
+
+- 新增**工作区级治理 hook**：Hermes 项目级 plugin `.hermes/plugins/workspace-gate/`（`plugin.yaml` + `__init__.py` v1.2.1 + `selfcheck.py`），在派生工作区内机械守门「写工作区文件前必须先 `read_file` 读取 `AGENT_RULES.md`」——把 §2 的「任务开始前读规则」从软提醒变成机械拦截。事件：`pre_tool_call` 守门（内部异常也 block，fail-closed）、`post_tool_call` 记账（仅 `status=ok` 且 realpath 严格相等）、`pre_llm_call` 提醒（每会话至多一次）、`on_session_end` 回合级审计（有界追加）。守门判据是**写入目标路径**是否在工作区内，与「会话 cwd」解耦。
+- `AGENT_RULES.md` 新增 §12「工作区治理 hook（机械守门）」（`R97`–`R100`，文末追加、不打乱既有 ID）：声明守门判据、skill（治心）与 hook（治手）的分工、以及「调参写 `plugin.custom.json`、不得改锁定脚本」的边界。已有 custom `overrides`/`extends` 引用不受影响（纯新增条款）。
+- `TEMPLATE_FILES` 收录 3 个 plugin 文件（17 → 20 项）；`.gitignore` 增补 `.workspace/.hook-state/`（守门状态文件不入库，既有实例需自行补该行——`.gitignore` 不在 `TEMPLATE_FILES` 内，同步不会覆盖它）；`check_template.py` 的 `TEMPLATE_OWNED` 与 template-update skill 的清单计数同步。
+- README 双语新增「Hook 治理（工作区级机械守门）」节：守门判据、事件、启用方式（`HERMES_ENABLE_PROJECT_PLUGINS=true` **且** `plugins.enabled: [workspace-gate]`）、`plugin.custom.json` 调参、`selfcheck.py` 自检、信任边界，以及**在场核验方法**（实测 `hermes plugins list` 不列项目插件，改用 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `active` 行或行为验证）。
+- 实现经**跨模型交叉审查**（老大要求「任何误差都会导致行为的错误」）：GLM-5.3 独立审查 v1.0.0 抓出两个致命项——patch 的 `Delete / Move / 无空格` 头整类漏守（可无守门删除工作区文件、含删 `AGENT_RULES.md` 使全区永久脱防）、`$HERMES_HOME`/profile 下 cwd 反查失效致相对路径写入静默放行——以及 I1–I7/S1–S6 共 13 项；逐条处置为 v1.2.x。**GLM 复审查结论：可作为随模板分发的治理守门发布**（F1/F2(b)/I1/I2/I4/I6/I7/S1–S5 到位），并按复审查要求前置补两处：patch `mode=patch` 不再收集 `path`（与核心 `_extract_file_mutation_targets` 完全对齐）、`$HERMES_HOME` 改用 `hermes_constants.get_hermes_home()`（含 ContextVar override）。验证：48 项合成 payload 自检全绿 + GLM 真实会话八项断言全过（未读→拦、相对路径→拦、`*** Delete File:` →拦、区外→放行、读后→放行）。已知残留（跨进程状态丢更新、DrvFs 侧未实测等）见本工作区 `notes/workspace-gate-hook-260915.md` 未决项。
+
 ## 2.1.0（2026-09-01）
 
 - 新增 `delivery-closure` skill（`.workspace/skills/delivery-closure/`）：把 §9 完成标准落成六步机械流程（产物清点 → 查 INDEX → note 三选一 → `rebuild_index` 回写 → 部署与机械验证 → 固定格式完成声明）。动因：散文式完成标准（"需要的 note 和索引写回已完成"）在同模型同夜的 A/B 中被自评跳过，而 skill 化的机械步骤（template-update 七步）被完整遵循三次——表示形式决定遵循率。

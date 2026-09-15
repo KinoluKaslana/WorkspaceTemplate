@@ -96,10 +96,14 @@
       "R93": "4. **双级校验**：`scripts/verify_rules.py` 提供（a）文件级——模板层文件哈希与注册表比对，检测任何直接改动；（b）条款级——逐条款 ID 比对注册表，检测新增/删除/改写/乱序，防止\"用户直接在模板文件里增删条款或调序\"被误判为同步冲突。校验失败时先修复工作区文件（从模板克隆恢复），不得带着漂移做同步。",
       "R94": "5. **模板层条款演进**：模板新版本若删除/改写某条款 ID，同步后 `verify_rules.py` 会列出受影响的 custom `overrides` 引用，由 Agent 逐条向用户报告并改写 custom 条款指向；不得静默丢弃 custom 语义。",
       "R95": "## 11. 交付闭环 skill 指针",
-      "R96": "1. 任务模式交付物声明完成之前，必须执行 `.workspace/skills/delivery-closure/` skill 定义的机械闭环流程（产物清点 → note 判定（合并/新建/豁免）→ 索引回写 → 外部动作与机械验证 → 完成声明格式）；§9 末尾完成标准中「需要的 note 和索引写回已完成」的具体执行含义以该 skill 正文为准。"
+      "R96": "1. 任务模式交付物声明完成之前，必须执行 `.workspace/skills/delivery-closure/` skill 定义的机械闭环流程（产物清点 → note 判定（合并/新建/豁免）→ 索引回写 → 外部动作与机械验证 → 完成声明格式）；§9 末尾完成标准中「需要的 note 和索引回写已完成」的具体执行含义以该 skill 正文为准。",
+      "R97": "## 12. 工作区治理 hook（机械守门）",
+      "R98": "1. **守门判据（机械可查）**：本次工具调用的写入目标路径落在本工作区内，且本会话尚未 `read_file` 过 `AGENT_RULES.md` → 拦截并说明原因；工作区外的写入不受影响。判据是「写入目标路径」而非「会话 cwd」，因此「会话在别处、却写本工作区文件」同样被拦。",
+      "R99": "2. **分工与边界**：hook 只保证机械动作不被绕过，不代替 Agent 理解并遵守规则。hook 未启用、被绕过、或在无法归属会话的状态下放行时，§2/§9/§11 的义务**不变**——不得以「hook 没拦」为由免除任何规则义务。",
+      "R100": "3. **调参与信任边界**：调整守门行为写工作区所有的工作区级覆写文件 `.hermes/plugins/workspace-gate/plugin.custom.json`（键：`enabled` / `gate_files` / `write_tools`）；**不得直接修改锁定脚本**（哈希校验会报告漂移，模板同步时被整文件覆盖）。守门状态文件位于 `.workspace/.hook-state/`（已 gitignore）。守门防「无意识跳过」，不防「主动绕过」：拥有 `terminal`/`execute_code` 的 Agent 可在工具层之外绕行，属沙箱/权限层问题，不在本条款范围内。"
     },
-    "file_sha256": "d99614cac611452c11faec4b7767641f1727b8356bc04e3a92debe5bb1fb495c",
-    "marked": 96
+    "file_sha256": "562833f3a1d95d611d7505752f1e29855a5157ec050087452858b2c9f0e1ad17",
+    "marked": 100
   },
   "AGENTS.md": {
     "clauses": {},
@@ -118,12 +122,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "d52cef4d41b65183f71cf16d137ce9180bafb6a40a0a3f028cda1ced77a919fb",
+    "file_sha256": "ddddc1d6cab06a4f49a3ae4fa9752b8e7a902e5d235e1f0344a33486e9ad1d64",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "083a6c02526984f79b82965d0e7985cc8b05a9cf8ccddea98608308ea07376d3",
+    "file_sha256": "5b06d41e5f200213bdcd33ebdf4c9343dbde454a6459d80e633bf43edeaf5722",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -148,17 +152,17 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "4fcff8902da2fb428104197eb8f4f1026428a2b520ca6530d06b52c548a0472f",
+    "file_sha256": "1c1e13ee97834db6d093ef665d9021a6b6367493c4b7d636aee52d326e5f8dde",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "fdc8805c82cefffe863c187c25d170c4d5f5f10fe0d032dd547d7fe03ca73a06",
+    "file_sha256": "7593d516e854668aff6e406ebb9e873334cc650f9b5c73a00b75d78b6bc3dec1",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
     "clauses": {},
-    "file_sha256": "bbfa379269a3a3982a3d65997f9dac31f30b0cb939167e98cdc09959bfccd489",
+    "file_sha256": "cfccc5d5029f4bd08a4707cb66b16e430e869236293cb6188b07fb03c3cb12ee",
     "marked": 0
   },
   ".workspace/skills/workspace-init/SKILL.md": {
@@ -174,6 +178,21 @@
   ".workspace/skills/delivery-closure/SKILL.md": {
     "clauses": {},
     "file_sha256": "cdbb49aa6058105ab2109b5a5d031f9bafff0af2645ce4490a3234b522d59f26",
+    "marked": 0
+  },
+  ".hermes/plugins/workspace-gate/plugin.yaml": {
+    "clauses": {},
+    "file_sha256": "6d2342df0f481f9f43341b85949f57a5a65ce81fb92c240502b5a4ff71a018c9",
+    "marked": 0
+  },
+  ".hermes/plugins/workspace-gate/__init__.py": {
+    "clauses": {},
+    "file_sha256": "071e5e149e7bf5e0384f106d0e63316759c6f019839ae50262a05294df5193bc",
+    "marked": 0
+  },
+  ".hermes/plugins/workspace-gate/selfcheck.py": {
+    "clauses": {},
+    "file_sha256": "9b402f3b8353bf69819fa6f3f3a62e4d72d4e100a3f46c2dc0e80bd6ff132e1b",
     "marked": 0
   }
 }

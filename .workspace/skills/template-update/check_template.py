@@ -29,6 +29,9 @@ TEMPLATE_OWNED = {
     "scripts/inspect_skills.py",
     ".workspace/skills/template-update/SKILL.md",
     ".workspace/skills/template-update/check_template.py",
+    ".hermes/plugins/workspace-gate/plugin.yaml",
+    ".hermes/plugins/workspace-gate/__init__.py",
+    ".hermes/plugins/workspace-gate/selfcheck.py",
 }
 # Mixed-ownership files (three-way merge; local lines preserved).
 MIXED = {

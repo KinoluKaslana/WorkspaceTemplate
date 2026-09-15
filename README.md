@@ -8,7 +8,7 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v2.1.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.2.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -135,6 +135,31 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 
 条款 ID（`<!-- id:Rn -->`，由 [`scripts/mark_rules.py`](scripts/mark_rules.py) 维护，注册表在 `.workspace/rule-clauses.json`；ID 跨文件**全局唯一、永不复用**）让"用户在模板文件里加了条款/调了顺序"被精确识别为漂移，而不是等到同步时变成一锅冲突。本地注册表可被重生成，所以**权威判定只认 `--vs-template`**。`--vs-template` 依赖本机 `git`（对模板克隆做 `git status` / `rev-parse` 信任锚定）；没有 git 时用快速自查路径即可。
 
+## Hook 治理（工作区级机械守门）
+
+模板随仓库分发一个 **Hermes 项目级 plugin**（`.hermes/plugins/workspace-gate/`），把「先读治理文件、再写工作区文件」从软提醒变成**机械拦截**——对应 `AGENT_RULES.md` §12：
+
+| 项 | 事实 |
+|---|---|
+| 位置 | `.hermes/plugins/workspace-gate/`（`plugin.yaml` + `__init__.py` + `selfcheck.py`，属模板层锁定文件，参与哈希校验） |
+| 守门判据 | 本次写入的目标路径落在工作区内，且**本会话**尚未 `read_file` 过 `AGENT_RULES.md` → 拦截并说明原因；工作区外写入不受影响 |
+| 事件 | `pre_tool_call` 守门（内部异常也 block，fail-closed）、`post_tool_call` 记账（仅 `status=ok`）、`pre_llm_call` 提醒（每个会话至多一次）、`on_session_end` 审计（按回合有界追加） |
+| 启用 | `HERMES_ENABLE_PROJECT_PLUGINS=true`（允许发现项目插件）**且** `~/.hermes/config.yaml` 有 `plugins.enabled: [workspace-gate]`（加载）——缺一不生效 |
+| 调参 | 写工作区所有的工作区级覆写 `.hermes/plugins/workspace-gate/plugin.custom.json`（`enabled` / `gate_files` / `write_tools`）；**不要直接改脚本**（锁定层，同步时会被整文件覆盖） |
+| 自检 | `<configured-python> .hermes/plugins/workspace-gate/selfcheck.py`（合成 payload 断言，全绿即守门逻辑未回归） |
+| 信任边界 | 防「无意识跳过」，不防「主动绕过」：守门状态文件在 `.workspace/.hook-state/`（已 gitignore），拥有 `terminal`/`execute_code` 的 Agent 可绕到工具层之外——要防恶意绕过需沙箱/OS 权限层 |
+
+拦截是**兜底**而不是替代：规则内容仍由 `AGENT_RULES.md` §2/§9/§11 与 `delivery-closure` skill 界定（**skill 治心、hook 治手**）。hook 未启用时义务不变。
+
+**怎么确认守门真的在场**（不要用 `hermes plugins list`——实测它只列 bundled 插件，项目插件即使已生效也不出现）：
+
+```bash
+# ① 在场信号：plugin 每次加载都会写一行（v1.2.0 起）
+tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gate active (v1.2.0, hermes_home=…)
+# ② 行为验证：在工作区内、未读规则时尝试写文件，应被拦截并报出工作区路径与 target
+# ③ 状态文件：<工作区根>/.workspace/.hook-state/<session_id>.json 记录该会话已读文件
+```
+
 ## 工作区生命周期 skills
 
 三个 skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间），登记于 `skills/REGISTRY.md` 与 `TOOLS.md`：
@@ -197,6 +222,12 @@ Agent 将自动完成：
 │   ├── _INVERTED.md         # 倒排索引/关联图（按需加载）
 │   ├── _TEMPLATE.md         # Note 模板
 │   └── rebuild_index.py     # 标准库索引器（双层索引 + 策展状态）
+├── .hermes/
+│   └── plugins/
+│       └── workspace-gate/  # 工作区级治理 hook（先读规则再写文件；§12）
+│           ├── plugin.yaml  # 插件清单（provides_hooks）
+│           ├── __init__.py  # 守门实现（模板层锁定）
+│           └── selfcheck.py # 合成 payload 自检（不依赖 Hermes 运行时）
 ├── scripts/
 │   ├── inspect_skills.py    # Skills 只读盘点器
 │   ├── mark_rules.py        # 条款 ID 标记 + 注册表生成

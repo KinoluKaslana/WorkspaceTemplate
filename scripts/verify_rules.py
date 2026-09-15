@@ -57,6 +57,9 @@ TEMPLATE_FILES = [
     ".workspace/skills/workspace-init/SKILL.md",
     ".workspace/skills/git-init/SKILL.md",
     ".workspace/skills/delivery-closure/SKILL.md",
+    ".hermes/plugins/workspace-gate/plugin.yaml",
+    ".hermes/plugins/workspace-gate/__init__.py",
+    ".hermes/plugins/workspace-gate/selfcheck.py",
     ".workspace/rule-clauses.json",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}

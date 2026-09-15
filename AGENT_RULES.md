@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`2.1.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`2.2.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -165,4 +165,12 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 
 ## 11. 交付闭环 skill 指针 <!-- id:R95 -->
 
-1. 任务模式交付物声明完成之前，必须执行 `.workspace/skills/delivery-closure/` skill 定义的机械闭环流程（产物清点 → note 判定（合并/新建/豁免）→ 索引回写 → 外部动作与机械验证 → 完成声明格式）；§9 末尾完成标准中「需要的 note 和索引写回已完成」的具体执行含义以该 skill 正文为准。 <!-- id:R96 -->
+1. 任务模式交付物声明完成之前，必须执行 `.workspace/skills/delivery-closure/` skill 定义的机械闭环流程（产物清点 → note 判定（合并/新建/豁免）→ 索引回写 → 外部动作与机械验证 → 完成声明格式）；§9 末尾完成标准中「需要的 note 和索引回写已完成」的具体执行含义以该 skill 正文为准。 <!-- id:R96 -->
+
+## 12. 工作区治理 hook（机械守门） <!-- id:R97 -->
+
+模板随仓库分发一个 Hermes 项目级 plugin（`.hermes/plugins/workspace-gate/`，属模板层锁定文件）：在本工作区内写文件前，必须先 `read_file` 读取 `AGENT_RULES.md`，否则该次写入被机械拦截。它是 §2「任务开始前读规则」与 §9/§11「交付与完成标准」的**兜底强制执行**手段——skill 治「心」，hook 治「手」，两者互补：
+
+1. **守门判据（机械可查）**：本次工具调用的写入目标路径落在本工作区内，且本会话尚未 `read_file` 过 `AGENT_RULES.md` → 拦截并说明原因；工作区外的写入不受影响。判据是「写入目标路径」而非「会话 cwd」，因此「会话在别处、却写本工作区文件」同样被拦。 <!-- id:R98 -->
+2. **分工与边界**：hook 只保证机械动作不被绕过，不代替 Agent 理解并遵守规则。hook 未启用、被绕过、或在无法归属会话的状态下放行时，§2/§9/§11 的义务**不变**——不得以「hook 没拦」为由免除任何规则义务。 <!-- id:R99 -->
+3. **调参与信任边界**：调整守门行为写工作区所有的工作区级覆写文件 `.hermes/plugins/workspace-gate/plugin.custom.json`（键：`enabled` / `gate_files` / `write_tools`）；**不得直接修改锁定脚本**（哈希校验会报告漂移，模板同步时被整文件覆盖）。守门状态文件位于 `.workspace/.hook-state/`（已 gitignore）。守门防「无意识跳过」，不防「主动绕过」：拥有 `terminal`/`execute_code` 的 Agent 可在工具层之外绕行，属沙箱/权限层问题，不在本条款范围内。 <!-- id:R100 -->
