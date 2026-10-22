@@ -1,58 +1,48 @@
-# ALPHA — 客户端写前守门落地说明（alpha 分支）
+# ALPHA — 客户端写前守门落地说明（alpha 分支，round 2）
 
-> 分支用途：把「Codex / Claude Code 工作区写前守门」的当前成果落到模板仓，**供真实模型试跑与两轮迭代**。
-> 状态：**alpha，未发布**。不登记 `TEMPLATE_FILES`，不进 `rule-clauses.json`，`verify_rules --vs-template` 对它不作保证。
+> 分支用途：把「Codex / Claude Code 工作区写前守门」落到模板仓，供真实模型试跑与两轮迭代。
+> 状态：**alpha，未发布**。已登记 `TEMPLATE_FILES`（hooks 三文件 + 两配置），`verify_rules --workspace .` = clean；`--vs-template`（对 clean 克隆）已验证 clean。
 
-## 1. 本分支落地的内容
+## 1. 已落地
 
-| 路径 | 来源 | 说明 |
-|---|---|---|
-| `.workspace/hooks/hook.py` | W0 版本（sha `e19b5dc2…`） | Bash 分派同时接受 `cc`/`codex`；cc 的 Bash 读不记账；其余判定未改 |
-| `.workspace/hooks/gate_core.py` | 未改（sha `30027b3e…`） | 读证据/修订绑定/deny/生命周期对账 |
-| `.workspace/hooks/wtarget.py` | W1b（B′ 识别器，sha `e3a0a0fd…`） | 窄识别器；**尚未接线**，只被测试调用 |
-| `.codex/hooks.json` | 既有 | Codex 事件：`^Bash$`、`apply_patch`、Stop、SessionEnd… |
-| `.claude/settings.json` | 既有 | **只订阅 `Write\|Edit`**（用户 2026-10-22 约束：不做 CC Bash 订阅） |
-| `hooks-tests/` | W0 + W1b 测试 | `test_wtarget.py`（86 例）、`test_bash_dispatch.py`（7 例）、`replay_wtarget.py` |
+| 路径 | 说明 |
+|---|---|
+| `.workspace/hooks/hook.py` | 适配器：Bash 分派（cc/codex）、W1 接线（`wtarget`）、W6 `$'…'` 规范化、C9 deny 文案、stop/session_end 差集审计 |
+| `.workspace/hooks/gate_core.py` | 判定核心：`SCHEMA=5`、审计 `events` 槽位、`evaluate_read_required`（B′）、`worktree_audit`（W3）、C9 文案 |
+| `.workspace/hooks/wtarget.py` | 写目标窄识别器：`class=interpreter_wrapper|opaque|static`；`WHITELIST` 由命令形态表投影 |
+| `.codex/hooks.json` | Codex：`^Bash$` / `apply_patch` / Stop / SessionEnd |
+| `.claude/settings.json` | CC：**只订阅 `Write\|Edit`**（不做 Bash 订阅）+ **Stop**（lifecycle，已原生验证触发） |
+| `hooks-tests/` | `test_wtarget`（86 例 + 白名单恒等/正负例）、`test_bash_dispatch`（12 例）、`test_apply_patch_ansi`（9 例）、`replay_wtarget.py`（`--corpus` 可选） |
 
-## 2. 现在能证明什么 / 不能证明什么
+## 2. 已实测（真机 + 进程级）
 
-**能证明（进程级测试）**
-- CC 的 `Write`/`Edit` 与 Codex 的 `apply_patch` 在未完整读 `AGENT_RULES.md` 当前修订时被 deny，读完放行，外部改动后再次 deny（`gate_core` 既有语义）。
-- Bash 分派两端可用：`GATE_CLIENT=cc` 的 `ls` 不再触发「内部错误 deny」；`apply_patch` 类 Bash patch 仍按写判定。
-- `wtarget` 对 11 类静态写形态的识别、对已知漏判（heredoc-first、`cd`/子 shell、`env` 包装、heredoc 正文假 `apply_patch`、`<` 输入重定向、`perl -e`）的回归全绿。
+**真机 Codex 0.163.0 / deepseek-v4-flash（两轮，共 5 次 run）**
+- 未读 `apply_patch` → **deny**，文案含「已覆盖 无；缺失 1..177；共 177 行」。
+- 未读 `printf … >> AGENT_RULES.md` → **deny**（round 1 时此路径放行——W1 接线后关闭）。
+- 全读（`sed -n` 三段）→ `apply_patch` allow；随后 `printf >>` allow。
+- 追加写后修订变化 → 下一次 `apply_patch` **deny**，模型准确复述「缺失 1..178；共 178 行」。
+- `git status --porcelain` 未读 → allow，并落 `unresolved-command`（class=opaque）审计。
+- `stop` / `session_end` → `worktree-change` 审计记录（`audit-codex.jsonl` 的 `events`）。
 
-**不能证明**
-- `wtarget` 还没接线：**当前守门实际只覆盖 `apply_patch` 与原生 `Write`/`Edit`**；Bash 的 `>` / `sed -i` / `tee` 等仍不拦（与历史一致）。
-- 无原生 Codex / Claude Code 真机会话 E2E；全部是进程级（真实启动 hook + 合成 payload）。
-- CC 的 Bash 写不拦截、无逐条归因；会话级差集审计（W3）与指纹锚（W2）尚未实现。
-- 无审计槽位：`gate_core._append_audit` 仍写 6 个固定字段，没有 `unresolved-command` / `unsanctioned-gatefile-change`。
+**真机 Claude Code 2.1.87-dev**
+- `claude -p "Say exactly: OK"` 在含本仓 `.claude/settings.json` 的夹具中运行 → **Stop hook 触发**（观察器记录 `STOP_FIRED`）；`PreToolUse` 仍只 `Write|Edit`。
 
-## 3. 试跑方式（alpha 测试约定）
+**进程级**
+- 三套测试全绿；`replay_wtarget.py --corpus <历史语料>`：误拒 0、漏判 0、单元矩阵 86/86。
+- `grep -rn "/home/kinolu" hooks-tests/` 为空；任意 cwd 可跑。
 
-```bash
-# 0) 依赖：Python ≥ 3.10（系统 python3 即可）
-python3 -B hooks-tests/test_wtarget.py
-python3 -B hooks-tests/test_bash_dispatch.py
+## 3. 不在覆盖内（必须与能力一起声明）
 
-# 1) Codex 侧（可选，真机）：在临时夹具里跑，不要直接在本仓 .hook-state 上做破坏性试验
-#    需要 CODEX_HOME 指向隔离目录、并把夹具路径加入 trusted 项目
-#    见交付方提供的 run/CODEX_HOME 模板（不在本仓分发）
+1. **CC 经 Bash 的一切写入不拦截、无逐条归因**（不订阅该事件）；只能由 Stop/SessionEnd 的差集审计事后发现「哪些文件变了」，不能归因到具体命令。
+2. `python -c` / `sh -c` / `perl -e` / `env|sudo|xargs` 包装等：未读时按 B′ **拒绝**；已读后属「未判形态」，按审计放行（不逐条解析内层）。
+3. `W2`（治理文件指纹锚）与 `W4`（`verify_rules --vs-template` 完成声明门禁）**未实现**；`authorized-gatefile-write` / `unsanctioned-gatefile-change` 两个审计槽位已定义、未发射。
+4. Codex heredoc patch 无 PostToolUse；写后撤销靠下一次 Pre / Stop / SessionEnd 对账，非即时。
+5. 同 uid 下不存在安全边界；自授权闭环（改治理文件 → 下次 Pre 拒 → 重读自改版 → 放行）仍成立，只能「必被发现」，不能「被阻止」。
+6. 未测：`apply_patch $'…'` 的真机形态（只有进程级 9 例）；Windows 原生；多客户端并发。
 
-# 2) Claude Code 侧：只验证 Write/Edit 守门（Bash 不订阅，属已知边界）
-```
+## 4. 两轮迭代记录
 
-## 4. 已知风险（alpha 期间）
-
-1. **`apply_patch $'…'`** 仍会 `ValueError → 「内部错误」deny`（W6 未做）。
-2. **越界读**（`sed -n 171,180p`，文件 176 行）会拒账 → coverage 不满 → 永久 deny，且文案不指缺行（C9）。
-3. **非 patch 写不拦**：`echo >`、`sed -i`、`tee`、`python -c` 等不受管（W1 接线后才会有一半被纳管）。
-4. **Codex heredoc 无 PostToolUse**：写后撤销靠下一次 Pre/Stop/SessionEnd 的延迟对账，不是即时。
-5. 本分支未注册哈希：任何模板同步都可能覆盖这些文件，升级前需 diff。
-
-## 5. 迭代计划（用户指定）
-
-1. **R1 试跑**（deepseek-flash）：在本分支上跑真实用法，记录「被拦 / 未被拦 / 误拒」样本。
-2. **研判**（DeepSeek-V4-Pro）：对 R1 样本与接线必要性做研判。
-3. **验收**（GLM）：对研判与代码做验收，列出阻塞项。
-4. **问题讨论**（DeepSeek-V4-Pro × LUNA）→ **GLM 拍板**。
-5. **落地第二轮**：按拍板修改落回 alpha，重复一轮试跑与验收。
+| 轮 | 提交 | 试跑 | 研判/验收 |
+|---|---|---|---|
+| R1 | `1c83ac8` | 拦截 1 / 放行 3 / 盲区 1（`printf >>`）/ 误拒 0 | 研判：可进 R2；验收（GLM）：有条件接受 |
+| R2 | `2a63405` | 未读 `printf >>` deny、读后 allow、追加后 deny（C9 文案）、审计/差集成立 | 讨论（DS×LUNA）→ GLM 拍板 → 终验：有条件接受（4 条件已补 3 项，余 1 项属 W2） |
