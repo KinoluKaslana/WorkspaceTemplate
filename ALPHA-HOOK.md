@@ -15,7 +15,7 @@
 | `.workspace/hooks/cc_transcript.py` | CC 的 Bash 写**事后**归因（转录回放 → `cc-bash-write`/`cc-bash-gap`，`would_deny` 复算；不订阅、不拦截） |
 | `.codex/hooks.json` | Codex：`^Bash$` / `apply_patch` / Stop / SessionEnd |
 | `.claude/settings.json` | CC：只订阅 `Write\|Edit`（**不做 Bash 订阅**）+ Stop（lifecycle，已原生验证） |
-| `hooks-tests/` | 6 个测试文件、共 58 例（识别器矩阵 86 断言、分派 18〔W8/W9 复合形态、C9 行数口径、W10 原生形态可读 deny〕、CC 转录 12、CC 接线 3、ANSI-C 9、W2 锚 3、authz 5、template_anchor 4） |
+| `hooks-tests/` | 6 个测试文件、共 69 例（识别器矩阵 86 断言、分派 18〔W8/W9 复合形态、C9 行数口径、W10 原生形态可读 deny〕、CC 转录 22、CC 接线 4、ANSI-C 9、W2 锚 3、authz 5、template_anchor 4） |
 
 ## 2. 已实测
 

@@ -209,6 +209,153 @@ class CcTranscript(unittest.TestCase):
         self.assertEqual(second["events"], [])
         self.assertEqual(second["offset"], first["offset"])
 
+    def test_custom_gate_files_are_honored(self):
+        # gate.custom.json 指定一个可弃置 gate 文件 → 对它的未读 Bash 写应 would_deny。
+        (self.ws / "TEST-GATE.md").write_text("a\nb\nc\n", encoding="utf-8")
+        (self.ws / ".workspace" / "gate.custom.json").write_text(
+            json.dumps({"gate_files": ["TEST-GATE.md"]}), encoding="utf-8")
+        path = self.write([("Bash", {"command": "printf 'x' >> TEST-GATE.md"}, "", False)])
+        res = self.analyze(path)
+        write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
+        self.assertTrue(write["would_deny"], write)
+        self.assertEqual(write["targets"], [str(self.ws / "TEST-GATE.md")])
+        # 读全该文件后同命令 → 放行（同会话重写转录，从头分析）
+        body = (self.ws / "TEST-GATE.md").read_bytes().decode()
+        lines = body.rstrip("\n").split("\n")
+        numbered = "\n".join(f"{i+1}\t{l}" for i, l in enumerate(lines))
+        Path(path).write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in _records(
+            self.sid, [("Read", {"file_path": str(self.ws / "TEST-GATE.md"), "offset": 1}, numbered, False),
+                       ("Bash", {"command": "printf 'x' >> TEST-GATE.md"}, "", False)])) + "\n",
+            encoding="utf-8")
+        res2 = ct.analyze(str(self.ws), self.sid, path, str(self.ws))
+        write2 = [e for e in res2["events"] if e["type"] == "cc-bash-write"][0]
+        self.assertFalse(write2["would_deny"], write2)
+        self.assertEqual(write2["read_state"], "complete")
+
+    def test_second_gate_needs_its_own_read(self):
+        (self.ws / "G2.md").write_text("x\ny\n", encoding="utf-8")
+        (self.ws / ".workspace" / "gate.custom.json").write_text(
+            json.dumps({"gate_files": [GATE, "G2.md"]}), encoding="utf-8")
+        path = self.write([
+            ("Read", {"file_path": str(self.ws / GATE), "offset": 1}, self.gate_text(1), False),
+            ("Bash", {"command": "printf 'x' >> G2.md"}, "", False),
+        ])
+        res = self.analyze(path)
+        write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
+        self.assertTrue(write["would_deny"], "读了 AGENT_RULES 不等于读了 G2.md")
+        self.assertEqual(write["read_state"], "missing")
+
+    def test_read_then_write_uses_transcript_revision(self):
+        # CC 无写前拦截：审计时文件已被本次会话追加。写前的整文件读必须仍能证明「读过」。
+        (self.ws / "G3.md").write_text("a\nb\nc\n", encoding="utf-8")
+        (self.ws / ".workspace" / "gate.custom.json").write_text(
+            json.dumps({"gate_files": ["G3.md"]}), encoding="utf-8")
+        read_text = "1\ta\n2\tb\n3\tc\n4\t\n"
+        path = self.write([
+            ("Read", {"file_path": str(self.ws / "G3.md"), "offset": 1}, read_text, False),
+            ("Bash", {"command": "printf 'd\\n' >> G3.md"}, "", False),
+        ])
+        (self.ws / "G3.md").write_text("a\nb\nc\nd\n", encoding="utf-8")  # 写已落盘
+        res = self.analyze(path)
+        write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
+        self.assertFalse(write["would_deny"], write)
+        self.assertEqual(write["read_state"], "complete")
+        self.assertEqual(write["revision"], "transcript")
+
+    def test_partial_read_with_limit_is_not_a_reference(self):
+        (self.ws / "G4.md").write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
+        (self.ws / ".workspace" / "gate.custom.json").write_text(
+            json.dumps({"gate_files": ["G4.md"]}), encoding="utf-8")
+        path = self.write([
+            ("Read", {"file_path": str(self.ws / "G4.md"), "offset": 1, "limit": 2}, "1\ta\n2\tb", False),
+            ("Bash", {"command": "printf 'x' >> G4.md"}, "", False),
+        ])
+        res = self.analyze(path)
+        write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
+        self.assertTrue(write["would_deny"], write)
+        self.assertEqual(write["revision"], "disk")
+
+    def test_failed_read_is_not_evidence(self):
+        # is_error=True 的 Read 不授证（LUNA 探针：错误 Read 曾被记 complete）。
+        path = self.write([
+            ("Read", {"file_path": str(self.ws / GATE), "offset": 1}, self.gate_text(1), True),
+            ("Bash", {"command": f"printf 'x' >> {GATE}"}, "", False),
+        ])
+        res = self.analyze(path)
+        write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
+        self.assertTrue(write["would_deny"], write)
+        self.assertEqual(write["read_state"], "missing")
+
+    def test_missing_result_is_pending_then_resolved(self):
+        # tool_use 已落盘、tool_result 未落盘：不得记 result=ok，须进 pending 待补。
+        use = {"type": "assistant", "sessionId": self.sid, "cwd": str(self.ws),
+               "timestamp": "2026-10-22T09:00:00.000Z",
+               "message": {"role": "assistant", "content": [
+                   {"type": "tool_use", "id": "call_p", "name": "Bash",
+                    "input": {"command": "echo hi > artifacts/p.txt"}}]}}
+        path = self.proj_dir / f"{self.sid}.jsonl"
+        path.write_text(json.dumps(use, ensure_ascii=False) + "\n", encoding="utf-8")
+        first = ct.analyze(str(self.ws), self.sid, str(path), str(self.ws))
+        self.assertEqual([e for e in first["events"] if e["type"] == "cc-bash-write"], [])
+        self.assertIn("call_p", first["pending"])
+        res_block = {"type": "user", "sessionId": self.sid, "cwd": str(self.ws),
+                     "timestamp": "2026-10-22T09:00:01.000Z",
+                     "message": {"role": "user", "content": [
+                         {"type": "tool_result", "tool_use_id": "call_p",
+                          "is_error": False, "content": ""}]}}
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(res_block, ensure_ascii=False) + "\n")
+        second = ct.analyze(str(self.ws), self.sid, str(path), str(self.ws),
+                            start_offset=first["offset"], pending=first["pending"])
+        writes = [e for e in second["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(writes), 1, second)
+        self.assertEqual(writes[0]["result"], "ok")
+        self.assertEqual(second["pending"], {})
+
+    def test_result_unknown_when_is_error_absent(self):
+        # is_error 缺失 → result=unknown，不得冒充 ok。
+        path = self.write([("Bash", {"command": "echo hi > artifacts/u.txt"}, "", None)])
+        res = self.analyze(path)
+        write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
+        self.assertEqual(write["result"], "unknown")
+
+    def test_symlink_escape_rejected(self):
+        # projects 目录内的 symlink 指向根外 → 必须拒读（realpath 校验）。
+        outside = self.base / "outside.jsonl"
+        outside.write_text("{}\n", encoding="utf-8")
+        link = self.proj_dir / f"{self.sid}.jsonl"
+        link.symlink_to(outside)
+        ok, why = ct.validate_path(str(link), self.sid, str(self.ws))
+        self.assertFalse(ok)
+        self.assertIn(why, ("transcript-outside-projects", "transcript-missing"))
+
+    def test_cwd_mismatch_rejected(self):
+        other = self.base / "other-ws"
+        other.mkdir()
+        path = self.write([("Bash", {"command": "echo hi > x.txt"}, "", False)])
+        data = Path(path).read_text(encoding="utf-8").splitlines()
+        rewritten = []
+        for line in data:
+            rec = json.loads(line)
+            rec["cwd"] = str(other)
+            rewritten.append(json.dumps(rec, ensure_ascii=False))
+        Path(path).write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+        res = self.analyze(path)
+        self.assertTrue(any(e.get("reason") == "transcript-cwd-mismatch" for e in res["events"]),
+                        res["events"])
+
+    def test_oversize_keeps_records_and_flags_incomplete(self):
+        path = self.write([("Bash", {"command": "echo hi > artifacts/o.txt"}, "", False)])
+        old = ct.MAX_BYTES
+        ct.MAX_BYTES = 200  # 强制截断
+        try:
+            res = self.analyze(path)
+        finally:
+            ct.MAX_BYTES = old
+        self.assertTrue(any(e.get("reason") == "transcript-truncated" for e in res["events"]),
+                        res["events"])
+        self.assertTrue(res["stats"].get("incomplete"))
+
     def test_changed_but_untargeted_gap(self):
         # 真实 git 仓 + 未提交改动，且转录里没有对应写入命令 → gap
         for args in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):

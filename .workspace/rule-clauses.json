@@ -204,7 +204,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "4e9e0504b47a292d8a769948f905cf9f2b68b4aa07d2b3af8e224fe8dd53ade2",
+    "file_sha256": "ee6ef426f17c4257f596fc53c1b59316e7eaec0d13bce9456116b5e129c9c90f",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
@@ -224,7 +224,7 @@
   },
   ".workspace/hooks/cc_transcript.py": {
     "clauses": {},
-    "file_sha256": "4cc643bdec00a6e5641bf0383d2adffd0e3c26f2ed82240b65af882affd0d119",
+    "file_sha256": "1d420334cd263b4dc8d4f39c308778504b3570f351f7a1b88639dbdedeb1c204",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {
