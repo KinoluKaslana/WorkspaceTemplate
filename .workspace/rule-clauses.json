@@ -152,7 +152,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "f157fed8ae3d64b9fb4ec9444279bca4ae6dbbda371fc66989b777fa9efef769",
+    "file_sha256": "c76fac41c92110f165addfed53bf0da6ac0ee105186a43438175edb90637b17d",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -197,17 +197,27 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "daea8a4401c51bbd042dbb00ca88a25291223a6f640639f320de8b2e710e4703",
+    "file_sha256": "6b1e485bbaa3bd284855e43e135161478f6cf4aeca802ccc9d4314f53bd90788",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "9e591ad01e6549ca716bd8769c27bc29336daa6b84a5e652d1422bd8e5800fb4",
+    "file_sha256": "ff31ac53bf09fc42fb5b0359fad905b9cfe45e0c1e741b161f55767da28b91d9",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
     "clauses": {},
     "file_sha256": "689672e6a96f28df9c486460766417567c505f11afc52c6db2b86fe719f97751",
+    "marked": 0
+  },
+  ".workspace/hooks/authz.py": {
+    "clauses": {},
+    "file_sha256": "2bf60ed12f50e845c087f8f6a7ae7089dfb5c24a1634f1525f85d3cc420a018a",
+    "marked": 0
+  },
+  ".workspace/hooks/template_anchor.py": {
+    "clauses": {},
+    "file_sha256": "1e13a2d838a683037dfdf07c8f8e84c272d76286934738df4b4db2963218166d",
     "marked": 0
   },
   ".codex/hooks.json": {

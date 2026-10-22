@@ -160,6 +160,87 @@ def load_conf(ws_root: str) -> dict:
     return conf
 
 
+# ------------------------------------------------------------ 豁免令牌（W2/B）
+
+AUTHZ_FILENAME = "authz.json"
+
+
+def _authz_path(ws_root: str) -> Path:
+    return Path(ws_root) / STATE_DIRNAME / AUTHZ_FILENAME
+
+
+def load_authz(ws_root: str) -> dict:
+    """损坏/缺失 → 视为无令牌（fail-safe）。返回 {"schema":1,"tokens":[]}。"""
+    p = _authz_path(ws_root)
+    if not p.is_file():
+        return {"schema": 1, "tokens": []}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {"schema": 1, "tokens": []}
+    if not isinstance(data, dict) or not isinstance(data.get("tokens"), list):
+        return {"schema": 1, "tokens": []}
+    return data
+
+
+def save_authz(ws_root: str, data: dict) -> None:
+    p = _authz_path(ws_root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix="authz.tmp.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, p)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def consume_authz(ws_root: str, targets: list[str]) -> dict | None:
+    """B3：消费一个未过期、未消耗、目标集合精确相等的豁免令牌。
+
+    命中 → 标 consumed=True 落盘并返回 {"id","targets"}；否则 None。异常吞掉记 log。
+    """
+    try:
+        if not isinstance(targets, list) or not targets:
+            return None
+        tset = {os.path.normpath(os.path.expanduser(t)) for t in targets if isinstance(t, str)}
+        if not tset:
+            return None
+        data = load_authz(ws_root)
+        tokens = data.get("tokens")
+        if not isinstance(tokens, list):
+            return None
+        now = time.time()
+        hit = None
+        for tok in tokens:
+            if not isinstance(tok, dict):
+                continue
+            if tok.get("consumed"):
+                continue
+            exp = tok.get("expires_at")
+            if not isinstance(exp, (int, float)) or exp <= now:
+                continue
+            tt = tok.get("targets")
+            if not isinstance(tt, list):
+                continue
+            if {os.path.normpath(os.path.expanduser(t)) for t in tt if isinstance(t, str)} != tset:
+                continue
+            hit = tok
+            break
+        if hit is None:
+            return None
+        hit["consumed"] = True
+        save_authz(ws_root, data)
+        return {"id": hit.get("id"), "targets": list(hit.get("targets", []))}
+    except Exception as exc:
+        log(ws_root, f"consume_authz failed: {exc}")
+        return None
+
+
 # ------------------------------------------------------------ 状态（flock + 原子写）
 
 def _state_path(ws_root: str, client: str, session_id: str) -> Path:
@@ -233,6 +314,8 @@ def load_state(ws_root: str, client: str, session_id: str) -> dict:
         state["ends"] = []
     if not isinstance(state.get("events"), list):
         state["events"] = []
+    if not isinstance(state.get("anchors"), dict):
+        state["anchors"] = {}
     state.setdefault("legacy", None)
     return state
 
@@ -495,36 +578,55 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
 
     with _StateLock(ws_root, client, session_id):
         state = load_state(ws_root, client, session_id)
-        for target in targets:
-            for gate_rel, gate_abs in gate_abs_map.items():
-                _mark_activity(state)
-                # 所有受管目标都必须满足治理文件许可，不只治理文件自身。
-                # 修订复核：重哈希，不一致 → 撤销（V140-3/V142-1）
-                try:
-                    current = Path(gate_abs).read_bytes()
-                    fp = f"c{len(current)}:{sha256_hex(current)}"
-                except OSError:
-                    current, fp = b"", None
-                entry = state["reads"].get(gate_rel)
-                if entry and (fp is None or entry.get("fingerprint") != fp):
-                    _revocation(state, gate_rel,
-                                "revision-changed" if fp else "gate-missing")
-                    entry = None
-                unread = []
-                if (not current or entry is None or entry.get("complete") is not True
-                        or entry.get("anchor") != "content"
-                        or not coverage_complete(entry.get("coverage", []),
-                                                 len(current.split(b"\n")))):
-                    unread.append(gate_rel)
-                if unread:
+        # 所有受管目标都必须满足治理文件许可，不只治理文件自身。
+        # 修订复核：重哈希，不一致 → 撤销（V140-3/V142-1）。逐 gate 只做一次。
+        unread: list[str] = []
+        per_gate: dict[str, tuple[bytes, dict | None]] = {}
+        for gate_rel, gate_abs in gate_abs_map.items():
+            _mark_activity(state)
+            try:
+                current = Path(gate_abs).read_bytes()
+                fp = f"c{len(current)}:{sha256_hex(current)}"
+            except OSError:
+                current, fp = b"", None
+            entry = state["reads"].get(gate_rel)
+            if entry and (fp is None or entry.get("fingerprint") != fp):
+                _revocation(state, gate_rel,
+                            "revision-changed" if fp else "gate-missing")
+                entry = None
+            if (not current or entry is None or entry.get("complete") is not True
+                    or entry.get("anchor") != "content"
+                    or not coverage_complete(entry.get("coverage", []),
+                                             len(current.split(b"\n")))):
+                unread.append(gate_rel)
+            per_gate[gate_rel] = (current, entry)
+        if unread:
+            # B4 豁免令牌：仅当静态可判目标集合命中任一 gate 文件时尝试消费；
+            # 命中 → allow + authorized-gatefile-write 审计；未命中 → 维持既有 C9 deny。
+            gate_abs_set = {os.path.normpath(g) for g in gate_abs_map.values()}
+            target_set = {os.path.normpath(t) for t in targets}
+            if gate_abs_set & target_set:
+                authz = consume_authz(ws_root, targets)
+                if authz:
+                    state["events"].append({
+                        "type": "authorized-gatefile-write",
+                        "targets": list(targets),
+                        "nonce": authz["id"],
+                        "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    })
+                    state["events"] = state["events"][-50:]
                     save_state(ws_root, client, session_id, state)
-                    total = len(current.split(b"\n"))
-                    cov = entry.get("coverage", []) if isinstance(entry, dict) else []
-                    return {
-                        "action": "deny",
-                        "reason": _c9_deny_reason(ws_root, gate_rel, cov, total, target),
-                        "ws": ws_root,
-                    }
+                    return {"action": "allow", "reason": "authorized-gatefile-write", "ws": ws_root}
+            gate_rel = unread[0]
+            current, entry = per_gate[gate_rel]
+            save_state(ws_root, client, session_id, state)
+            total = len(current.split(b"\n"))
+            cov = entry.get("coverage", []) if isinstance(entry, dict) else []
+            return {
+                "action": "deny",
+                "reason": _c9_deny_reason(ws_root, gate_rel, cov, total, targets[0]),
+                "ws": ws_root,
+            }
         # 全部治理文件当前修订均已读，持久化撤销留档。
         save_state(ws_root, client, session_id, state)
     return {"action": "allow", "reason": "ok", "ws": ws_root}
@@ -733,6 +835,112 @@ def evaluate_post_write(ws_root: str, client: str, session_id: str,
                     touched.append(gate_rel)
         save_state(ws_root, client, session_id, state)
     return {"action": "none", "revoked": touched}
+
+
+# ------------------------------------------------------------ 指纹锚（W2/A）
+
+def _anchor_snapshot(gate_abs: str) -> dict | None:
+    try:
+        p = Path(gate_abs)
+        st = p.stat()
+        data = p.read_bytes()
+    except OSError:
+        return None
+    return {"size": st.st_size, "mtime_ns": st.st_mtime_ns,
+            "sha256": sha256_hex(data), "ts": time.strftime("%Y-%m-%d %H:%M:%S")}
+
+
+def anchor_baseline(ws_root: str, client: str, session_id: str,
+                    refresh: bool = False) -> dict:
+    """W2 A1：对 conf["gate_files"] 记录指纹锚基线。仅在缺失或显式 refresh 时写。"""
+    try:
+        conf = load_conf(ws_root)
+        recorded: list[str] = []
+        with _StateLock(ws_root, client, session_id):
+            state = load_state(ws_root, client, session_id)
+            anchors = state.setdefault("anchors", {})
+            if not isinstance(anchors, dict):
+                anchors = {}
+                state["anchors"] = anchors
+            for gate_rel in conf["gate_files"]:
+                if not refresh and gate_rel in anchors:
+                    continue
+                snap = _anchor_snapshot(_norm_join(ws_root, gate_rel))
+                if snap is None:
+                    continue
+                anchors[gate_rel] = snap
+                recorded.append(gate_rel)
+            save_state(ws_root, client, session_id, state)
+        return {"recorded": recorded}
+    except Exception as exc:
+        log(ws_root, f"anchor_baseline failed: {exc}")
+        return {"recorded": []}
+
+
+def anchor_check(ws_root: str, client: str, session_id: str, source: str) -> dict:
+    """W2 A2：指纹锚复核（report-only，绝不返回 deny）。
+
+    字节变化（size 或 sha256）→ 落 unsanctioned-gatefile-change 并撤销读许可
+    （deny 仍由既有写前复核产生）；字节相同但 mtime_ns 变 → 落 suspect，不撤销。
+    """
+    changed: list[str] = []
+    suspect: list[str] = []
+    try:
+        conf = load_conf(ws_root)
+        if not conf["enabled"]:
+            return {"changed": [], "suspect": []}
+        with _StateLock(ws_root, client, session_id):
+            state = load_state(ws_root, client, session_id)
+            anchors = state.setdefault("anchors", {})
+            if not isinstance(anchors, dict):
+                anchors = {}
+                state["anchors"] = anchors
+            for gate_rel in conf["gate_files"]:
+                gate_abs = _norm_join(ws_root, gate_rel)
+                prev = anchors.get(gate_rel)
+                snap = _anchor_snapshot(gate_abs)
+                if snap is None:
+                    continue
+                if not isinstance(prev, dict):
+                    anchors[gate_rel] = snap
+                    continue
+                byte_changed = (prev.get("size") != snap["size"]
+                                or prev.get("sha256") != snap["sha256"])
+                mtime_changed = prev.get("mtime_ns") != snap["mtime_ns"]
+                if not byte_changed and not mtime_changed:
+                    continue
+                anchors[gate_rel] = snap
+                events = state.get("events")
+                if not isinstance(events, list):
+                    events = []
+                    state["events"] = events
+                if byte_changed:
+                    _revocation(state, gate_rel, "revision-changed")
+                    changed.append(gate_rel)
+                    events.append({
+                        "type": "unsanctioned-gatefile-change",
+                        "file": gate_rel,
+                        "previous": prev,
+                        "current": snap,
+                        "source": source,
+                        "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    })
+                else:
+                    suspect.append(gate_rel)
+                    events.append({
+                        "type": "unsanctioned-gatefile-change",
+                        "file": gate_rel,
+                        "previous": prev,
+                        "current": snap,
+                        "source": source,
+                        "suspect": True,
+                        "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    })
+                state["events"] = events[-50:]
+            save_state(ws_root, client, session_id, state)
+    except Exception as exc:
+        log(ws_root, f"anchor_check failed: {exc}")
+    return {"changed": changed, "suspect": suspect}
 
 
 # ------------------------------------------------------------ 日志 / 审计

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
@@ -366,20 +367,62 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
             core.remember_read_workspace(owner, ws, client, data["session_id"])
 
 
+def _template_anchor_gate(ws: str) -> dict:
+    """W4：运行 template_anchor.py（timeout 10）。advisory，绝不产生 deny 决策。"""
+    anchor_script = Path(__file__).resolve().parent / "template_anchor.py"
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-B", str(anchor_script), "--workspace", ws, "--json"],
+            capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "reason": "completion-gate 超时（10s）",
+                "systemMessage": "[workspace-gate] 完成声明门禁：template_anchor 超时（10s）"}
+    except Exception as exc:
+        return {"ok": False, "reason": f"completion-gate 无法运行：{exc}",
+                "systemMessage": f"[workspace-gate] 完成声明门禁：无法运行 template_anchor（{exc}）"}
+    ok = False
+    reason = f"template_anchor exit={proc.returncode}"
+    try:
+        payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
+        if isinstance(payload, dict):
+            ok = bool(payload.get("ok"))
+            reason = payload.get("reason", reason)
+    except Exception:
+        pass
+    msg = ("[workspace-gate] 完成声明门禁：clean"
+           if ok else f"[workspace-gate] 完成声明门禁：未通过（{reason}）")
+    return {"ok": ok, "reason": reason, "systemMessage": msg}
+
+
 def handle(event: str, data: dict) -> None:
     client = _client(data)
     sid, cwd = _session(data)
+    # W2 指纹锚：先 anchor_check（可能撤销读许可并落审计），再 reconcile，
+    # 保证同一改动只产生一条 revision-changed + 一条 unsanctioned-gatefile-change。
+    if event in ("pre_bash", "pre_write", "stop", "session_end"):
+        owner = core.find_workspace(cwd)
+        if owner:
+            core.anchor_check(owner, client, sid, event)
     if client == "codex" and event in ("pre_bash", "pre_write", "stop"):
         owner = core.find_workspace(cwd)
         if owner:
             core.reconcile_session_reads(owner, client, sid,
                                          "Stop" if event == "stop" else "PreToolUse")
     if event == "stop":
-        # W3：客户端无关差集审计（report-only）+ advisory 对账。
-        # 恒输出 {}：从不声明完成或请求续轮。
+        # W3：客户端无关差集审计 + W4 完成声明门禁（均 report-only / advisory）。
+        # 恒不 deny：从不声明完成或请求续轮。
         ws = core.find_workspace(cwd)
         if ws:
             core.worktree_audit(ws, client, sid, "stop")
+            gate = _template_anchor_gate(ws)
+            core.append_audit_event(ws, client, sid, {
+                "type": "completion-gate",
+                "ok": bool(gate.get("ok")),
+                "reason": gate.get("reason", ""),
+            })
+            print(json.dumps({"systemMessage": gate.get("systemMessage", "")},
+                             ensure_ascii=False))
+            return
         print("{}")
         return
     if event in ("pre_bash", "post_bash"):
@@ -436,6 +479,8 @@ def handle(event: str, data: dict) -> None:
             core.note_activity(owner, client, sid)
     if event == "session_start":
         ws = core.find_workspace(cwd)
+        if ws:
+            core.anchor_baseline(ws, client, sid)
         result = (core.evaluate_session_start(ws, client, sid, data.get("permission_mode"))
                   if ws else {"action": "none"})
         if result.get("action") == "context":

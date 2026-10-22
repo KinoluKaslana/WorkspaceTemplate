@@ -63,6 +63,8 @@ TEMPLATE_FILES = [
     ".workspace/hooks/hook.py",
     ".workspace/hooks/gate_core.py",
     ".workspace/hooks/wtarget.py",
+    ".workspace/hooks/authz.py",
+    ".workspace/hooks/template_anchor.py",
     ".codex/hooks.json",
     ".claude/settings.json",
     ".workspace/rule-clauses.json",
