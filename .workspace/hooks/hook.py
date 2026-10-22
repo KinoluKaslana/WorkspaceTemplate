@@ -209,7 +209,7 @@ def _bash_patch(command: object, depth: int = 0) -> str | None:
     This is NOT a general shell parser or a boundary against concealed writes.
     """
     if not isinstance(command, str) or depth > 8:
-        raise ValueError("missing or excessively nested Bash command")
+        raise _PatchParseError("Bash 命令缺失或嵌套过深，无法静态确定 apply_patch 目标")
     command = command.strip()
     words = _literal_shell_words(command)
     if words:
@@ -220,7 +220,9 @@ def _bash_patch(command: object, depth: int = 0) -> str | None:
             return None
         if exe == "apply_patch":
             if len(words) != 2:
-                raise ValueError("explicit apply_patch requires one literal patch")
+                raise _PatchParseError(
+                    "显式 apply_patch 只接受一个字面 patch 参数，无法静态确定目标；"
+                    "请改用带引号 heredoc 的单条 apply_patch 调用")
             return words[1]
     # W6：apply_patch $'…'（ANSI-C 引用）——先解码再按字面 patch 处理；
     # 解码失败给出可读 ValueError（不再落「内部错误」）。
@@ -247,12 +249,17 @@ def _bash_patch(command: object, depth: int = 0) -> str | None:
         r"(?P<quote>['\"]?)(?P<delimiter>[A-Za-z_][A-Za-z_0-9]*)(?P=quote)[ \t]*\n"
         r"(?P<body>.*?)\n(?P=delimiter)", command, re.DOTALL)
     if not match:
-        raise ValueError("explicit apply_patch has unsupported shell syntax")
+        raise _PatchParseError(
+            "显式 apply_patch 处于不支持的 shell 形态（与其他命令用 && / ; / cd 串联、"
+            "或经重定向输入），无法静态确定目标；请单独调用 apply_patch"
+            "（不要加 mkdir / cd 等前缀命令）")
     body = match['body']
     if match['delimiter'] in body.splitlines():
-        raise ValueError("multiple heredoc terminators")
+        raise _PatchParseError("apply_patch 出现多个 heredoc 终止符，无法静态确定目标")
     if not match['quote'] and re.search(r"[$`\\]", body):
-        raise ValueError("expanding heredoc cannot determine patch targets")
+        raise _PatchParseError(
+            "apply_patch 使用会展开的 heredoc（$ ` \\），无法静态确定目标；"
+            "请改用带引号的 <<'PATCH'")
     return body
 
 

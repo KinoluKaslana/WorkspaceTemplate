@@ -394,16 +394,32 @@ def _missing_intervals(coverage: list[list[int]], total: int) -> list[list[int]]
     return missing
 
 
+def _physical_lines(raw: bytes) -> int:
+    """wc -l 口径：正文 LF 行数（末尾空 EOF 行不计）。"""
+    if not raw:
+        return 0
+    return len(raw.split(b"\n")) - (1 if raw.endswith(b"\n") else 0)
+
+
 def _c9_deny_reason(ws_root: str, gate_rel: str, coverage: list[list[int]],
-                    total: int, target: str | None = None) -> str:
-    """C9 文案：已覆盖 / 缺失 / 共 N 行 / 下一步 四要素。不含 nonce、不含其他会话信息。"""
+                    total: int, target: str | None = None,
+                    physical: int | None = None) -> str:
+    """C9 文案：已覆盖 / 缺失 / 共 N 行 / 下一步 四要素。不含 nonce、不含其他会话信息。
+
+    `total` 保持 core 的 split(b"\\n") 行数契约（缺失区间按此口径）；
+    仅当调用方给出 `physical` 且与 `total` 不同（文末有空行）时，追加 wc -l 对照，
+    避免模型把文末空行当成「还没读到的那一行」而反复重读。
+    """
     cov = _fmt_ivs(merge_intervals(coverage))
     miss = _fmt_ivs(_missing_intervals(coverage, total))
+    total_note = f"共 {total} 行"
+    if physical is not None and physical != total:
+        total_note += f"（wc -l = {physical}，差 {total - physical} 行为文末空行）"
     tail = "下一步：read_file 补齐缺失区间后重试。"
     if target is not None:
         tail += f"目标：{target}"
     return (f"WorkspaceTemplate 守门（{ws_root}）：写工作区文件前须先完整读取治理文件。\n"
-            f"文件 {gate_rel}：已覆盖 {cov}；缺失 {miss}；共 {total} 行。\n"
+            f"文件 {gate_rel}：已覆盖 {cov}；缺失 {miss}；{total_note}。\n"
             f"{tail}")
 
 
@@ -624,7 +640,8 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
             cov = entry.get("coverage", []) if isinstance(entry, dict) else []
             return {
                 "action": "deny",
-                "reason": _c9_deny_reason(ws_root, gate_rel, cov, total, targets[0]),
+                "reason": _c9_deny_reason(ws_root, gate_rel, cov, total, targets[0],
+                                          physical=_physical_lines(current)),
                 "ws": ws_root,
             }
         # 全部治理文件当前修订均已读，持久化撤销留档。
@@ -666,7 +683,8 @@ def evaluate_read_required(ws_root: str, client: str, session_id: str) -> dict:
                 if not complete:
                     cov = entry.get("coverage", []) if isinstance(entry, dict) else []
                     return {"action": "deny",
-                            "reason": _c9_deny_reason(ws_root, gate_rel, cov, total),
+                            "reason": _c9_deny_reason(ws_root, gate_rel, cov, total,
+                                                      physical=_physical_lines(current)),
                             "ws": ws_root}
         return {"action": "allow"}
     except Exception as exc:

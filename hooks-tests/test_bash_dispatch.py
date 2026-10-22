@@ -5,6 +5,7 @@ run_fix_suite.py 之外独立运行：`.venv-314/bin/python -B hook-adapter-e2e-
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,7 +23,10 @@ import gate_core as core  # noqa: E402
 
 class BashDispatch(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="w0-dispatch-", dir="/tmp/w0-probe")
+        # 基座自建：/tmp 被清理过（或换机器）时，不应让全部用例集体 ERROR。
+        probe_root = Path("/tmp/w0-probe")
+        probe_root.mkdir(parents=True, exist_ok=True)
+        self.tmp = tempfile.TemporaryDirectory(prefix="w0-dispatch-", dir=str(probe_root))
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name)
         (self.base / ".git").mkdir()  # 阻止向上冒领真实工作区
@@ -146,6 +150,49 @@ class BashDispatch(unittest.TestCase):
         self.assertIn("共", self.reason(out))
         self.assertIn("read_file", self.reason(out))
         self.assertNotIn("内部错误", self.reason(out))
+
+    def test_c9_wc_l_physical_lines_annotation(self):
+        # C9 文案口径回归：core 的 total 用 split(b"\n") 计数，对以 LF 结尾的治理文件
+        # 比 wc -l 多 1，模型会误以为「还差最后一行」而无效重读。deny 文案须同时给出
+        # 两个口径，且 wc -l 数值必须等于真实文件的物理行数（不硬编码）。
+        real = (ROOT / core.GATE_FILE).read_bytes()
+        self.assertEqual((self.ws / core.GATE_FILE).read_bytes(), real,
+                         "临时工作区的 gate 副本应与真实文件字节一致")
+        total = len(real.split(b"\n"))
+        physical = len(real.split(b"\n")) - (1 if real.endswith(b"\n") else 0)
+        out = self.invoke("pre_write", "cc", tool_name="Write",
+                          tool_input={"file_path": "victim.txt"})
+        self.assertTrue(self.denied(out))
+        reason = self.reason(out)
+        self.assertIn("共 ", reason)
+        self.assertIn("wc -l = ", reason)
+        # 语义不变：缺失区间/总行数仍按 total 口径。
+        self.assertIn(f"共 {total} 行", reason)
+        m = re.search(r"wc -l = (\d+)", reason)
+        got = int(m.group(1)) if m else None
+        self.assertEqual(got, physical, f"deny 文案的 wc -l 数值不符：{reason}")
+
+    def test_w8_compound_apply_patch_readable_deny(self):
+        # F1 回归：显式 apply_patch 处在不支持的 shell 形态（如 `mkdir && apply_patch` 串联）
+        # 时必须是「可读 deny + fail-closed」，不得落到泛异常「内部错误」。
+        cmd = "mkdir -p artifacts && " + self.heredoc(self.block(["victim.txt"]))
+        out = self.invoke("pre_bash", "codex", tool_name="Bash", tool_input={"command": cmd})
+        self.assertTrue(self.denied(out))
+        self.assertNotIn("内部错误", self.reason(out))
+        self.assertIn("apply_patch", self.reason(out))
+        self.assertIn("无法静态确定", self.reason(out))
+
+    def test_w9_compound_apply_patch_denied_after_full_read(self):
+        # 形态本身不可静态判定：即使已完整读取治理文件，复合形态仍 deny，
+        # 但文案要可读（指向「单独调用 apply_patch」），供模型自愈。
+        self.invoke("post_read", "codex", **self.codex_cat_read_payload())
+        self.assertTrue(self.state(client="codex")["reads"].get(core.GATE_FILE, {}).get("complete"))
+        cmd = "mkdir -p artifacts && " + self.heredoc(self.block(["victim.txt"]))
+        out = self.invoke("pre_bash", "codex", tool_name="Bash", tool_input={"command": cmd},
+                          ws=self.ws)
+        self.assertTrue(self.denied(out))
+        self.assertNotIn("内部错误", self.reason(out))
+        self.assertIn("单独调用 apply_patch", self.reason(out))
 
     def test_d4_cc_read_then_bash_patch_allows(self):
         # 全文 Read 记账后，CC Bash patch 不再 deny。

@@ -42,6 +42,7 @@
 6. Codex heredoc patch 无 PostToolUse；写后撤销靠下一次 Pre / Stop / SessionEnd 对账。
 7. 同 uid 下不存在安全边界；自授权闭环仍成立（只能「必被发现」，不能「被阻止」）。
 8. 未测：`apply_patch $'…'` 真机形态；Windows 原生；多客户端并发。
+9. **`worktree-change` 的文件粒度受 git 限制**：会话中新出现的**未跟踪目录**在 `git status --porcelain` 中被折叠成 `?? dir/`，因此 `files` 只到目录级、`diff_stat` 为空；文件级归因需由 `completion-gate`/artifact 侧补证（3 轮受管测试 R3-A 实测：`files=["artifacts/"]`，而实际写入是 `artifacts/r3a.txt`）。
 
 ## 4. 迭代记录
 
@@ -50,3 +51,5 @@
 | R1 | `1c83ac8` | 拦截 1 / 放行 3 / 盲区 1（`printf >>`）/ 误拒 0；研判可进 R2，GLM 有条件接受 |
 | R2 | `2a63405` | W-schema/W1(B′)/C9/W6/W3 + 登记；`printf >>` 未读 deny、读后 allow、追加后 deny；GLM 终验有条件接受，4 条件补 3 |
 | W2/W4 | `ca36b4d` | 指纹锚 + 豁免令牌 + 完成声明门禁；三态 fail-closed；Codex/CC 真机 `completion-gate ok=true` |
+| 受管 3 轮 | 未提交（`dev@71f85f4` + F1 修复） | 被测 `deepseek-v4-flash` @ codex 0.163.0：R1/R2/R3 三轮全 pass；抓 F1（复合 `apply_patch` 落「内部错误」）→ 改可读 deny + W8/W9 回归；F2（未跟踪目录→目录级归因）§3-9 补边界 |
+| S5 重跑 | 未提交（工作树） | 3 轮真机（每轮独立看管、两席研讨）：R1 deny 后中止 / R2 拒冷写先读 / R3 完整链 release_gate=true；C9 文案口径修正 + 回归 |
