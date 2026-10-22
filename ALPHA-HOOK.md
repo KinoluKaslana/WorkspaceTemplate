@@ -1,7 +1,7 @@
-# ALPHA — 客户端写前守门落地说明（alpha 分支，W2/W4 完成）
+# 客户端写前守门落地说明（dev 分支，W2/W4 + 受管测试收口）
 
-> 分支用途：把「Codex / Claude Code 工作区写前守门」落到模板仓，供真实模型试跑与迭代。
-> 状态：**alpha，未发布**。已登记 `TEMPLATE_FILES`（hooks 五文件 + 两配置）；`verify_rules --workspace .` = clean；`--vs-template`（clean 克隆）= clean / `template_clean: true`。
+> 用途：把「Codex / Claude Code 工作区写前守门」落到模板仓，供真实模型试跑与迭代。
+> 状态：**已并入 `dev`，未发布**。已登记 `TEMPLATE_FILES`（hooks 五文件 + 两配置，共 27 项）；`verify_rules --workspace .` = clean；`--vs-template`（clean 克隆）= clean / `template_clean: true`。
 
 ## 1. 已落地
 
@@ -14,7 +14,7 @@
 | `.workspace/hooks/template_anchor.py` | W4 门禁：`verify_rules --vs-template` 三键判定（`exit==0 ∧ clean ∧ template_clean`） |
 | `.codex/hooks.json` | Codex：`^Bash$` / `apply_patch` / Stop / SessionEnd |
 | `.claude/settings.json` | CC：只订阅 `Write\|Edit`（**不做 Bash 订阅**）+ Stop（lifecycle，已原生验证） |
-| `hooks-tests/` | 6 个测试文件（识别器 86 例、分派 12、ANSI-C 9、W2 锚 3、authz 5、template_anchor 4） |
+| `hooks-tests/` | 6 个测试文件、共 40 例（识别器矩阵 86 断言、分派 15〔含 W8/W9 复合形态 + C9 行数口径〕、ANSI-C 9、W2 锚 3、authz 5、template_anchor 4） |
 
 ## 2. 已实测
 
@@ -51,5 +51,7 @@
 | R1 | `1c83ac8` | 拦截 1 / 放行 3 / 盲区 1（`printf >>`）/ 误拒 0；研判可进 R2，GLM 有条件接受 |
 | R2 | `2a63405` | W-schema/W1(B′)/C9/W6/W3 + 登记；`printf >>` 未读 deny、读后 allow、追加后 deny；GLM 终验有条件接受，4 条件补 3 |
 | W2/W4 | `ca36b4d` | 指纹锚 + 豁免令牌 + 完成声明门禁；三态 fail-closed；Codex/CC 真机 `completion-gate ok=true` |
-| 受管 3 轮 | 未提交（`dev@71f85f4` + F1 修复） | 被测 `deepseek-v4-flash` @ codex 0.163.0：R1/R2/R3 三轮全 pass；抓 F1（复合 `apply_patch` 落「内部错误」）→ 改可读 deny + W8/W9 回归；F2（未跟踪目录→目录级归因）§3-9 补边界 |
-| S5 重跑 | 未提交（工作树） | 3 轮真机（每轮独立看管、两席研讨）：R1 deny 后中止 / R2 拒冷写先读 / R3 完整链 release_gate=true；C9 文案口径修正 + 回归 |
+| 受管 3 轮 | `dev@71f85f4` 基线 → `a3c4811` 收口 | 被测 `deepseek-v4-flash` @ codex 0.163.0，6 次 run：三次未读全为 deny（R1-A 首写文案为「内部错误」= F1，deny 本身成立）、读全后写 allow（R1-B/R3-A）、令牌复用 deny（R2-A）、`touch` 记 suspect 不撤销（R2-B）、脏夹具 `completion-gate ok=false`（R3-B）。**不作「§13 全覆盖」证据**：R2-A 未触发 deny 期链、R3-A 首写被 F1 打断。F1/F2 见下两行；GLM 有条件接受、LUNA 判不可接受（F1 阻断） |
+| F1 修复 | `a3c4811` | 显式 `apply_patch` 五类不可解析形态：裸 `ValueError` → `_PatchParseError` → 可读 deny（`无法静态确定目标；请单独调用 apply_patch`）；fail-closed 不变；W8/W9 回归 |
+| F2 边界 | `a3c4811` | `worktree-change` 对会话中新出现的未跟踪目录只到目录级（`?? dir/`、`diff_stat` 空）：R105 + §3-9 声明文件级归因须由 `completion-gate`/artifact 补证 |
+| S5 重跑 | `a3c4811` | 3 轮真机（每轮独立看管 + 两席研讨）：R1 deny 后中止 / R2 拒冷写先读（deny 腿未触发）/ R3 完整链 `release_gate=true`；C9 行数口径修正（`共 N 行（wc -l = M…）`，判定不变） |

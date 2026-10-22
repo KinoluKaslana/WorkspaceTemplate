@@ -2,12 +2,17 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 2.5.2（2026-10-22，未提交）
+
+- **政策 §13 R105 明确审计归因边界**：`unresolved-command` 仅落 `tool_use_id` + `digest`（命令 sha256 前 16）+ `class`，不落命令原文、不做 native tool-use 对账，因此审计自身**不可直读归因**（只能以候选命令重算 digest 比对）；需要命令级可读归因须另行实现对账。政策 2.5.1 → 2.5.2。
+- **文档措辞与事实对齐（LUNA 终验提出）**：删除 `ALPHA-HOOK.md` / 本文件里「R1/R2/R3 三轮全 pass」的过度声明，改为按轮记录（R1 链未闭合、R2 deny 腿未触发、R3 pass）；`ALPHA-HOOK.md` 测试数 12 → 15（共 40 例）；重写 `hooks-tests/README.md`（删除「wtarget 未接入」「审计只有 6 字段」「W2/W3 未实现」等过期表述，按 2.5.2 现状描述）。
+
 ## 2.5.1（2026-10-22，未提交）
 
 - **政策 §13 R105 补边界**：`worktree-change` 的文件粒度受 git 限制——会话中新出现的**未跟踪目录**在 `git status --porcelain` 中折叠为 `?? dir/`，故 `files` 只到目录级且 `diff_stat` 为空，文件级归因须由 `completion-gate`/artifact 侧补证，不得据目录级条目推断具体写入文件。政策 2.5.0 → 2.5.1。
 - **修复（客户端 3 轮受管真机测试发现，F1）**：`.workspace/hooks/hook.py` 的 `_bash_patch()` 对显式 `apply_patch` 的不可解析形态（`mkdir … && apply_patch <<'PATCH'` 等 `&&`/`;`/`cd` 串联、非单字面 patch 参数、多 heredoc 终止符、会展开的 heredoc、命令缺失）原先抛裸 `ValueError`，被 `main()` 泛异常分支渲染成 `Workspace gate 内部错误；请人工检查。(ValueError)`；现改为抛 `_PatchParseError`，输出可读 deny（说明该形态目标不可静态确定、请单独调用 `apply_patch`），fail-closed 语义不变。`hooks-tests/test_bash_dispatch.py` 新增 W8/W9 两条回归：复合形态 deny 文案不含「内部错误」、且已完整读取后仍 deny 但可读。
 - **F2（实现文档补记）**：`ALPHA-HOOK.md` §3 增第 9 条边界说明（与 R105 同义），§4 增「受管 3 轮」迭代行。
-- 3 轮受管真机测试：被测 `deepseek-v4-flash` @ `codex-cli 0.163.0`；R1/R2/R3 三轮全 pass；看管席（`deepseek-v4-pro`）与验收席（`glm-5.3` / `gpt-5.6-luna`）均要求先闭合 F1，已闭合并真机复验。
+- 3 轮受管真机测试：被测 `deepseek-v4-flash` @ `codex-cli 0.163.0`（6 次 run，每轮独立夹具/会话）。**结论按轮记录，不作「三轮全 pass」**：三次未读写均 deny（R1-A 首写文案为「内部错误」→ F1，deny 本身成立）、读全后写 allow（R1-B/R3-A）、令牌复用 deny（R2-A）、`touch` 记 `suspect` 不撤销（R2-B）、脏夹具 `completion-gate ok=false`（R3-B）。看管席（`deepseek-v4-pro`）判 R1 链未闭合，`glm-5.3` 有条件接受，`gpt-5.6-luna` 判不可接受（F1 阻断）；F1/F2 已在 `a3c4811` 闭合。
 - **C9 文案口径修正**：deny 文案的「共 N 行」用 `len(bytes.split(b"\n"))` 计数，对以 LF 结尾的治理文件比 `wc -l` 多 1（`AGENT_RULES.md`：文案 188 / `wc -l` 187），会让模型误以为「还差第 188 行」而无效重读（真机 R2 已复现）。现改为在该行追加 `wc -l` 对照：`共 N 行（wc -l = M，差 1 行为文末空行）`——**语义/判定不变**（`缺失 x..y` 与总行数仍按 `split` 口径），仅多一行对照；`gate_core.py` 新增 `_physical_lines()`，两个 deny 调用点传入 `physical`。`hooks-tests/test_bash_dispatch.py` 新增回归（在未读 gate 的 `pre_write` 上断言文案同时含 `共 ` 与 `wc -l = `，且 `wc -l` 数值等于真实文件的 `len(bytes.split(b"\n")) - 1`，按文件现算、不硬编码 187）。
 - **S5 单轮完整链真机重跑记录**：R1/R2 观测不成立、R3 pass（`release_gate=true`），逐轮独立看管 + 两席研讨；详见工作区 `s5-261022/S5-REPORT.md`。
 
