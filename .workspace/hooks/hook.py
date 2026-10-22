@@ -17,7 +17,12 @@ PATCH_HEADER = re.compile(r"\*\*\* (?:(?:Update|Add|Delete) File|Move to): (.+)"
 
 
 class _PatchParseError(ValueError):
-    """apply_patch 形态无法静态确定（可读 deny）：文案原样输出，不包装成「内部错误」。"""
+    """写目标无法静态确定（可读 deny）：文案原样输出，不包装成「内部错误」。
+
+    覆盖两类来源：① Bash 里的显式 `apply_patch` 形态不可解析；② 原生
+    `apply_patch` / `Write` / `Edit` 的 payload 本身缺字段或形态不合规。
+    两者对模型都是「改法明确」的错误，因此必须给出可执行文案（R102/R103）。
+    """
 
 
 def _deny(reason: str) -> None:
@@ -58,7 +63,9 @@ def _session(data: dict) -> tuple[str, str]:
 
 def _absolute(path: object, cwd: str) -> str:
     if not isinstance(path, str) or not path.strip():
-        raise ValueError("missing path")
+        raise _PatchParseError(
+            "写入目标路径缺失或为空，无法确定要写哪个文件；"
+            "请在 Write/Edit 的 file_path 或 apply_patch 的文件头给出明确路径")
     value = os.path.expanduser(path.strip())
     if not os.path.isabs(value):
         value = os.path.join(cwd, value)
@@ -68,7 +75,9 @@ def _absolute(path: object, cwd: str) -> str:
 def _write_targets(data: dict, client: str, cwd: str) -> list[str]:
     inp = data.get("tool_input")
     if not isinstance(inp, dict):
-        raise ValueError("missing tool_input")
+        raise _PatchParseError(
+            "tool_input 缺失或不是对象，无法确定写入目标；"
+            "请单独调用写入工具（不要与其他调用合并）")
     # Branch on payload shape, not client: a Bash-dispatched apply_patch (cc or
     # codex) is reassigned to tool_input={"command": <patch>}, while CC's native
     # Write/Edit carries file_path. This keeps a CC Bash patch parseable without
@@ -76,10 +85,14 @@ def _write_targets(data: dict, client: str, cwd: str) -> list[str]:
     if "command" in inp:
         patch = inp.get("command")
         if not isinstance(patch, str):
-            raise ValueError("missing apply_patch command")
+            raise _PatchParseError(
+                "apply_patch 的 command 不是字符串，无法确定写入目标；"
+                "请把 patch 作为带引号的 heredoc 传入")
         lines = patch.splitlines()
         if not lines or lines[0] != "*** Begin Patch" or lines[-1] != "*** End Patch":
-            raise ValueError("apply_patch must be a complete standard patch")
+            raise _PatchParseError(
+                "apply_patch 必须包含完整的 `*** Begin Patch` 与 `*** End Patch` 外壳；"
+                "当前形态无法静态确定目标，请单独调用 apply_patch")
         paths = []
         for line in lines[1:-1]:
             if not line.startswith("*** "):
@@ -88,13 +101,19 @@ def _write_targets(data: dict, client: str, cwd: str) -> list[str]:
                 continue
             match = PATCH_HEADER.fullmatch(line)
             if not match:
-                raise ValueError("unparseable apply_patch header")
+                raise _PatchParseError(
+                    f"apply_patch 的文件头无法解析：{line.strip()[:80]}；"
+                    "请使用 `*** Update File:` / `*** Add File:` / `*** Delete File:`")
             path = match.group(1)
             if path != path.strip() or any(ord(c) < 32 for c in path) or path.startswith("~"):
-                raise ValueError("ambiguous apply_patch path")
+                raise _PatchParseError(
+                    f"apply_patch 目标路径含首尾空格、控制字符或 `~` 前缀：{path[:80]!r}；"
+                    "请改用干净的工作区相对路径或绝对路径")
             paths.append(_absolute(path, cwd))
         if not paths:
-            raise ValueError("apply_patch must contain standard file headers")
+            raise _PatchParseError(
+                "apply_patch 未包含任何文件头（`*** Update File:` / `*** Add File:` / "
+                "`*** Delete File:`），无法确定写入目标")
         return paths
     return [_absolute(inp.get("file_path"), cwd)]
 

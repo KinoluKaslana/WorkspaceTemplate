@@ -204,7 +204,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "f3eb5862d5247bb575d2919077b9aa569d05c630fd87c4d29dfb42fdc59c9c1c",
+    "file_sha256": "5d4cda757790be64760fb516a3ba727448a4e38e6762ca6fd407e8e6de3ae276",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {

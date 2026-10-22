@@ -285,6 +285,37 @@ class BashDispatch(unittest.TestCase):
         self.assertTrue(any(e.get("files") for e in wt),
                         "worktree-change 的 files 应非空（有未提交改动）")
 
+    # ---- W10（原生 payload 形态错误 → 可读 deny，不再是「内部错误」）----
+
+    def test_w10_native_patch_missing_shell_readable(self):
+        # 原生 apply_patch（tool_input.command）缺 *** End Patch → 可读 deny。
+        bad = "*** Begin Patch\n*** Add File: victim.txt\n+hi\n"
+        out = self.invoke("pre_write", "codex", tool_name="apply_patch",
+                          tool_input={"command": bad})
+        self.assertTrue(self.denied(out))
+        reason = self.reason(out)
+        self.assertNotIn("内部错误", reason)
+        self.assertIn("apply_patch", reason)
+        self.assertIn("Begin Patch", reason)
+
+    def test_w10_native_patch_bad_header_readable(self):
+        # 头行不是 Update/Add/Delete File → 可读 deny，且回显问题行。
+        bad = "*** Begin Patch\n*** Copy File: victim.txt\n+hi\n*** End Patch"
+        out = self.invoke("pre_write", "codex", tool_name="apply_patch",
+                          tool_input={"command": bad})
+        self.assertTrue(self.denied(out))
+        reason = self.reason(out)
+        self.assertNotIn("内部错误", reason)
+        self.assertIn("Copy File", reason)
+
+    def test_w10_write_missing_path_readable(self):
+        # Write 缺 file_path → 可读 deny（指向 file_path），不是内部错误。
+        out = self.invoke("pre_write", "cc", tool_name="Write", tool_input={})
+        self.assertTrue(self.denied(out))
+        reason = self.reason(out)
+        self.assertNotIn("内部错误", reason)
+        self.assertIn("file_path", reason)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

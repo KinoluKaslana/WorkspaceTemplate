@@ -4,6 +4,7 @@
 
 ## 2.5.2（2026-10-22，未提交）
 
+- **原生 payload 形态错误也走可读 deny**：`hook.py` 的 `_write_targets()` / `_absolute()` 对「patch 缺 Begin/End 外壳」「文件头不是 Update/Add/Delete File」「目标路径含首尾空格/控制字符/`~`」「`tool_input` 或 `file_path` 缺失」原先抛裸 `ValueError` → 渲染成「内部错误」；现统一改抛 `_PatchParseError`，输出可执行文案（指出缺什么、该怎么改）。与 F1 同族问题（GLM 终验 unverified 项），fail-closed 不变。`test_bash_dispatch` 新增 W10 三条回归（共 18 例；六套合计 43 例）。
 - **政策 §13 R105 明确审计归因边界**：`unresolved-command` 仅落 `tool_use_id` + `digest`（命令 sha256 前 16）+ `class`，不落命令原文、不做 native tool-use 对账，因此审计自身**不可直读归因**（只能以候选命令重算 digest 比对）；需要命令级可读归因须另行实现对账。政策 2.5.1 → 2.5.2。
 - **文档措辞与事实对齐（LUNA 终验提出）**：删除 `ALPHA-HOOK.md` / 本文件里「R1/R2/R3 三轮全 pass」的过度声明，改为按轮记录（R1 链未闭合、R2 deny 腿未触发、R3 pass）；`ALPHA-HOOK.md` 测试数 12 → 15（共 40 例）；重写 `hooks-tests/README.md`（删除「wtarget 未接入」「审计只有 6 字段」「W2/W3 未实现」等过期表述，按 2.5.2 现状描述）。
 

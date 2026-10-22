@@ -21,7 +21,7 @@ done
 python3 -B hooks-tests/replay_wtarget.py --unit   # 同一识别器矩阵（回放脚本的单测模式）
 ```
 
-当前规模：`test_wtarget` 4 类（内含 86 条断言矩阵）、`test_bash_dispatch` 15、`test_apply_patch_ansi` 9、`test_w2_anchor` 3、`test_authz` 5、`test_template_anchor` 4——**共 40 例**，全绿。
+当前规模：`test_wtarget` 4 类（内含 86 条断言矩阵）、`test_bash_dispatch` 18、`test_apply_patch_ansi` 9、`test_w2_anchor` 3、`test_authz` 5、`test_template_anchor` 4——**共 43 例**，全绿。
 
 要求 Python ≥ 3.10（纯 stdlib，不装依赖）。测试全部是**进程级**：真实启动 `.workspace/hooks/hook.py`、stdin 喂 payload；**不是**原生 Codex / Claude Code 会话 E2E（原生行为证据见各轮 `*-TEST-REPORT.md` 与 `ROUNDS-FACTS.md`）。
 

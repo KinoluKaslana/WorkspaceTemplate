@@ -14,7 +14,7 @@
 | `.workspace/hooks/template_anchor.py` | W4 门禁：`verify_rules --vs-template` 三键判定（`exit==0 ∧ clean ∧ template_clean`） |
 | `.codex/hooks.json` | Codex：`^Bash$` / `apply_patch` / Stop / SessionEnd |
 | `.claude/settings.json` | CC：只订阅 `Write\|Edit`（**不做 Bash 订阅**）+ Stop（lifecycle，已原生验证） |
-| `hooks-tests/` | 6 个测试文件、共 40 例（识别器矩阵 86 断言、分派 15〔含 W8/W9 复合形态 + C9 行数口径〕、ANSI-C 9、W2 锚 3、authz 5、template_anchor 4） |
+| `hooks-tests/` | 6 个测试文件、共 43 例（识别器矩阵 86 断言、分派 18〔含 W8/W9 复合形态、C9 行数口径、W10 原生形态可读 deny〕、ANSI-C 9、W2 锚 3、authz 5、template_anchor 4） |
 
 ## 2. 已实测
 
