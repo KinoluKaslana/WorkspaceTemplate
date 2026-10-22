@@ -12,6 +12,7 @@ from pathlib import Path
 
 import gate_core as core
 import wtarget
+import cc_transcript
 
 PATCH_HEADER = re.compile(r"\*\*\* (?:(?:Update|Add|Delete) File|Move to): (.+)")
 
@@ -393,6 +394,30 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
             core.remember_read_workspace(owner, ws, client, data["session_id"])
 
 
+def _cc_attribution(ws: str, client: str, sid: str, cwd: str, data: dict, source: str) -> None:
+    """CC 的 Bash 写事后归因（**不订阅** Bash）：转录回放 → would_deny 复算。
+
+    report-only：只往审计槽追加 `cc-bash-write` / `cc-bash-gap`，任何异常仅记 log，
+    绝不影响判定、输出或退出码。转录只读 payload 精确给出的路径（cc_transcript 校验）。
+    """
+    if client != "cc":
+        return
+    try:
+        path = data.get("transcript_path")
+        if not isinstance(path, str) or not path.strip():
+            core.append_audit_event(ws, client, sid, {
+                "type": "cc-bash-gap", "reason": "no-transcript-path", "source": source})
+            return
+        offset = cc_transcript.load_offset(ws, sid)
+        result = cc_transcript.analyze(ws, sid, path, cwd, start_offset=offset)
+        for record in result.get("events", []):
+            core.append_audit_event(ws, client, sid, record)
+        cc_transcript.save_offset(ws, sid, int(result.get("offset") or 0),
+                                  result.get("stats", {}))
+    except Exception as exc:  # 审计失败不得影响生命周期输出
+        core.log(ws, f"cc_attribution failed: {type(exc).__name__}: {exc}")
+
+
 def _template_anchor_gate(ws: str) -> dict:
     """W4：运行 template_anchor.py（timeout 10）。advisory，绝不产生 deny 决策。"""
     anchor_script = Path(__file__).resolve().parent / "template_anchor.py"
@@ -440,6 +465,7 @@ def handle(event: str, data: dict) -> None:
         ws = core.find_workspace(cwd)
         if ws:
             core.worktree_audit(ws, client, sid, "stop")
+            _cc_attribution(ws, client, sid, cwd, data, "stop")
             gate = _template_anchor_gate(ws)
             core.append_audit_event(ws, client, sid, {
                 "type": "completion-gate",
@@ -543,6 +569,7 @@ def handle(event: str, data: dict) -> None:
             # W3：先落 worktree-change（report-only），再 evaluate_session_end
             # 把累积事件一并 flush 进 audit-<client>.jsonl。
             core.worktree_audit(ws, client, sid, "session_end")
+            _cc_attribution(ws, client, sid, cwd, data, "session_end")
             core.evaluate_session_end(ws, client, sid, data.get("completed"),
                                       data.get("interrupted"), reason=data.get("reason"))
     else:

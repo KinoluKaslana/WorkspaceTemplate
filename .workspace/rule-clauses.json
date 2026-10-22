@@ -104,12 +104,12 @@
       "R101": "## 13. 客户端治理 hook（Claude Code / Codex）",
       "R102": "1. **适用与身份**：本 hook 只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份仍由 `.workspace/bootstrap.json` 的存在性承担（与 §12 同源，不依赖 gate 文件同时存在）；脚本位于 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定，实例改动会报漂移。",
       "R103": "2. **守门判据**：Codex `apply_patch`（heredoc / 双引号 / `$'…'`）与 Bash 静态可判写（`>`/`>>`/`tee`/`sed -i`/`perl -i`/`truncate`/`cp`/`mv`/`install`/`dd of=`）在目标属本工作区且未完整读 gate 当前修订时 deny；解释器/包装类（`python*`/`sh`/`bash`/`zsh`/`dash`/`perl`/`make`/`env`/`sudo`/`nice`/`nohup`/`timeout`/`xargs`/`command`/`exec`）未读即 deny（B′）；其余不可判形态**只审计不拦**（`unresolved-command`）。",
-      "R104": "3. **客户端差异（必须明说）**：Claude Code 仅 `Write`/`Edit` 受管，**其 Bash 写入不订阅、不拦截、无逐条归因**；只能由 `Stop`/`SessionEnd` 的会话级差集（`worktree-change`）与治理文件指纹锚（`unsanctioned-gatefile-change`）事后发现。**不得据此推断整仓写路径受管。**",
-      "R105": "4. **证据与审计**：读证据绑内容指纹 `c<size>:<sha256>` 与覆盖区间 `1..total`；审计事件五型（`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate`）；只记路径/哈希/会话/动作，不落正文。**`unresolved-command` 仅含 `tool_use_id`、`digest`（命令 sha256 前 16 位）与 `class`，不落命令原文、也不做 native tool-use 对账，因此审计本身不可直读归因**——只能以候选命令重算 digest 比对；需要命令级可读归因时必须另行实现对账，不得凭该事件推断具体命令。`worktree-change` 的文件粒度受 git 限制：会话中新出现的**未跟踪目录**在 `git status --porcelain` 中折叠为 `?? dir/`，故 `files` 只到目录级且 `diff_stat` 为空，文件级归因须由 `completion-gate`/artifact 侧补证，不得据目录级条目推断具体写入文件。",
+      "R104": "3. **客户端差异（必须明说）**：Claude Code 仅 `Write`/`Edit` 受管，**其 Bash 写入不订阅、不拦截**；`Stop`/`SessionEnd` 时会话级差集（`worktree-change`）与治理文件指纹锚（`unsanctioned-gatefile-change`）仍只到文件/目录级，但**可经转录回放做命令级事后归因**：只读平台在 payload 中给出的 `transcript_path`（校验 project slug 与 session_id，不遍历 `~/.claude/projects/**`），把转录里的 `Bash` 命令按静态可判目标分类，并用转录里的 `Read` 记录重建读证据，复算出 `would_deny`（`cc-bash-write` 事件），未归因形态记 `cc-bash-gap`。**事后归因不等于拦截，`would_deny=true` 不表示写入被阻止**；转录可被同 uid 删改，故它只是审计复算，不得据此推断整仓写路径受管或已被阻止。命令原文默认不落盘（只记 digest），需 `.workspace/gate.custom.json` 的 `audit_command_text=true` 显式开启。",
+      "R105": "4. **证据与审计**：读证据绑内容指纹 `c<size>:<sha256>` 与覆盖区间 `1..total`；审计事件七型（`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate` / `cc-bash-write` / `cc-bash-gap`）；只记路径/哈希/会话/动作，不落正文。**`unresolved-command` 仅含 `tool_use_id`、`digest`（命令 sha256 前 16 位）与 `class`，不落命令原文、也不做 native tool-use 对账，因此审计本身不可直读归因**——只能以候选命令重算 digest 比对；需要命令级可读归因时必须另行实现对账，不得凭该事件推断具体命令。`worktree-change` 的文件粒度受 git 限制：会话中新出现的**未跟踪目录**在 `git status --porcelain` 中折叠为 `?? dir/`，故 `files` 只到目录级且 `diff_stat` 为空，文件级归因须由 `completion-gate`/artifact 侧补证，不得据目录级条目推断具体写入文件。",
       "R106": "5. **调参与豁免**：行为调参写 `.workspace/gate.custom.json`（`enabled`/`gate_files`/`write_tools`）；合法直改 gate 文件用**操作级单次令牌**（`python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --ttl 300`），令牌单次消耗、目标集合精确匹配、无通配；不得以「父 Agent 身份」作为豁免依据（payload 无身份字段）。",
       "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（当前 8 个 definition），definition 变更即需重审；CC `-p` 免信任但仓库自带 hook 会被执行，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，本守门防「无意识跳过」，不防主动绕过。"
     },
-    "file_sha256": "af92bd57408ab9e2bdcff7af04b1a76ab4cafe77e16567a06cd73042db4a120c",
+    "file_sha256": "7305d74c28e615db01f79f1fcc68361a8bb7132b1f7060a1e4b481f1859a660c",
     "marked": 107
   },
   "AGENTS.md": {
@@ -159,17 +159,17 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "c76fac41c92110f165addfed53bf0da6ac0ee105186a43438175edb90637b17d",
+    "file_sha256": "0c59de62679c677afc4ee6d0d9fdf376bb03fee2a6a26fa87a79a2b31883ed77",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "f5664e2b8ea6dc9932a8ca6ce74d5698dbb02fcf8e62327962d791b5fa25a28c",
+    "file_sha256": "23aa86fbe196936f41dc5a3032df68f0dd79fec05dbbe14cc2878a3056738696",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
     "clauses": {},
-    "file_sha256": "9729b5793c33802672d3117f7a6ac553a282aff49e17cc3ea26d0a59258d3254",
+    "file_sha256": "b72728769a323e64325b6759c731b39fb0ddb7cb1be00411391e7b28eb41909f",
     "marked": 0
   },
   ".workspace/skills/workspace-init/SKILL.md": {
@@ -204,7 +204,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "5d4cda757790be64760fb516a3ba727448a4e38e6762ca6fd407e8e6de3ae276",
+    "file_sha256": "4e9e0504b47a292d8a769948f905cf9f2b68b4aa07d2b3af8e224fe8dd53ade2",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
@@ -220,6 +220,11 @@
   ".workspace/hooks/authz.py": {
     "clauses": {},
     "file_sha256": "2bf60ed12f50e845c087f8f6a7ae7089dfb5c24a1634f1525f85d3cc420a018a",
+    "marked": 0
+  },
+  ".workspace/hooks/cc_transcript.py": {
+    "clauses": {},
+    "file_sha256": "4cc643bdec00a6e5641bf0383d2adffd0e3c26f2ed82240b65af882affd0d119",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {

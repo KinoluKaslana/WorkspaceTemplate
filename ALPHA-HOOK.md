@@ -12,9 +12,10 @@
 | `.workspace/hooks/wtarget.py` | 窄识别器：`class=interpreter_wrapper|opaque|static`，白名单由命令形态表投影 |
 | `.workspace/hooks/authz.py` | 豁免令牌 CLI：`mint/list/revoke`（单次、精确集合、无通配） |
 | `.workspace/hooks/template_anchor.py` | W4 门禁：`verify_rules --vs-template` 三键判定（`exit==0 ∧ clean ∧ template_clean`） |
+| `.workspace/hooks/cc_transcript.py` | CC 的 Bash 写**事后**归因（转录回放 → `cc-bash-write`/`cc-bash-gap`，`would_deny` 复算；不订阅、不拦截） |
 | `.codex/hooks.json` | Codex：`^Bash$` / `apply_patch` / Stop / SessionEnd |
 | `.claude/settings.json` | CC：只订阅 `Write\|Edit`（**不做 Bash 订阅**）+ Stop（lifecycle，已原生验证） |
-| `hooks-tests/` | 6 个测试文件、共 43 例（识别器矩阵 86 断言、分派 18〔含 W8/W9 复合形态、C9 行数口径、W10 原生形态可读 deny〕、ANSI-C 9、W2 锚 3、authz 5、template_anchor 4） |
+| `hooks-tests/` | 6 个测试文件、共 58 例（识别器矩阵 86 断言、分派 18〔W8/W9 复合形态、C9 行数口径、W10 原生形态可读 deny〕、CC 转录 12、CC 接线 3、ANSI-C 9、W2 锚 3、authz 5、template_anchor 4） |
 
 ## 2. 已实测
 
@@ -55,3 +56,4 @@
 | F1 修复 | `a3c4811` | 显式 `apply_patch` 五类不可解析形态：裸 `ValueError` → `_PatchParseError` → 可读 deny（`无法静态确定目标；请单独调用 apply_patch`）；fail-closed 不变；W8/W9 回归 |
 | F2 边界 | `a3c4811` | `worktree-change` 对会话中新出现的未跟踪目录只到目录级（`?? dir/`、`diff_stat` 空）：R105 + §3-9 声明文件级归因须由 `completion-gate`/artifact 补证 |
 | S5 重跑 | `a3c4811` | 3 轮真机（每轮独立看管 + 两席研讨）：R1 deny 后中止 / R2 拒冷写先读（deny 腿未触发）/ R3 完整链 `release_gate=true`；C9 行数口径修正（`共 N 行（wc -l = M…）`，判定不变） |
+| CC Bash 归因 | 未提交（2.6.0） | `cc_transcript.py`：只读 payload 的 `transcript_path`（校验 slug/session_id，不遍历）；`would_deny` 复算 + `git` 差集交叉；原文默认不落；10+3 例回归 |

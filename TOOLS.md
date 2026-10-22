@@ -31,10 +31,11 @@
 
 | 文件 | SHA-256 |
 |---|---|
-| `.workspace/hooks/hook.py` | `6b1e485bbaa3bd284855e43e135161478f6cf4aeca802ccc9d4314f53bd90788` |
-| `.workspace/hooks/gate_core.py` | `ff31ac53bf09fc42fb5b0359fad905b9cfe45e0c1e741b161f55767da28b91d9` |
+| `.workspace/hooks/hook.py` | `4e9e0504b47a292d8a769948f905cf9f2b68b4aa07d2b3af8e224fe8dd53ade2` |
+| `.workspace/hooks/gate_core.py` | `8da4614815ef3b54250b9fa8ce791b2da4ebd605f12bd50fc2d010b10fdaa8bb` |
 | `.workspace/hooks/wtarget.py` | `689672e6a96f28df9c486460766417567c505f11afc52c6db2b86fe719f97751` |
 | `.workspace/hooks/authz.py` | `2bf60ed12f50e845c087f8f6a7ae7089dfb5c24a1634f1525f85d3cc420a018a` |
+| `.workspace/hooks/cc_transcript.py` | `4cc643bdec00a6e5641bf0383d2adffd0e3c26f2ed82240b65af882affd0d119` |
 | `.workspace/hooks/template_anchor.py` | `1e13a2d838a683037dfdf07c8f8e84c272d76286934738df4b4db2963218166d` |
 | `.codex/hooks.json` | `0f5576327ed4373884115a9483d578283887894af391336a55d2744fc0972f68` |
 | `.claude/settings.json` | `dce37de09847d24e0e505146058726864281bfd9a30586d49183ced26329e7aa` |
@@ -49,11 +50,13 @@
 | 写路径 | Codex | Claude Code |
 |---|---|---|
 | `apply_patch` / `Write`/`Edit` | 受拦 + 审计 | 受拦 + 审计 |
-| Bash 静态可判写（`>`/`>>`/`tee`/`sed -i` 等） | 受拦（未读 deny）/ 审计 | **未覆盖、无审计** |
-| Bash 解释器/包装类（`python*`/`sh`/`bash`/…） | 受拦（未读 B′ deny） | **未覆盖、无审计** |
-| Bash 其余不可判形态 | 只审计（`unresolved-command`） | **未覆盖、无审计** |
+| Bash 静态可判写（`>`/`>>`/`tee`/`sed -i` 等） | 受拦（未读 deny）/ 审计 | 不拦截；**事后转录回放归因**（`cc-bash-write`，含 `would_deny`） |
+| Bash 解释器/包装类（`python*`/`sh`/`bash`/…） | 受拦（未读 B′ deny） | 不拦截；事后复算 `would_deny`（`class=interpreter_wrapper`） |
+| Bash 其余不可判形态 | 只审计（`unresolved-command`） | 不拦截；记 `cc-bash-gap(unresolved-command)` |
 
-审计与状态落在 `.workspace/.hook-state/`（`audit-<client>.jsonl`、`authz.json`；已 gitignore）。
+审计与状态落在 `.workspace/.hook-state/`（`audit-<client>.jsonl`、`authz.json`、`cc-transcript-<session>.json` 偏移；已 gitignore）。
+
+CC 的 Bash 归因走**转录回放**（`cc_transcript.py`）：只读 platform payload 给出的 `transcript_path`，先校验 project slug == cwd 拉平值、文件名 == session_id，否则记 `cc-bash-gap` 并拒读；**不遍历 `~/.claude/projects/**`**（避免读入其他项目与会话）。命令原文默认不落盘，需 `.workspace/gate.custom.json` 的 `audit_command_text=true`。事后归因不等于拦截。
 
 信任步骤：Codex 首次需 `/hooks` 逐条信任（当前 8 个 definition），definition 变更即需重审；Claude Code `-p` 免信任但仓库自带 hook 会被执行，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open。
 

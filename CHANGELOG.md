@@ -2,6 +2,15 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 2.6.0（2026-10-22，未提交）
+
+- **CC Bash 非订阅归因（新能力，不改变拦截面）**：新增 `.workspace/hooks/cc_transcript.py` —— CC 仍**不订阅** Bash hook，但在 `Stop` / `SessionEnd` 用平台 payload 里的 `transcript_path` 做**转录回放**：解析 `Bash.tool_use.input.command`，用 `wtarget` 分类静态可判目标，用转录里的 `Read.tool_use + tool_result` 重建读证据，复算出 `would_deny`，并与 `git status` 差集交叉。新增审计事件 `cc-bash-write`（digest / targets / class / would_deny / read_state / result）与 `cc-bash-gap`（`unresolved-command` / `no-transcript-path` / `transcript-*` / `changed-but-untargeted` / `transcript-too-large`）。
+- **只读边界**：仅读 payload 精确给出的转录路径，先校验 project slug == cwd 拉平值、文件名 == session_id，否则记 gap 并拒读；**不遍历 `~/.claude/projects/**`**（本机实测该目录含 22 个项目、104 MB 转录，含其他私人项目）。偏移按会话 sidecar 增量保存（`cc-transcript-<session>.json`）。单文件 > 8 MB 或 > 20000 条 tool_use 记 `transcript-too-large`，不做无限解析。
+- **读证据只认可校验内容**：CC 的 Read 结果会附带 `<system-reminder>` 尾注、超长时截断；剥掉尾注后必须与治理文件对应行逐行相等才授证，末尾出现 `... [truncated]`、短读未到 EOF、内容与磁盘不符一律不授证（否则「截断读」会被当成「读全」）。
+- **语义**：事后归因，**不拦截**；`would_deny=true` 表示「按当时证据本该 deny」，不表示写入被阻止；转录可被同 uid 删改，故只是审计复算。命令原文默认不落盘（只记 digest），需 `.workspace/gate.custom.json` 的 `audit_command_text=true` 显式开启。
+- **政策**：§13 R104 改写为「不订阅、不拦截，但可经转录回放做命令级事后归因」；R105 审计事件五型 → 七型。政策 2.5.2 → 2.6.0。`TEMPLATE_FILES` 27 → 28。
+- **测试**：新增 `hooks-tests/test_cc_transcript.py`（12 例：路径三重校验、增量与半行容错、would_deny 矩阵、**截断/注入/内容不符不授证**、原文开关、差集缺口、偏移幂等）与 `hooks-tests/test_cc_wiring.py`（3 例：真实启动 hook.py 的 cc stop/session_end、无转录 gap、跨事件偏移幂等）。八套合计 58 例。
+
 ## 2.5.2（2026-10-22，未提交）
 
 - **原生 payload 形态错误也走可读 deny**：`hook.py` 的 `_write_targets()` / `_absolute()` 对「patch 缺 Begin/End 外壳」「文件头不是 Update/Add/Delete File」「目标路径含首尾空格/控制字符/`~`」「`tool_input` 或 `file_path` 缺失」原先抛裸 `ValueError` → 渲染成「内部错误」；现统一改抛 `_PatchParseError`，输出可执行文案（指出缺什么、该怎么改）。与 F1 同族问题（GLM 终验 unverified 项），fail-closed 不变。`test_bash_dispatch` 新增 W10 三条回归（共 18 例；六套合计 43 例）。
