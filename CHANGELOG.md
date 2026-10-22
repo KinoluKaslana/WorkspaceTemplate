@@ -2,6 +2,13 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 2.5.0（2026-10-22，未提交）
+
+- **客户端治理 hook 首版**：新增 Codex CLI / Claude Code 写前守门——`.workspace/hooks/{hook,gate_core,wtarget,authz,template_anchor}.py` + `.codex/hooks.json` + `.claude/settings.json`；`TEMPLATE_FILES` 20 → 27（五脚本 + 两配置）。
+- **行为要点**：Codex `printf >>`/`sed -i` 等静态可判写在未读时 deny（真机验证）；`apply_patch $'…'` ANSI-C 规范化；C9 deny 文案带覆盖/缺失/总行数；`SCHEMA 4→5`；W2 指纹锚 + 豁免令牌 + W4 完成声明门禁（advisory）。
+- **边界**：**CC 的 Bash 写不订阅、不拦截、无归因**；W2 的 `suspect` 仅 mtime 兜底；W4 不进 deny；clone 未 pin。
+- 政策 2.4.0 → 2.5.0（新增 §13，R101–R107：标题 R101 + 六条 R102–R107）。
+
 ## 2.4.3（2026-09-16，未提交）
 
 - **workspace-gate plugin v1.4.2 → v1.4.3**：按 v1.4.2 确认轮（GPT-5.6-SOL high，报告见派生工作区 `gate-v130-260915/confirmation-review-v142.md`）处置 V142-1/V142-2。⚠️ **尚未经新一轮独立复核。**

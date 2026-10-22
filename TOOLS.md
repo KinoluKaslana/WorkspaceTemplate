@@ -25,6 +25,40 @@
 | 网络与审批模式 | 以当前平台实际提供为准，待记录 |
 | 环境事实核验日期 | 未初始化 |
 
+### 1.1 客户端治理 hook（Codex / Claude Code）
+
+模板随仓库分发客户端写前守门 hook（对应 `AGENT_RULES.md` §13）：Codex CLI / Claude Code 项目级 hook，把「先读治理文件、再写工作区文件」落到客户端层。文件与指纹（模板层锁定，随 `TEMPLATE_FILES` 哈希锁定）：
+
+| 文件 | SHA-256 |
+|---|---|
+| `.workspace/hooks/hook.py` | `6b1e485bbaa3bd284855e43e135161478f6cf4aeca802ccc9d4314f53bd90788` |
+| `.workspace/hooks/gate_core.py` | `ff31ac53bf09fc42fb5b0359fad905b9cfe45e0c1e741b161f55767da28b91d9` |
+| `.workspace/hooks/wtarget.py` | `689672e6a96f28df9c486460766417567c505f11afc52c6db2b86fe719f97751` |
+| `.workspace/hooks/authz.py` | `2bf60ed12f50e845c087f8f6a7ae7089dfb5c24a1634f1525f85d3cc420a018a` |
+| `.workspace/hooks/template_anchor.py` | `1e13a2d838a683037dfdf07c8f8e84c272d76286934738df4b4db2963218166d` |
+| `.codex/hooks.json` | `0f5576327ed4373884115a9483d578283887894af391336a55d2744fc0972f68` |
+| `.claude/settings.json` | `dce37de09847d24e0e505146058726864281bfd9a30586d49183ced26329e7aa` |
+
+| 客户端 | 订阅事件 |
+|---|---|
+| Codex | `SessionStart` / `UserPromptSubmit` / `PreToolUse(^Bash$, apply_patch)` / `PostToolUse(^Bash$, apply_patch)` / `Stop` / `SessionEnd` |
+| Claude Code | `SessionStart` / `UserPromptSubmit` / `PreToolUse(Write\|Edit)` / `PostToolUse(Read, Write\|Edit)` / `Stop` / `SessionEnd`（**无 Bash**） |
+
+覆盖面真值表：
+
+| 写路径 | Codex | Claude Code |
+|---|---|---|
+| `apply_patch` / `Write`/`Edit` | 受拦 + 审计 | 受拦 + 审计 |
+| Bash 静态可判写（`>`/`>>`/`tee`/`sed -i` 等） | 受拦（未读 deny）/ 审计 | **未覆盖、无审计** |
+| Bash 解释器/包装类（`python*`/`sh`/`bash`/…） | 受拦（未读 B′ deny） | **未覆盖、无审计** |
+| Bash 其余不可判形态 | 只审计（`unresolved-command`） | **未覆盖、无审计** |
+
+审计与状态落在 `.workspace/.hook-state/`（`audit-<client>.jsonl`、`authz.json`；已 gitignore）。
+
+信任步骤：Codex 首次需 `/hooks` 逐条信任（当前 8 个 definition），definition 变更即需重审；Claude Code `-p` 免信任但仓库自带 hook 会被执行，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open。
+
+核验日期 2026-10-22。实测仅覆盖 Codex 0.163.0 / Claude Code 2.1.87-dev，Windows 原生未验证。
+
 ## 2. Python 运行时
 
 **当前状态：`unconfigured`。** 与 `.workspace/bootstrap.json` 保持一致，不在用户选择前预创建 venv 或假定 MCP 工具存在。

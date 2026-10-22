@@ -32,6 +32,13 @@ TEMPLATE_OWNED = {
     ".hermes/plugins/workspace-gate/plugin.yaml",
     ".hermes/plugins/workspace-gate/__init__.py",
     ".hermes/plugins/workspace-gate/selfcheck.py",
+    ".workspace/hooks/hook.py",
+    ".workspace/hooks/gate_core.py",
+    ".workspace/hooks/wtarget.py",
+    ".workspace/hooks/authz.py",
+    ".workspace/hooks/template_anchor.py",
+    ".codex/hooks.json",
+    ".claude/settings.json",
 }
 # Mixed-ownership files (three-way merge; local lines preserved).
 MIXED = {

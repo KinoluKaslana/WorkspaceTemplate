@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`2.4.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`2.5.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -174,3 +174,14 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 1. **守门判据（机械可查）**：对每个**能够确定**的写入目标分别判定其所属工作区，任一目标缺少可信的完整读取证据即拦截；**不得用其他工作区的配置豁免该目标**。受管写入目标的**相对路径**以「核心同源的 task cwd 锚点」（与文件工具实际读写所用 cwd 同源的记录，不含进程 cwd 兜底）解析；解析不出时默认拦截并要求改用绝对路径——这是**有意保留的过度拦截**；工作区级 `plugin.custom.json` 的 `write_tools` 缩窄/放宽只适用于能确定归属的目标。「完整读取」＝同一会话对治理文件**当前修订**的**连续行证据**累计覆盖 `1..total`（分次读取可累加，但**不允许中间有洞**，只读首尾两行不算；证据绑定文件修订指纹，修订变化即撤销既有覆盖与许可，跨修订拼接不算完整）；**空正文、EOF 越界、重复读取存根、行尾截断标记（`... [truncated]`）、解析失败、缺失总行数一律不增加已读证据**（合法正文恰以裸标记结尾时的保守误拦属已知并接受，治理文件应改写该行）。旧版状态的读许可不继承：`evidence_schema` 落后时迁移清空并留档 `*_legacy*`（需要旧行为兼容时必须由用户显式开启并记录降级审计）。判据是「写入目标路径」而非「会话 cwd」，因此「会话在别处、却写本工作区文件」同样被拦。会话收尾由 `on_session_finalize` 写边界审计条目（`boundaries`／`scope="session"`，按生命周期 epoch 与回合计数去重：同一阶段重复收尾幂等覆盖，恢复后的新阶段追加新条目，恢复由任一活动点标记 `status="resumed"`，不以重新读文件为前提）；该边界只归属**会话 cwd 所属工作区**，同一会话经由绝对路径写入的其他工作区不在该条目内（其读证据仍各自记账）。 <!-- id:R98 -->
 2. **分工与边界**：hook 只保证机械动作不被绕过，不代替 Agent 理解并遵守规则。hook 未启用、被绕过、或在无法归属会话的状态下放行时，§2/§9/§11 的义务**不变**——不得以「hook 没拦」为由免除任何规则义务。 <!-- id:R99 -->
 3. **调参与信任边界**：调整守门行为写工作区所有的工作区级覆写文件 `.hermes/plugins/workspace-gate/plugin.custom.json`（键：`enabled` / `gate_files` / `write_tools`）；**不得直接修改锁定脚本**（哈希校验会报告漂移，模板同步时被整文件覆盖）。守门状态文件位于 `.workspace/.hook-state/`（已 gitignore）。守门防「无意识跳过」，不防「主动绕过」：拥有 `terminal`/`execute_code` 的 Agent 可在工具层之外绕行，属沙箱/权限层问题，不在本条款范围内。 <!-- id:R100 -->
+
+## 13. 客户端治理 hook（Claude Code / Codex） <!-- id:R101 -->
+
+模板随仓库分发一套客户端写前守门 hook（`.workspace/hooks/` 五脚本 + `.codex/hooks.json` + `.claude/settings.json`，均属模板层锁定文件，随 `TEMPLATE_FILES` 哈希锁定）：把「先读治理文件、再写工作区文件」在 Codex CLI / Claude Code 的项目级 hook 层机械落地，作为 §12 在客户端侧的扩展（§12 治 Hermes，本节治 Codex / Claude Code）：
+
+1. **适用与身份**：本 hook 只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份仍由 `.workspace/bootstrap.json` 的存在性承担（与 §12 同源，不依赖 gate 文件同时存在）；脚本位于 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定，实例改动会报漂移。 <!-- id:R102 -->
+2. **守门判据**：Codex `apply_patch`（heredoc / 双引号 / `$'…'`）与 Bash 静态可判写（`>`/`>>`/`tee`/`sed -i`/`perl -i`/`truncate`/`cp`/`mv`/`install`/`dd of=`）在目标属本工作区且未完整读 gate 当前修订时 deny；解释器/包装类（`python*`/`sh`/`bash`/`zsh`/`dash`/`perl`/`make`/`env`/`sudo`/`nice`/`nohup`/`timeout`/`xargs`/`command`/`exec`）未读即 deny（B′）；其余不可判形态**只审计不拦**（`unresolved-command`）。 <!-- id:R103 -->
+3. **客户端差异（必须明说）**：Claude Code 仅 `Write`/`Edit` 受管，**其 Bash 写入不订阅、不拦截、无逐条归因**；只能由 `Stop`/`SessionEnd` 的会话级差集（`worktree-change`）与治理文件指纹锚（`unsanctioned-gatefile-change`）事后发现。**不得据此推断整仓写路径受管。** <!-- id:R104 -->
+4. **证据与审计**：读证据绑内容指纹 `c<size>:<sha256>` 与覆盖区间 `1..total`；审计事件五型（`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate`）；只记路径/哈希/会话/动作，不落正文。 <!-- id:R105 -->
+5. **调参与豁免**：行为调参写 `.workspace/gate.custom.json`（`enabled`/`gate_files`/`write_tools`）；合法直改 gate 文件用**操作级单次令牌**（`python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --ttl 300`），令牌单次消耗、目标集合精确匹配、无通配；不得以「父 Agent 身份」作为豁免依据（payload 无身份字段）。 <!-- id:R106 -->
+6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（当前 8 个 definition），definition 变更即需重审；CC `-p` 免信任但仓库自带 hook 会被执行，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，本守门防「无意识跳过」，不防主动绕过。 <!-- id:R107 -->

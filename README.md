@@ -160,6 +160,19 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gat
 # ③ 状态文件：<工作区根>/.workspace/.hook-state/<session_id>.json 记录该会话已读文件
 ```
 
+## 客户端治理 hook（Codex / Claude Code）
+
+模板另随仓库分发一套**客户端写前守门 hook**（对应 `AGENT_RULES.md` §13）：`.workspace/hooks/{hook,gate_core,wtarget,authz,template_anchor}.py` + `.codex/hooks.json` + `.claude/settings.json`，把「先读治理文件、再写工作区文件」落到 Codex CLI / Claude Code 的项目级 hook 层。覆盖面真值表：
+
+| 写路径 | Codex | Claude Code |
+|---|---|---|
+| `apply_patch` / `Write`/`Edit` | 受拦 + 审计 | 受拦 + 审计 |
+| Bash 静态可判写（`>`/`>>`/`tee`/`sed -i` 等） | 受拦（未读 deny）/ 审计 | **未覆盖、无审计** |
+| Bash 解释器/包装类（`python*`/`sh`/`bash`/…） | 受拦（未读 B′ deny） | **未覆盖、无审计** |
+| Bash 其余不可判形态 | 只审计（`unresolved-command`） | **未覆盖、无审计** |
+
+边界必须一并声明：**Claude Code 经 Bash 的一切写入不订阅、不拦截、无逐条归因**（只能由 `Stop`/`SessionEnd` 的会话级差集与治理文件指纹锚事后发现），不得据此推断整仓写路径受管；hook 超时/加载失败为客户端 fail-open。事件映射、文件指纹与信任步骤见 `TOOLS.md` §1.1。
+
 ## 工作区生命周期 skills
 
 三个 skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间），登记于 `skills/REGISTRY.md` 与 `TOOLS.md`：
