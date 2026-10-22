@@ -10,8 +10,13 @@ import sys
 from pathlib import Path
 
 import gate_core as core
+import wtarget
 
 PATCH_HEADER = re.compile(r"\*\*\* (?:(?:Update|Add|Delete) File|Move to): (.+)")
+
+
+class _PatchParseError(ValueError):
+    """apply_patch 形态无法静态确定（可读 deny）：文案原样输出，不包装成「内部错误」。"""
 
 
 def _deny(reason: str) -> None:
@@ -117,6 +122,84 @@ def _literal_shell_words(command: str) -> list[str] | None:
         return None
 
 
+_HEX = set("0123456789abcdefABCDEF")
+_OCT = set("01234567")
+
+
+def _decode_ansi_c(text: str) -> str | None:
+    """解码 bash ANSI-C $'...' 内层。
+
+    支持 \\a \\b \\e \\E \\f \\n \\r \\t \\v \\\\ \\' \\" \\? \\nnn(八进制)
+    \\xHH \\uHHHH \\UHHHHHHHH \\cX。任何不支持的转义/残缺 → None（宁不猜）。
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c != "\\":
+            out.append(c)
+            i += 1
+            continue
+        if i + 1 >= n:
+            return None  # 行尾孤立反斜杠
+        e = text[i + 1]
+        if e == "a":
+            out.append("\a"); i += 2
+        elif e == "b":
+            out.append("\b"); i += 2
+        elif e in ("e", "E"):
+            out.append("\x1b"); i += 2
+        elif e == "f":
+            out.append("\f"); i += 2
+        elif e == "n":
+            out.append("\n"); i += 2
+        elif e == "r":
+            out.append("\r"); i += 2
+        elif e == "t":
+            out.append("\t"); i += 2
+        elif e == "v":
+            out.append("\v"); i += 2
+        elif e in ("\\", "'", '"', "?"):
+            out.append(e); i += 2
+        elif e in _OCT:
+            j = i + 1
+            while j < n and j < i + 4 and text[j] in _OCT:
+                j += 1
+            val = int(text[i + 1:j], 8)
+            if val > 255:
+                return None
+            out.append(chr(val)); i = j
+        elif e == "x":
+            j = i + 2
+            while j < n and j < i + 4 and text[j] in _HEX:
+                j += 1
+            digits = text[i + 2:j]
+            if not digits:
+                return None
+            out.append(chr(int(digits, 16))); i = j
+        elif e == "u":
+            digits = text[i + 2:i + 6]
+            if len(digits) != 4 or not all(ch in _HEX for ch in digits):
+                return None
+            out.append(chr(int(digits, 16))); i += 6
+        elif e == "U":
+            digits = text[i + 2:i + 10]
+            if len(digits) != 8 or not all(ch in _HEX for ch in digits):
+                return None
+            cp = int(digits, 16)
+            if cp > 0x10FFFF:
+                return None
+            out.append(chr(cp)); i += 10
+        elif e == "c":
+            if i + 2 >= n:
+                return None
+            out.append(chr(ord(text[i + 2]) & 0x1F)); i += 3
+        else:
+            return None
+    return "".join(out)
+
+
 def _bash_patch(command: object, depth: int = 0) -> str | None:
     """Literal heredoc/argument and bash|sh -c|-lc only; never evaluate shell.
 
@@ -138,6 +221,16 @@ def _bash_patch(command: object, depth: int = 0) -> str | None:
             if len(words) != 2:
                 raise ValueError("explicit apply_patch requires one literal patch")
             return words[1]
+    # W6：apply_patch $'…'（ANSI-C 引用）——先解码再按字面 patch 处理；
+    # 解码失败给出可读 ValueError（不再落「内部错误」）。
+    ansi = re.fullmatch(
+        r"[ \t]*(?:[A-Za-z0-9_./-]*/)?apply_patch[ \t]+\$'((?:[^'\\]|\\.)*)'[ \t]*",
+        command)
+    if ansi:
+        decoded = _decode_ansi_c(ansi.group(1))
+        if decoded is None:
+            raise _PatchParseError("explicit apply_patch has unsupported ANSI-C escape")
+        return decoded
     # Decode literal executable spelling even in unsupported shell forms
     # (e.g. app'ly_patch' < file). Tokens only detect intent, never grant credit.
     try:
@@ -282,26 +375,59 @@ def handle(event: str, data: dict) -> None:
             core.reconcile_session_reads(owner, client, sid,
                                          "Stop" if event == "stop" else "PreToolUse")
     if event == "stop":
-        # Advisory reconciliation only: never claim completion or ask continuation.
+        # W3：客户端无关差集审计（report-only）+ advisory 对账。
+        # 恒输出 {}：从不声明完成或请求续轮。
+        ws = core.find_workspace(cwd)
+        if ws:
+            core.worktree_audit(ws, client, sid, "stop")
         print("{}")
         return
     if event in ("pre_bash", "post_bash"):
         if client not in ("cc", "codex") or data.get("tool_name") != "Bash":
             raise ValueError("Bash dispatch identity mismatch")
         inp = data.get("tool_input")
-        patch = _bash_patch(inp.get("command") if isinstance(inp, dict) else None)
-        if patch is None:
-            if event == "pre_bash":
-                return  # A read must not enter pre_write (or create write state).
+        command = inp.get("command") if isinstance(inp, dict) else None
+        cmd_str = command if isinstance(command, str) else ""
+        patch = _bash_patch(command)
+        if patch is not None:
+            data = {**data, "tool_input": {"command": patch}}
+            event = "pre_write" if event == "pre_bash" else "post_write"
+        elif event == "pre_bash":
+            # W1 接线：patch 之外的 Bash 按 wtarget.classify 分派。
+            # write → pre_write（逐目标路由 + deny）；interpreter_wrapper 未读 → deny；
+            # 其余 unresolved → 审计放行（unresolved-command）。CC 不订阅 Bash，此分支实际不达。
+            ws = core.find_workspace(cwd)
+            gate_files: list[str] = []
+            if ws:
+                conf = core.load_conf(ws)
+                gate_files = [core._norm_join(ws, g) for g in conf["gate_files"]]
+            res = wtarget.classify(cmd_str, cwd, gate_files)
+            if res["kind"] == "write" and res["targets"]:
+                result = core.evaluate_pre_write(cwd, client, sid, res["targets"])
+                if result.get("action") == "deny":
+                    _deny(result["reason"])
+            elif res["class"] == "interpreter_wrapper":
+                owner = ws or cwd
+                req = core.evaluate_read_required(owner, client, sid)
+                if req.get("action") == "deny":
+                    _deny(req["reason"])
+            elif ws and res["kind"] == "unresolved":
+                core.append_audit_event(ws, client, sid, {
+                    "type": "unresolved-command",
+                    "tool_use_id": data.get("tool_use_id") or data.get("turn_id") or "",
+                    "client": client,
+                    "digest": core.sha256_hex(cmd_str.encode("utf-8"))[:16],
+                    "class": res["class"],
+                })
+            return
+        else:
+            # post_bash + patch is None：保持现状。
             if client == "codex":
                 event = "post_read"
             else:
                 # CC 的 Bash stdout 被截断，无法做内容锚定；绝不记账。
                 # 不能偷偷走 post_read（会破坏 CC「只认 Read」的记账契约）。
                 return
-        else:
-            data = {**data, "tool_input": {"command": patch}}
-            event = "pre_write" if event == "pre_bash" else "post_write"
     # Boundaries belong to cwd's workspace, including failed/unsupported reads.
     # Activity changes lifecycle, never permission.
     if event in ("pre_write", "post_write", "post_read"):
@@ -343,6 +469,9 @@ def handle(event: str, data: dict) -> None:
         if ws:
             if client == "codex":
                 core.reconcile_session_reads(ws, client, sid, "SessionEnd")
+            # W3：先落 worktree-change（report-only），再 evaluate_session_end
+            # 把累积事件一并 flush 进 audit-<client>.jsonl。
+            core.worktree_audit(ws, client, sid, "session_end")
             core.evaluate_session_end(ws, client, sid, data.get("completed"),
                                       data.get("interrupted"), reason=data.get("reason"))
     else:
@@ -363,6 +492,12 @@ def main(argv: list[str] | None = None) -> int:
         if env_client in ("cc", "codex"):
             data["client"] = env_client
         handle(event, data)
+    except _PatchParseError as exc:
+        # 可读 deny 文案：apply_patch 形态无法静态确定，不包装成「内部错误」。
+        if event in ("pre_write", "pre_bash"):
+            _deny(str(exc))
+        else:
+            print(json.dumps({"systemMessage": str(exc)}, ensure_ascii=False))
     except Exception as exc:
         message = f"Workspace gate 内部错误；请人工检查。({type(exc).__name__})"
         # Only configured PreToolUse dispatches can return a deny decision.

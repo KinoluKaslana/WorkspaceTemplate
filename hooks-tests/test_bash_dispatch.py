@@ -39,11 +39,13 @@ class BashDispatch(unittest.TestCase):
 
     # ---- 工具 ----
 
-    def invoke(self, event, client, **fields):
-        payload = {"session_id": self.sid, "cwd": str(self.ws), **fields}
+    def invoke(self, event, client, ws=None, sid=None, **fields):
+        ws = Path(ws) if ws else self.ws
+        sid = sid or self.sid
+        payload = {"session_id": sid, "cwd": str(ws), **fields}
         env = {**os.environ, "GATE_CLIENT": client, "PYTHONDONTWRITEBYTECODE": "1"}
         p = subprocess.run([PY, "-B", str(HOOK), event], input=json.dumps(payload),
-                           text=True, capture_output=True, env=env, cwd=str(self.ws),
+                           text=True, capture_output=True, env=env, cwd=str(ws),
                            timeout=20)
         self.assertEqual(p.returncode, 0, f"exit!=0 stderr={p.stderr}")
         self.assertEqual(p.stderr, "", f"stderr not empty: {p.stderr}")
@@ -55,9 +57,48 @@ class BashDispatch(unittest.TestCase):
     def reason(self, out):
         return out.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
 
-    def state(self, client="cc"):
-        p = core._state_path(str(self.ws), client, self.sid)
+    def state(self, client="cc", ws=None):
+        ws = Path(ws) if ws else self.ws
+        p = core._state_path(str(ws), client, self.sid)
         return json.loads(p.read_text()) if p.exists() else {"reads": {}}
+
+    def state_events(self, client="codex", ws=None):
+        return self.state(client, ws).get("events", [])
+
+    def audit(self, client="codex", ws=None):
+        ws = Path(ws) if ws else self.ws
+        p = Path(ws) / core.STATE_DIRNAME / f"audit-{client}.jsonl"
+        if not p.exists():
+            return {"lines": [], "events": []}
+        lines = [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+        events = []
+        for ln in lines:
+            events.extend(ln.get("events", []))
+        return {"lines": lines, "events": events}
+
+    def _real_git_workspace(self):
+        root = self.base / "gitws"
+        (root / ".workspace").mkdir(parents=True)
+        (root / core.BOOTSTRAP_REL).write_text("{}")
+        (root / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
+        for args in (["init", "-q"], ["config", "user.email", "t@t"],
+                     ["config", "user.name", "t"]):
+            r = subprocess.run(["git", "-C", str(root), *args],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, f"git {args} failed: {r.stderr}")
+        (root / "probe.txt").write_text("v1\n")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], capture_output=True)
+        r = subprocess.run(["git", "-C", str(root), "commit", "-qm", "init"],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return root
+
+    def codex_cat_read_payload(self):
+        gate = self.ws / core.GATE_FILE
+        data = gate.read_bytes()
+        return {"hook_event_name": "PostToolUse", "tool_name": "Bash",
+                "tool_input": {"command": "cat AGENT_RULES.md"},
+                "tool_response": {"exit_code": 0, "stdout": data.decode("utf-8")}}
 
     def block(self, targets):
         return "*** Begin Patch\n" + "".join(
@@ -99,7 +140,11 @@ class BashDispatch(unittest.TestCase):
         out = self.invoke("pre_bash", "cc", tool_name="Bash",
                        tool_input={"command": self.heredoc(self.block(["victim.txt"]))})
         self.assertTrue(self.denied(out))
-        self.assertIn("请先完整 read_file", self.reason(out))
+        # C9 文案：已覆盖/缺失/共 N 行/read_file 四要素。
+        self.assertIn("已覆盖", self.reason(out))
+        self.assertIn("缺失", self.reason(out))
+        self.assertIn("共", self.reason(out))
+        self.assertIn("read_file", self.reason(out))
         self.assertNotIn("内部错误", self.reason(out))
 
     def test_d4_cc_read_then_bash_patch_allows(self):
@@ -134,6 +179,64 @@ class BashDispatch(unittest.TestCase):
         self.assertFalse(self.denied(out))
         st = self.state()
         self.assertNotIn(core.GATE_FILE, st.get("reads", {}))
+
+    # ---- W1（B′）----
+
+    def test_w1_redirect_write_unread_denies(self):
+        # 静态可判写（重定向 >> 命中 gate）未读 → deny（C9）。
+        out = self.invoke("pre_bash", "codex", tool_name="Bash",
+                       tool_input={"command": "printf 'x' >> AGENT_RULES.md"})
+        self.assertTrue(self.denied(out))
+        self.assertIn("已覆盖", self.reason(out))
+        self.assertIn("缺失", self.reason(out))
+        self.assertNotIn("内部错误", self.reason(out))
+
+    def test_w1_interpreter_wrapper_unread_denies(self):
+        # interpreter_wrapper（python3 -c）未读 → deny。
+        out = self.invoke("pre_bash", "codex", tool_name="Bash",
+                       tool_input={"command": "python3 -c \"open('AGENT_RULES.md','w')\""})
+        self.assertTrue(self.denied(out))
+        self.assertIn("已覆盖", self.reason(out))
+        self.assertNotIn("内部错误", self.reason(out))
+
+    def test_w1_opaque_unresolved_allows_and_audits(self):
+        # 其它 unresolved（git status）未读 → allow 且落 unresolved-command 审计。
+        out = self.invoke("pre_bash", "codex", tool_name="Bash",
+                       tool_input={"command": "git status"}, tool_use_id="tu-1")
+        self.assertFalse(self.denied(out))
+        evs = self.state_events("codex")
+        hits = [e for e in evs if e.get("type") == "unresolved-command"
+                and e.get("tool_use_id") == "tu-1"]
+        self.assertTrue(hits, "unresolved-command 未落审计")
+        self.assertEqual(hits[0]["class"], "opaque")
+
+    def test_w1_after_read_all_three_allow(self):
+        # 已完整读后：同三条（重定向写 / interpreter_wrapper / git status）均放行。
+        self.invoke("post_bash", "codex", **self.codex_cat_read_payload())
+        st = self.state("codex")
+        self.assertTrue(st["reads"].get(core.GATE_FILE, {}).get("complete"),
+                        "codex 全文读未记账")
+        for cmd in ("printf 'x' >> AGENT_RULES.md",
+                    "python3 -c \"open('AGENT_RULES.md','w')\"",
+                    "git status"):
+            out = self.invoke("pre_bash", "codex", tool_name="Bash",
+                           tool_input={"command": cmd})
+            self.assertFalse(self.denied(out), f"已读后应放行：{cmd}")
+
+    # ---- W3（客户端无关差集审计）----
+
+    def test_w3_worktree_change_audit(self):
+        # 真实 git 仓 + 未提交改动 → stop/session_end 后 audit 出现非空 worktree-change。
+        ws = self._real_git_workspace()
+        (ws / "probe.txt").write_text("v2\n")  # 未提交改动
+        sid = "w3-" + self._testMethodName
+        self.invoke("stop", "codex", ws=ws, sid=sid)
+        self.invoke("session_end", "codex", ws=ws, sid=sid)
+        aud = self.audit("codex", ws)
+        wt = [e for e in aud["events"] if e.get("type") == "worktree-change"]
+        self.assertTrue(wt, "audit 未出现 worktree-change")
+        self.assertTrue(any(e.get("files") for e in wt),
+                        "worktree-change 的 files 应非空（有未提交改动）")
 
 
 if __name__ == "__main__":

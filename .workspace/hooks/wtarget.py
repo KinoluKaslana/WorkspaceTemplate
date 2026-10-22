@@ -55,6 +55,23 @@ _WILDCARD_CHARS = set("*?[{")
 _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
+# ---------------------------------------------------------------- B′ 命令形态表
+# interpreter_wrapper 的**唯一来源**是下表投影（whitelist 恒等单测锁死，禁人工清单）。
+# 新增解释器只加表行；对应正/负例须同时进测试矩阵（缺例即 fail，见 test_wtarget.py）。
+_COMMAND_FORM_TABLE = (
+    (("python", "python2", "python3"), "interpreter_wrapper"),
+    (("sh", "bash", "zsh", "dash"), "interpreter_wrapper"),
+    (("perl",), "interpreter_wrapper"),
+    (("make",), "interpreter_wrapper"),
+    (("env", "sudo", "nice", "nohup", "timeout", "xargs", "command", "exec"),
+     "interpreter_wrapper"),
+)
+
+WHITELIST = frozenset(
+    w for names, kind in _COMMAND_FORM_TABLE if kind == "interpreter_wrapper" for w in names
+)
+
+
 # ---------------------------------------------------------------- 分段（规则 1）
 
 def _split_segments(command: str) -> list[str]:
@@ -322,6 +339,14 @@ def _first_command_word(segment: str) -> str:
     return os.path.basename(segment[i:j])
 
 
+def _lead_command_word(seg: str) -> str:
+    """命令首词元（basename），供 B′ interpreter_wrapper 判定。词元化失败时退回轻量提取。"""
+    tokens, err = _lex(seg)
+    if err is None:
+        return _command_word(tokens)
+    return _first_command_word(seg)
+
+
 def _has_unbalanced_paren(token: str) -> bool:
     """目标词元里出现未闭合的 ( 或 )（如子 shell 尾括号污染路径）→ True。"""
     depth = 0
@@ -541,7 +566,7 @@ def classify(command: str, cwd: str, gate_files: list[str]) -> dict:
 
     if not isinstance(command, str) or not command.strip():
         return {"kind": "other", "targets": [], "gate_targets": [], "forms": [],
-                "confidence": "static", "reason": "空命令"}
+                "confidence": "static", "class": "static", "reason": "空命令"}
 
     # F2 §2：apply_patch 不再按「整条命令出现 apply_patch 词元」判定——
     # 只在分段后的段首命令位判定，heredoc 正文/引号内文本/非命令位参数一律不参与。
@@ -549,8 +574,9 @@ def classify(command: str, cwd: str, gate_files: list[str]) -> dict:
     segments = _split_segments(command)
     if not segments:
         return {"kind": "other", "targets": [], "gate_targets": [], "forms": [],
-                "confidence": "static", "reason": "无有效分段"}
+                "confidence": "static", "class": "static", "reason": "无有效分段"}
 
+    lead = _lead_command_word(segments[0])  # 命令首词元（B′ 判 interpreter_wrapper 用）
     kinds: list[str] = []
     all_targets: list[str] = []
     all_forms: list[str] = []
@@ -673,14 +699,16 @@ def classify(command: str, cwd: str, gate_files: list[str]) -> dict:
         confidence = "partial" if "partial" in all_conf else "static"
         return {"kind": "write", "targets": targets, "gate_targets": gate_targets,
                 "forms": sorted(set(all_forms)), "confidence": confidence,
-                "reason": "；".join(reasons)}
+                "class": "static", "reason": "；".join(reasons)}
     if final_kind == "patch":
         return {"kind": "patch", "targets": [], "gate_targets": [], "forms": ["apply_patch"],
-                "confidence": "opaque", "reason": "apply_patch 词元（命令位），交 _bash_patch"}
+                "confidence": "opaque", "class": "static",
+                "reason": "apply_patch 词元（命令位），交 _bash_patch"}
     if final_kind == "unresolved":
+        cls = "interpreter_wrapper" if lead in WHITELIST else "opaque"
         return {"kind": "unresolved", "targets": [], "gate_targets": [],
                 "forms": sorted(set(all_forms)), "confidence": "opaque",
-                "reason": "；".join(reasons)}
+                "class": cls, "reason": "；".join(reasons)}
     return {"kind": final_kind, "targets": [], "gate_targets": [],
             "forms": sorted(set(all_forms)), "confidence": "static",
-            "reason": "；".join(reasons)}
+            "class": "static", "reason": "；".join(reasons)}

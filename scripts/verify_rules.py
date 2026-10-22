@@ -60,6 +60,11 @@ TEMPLATE_FILES = [
     ".hermes/plugins/workspace-gate/plugin.yaml",
     ".hermes/plugins/workspace-gate/__init__.py",
     ".hermes/plugins/workspace-gate/selfcheck.py",
+    ".workspace/hooks/hook.py",
+    ".workspace/hooks/gate_core.py",
+    ".workspace/hooks/wtarget.py",
+    ".codex/hooks.json",
+    ".claude/settings.json",
     ".workspace/rule-clauses.json",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}

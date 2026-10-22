@@ -152,7 +152,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "1c1e13ee97834db6d093ef665d9021a6b6367493c4b7d636aee52d326e5f8dde",
+    "file_sha256": "f157fed8ae3d64b9fb4ec9444279bca4ae6dbbda371fc66989b777fa9efef769",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -193,6 +193,31 @@
   ".hermes/plugins/workspace-gate/selfcheck.py": {
     "clauses": {},
     "file_sha256": "f2df7d113898c24bc8a068773de9c14ff3b2014dfde550ca79e7e7afc91f4e72",
+    "marked": 0
+  },
+  ".workspace/hooks/hook.py": {
+    "clauses": {},
+    "file_sha256": "daea8a4401c51bbd042dbb00ca88a25291223a6f640639f320de8b2e710e4703",
+    "marked": 0
+  },
+  ".workspace/hooks/gate_core.py": {
+    "clauses": {},
+    "file_sha256": "9e591ad01e6549ca716bd8769c27bc29336daa6b84a5e652d1422bd8e5800fb4",
+    "marked": 0
+  },
+  ".workspace/hooks/wtarget.py": {
+    "clauses": {},
+    "file_sha256": "689672e6a96f28df9c486460766417567c505f11afc52c6db2b86fe719f97751",
+    "marked": 0
+  },
+  ".codex/hooks.json": {
+    "clauses": {},
+    "file_sha256": "0f5576327ed4373884115a9483d578283887894af391336a55d2744fc0972f68",
+    "marked": 0
+  },
+  ".claude/settings.json": {
+    "clauses": {},
+    "file_sha256": "dce37de09847d24e0e505146058726864281bfd9a30586d49183ced26329e7aa",
     "marked": 0
   }
 }

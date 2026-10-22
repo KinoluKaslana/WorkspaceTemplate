@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""wtarget 写目标窄识别器 — 单元矩阵（从 W1b 回放矩阵抽取，86 例）。
+"""wtarget 写目标窄识别器 — 单元矩阵（86 例 + B′ whitelist 恒等/正负例）。
 
-自包含：不依赖历史语料，只依赖 .workspace/hooks/wtarget.py。
+自包含：只依赖 .workspace/hooks/wtarget.py；路径由 __file__ 推导，任意 cwd 可跑。
 运行：python3 -B hooks-tests/test_wtarget.py
 """
 from __future__ import annotations
@@ -17,12 +17,13 @@ sys.path.insert(0, str(HOOKS))
 import wtarget  # noqa: E402
 
 GATE_REL = "AGENT_RULES.md"
-CWD_MATRIX = str(ROOT)
-GATE_MATRIX = [os.path.join(CWD_MATRIX, GATE_REL)]
+CWD_MATRIX = str(ROOT)  # 运行时求值，不硬编码绝对路径
+GATE_MATRIX = [str(ROOT / GATE_REL)]
+
 
 def _matrix():
     """(command, expected_kind, expect_gate_hit, note)。覆盖判定纪律 3–8 + 对抗负样本。"""
-    G = GATE_REL
+    W = CWD_MATRIX
     return [
         ("echo hi > AGENT_RULES.md", "write", True, "redirect:>"),
         ("printf 'x' >> AGENT_RULES.md", "write", True, "redirect:>>"),
@@ -83,14 +84,14 @@ def _matrix():
         ("cat <<'EOF' > /tmp/x\necho a > AGENT_RULES.md\nEOF", "write", False, "F-A：heredoc 正文含 > 不当重定向"),
         ("cat <<EOF > /tmp/notgate\nhi\nEOF", "write", False, "F-A：非 gate 目标不误命中"),
         ("cd /tmp && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd /tmp 前缀不命中 gate"),
-        ("cd /home/kinolu/Workspaces/TemplateDev/hook-path-probe-261021/gate-ws && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd gate-ws 不因 payload cwd 误判"),
+        (f"cd {W} && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd 本仓根前缀仍 unresolved（不猜 cwd）"),
         ("cd - && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd - 前缀"),
         ("cd .. && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd .. 前缀"),
         ("pushd /tmp && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：pushd 前缀"),
-        ("sed -i 's/a/b/' /home/kinolu/Workspaces/TemplateDev/hook-path-probe-261021/gate-ws/AGENT_RULES.md", "write", True, "F-B：无 cd 绝对路径 gate 写照旧命中"),
+        (f"sed -i 's/a/b/' {W}/AGENT_RULES.md", "write", True, "F-B：无 cd 绝对路径 gate 写照旧命中"),
         # ---- F2 席修复回归（N4 子 shell / N5 包装前缀 / N6 apply_patch 命令位 / N7 输入重定向）----
         ("(cd /tmp && sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：子 shell (cd 前缀 → 整条 unresolved"),
-        ("(cd /home/kinolu/Workspaces/TemplateDev/hook-path-probe-261021/gate-ws && sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：子 shell cd gate-ws 不因 payload cwd 误判"),
+        (f"(cd {W} && sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：子 shell cd 本仓根不因 payload cwd 误判"),
         ("(pushd /tmp && sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：(pushd 变体"),
         ("(sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：裸括号子 shell"),
         ("echo hi > AGENT_RULES.md)", "unresolved", False, "F2-N4：目标尾括号不拼进路径"),
@@ -115,14 +116,43 @@ def _matrix():
         ("perl -pe 's/a/b/' AGENT_RULES.md", "unresolved", False, "F3：perl -p 无 -i → unresolved"),
     ]
 
+
+def _whitelist_positive_examples():
+    """每个 whitelist 名至少 1 条正例：首词元 = 该名 → class == interpreter_wrapper。"""
+    return {
+        "python": "python -c \"open('x','w')\"",
+        "python2": "python2 -c \"print(1)\"",
+        "python3": "python3 -c \"open('x','w')\"",
+        "sh": "sh -c 'sed -i s/a/b/ AGENT_RULES.md'",
+        "bash": "bash -c 'echo hi'",
+        "zsh": "zsh -c 'echo hi'",
+        "dash": "dash -c 'echo hi'",
+        "perl": "perl -e 'open OUT, \">x\"'",
+        "make": "make",
+        "env": "env X=1 sed -i 's/a/b/' AGENT_RULES.md",
+        "sudo": "sudo sed -i 's/a/b/' AGENT_RULES.md",
+        "nice": "nice sed -i 's/a/b/' AGENT_RULES.md",
+        "nohup": "nohup sed -i 's/a/b/' AGENT_RULES.md",
+        "timeout": "timeout 5 sed -i 's/a/b/' AGENT_RULES.md",
+        "xargs": "xargs sed -i 's/a/b/' AGENT_RULES.md",
+        "command": "command sed -i 's/a/b/' AGENT_RULES.md",
+        "exec": "exec sed -i 's/a/b/' AGENT_RULES.md",
+    }
+
+
+def _whitelist_negative_examples():
+    """whitelist 名在「静态可判」形态下的负例：应判非 interpreter_wrapper。"""
+    return [
+        ("perl -i -pe 's/a/b/' AGENT_RULES.md", "write"),  # perl -i → 静态写
+        ("sed -i 's/python/env/' AGENT_RULES.md", "write"),  # 名仅作脚本参数，非命令位
+    ]
+
+
 class WTargetMatrix(unittest.TestCase):
     def test_matrix(self):
         failures = []
         cases = _matrix()
-        legacy_root = "/home/kinolu/Workspaces/TemplateDev/hook-path-probe-261021/gate-ws"
         for cmd, exp_kind, exp_hit, note in cases:
-            # 矩阵里少数用例写死了当年探针工作区的绝对路径；移植到本仓时映射到 ROOT。
-            cmd = cmd.replace(legacy_root, CWD_MATRIX)
             r = wtarget.classify(cmd, CWD_MATRIX, GATE_MATRIX)
             got_hit = bool(r.get("gate_targets"))
             if r["kind"] != exp_kind or got_hit != exp_hit:
@@ -130,6 +160,26 @@ class WTargetMatrix(unittest.TestCase):
                     f"{note}: {cmd!r} expected=({exp_kind},{exp_hit}) actual=({r['kind']},{got_hit})")
         self.assertEqual(failures, [], "\n".join(failures))
         self.assertGreaterEqual(len(cases), 80)
+
+    def test_whitelist_projection_identity(self):
+        table_iw = {w for names, k in wtarget._COMMAND_FORM_TABLE
+                    if k == "interpreter_wrapper" for w in names}
+        self.assertEqual(set(wtarget.WHITELIST), table_iw,
+                         "WHITELIST 必须等于形态表 interpreter_wrapper 投影，禁人工清单")
+
+    def test_whitelist_positive_coverage(self):
+        ex = _whitelist_positive_examples()
+        self.assertEqual(set(ex), set(wtarget.WHITELIST),
+                         "whitelist 每个名字都须有正例（缺例即 fail）")
+        for name, cmd in ex.items():
+            r = wtarget.classify(cmd, CWD_MATRIX, GATE_MATRIX)
+            self.assertEqual(r["class"], "interpreter_wrapper", f"{name}: {cmd}")
+
+    def test_whitelist_negative_examples(self):
+        for cmd, exp_kind in _whitelist_negative_examples():
+            r = wtarget.classify(cmd, CWD_MATRIX, GATE_MATRIX)
+            self.assertNotEqual(r["class"], "interpreter_wrapper", f"负例误判为 iw: {cmd}")
+            self.assertEqual(r["kind"], exp_kind, f"{cmd}")
 
 
 if __name__ == "__main__":

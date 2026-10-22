@@ -1,37 +1,42 @@
 #!/usr/bin/env python3
 """replay_wtarget.py — W1b 回放基线：把历史真实命令语料回放进 wtarget.classify，
-得出「W1 能不能上线」的量化裁决。只读；不接线上链；只写 W1B-METRICS.json。
+得出「W1 能不能上线」的量化裁决。只读；不接线上链；只写指标 JSON。
 
 用法：
-    python3 replay_wtarget.py            # 跑全部，写 W1B-METRICS.json，stdout 打印摘要
-    python3 replay_wtarget.py --unit     # 只跑单元矩阵
+    python3 replay_wtarget.py                 # 默认只跑单元矩阵（无 --corpus）
+    python3 replay_wtarget.py --unit          # 同默认
+    python3 replay_wtarget.py --corpus <dir>  # 单元矩阵 + 语料回放
+    python3 replay_wtarget.py --out <path>    # 指定指标 JSON 输出
+
+路径由 __file__ 推导；任意 cwd 可跑。
 """
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import os
+import re
 import sys
 import time
-import hashlib
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-HOOKS_DIR = os.path.join(ROOT, "..", "workspace-template-e2e-260917", ".workspace", "hooks")
-CORPUS_ROOT = os.path.join(ROOT, "..", "hook-path-probe-261021", "out")
-OUT_JSON = os.path.join(ROOT, "W1B-METRICS.json")
+ROOT = Path(__file__).resolve().parents[1]
+HOOKS_DIR = ROOT / ".workspace" / "hooks"
 
-sys.path.insert(0, os.path.abspath(HOOKS_DIR))
+sys.path.insert(0, str(HOOKS_DIR))
 import wtarget  # noqa: E402
 
 GATE_REL = "AGENT_RULES.md"
-CWD_MATRIX = "/home/kinolu/Workspaces/TemplateDev/hook-path-probe-261021/gate-ws"
-GATE_MATRIX = [os.path.join(CWD_MATRIX, GATE_REL)]
+CWD_MATRIX = str(ROOT)  # 运行时求值，不硬编码绝对路径
+GATE_MATRIX = [str(ROOT / GATE_REL)]
 
 
 # ================================================================ 单元矩阵
 
 def _matrix():
     """(command, expected_kind, expect_gate_hit, note)。覆盖判定纪律 3–8 + 对抗负样本。"""
-    G = GATE_REL
+    W = CWD_MATRIX
     return [
         ("echo hi > AGENT_RULES.md", "write", True, "redirect:>"),
         ("printf 'x' >> AGENT_RULES.md", "write", True, "redirect:>>"),
@@ -92,14 +97,14 @@ def _matrix():
         ("cat <<'EOF' > /tmp/x\necho a > AGENT_RULES.md\nEOF", "write", False, "F-A：heredoc 正文含 > 不当重定向"),
         ("cat <<EOF > /tmp/notgate\nhi\nEOF", "write", False, "F-A：非 gate 目标不误命中"),
         ("cd /tmp && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd /tmp 前缀不命中 gate"),
-        ("cd /home/kinolu/Workspaces/TemplateDev/hook-path-probe-261021/gate-ws && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd gate-ws 不因 payload cwd 误判"),
+        (f"cd {W} && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd 本仓根前缀仍 unresolved（不猜 cwd）"),
         ("cd - && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd - 前缀"),
         ("cd .. && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：cd .. 前缀"),
         ("pushd /tmp && sed -i 's/a/b/' AGENT_RULES.md", "unresolved", False, "F-B：pushd 前缀"),
-        ("sed -i 's/a/b/' /home/kinolu/Workspaces/TemplateDev/hook-path-probe-261021/gate-ws/AGENT_RULES.md", "write", True, "F-B：无 cd 绝对路径 gate 写照旧命中"),
+        (f"sed -i 's/a/b/' {W}/AGENT_RULES.md", "write", True, "F-B：无 cd 绝对路径 gate 写照旧命中"),
         # ---- F2 席修复回归（N4 子 shell / N5 包装前缀 / N6 apply_patch 命令位 / N7 输入重定向）----
         ("(cd /tmp && sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：子 shell (cd 前缀 → 整条 unresolved"),
-        ("(cd /home/kinolu/Workspaces/TemplateDev/hook-path-probe-261021/gate-ws && sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：子 shell cd gate-ws 不因 payload cwd 误判"),
+        (f"(cd {W} && sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：子 shell cd 本仓根不因 payload cwd 误判"),
         ("(pushd /tmp && sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：(pushd 变体"),
         ("(sed -i 's/a/b/' AGENT_RULES.md)", "unresolved", False, "F2-N4：裸括号子 shell"),
         ("echo hi > AGENT_RULES.md)", "unresolved", False, "F2-N4：目标尾括号不拼进路径"),
@@ -179,24 +184,24 @@ def _collect(obj, out):
             _collect(v, out)
 
 
-def iter_corpus_files():
+def iter_corpus_files(corpus_root):
     files = []
-    for dirpath, _, names in os.walk(CORPUS_ROOT):
+    for dirpath, _, names in os.walk(corpus_root):
         for n in names:
             if n.endswith(_PATTERNS):
                 files.append(os.path.join(dirpath, n))
     # cc-probe/hook-events.jsonl 是 hooklog 格式但名为 .jsonl：显式纳入（CC 原生事件流）。
-    cc = os.path.join(CORPUS_ROOT, "cc-probe", "hook-events.jsonl")
+    cc = os.path.join(corpus_root, "cc-probe", "hook-events.jsonl")
     if os.path.isfile(cc) and cc not in files:
         files.append(cc)
     files.sort()
     return files
 
 
-def iter_commands():
+def iter_commands(corpus_root):
     """yield (source_rel, source_type, line_no, cwd, command)。"""
-    for fp in iter_corpus_files():
-        rel = os.path.relpath(fp, CORPUS_ROOT)
+    for fp in iter_corpus_files(corpus_root):
+        rel = os.path.relpath(fp, corpus_root)
         if rel.endswith(".hooklog") or rel.endswith("hook-events.jsonl"):
             stype = "hooklog"
         elif rel.endswith(".native.jsonl"):
@@ -230,13 +235,10 @@ def iter_commands():
 def _read_class(cmd: str) -> bool:
     """语料里的「读类」真值：首词元（basename）∈ 读命令集合，且非写形态。"""
     try:
-        first = None
         i = 0
         n = len(cmd)
         while i < n and cmd[i] in " \t":
             i += 1
-        # 跳过 VAR=val
-        import re
         m = re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", cmd[i:])
         if m:
             i += m.end()
@@ -252,7 +254,7 @@ def _read_class(cmd: str) -> bool:
                 "test", "true", "nl", "bat"}
     if first in read_set:
         return True
-    if first == "sed" and not ("-i" in cmd.split()):
+    if first == "sed" and "-i" not in cmd.split():
         return True
     return False
 
@@ -291,8 +293,16 @@ def _unresolved_category(cmd: str, reason: str) -> str:
 
 # ================================================================ 主流程
 
-def main() -> int:
-    only_unit = "--unit" in sys.argv
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--unit", action="store_true", help="只跑单元矩阵")
+    ap.add_argument("--corpus", default=None, help="语料根目录；缺省只跑单元矩阵")
+    ap.add_argument("--out", default=None, help="指标 JSON 输出路径（默认 <脚本目录>/W1B-METRICS.json）")
+    args = ap.parse_args(argv)
+
+    corpus_root = args.corpus
+    out_json = args.out or str(Path(__file__).parent / "W1B-METRICS.json")
+    only_unit = args.unit or corpus_root is None
 
     # --- 单元矩阵 ---
     matrix = _matrix()
@@ -312,7 +322,7 @@ def main() -> int:
             "expected": {"kind": exp_kind, "gate_hit": exp_hit},
             "actual": {"kind": got_kind, "gate_hit": got_hit,
                        "targets": r["targets"], "forms": r["forms"],
-                       "confidence": r["confidence"]},
+                       "confidence": r["confidence"], "class": r["class"]},
             "pass": ok,
         })
 
@@ -323,11 +333,22 @@ def main() -> int:
                 print(f"  FAIL {c['note']}: {c['command']!r}\n"
                       f"        expected={c['expected']} actual={c['actual']['kind']},"
                       f"gate_hit={c['actual']['gate_hit']}")
+        wtarget_sha = hashlib.sha256(
+            (HOOKS_DIR / "wtarget.py").read_bytes()).hexdigest()
+        metrics = {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                   "classifier": {"file": ".workspace/hooks/wtarget.py",
+                                  "sha256": wtarget_sha},
+                   "corpus_root": None,
+                   "unit_matrix": {"total": len(matrix), "passed": n_pass,
+                                   "failed": n_fail, "cases": unit_cases}}
+        with open(out_json, "w", encoding="utf-8") as f:
+            json.dump(metrics, f, ensure_ascii=False, indent=2)
+        print(f"指标已写: {out_json}")
         return 0 if n_fail == 0 else 1
 
     # --- 语料回放 ---
     records = []
-    for rel, stype, line_no, cwd, cmd in iter_commands():
+    for rel, stype, line_no, cwd, cmd in iter_commands(corpus_root):
         records.append((rel, stype, line_no, cwd, cmd))
 
     per_source: dict[str, int] = {}
@@ -362,7 +383,6 @@ def main() -> int:
             unresolved_by_token[tok] = unresolved_by_token.get(tok, 0) + 1
             cat = _unresolved_category(cmd, r["reason"])
             unresolved_categories[cat] = unresolved_categories.get(cat, 0) + 1
-        # 误拒：读类真值 但 被识别为 write 且 gate_targets 非空。
         if k == "write" and r["gate_targets"] and _read_class(cmd):
             false_reject_cases.append({
                 "source": rel, "line": line_no, "cwd": cwd, "command": cmd,
@@ -370,7 +390,6 @@ def main() -> int:
             })
     total_s = time.perf_counter() - t0
 
-    # 漏判：历史真实 gate 写（原始形态）必须被识别为 write 且 gate 命中。
     ground_truth_gate_writes = [
         "printf '%s\\n' '<!-- probe-appended -->' >> AGENT_RULES.md",
         "printf '\\n<!-- probe-appended -->\\n' >> AGENT_RULES.md",
@@ -388,8 +407,6 @@ def main() -> int:
         if found and not caught:
             miss_cases.append({"command": gt, "classified": r["kind"],
                                "instances_in_corpus": len(found)})
-    # 补扫：语料里含 AGENT_RULES.md 且是写形态（>>/truncate 原始）但未被识别 write。
-    # 排除 shell 包装形态（zsh/sh -c 按规则 4 落 unresolved，属已声明类别，不算漏判）。
     _SHELLS = {"zsh", "sh", "bash", "dash", "ash", "fish", "csh", "tcsh"}
     for rel, st, ln, cwd, cmd in records:
         first = cmd.split()[0] if cmd.split() else ""
@@ -402,6 +419,7 @@ def main() -> int:
                                    "classified": r["kind"]})
 
     sorted_ms = sorted(per_cmd_ms)
+
     def pct(p):
         if not sorted_ms:
             return 0.0
@@ -410,15 +428,12 @@ def main() -> int:
 
     unresolved_ratio = (unresolved_total / len(records)) if records else 0.0
 
-    wtarget_sha = hashlib.sha256(
-        open(os.path.join(HOOKS_DIR, "wtarget.py"), "rb").read()).hexdigest()
+    wtarget_sha = hashlib.sha256((HOOKS_DIR / "wtarget.py").read_bytes()).hexdigest()
 
     metrics = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "fix_round": "F2",
-        "classifier": {"file": "workspace-template-e2e-260917/.workspace/hooks/wtarget.py",
-                       "sha256": wtarget_sha},
-        "corpus_root": CORPUS_ROOT,
+        "classifier": {"file": ".workspace/hooks/wtarget.py", "sha256": wtarget_sha},
+        "corpus_root": corpus_root,
         "extraction_rule": (
             "递归取 command 字段：字符串 / argv 列表(-c 内层重建) / arguments JSON 字符串内的 cmd；"
             "逐行去重；cwd 取行内或文件级 session_meta；cc-probe/hook-events.jsonl 为 hooklog 格式，显式纳入。"),
@@ -445,7 +460,7 @@ def main() -> int:
                    "per_command_mean_ms": (sum(per_cmd_ms) / len(per_cmd_ms)) if per_cmd_ms else 0.0},
     }
 
-    with open(OUT_JSON, "w", encoding="utf-8") as f:
+    with open(out_json, "w", encoding="utf-8") as f:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
 
     # --- stdout 摘要 ---
@@ -475,9 +490,8 @@ def main() -> int:
             print(f"  FAIL {c['note']}: {c['command']!r} expected={c['expected']} "
                   f"actual={c['actual']['kind']},hit={c['actual']['gate_hit']}")
     print(f"计时: 全语料 {total_s*1000:.2f} ms, 单条 p50={pct(50):.3f} ms, p95={pct(95):.3f} ms")
-    print(f"指标已写: {OUT_JSON}")
+    print(f"指标已写: {out_json}")
 
-    # go/no-go
     verdict = (len(false_reject_cases) == 0 and len(miss_cases) == 0 and n_fail == 0)
     print("=" * 72)
     print(f"裁决: W1 {'可以上线' if verdict else '不可以上线'}")

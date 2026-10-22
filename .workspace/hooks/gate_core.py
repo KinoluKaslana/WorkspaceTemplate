@@ -19,7 +19,7 @@
   ② 截断即沉默：检测到截断 → 不记账、不假记账（deny 文案指引重读/分段）。
   ③ 命令串不是阅读证据；无响应、截断及不可判定均不授证。
 
-状态 schema 4；旧许可清空留档（含旧 adapter 未验证成功/元数据的 schema 3）；
+状态 schema 5；旧许可清空留档（含旧 adapter 未验证成功/元数据的 schema 3/4）；
 flock 并发；mkstemp+os.replace 原子写。interval 仅为 content 的覆盖方式，不是弱证据。
 """
 from __future__ import annotations
@@ -29,11 +29,12 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import tempfile
 import time
 from pathlib import Path
 
-SCHEMA = 4
+SCHEMA = 5
 BOOTSTRAP_REL = ".workspace/bootstrap.json"
 CUSTOM_REL = ".workspace/gate.custom.json"
 STATE_DIRNAME = ".workspace/.hook-state"
@@ -230,6 +231,8 @@ def load_state(ws_root: str, client: str, session_id: str) -> dict:
         state["revocations"] = []
     if not isinstance(state.get("ends"), list):
         state["ends"] = []
+    if not isinstance(state.get("events"), list):
+        state["events"] = []
     state.setdefault("legacy", None)
     return state
 
@@ -284,6 +287,41 @@ def coverage_complete(coverage: list[list[int]], total_lines: int) -> bool:
         return False
     merged = merge_intervals(coverage)
     return merged == [[1, total_lines]]
+
+
+def _fmt_ivs(ivs: list[list[int]]) -> str:
+    """区间串：[[1,5],[8,8]] → "1..5、8"；空 → "无"。"""
+    if not ivs:
+        return "无"
+    parts = [str(a) if a == b else f"{a}..{b}" for a, b in ivs]
+    return "、".join(parts)
+
+
+def _missing_intervals(coverage: list[list[int]], total: int) -> list[list[int]]:
+    """1..total 内未被覆盖的区间（C9 缺失区间）。"""
+    merged = merge_intervals(coverage)
+    missing: list[list[int]] = []
+    cursor = 1
+    for a, b in merged:
+        if a > cursor:
+            missing.append([cursor, a - 1])
+        cursor = max(cursor, b + 1)
+    if cursor <= total:
+        missing.append([cursor, total])
+    return missing
+
+
+def _c9_deny_reason(ws_root: str, gate_rel: str, coverage: list[list[int]],
+                    total: int, target: str | None = None) -> str:
+    """C9 文案：已覆盖 / 缺失 / 共 N 行 / 下一步 四要素。不含 nonce、不含其他会话信息。"""
+    cov = _fmt_ivs(merge_intervals(coverage))
+    miss = _fmt_ivs(_missing_intervals(coverage, total))
+    tail = "下一步：read_file 补齐缺失区间后重试。"
+    if target is not None:
+        tail += f"目标：{target}"
+    return (f"WorkspaceTemplate 守门（{ws_root}）：写工作区文件前须先完整读取治理文件。\n"
+            f"文件 {gate_rel}：已覆盖 {cov}；缺失 {miss}；共 {total} 行。\n"
+            f"{tail}")
 
 
 # ------------------------------------------------------------ 记账（C12 三段式）
@@ -480,16 +518,58 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
                     unread.append(gate_rel)
                 if unread:
                     save_state(ws_root, client, session_id, state)
+                    total = len(current.split(b"\n"))
+                    cov = entry.get("coverage", []) if isinstance(entry, dict) else []
                     return {
                         "action": "deny",
-                        "reason": (f"WorkspaceTemplate 守门（{ws_root}）：写工作区文件前请先"
-                                   f"完整 read_file 读取 {'、'.join(unread)}（治理规则入口，当前修订）。"
-                                   f"目标：{target}"),
+                        "reason": _c9_deny_reason(ws_root, gate_rel, cov, total, target),
                         "ws": ws_root,
                     }
         # 全部治理文件当前修订均已读，持久化撤销留档。
         save_state(ws_root, client, session_id, state)
     return {"action": "allow", "reason": "ok", "ws": ws_root}
+
+
+def evaluate_read_required(ws_root: str, client: str, session_id: str) -> dict:
+    """B′ 只读判定：任一 gate 文件当前修订未完整读 → deny（C9 文案）；否则 allow。
+
+    只读状态：不写 reads、不撤销、不落任何写前状态。内部异常 fail-closed（deny +
+    人工检查），并吞掉日志，不向 adapter 抛异常。
+    """
+    try:
+        if not ws_root or not os.path.isabs(ws_root):
+            return {"action": "deny", "reason": "Workspace gate 内部错误；请人工检查。", "ws": ws_root}
+        conf = load_conf(ws_root)
+        if not conf["enabled"]:
+            return {"action": "allow"}
+        gate_abs_map = {g: _norm_join(ws_root, g) for g in conf["gate_files"]}
+        with _StateLock(ws_root, client, session_id):
+            state = load_state(ws_root, client, session_id)
+            for gate_rel, gate_abs in gate_abs_map.items():
+                try:
+                    current = Path(gate_abs).read_bytes()
+                    fp = f"c{len(current)}:{sha256_hex(current)}"
+                except OSError:
+                    current, fp = b"", None
+                entry = state["reads"].get(gate_rel)
+                # 修订复核（只读）：指纹不一致按 unread 判，不撤销既有记账。
+                if entry and (fp is None or not isinstance(entry, dict)
+                              or entry.get("fingerprint") != fp):
+                    entry = None
+                total = len(current.split(b"\n"))
+                complete = (bool(current) and isinstance(entry, dict)
+                            and entry.get("complete") is True
+                            and entry.get("anchor") == "content"
+                            and coverage_complete(entry.get("coverage", []), total))
+                if not complete:
+                    cov = entry.get("coverage", []) if isinstance(entry, dict) else []
+                    return {"action": "deny",
+                            "reason": _c9_deny_reason(ws_root, gate_rel, cov, total),
+                            "ws": ws_root}
+        return {"action": "allow"}
+    except Exception as exc:
+        log(ws_root, f"evaluate_read_required failed: {exc}")
+        return {"action": "deny", "reason": "Workspace gate 内部错误；请人工检查。", "ws": ws_root}
 
 
 # ------------------------------------------------------------ Lifecycle reconciliation
@@ -674,6 +754,9 @@ def _append_audit(ws_root: str, client: str, state: dict) -> None:
     try:
         d = Path(ws_root) / STATE_DIRNAME
         d.mkdir(parents=True, exist_ok=True)
+        events = state.get("events")
+        if not isinstance(events, list):
+            events = []
         with open(d / f"audit-{client}.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps({
                 "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -682,6 +765,59 @@ def _append_audit(ws_root: str, client: str, state: dict) -> None:
                 "revocations": len(state.get("revocations", [])),
                 "permission_mode": (state.get("env") or {}).get("permission_mode"),
                 "boundary": state["ends"][-1] if state.get("ends") else None,
+                "events": events[-50:],
             }, ensure_ascii=False) + "\n")
     except Exception:
         pass
+
+
+def append_audit_event(ws_root: str, client: str, session_id: str, record: dict) -> None:
+    """向审计槽位追加一条事件（有界 50）。report-only：异常吞掉记 log，绝不影响判定。"""
+    try:
+        if not isinstance(record, dict) or not record.get("type"):
+            return
+        rec = dict(record)
+        rec.setdefault("ts", time.strftime("%Y-%m-%d %H:%M:%S"))
+        with _StateLock(ws_root, client, session_id):
+            state = load_state(ws_root, client, session_id)
+            events = state.get("events")
+            if not isinstance(events, list):
+                events = []
+            events.append(rec)
+            state["events"] = events[-50:]
+            save_state(ws_root, client, session_id, state)
+    except Exception as exc:
+        log(ws_root, f"append_audit_event failed: {exc}")
+
+
+def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> None:
+    """W3 客户端无关差集审计（最小版）。git status --porcelain + git diff --stat，
+    把结果作为 worktree-change 记录写入 audit（report-only，不产生 deny）。"""
+    if source not in ("stop", "session_end"):
+        return
+    try:
+        status = subprocess.run(["git", "-C", ws_root, "status", "--porcelain"],
+                                capture_output=True, text=True, timeout=5)
+        diff = subprocess.run(["git", "-C", ws_root, "diff", "--stat"],
+                              capture_output=True, text=True, timeout=5)
+    except Exception as exc:
+        log(ws_root, f"worktree_audit git failed: {exc}")
+        return
+    if status.returncode != 0:
+        log(ws_root, f"worktree_audit git status rc={status.returncode}")
+        return
+    files: list[str] = []
+    for line in (status.stdout or "").splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:  # rename: "R  old -> new"
+            path = path.split(" -> ")[-1].strip()
+        if path:
+            files.append(path)
+    append_audit_event(ws_root, client, session_id, {
+        "type": "worktree-change",
+        "files": files,
+        "source": source,
+        "diff_stat": (diff.stdout or "").strip(),
+    })
