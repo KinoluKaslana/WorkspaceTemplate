@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`2.6.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`2.6.1`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -177,11 +177,11 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 
 ## 13. 客户端治理 hook（Claude Code / Codex） <!-- id:R101 -->
 
-模板随仓库分发一套客户端写前守门 hook（`.workspace/hooks/` 五脚本 + `.codex/hooks.json` + `.claude/settings.json`，均属模板层锁定文件，随 `TEMPLATE_FILES` 哈希锁定）：把「先读治理文件、再写工作区文件」在 Codex CLI / Claude Code 的项目级 hook 层机械落地，作为 §12 在客户端侧的扩展（§12 治 Hermes，本节治 Codex / Claude Code）：
+模板随仓库分发一套客户端写前守门 hook（`.workspace/hooks/` 六脚本：`hook` / `gate_core` / `wtarget` / `authz` / `template_anchor` / `cc_transcript`，另加 `.codex/hooks.json` + `.claude/settings.json`，均属模板层锁定文件，随 `TEMPLATE_FILES` 哈希锁定）：把「先读治理文件、再写工作区文件」在 Codex CLI / Claude Code 的项目级 hook 层机械落地，作为 §12 在客户端侧的扩展（§12 治 Hermes，本节治 Codex / Claude Code）：
 
 1. **适用与身份**：本 hook 只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份仍由 `.workspace/bootstrap.json` 的存在性承担（与 §12 同源，不依赖 gate 文件同时存在）；脚本位于 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定，实例改动会报漂移。 <!-- id:R102 -->
 2. **守门判据**：Codex `apply_patch`（heredoc / 双引号 / `$'…'`）与 Bash 静态可判写（`>`/`>>`/`tee`/`sed -i`/`perl -i`/`truncate`/`cp`/`mv`/`install`/`dd of=`）在目标属本工作区且未完整读 gate 当前修订时 deny；解释器/包装类（`python*`/`sh`/`bash`/`zsh`/`dash`/`perl`/`make`/`env`/`sudo`/`nice`/`nohup`/`timeout`/`xargs`/`command`/`exec`）未读即 deny（B′）；其余不可判形态**只审计不拦**（`unresolved-command`）。 <!-- id:R103 -->
 3. **客户端差异（必须明说）**：Claude Code 仅 `Write`/`Edit` 受管，**其 Bash 写入不订阅、不拦截**；`Stop`/`SessionEnd` 时会话级差集（`worktree-change`）与治理文件指纹锚（`unsanctioned-gatefile-change`）仍只到文件/目录级，但**可经转录回放做命令级事后归因**：只读平台在 payload 中给出的 `transcript_path`（校验 project slug 与 session_id，不遍历 `~/.claude/projects/**`），把转录里的 `Bash` 命令按静态可判目标分类，并用转录里的 `Read` 记录重建读证据，复算出 `would_deny`（`cc-bash-write` 事件），未归因形态记 `cc-bash-gap`。**事后归因不等于拦截，`would_deny=true` 不表示写入被阻止**；转录可被同 uid 删改，故它只是审计复算，不得据此推断整仓写路径受管或已被阻止。命令原文默认不落盘（只记 digest），需 `.workspace/gate.custom.json` 的 `audit_command_text=true` 显式开启。 <!-- id:R104 -->
-4. **证据与审计**：读证据绑内容指纹 `c<size>:<sha256>` 与覆盖区间 `1..total`；审计事件七型（`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate` / `cc-bash-write` / `cc-bash-gap`）；只记路径/哈希/会话/动作，不落正文。**`unresolved-command` 仅含 `tool_use_id`、`digest`（命令 sha256 前 16 位）与 `class`，不落命令原文、也不做 native tool-use 对账，因此审计本身不可直读归因**——只能以候选命令重算 digest 比对；需要命令级可读归因时必须另行实现对账，不得凭该事件推断具体命令。`worktree-change` 的文件粒度受 git 限制：会话中新出现的**未跟踪目录**在 `git status --porcelain` 中折叠为 `?? dir/`，故 `files` 只到目录级且 `diff_stat` 为空，文件级归因须由 `completion-gate`/artifact 侧补证，不得据目录级条目推断具体写入文件。 <!-- id:R105 -->
+4. **证据与审计**：读证据绑内容指纹 `c<size>:<sha256>` 与覆盖区间 `1..total`；审计事件七型（`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate` / `cc-bash-write` / `cc-bash-gap`）；只记路径/哈希/会话/动作，不落正文。**`unresolved-command` 仅含 `tool_use_id`、`client`、`digest`（命令 sha256 前 16 位）与 `class`，不落命令原文、也不做 native tool-use 对账，因此审计本身不可直读归因**——只能以候选命令重算 digest 比对；需要命令级可读归因时必须另行实现对账，不得凭该事件推断具体命令。`worktree-change` 的文件粒度受 git 限制：会话中新出现的**未跟踪目录**在 `git status --porcelain` 中折叠为 `?? dir/`，故 `files` 只到目录级且 `diff_stat` 为空，文件级归因须由 `completion-gate`/artifact 侧补证，不得据目录级条目推断具体写入文件。 <!-- id:R105 -->
 5. **调参与豁免**：行为调参写 `.workspace/gate.custom.json`（`enabled`/`gate_files`/`write_tools`）；合法直改 gate 文件用**操作级单次令牌**（`python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --ttl 300`），令牌单次消耗、目标集合精确匹配、无通配；不得以「父 Agent 身份」作为豁免依据（payload 无身份字段）。 <!-- id:R106 -->
 6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（当前 8 个 definition），definition 变更即需重审；CC `-p` 免信任但仓库自带 hook 会被执行，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，本守门防「无意识跳过」，不防主动绕过。 <!-- id:R107 -->

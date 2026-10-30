@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v2.6.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.6.1-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -158,7 +158,7 @@ The block is a **safety net, not a substitute**: the rules themselves still come
 
 ```bash
 # (1) presence signal: the plugin logs one line every time it loads (v1.2.0+)
-tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # expect: workspace-gate active (v1.2.0, hermes_home=…)
+tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # expect: workspace-gate active (v1.4.3, hermes_home=…)  ← version follows the plugin
 # (2) behavioural check: inside the workspace, write a file before reading the rules — it must be blocked
 #     with the workspace path and the resolved target in the message
 # (3) state file: <workspace>/.workspace/.hook-state/<session_id>.json records what the session read
@@ -166,7 +166,7 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # expect: workspace-gate
 
 ## Client Governance Hooks (Codex / Claude Code)
 
-The template also ships a **client-side pre-write gate** (see `AGENT_RULES.md` §13): `.workspace/hooks/{hook,gate_core,wtarget,authz,template_anchor}.py` plus `.codex/hooks.json` and `.claude/settings.json`. Coverage truth table:
+The template also ships a **client-side pre-write gate** (see `AGENT_RULES.md` §13): `.workspace/hooks/{hook,gate_core,wtarget,authz,template_anchor,cc_transcript}.py` plus `.codex/hooks.json` and `.claude/settings.json`. Coverage truth table:
 
 | Write path | Codex | Claude Code |
 |---|---|---|

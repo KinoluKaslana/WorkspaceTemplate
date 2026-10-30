@@ -8,7 +8,7 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v2.6.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.6.1-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -157,14 +157,14 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 
 ```bash
 # ① 在场信号：plugin 每次加载都会写一行（v1.2.0 起）
-tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gate active (v1.2.0, hermes_home=…)
+tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gate active (v1.4.3, hermes_home=…)  ← 版本号随插件升级变化
 # ② 行为验证：在工作区内、未读规则时尝试写文件，应被拦截并报出工作区路径与 target
 # ③ 状态文件：<工作区根>/.workspace/.hook-state/<session_id>.json 记录该会话已读文件
 ```
 
 ## 客户端治理 hook（Codex / Claude Code）
 
-模板另随仓库分发一套**客户端写前守门 hook**（对应 `AGENT_RULES.md` §13）：`.workspace/hooks/{hook,gate_core,wtarget,authz,template_anchor}.py` + `.codex/hooks.json` + `.claude/settings.json`，把「先读治理文件、再写工作区文件」落到 Codex CLI / Claude Code 的项目级 hook 层。覆盖面真值表：
+模板另随仓库分发一套**客户端写前守门 hook**（对应 `AGENT_RULES.md` §13）：`.workspace/hooks/{hook,gate_core,wtarget,authz,template_anchor,cc_transcript}.py` + `.codex/hooks.json` + `.claude/settings.json`，把「先读治理文件、再写工作区文件」落到 Codex CLI / Claude Code 的项目级 hook 层。覆盖面真值表：
 
 | 写路径 | Codex | Claude Code |
 |---|---|---|

@@ -1,7 +1,7 @@
 # 工作区级 Hook 技术指南
 
 > 面向两类读者：**完全没接触过 hook 的人**（先看第 0–2 章，用比喻理解机制），以及**要改代码/排查问题的人**（第 3–6 章是逐 harness 的实现拆解）。
-> 对应政策：`AGENT_RULES.md` §12（Hermes 侧）与 §13（Codex / Claude Code 侧），当前政策版本 **2.6.0**。
+> 对应政策：`AGENT_RULES.md` §12（Hermes 侧）与 §13（Codex / Claude Code 侧），当前政策版本 **2.6.1**。
 
 ---
 
@@ -41,7 +41,7 @@ AI 想写文件
 
 ### 2.1 治理文件（gate files）与工作区身份
 
-- 默认治理文件：`AGENT_RULES.md`；可经 `.workspace/gate.custom.json` 的 `gate_files` 增补/替换（多个文件时**逐个**判定）。
+- 默认治理文件：`AGENT_RULES.md`。增补/替换的通道**按 harness 不同、互不联动**：Codex / Claude Code 读 `.workspace/gate.custom.json` 的 `gate_files`（`gate_core.load_conf`）；Hermes 插件读 `.hermes/plugins/workspace-gate/plugin.custom.json` 的 `gate_files`。多个文件时**逐个**判定。
 - 工作区身份：**存在 `.workspace/bootstrap.json`** 即视为一个工作区。不依赖治理文件是否存在——治理文件被删时不是「没有工作区」，而是「读不到 → 拦」（fail-closed）。
 - 目标解析：写入目标先按**绝对路径**落在哪个工作区来决定用哪套规则；解析不出的相对路径一律拒绝（有意为之的过度拦截）。
 
@@ -53,7 +53,8 @@ AI 想写文件
 {
   "AGENT_RULES.md": {
     "anchor": "content",
-    "fingerprint": "c28317:<sha256 全文>",
+    "fingerprint": "c<字节数>:<sha256 全文>",
+    "fingerprint_source": "tool_response | disk",
     "coverage": [[1, 188]],
     "complete": true
   }
@@ -66,7 +67,10 @@ AI 想写文件
 2. **覆盖区间**：读证据记的是「读到了第几行到第几行」，必须**连续覆盖 1..total、中间无缝**。只读首尾两行不算；读了一半再补另一半可以累加（不允许有洞）。
 3. **行数口径**：`total = len(文件字节.split(b"\n"))`，对以换行结尾的文件会比 `wc -l` 多 1（末尾那个「空行哨兵」）。
    - 所以 deny 文案会同时给两个数：`共 188 行（wc -l = 187，差 1 行为文末空行）`。
-   - 用 `sed -n '1,187p'` 读到最后一行是**足够**的（代码会把 187 升格成 188）；反过来真去读 `1,188` 会因越界被拒记（`request-past-eof`）。
+   - 用 `sed -n '1,187p'` 读到最后一行是**足够**的：内容锚定通过且区间止于 `total-1` 时，代码自动升格为 `total`（`record_read`）。
+   - 反过来多读不会「赚到一行」：`sed` 这类**严格区间**读（`strict_interval`）越界到第 188 行会被拒记（`request-past-eof`，既不授证也不误授证）；`read_file` 工具的越界部分被夹到文件末尾，不产生额外证据。
+
+> **结构随 harness 不同，判据相同**：上面的 `{anchor, fingerprint, coverage, complete}` 是 **Codex / Claude Code 侧**（`gate_core` 的 `state["reads"][gate]`）的形状；Hermes 插件用自己的字段（`read` 布尔 + `coverage` + `coverage_rev`）表达同一语义。改一个 harness 的字段名不影响另一个。
 
 ### 2.3 判定伪代码（三种 harness 都走这套语义）
 
@@ -100,7 +104,7 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 
 | 事件 | 含义 |
 |---|---|
-| `unresolved-command` | 看见了 Bash 命令但无法静态判定它写哪（只记 `tool_use_id` + `digest` + `class`） |
+| `unresolved-command` | 看见了 Bash 命令但无法静态判定它写哪（只记 `tool_use_id` + `client` + `digest` + `class`，不落命令原文） |
 | `authorized-gatefile-write` | 用令牌合法写了治理文件（记 nonce） |
 | `unsanctioned-gatefile-change` | 治理文件字节变了但没走令牌；仅 mtime 变化记 `suspect:true`（不撤销许可） |
 | `worktree-change` | 会话边界上的 git 差集（report-only） |
@@ -126,7 +130,7 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 1. `HERMES_ENABLE_PROJECT_PLUGINS=true`（允许发现项目级插件）
 2. `~/.hermes/config.yaml` 的 `plugins.enabled` 里有 `workspace-gate`
 
-> 注意：`hermes plugins list` **不会**列出项目插件（它只列内置插件）。是否生效看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 里的 `workspace-gate active (...)` 一行。
+> 注意：`hermes plugins list` **不会**列出项目插件（它只列内置插件）。是否生效看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 里的 `workspace-gate active (v1.4.3, hermes_home=…)` 一行（版本号随插件升级变化）。
 
 ### 3.2 它挂了哪些 hook
 
@@ -134,8 +138,10 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 |---|---|
 | `pre_tool_call` | 写之前判：目标在工作区内且本会话没有当前修订的完整读证据 → 拦截（内部异常也拦，fail-closed） |
 | `post_tool_call` | 只读工具成功后记账（`read_file` 的正文与行号区间）；失败/截断不记 |
-| `pre_llm_call` | 每个会话至多提醒一次「你还没读治理文件」 |
+| `pre_llm_call` | 提醒「你还没读治理文件」；每个活动阶段（epoch）至多一次——会话被 finalize（archived）后再恢复，可再提醒一次 |
 | `on_session_end` / `on_session_finalize` | 边界审计（按回合有界追加，恢复会话时分阶段记录） |
+
+两条必须知道的口径：① **判定逻辑内部异常一律 block**（fail-closed）；② **空 `session_id` 直接跳过守门**（日志记 `trust boundary`）——会话身份缺失时这道门失效，方向与 ① 相反，属客户端信任边界，不是判定逻辑。
 
 ### 3.3 数据流
 
@@ -153,7 +159,7 @@ pre_tool_call ──► 解析目标 → 找所属工作区 → 校验读证据�
 post_tool_call ──► 若是 read_file：把「读了哪些行 + 当时的指纹」写入状态
 ```
 
-状态文件：`<工作区>/.workspace/.hook-state/<session_id>.json`（已 gitignore）。
+状态文件：`<工作区>/.workspace/.hook-state/<session_id>.json`（已 gitignore）；文件名经消毒，`session_id` 里非 `[A-Za-z0-9_.-]` 的字符替换为 `_`。
 
 ### 3.4 调参（不要改脚本）
 
@@ -207,10 +213,12 @@ Bash 命令字符串
 
 **为什么复合命令（`mkdir -p x && apply_patch …`）要拒而不是硬解析**：如果整条命令里还夹着别的写（比如 `printf … >> AGENT_RULES.md && apply_patch …`），只解析 patch 目标会漏掉前面那个写。宁可 fail-closed 给可读提示，也不放宽。
 
+另外两种**代码支持但上面没画**的形态：`bash -c '…apply_patch …'` / `sh -lc '…'` 会被逐层剥壳再判定（最多 8 层，`depth > 8` 直接拒）；无引号定界符的 heredoc 只有在正文不含 `$`、反引号、反斜杠时按字面接受，否则按「会展开」拒。
+
 ### 4.3 读与写之间
 
 - Codex 的 Bash 读：`cat AGENT_RULES.md`、`sed -n 'a,bp' AGENT_RULES.md` 会被 `post_bash` 识别为读并记账（正文必须与磁盘逐字节一致；`sed` 区间越界不记）。
-- 原生 `apply_patch` 工具：走 `pre_write` 判定；但 Codex 目前**不为原生 patch 发 `PostToolUse`**，所以「写后立即撤销」在 Codex 上靠下一次 Pre / Stop / SessionEnd 的修订复核兜底。
+- 原生 `apply_patch` 工具：走 `pre_write` 判定；但 Codex 目前**不为原生 patch 发 `PostToolUse`**（`.codex/hooks.json` 虽订阅了该 matcher，实测客户端不发；见 `ALPHA-HOOK.md` §3 第 6 条），所以「写后立即撤销」在 Codex 上靠下一次 Pre / `Stop` / `SessionEnd` 的修订复核兜底。
 
 ### 4.4 验证方法（真机，不写代码）
 
@@ -235,7 +243,8 @@ CODEX_HOME=/tmp/cx-home codex exec --json \
 | `PreToolUse` | `Write|Edit` | 写前判定（deny） |
 | `PostToolUse` | `Read` | 读记账 |
 | `PostToolUse` | `Write|Edit` | 写后处理（写治理文件即消费许可） |
-| `Stop` / `SessionEnd` | — | 差集审计 + 完成声明门禁 + **Bash 转录归因** |
+| `Stop` | — | 差集审计 + **完成声明门禁**（advisory）+ Bash 转录归因 |
+| `SessionEnd` | — | 差集审计 + Bash 转录归因（**不做**完成声明门禁） |
 
 ### 5.2 为什么 CC 的 Bash 不拦
 
@@ -301,7 +310,8 @@ claude -p "执行一条 Bash：printf x >> POLICY2.md" \
 |---|---|---|---|
 | 写前拦截（原生文件工具） | ✅ `write_file`/`patch` | ✅ 原生 `apply_patch` | ✅ `Write`/`Edit` |
 | 写前拦截（Bash 静态写） | ⛔ 不在该层 | ✅ `>`/`>>`/`tee`/`sed -i`… | ⛔ 不订阅 |
-| Bash 写的事后归因 | ⛔ | ✅（Pre/Post 事件本身） | ✅ 转录回放（`cc-bash-write`） |
+| Bash 写的覆盖方式 | ⛔ 该层没有 Bash 事件 | **实时拦截**（`PreToolUse`）+ `PostToolUse` 记账 | **仅事后归因**（转录回放 `cc-bash-write`） |
+| 无法识别会话（空 `session_id`） | **跳过守门**（信任边界，fail-open） | 无此路径 | 无此路径 |
 | 读证据 | 行号 + 内容指纹 + 覆盖区间 | 同左 | 同左（从转录重建） |
 | 写治理文件需令牌 | 由 §12 判据覆盖 | ✅ `authz.py mint` | ✅ 同左 |
 | 完成声明门禁（advisory） | 会话结束时审计 | ✅ `Stop` → `completion-gate` | ✅ `Stop` → 同左 |
@@ -312,7 +322,7 @@ claude -p "执行一条 Bash：printf x >> POLICY2.md" \
 ## 7. 常见问题
 
 **Q1：deny 说「共 188 行」，但 `wc -l` 是 187，是不是 bug？**
-不是。代码按 `split(b"\n")` 数，末尾空行算一个「哨兵」；文案现在会同时写 `wc -l = 187`。读 `1..187` 就够；真去读 `1..188` 反而会被判越界不记账。
+不是。代码按 `split(b"\n")` 数，末尾空行算一个「哨兵」；文案现在会同时写 `wc -l = 187`。读 `1..187` 就够（会自动升格为 188）；用 `sed` 真去读 `1..188` 反而会因越界被拒记（`read_file` 则是把越界部分夹掉，同样不多得证据）。
 
 **Q2：为什么 `mkdir -p x && apply_patch …` 被拒？我只想先建目录。**
 把两条命令拆开：先 `mkdir -p x`，再单独 `apply_patch <<'PATCH' …`。复合命令里可能夹带别的写，静态解析不可靠，所以 fail-closed 并给可读提示。
@@ -321,7 +331,7 @@ claude -p "执行一条 Bash：printf x >> POLICY2.md" \
 不会。hook 超时/加载失败是**客户端 fail-open**（放行），不是我们主动放行——这是 §13 R107 明说的边界。
 
 **Q4：AI 用 `python -c` 写文件，能拦吗？**
-Codex 侧：未读时按 B′ 拒（解释器/包装类）；已读后审计放行（不解析内层）。CC 侧：不拦，只能事后转录归因（`class=interpreter_wrapper`）。
+Codex 侧：未读时按 B′ 拒（解释器/包装类）；**已读后直接放行，且不产生审计事件**（不解析内层，属已知盲区）。CC 侧：不拦，只能事后转录归因（`class=interpreter_wrapper`）。
 
 **Q5：能不能防住「读了之后先改文件再改回来」？**
 同 uid 下不能。`unsanctioned-gatefile-change` 能发现字节变化并撤销许可；但攻击者把内容改回去、再伪造时间戳，属于主动绕过，超出本机制范围（需要沙箱/OS 权限层）。

@@ -2,6 +2,13 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 2.6.1（2026-10-30）
+
+- **文档终审修订（`deepseek-v4-pro` + `glm-5.3` 两席、三轮研判，逐条回代码核对）**：`docs/hooks-guide.md` 修正 9 处——① §2.1 明确 gate 清单**按 harness 分流且互不联动**（Codex/CC 读 `.workspace/gate.custom.json`；Hermes 读 `plugin.custom.json`）；② §2.2 补「结构随 harness 不同、判据相同」（`gate_core` 的 `{anchor,fingerprint,fingerprint_source,coverage,complete}` vs Hermes 的 `read`+`coverage`+`coverage_rev`）；③ §2.2 第 3 点拆清「`sed` 严格区间越界 → `request-past-eof`」与「`read_file` 越界被夹到末尾」；④ §2.5 `unresolved-command` 补 `client`；⑤ §3.1 日志行示例改 `v1.4.3`；⑥ §3.2 补「空 `session_id` 直接跳过守门（trust boundary）」、`pre_llm_call` 按 epoch 提醒、状态文件名消毒；⑦ §4.2 补 `bash -c`/`sh -lc` **最多剥 8 层**、无引号 heredoc 拒 `$`/反引号/**反斜杠**；⑧ §4.3 标明「原生 patch 无 `PostToolUse`」为实测（`ALPHA-HOOK.md` §3 第 6 条）；⑨ §6 表与 Q4 改「Codex 实时拦截 + Post 记账」「包装类已读后直接放行且**无审计事件**」。
+- **政策事实修正**：§13 引言「五脚本」→ **六脚本**（补 `cc_transcript`）；R105 的 `unresolved-command` 字段补 `client`（与 `hook.py` 实际落盘一致）。政策 2.6.0 → 2.6.1。
+- **配套同步**：`ALPHA-HOOK.md` §3 第 1/2 条改口径（CC Bash 可经转录回放事后归因、包装类已读后无审计）；`hooks-tests/README.md` 政策版本与脚本计数；两份 README 徽章。
+- 三轮研判记录见工作区 `s5-261022/DOC-R{1,2,3}-*.md` 与 `DOC-REVIEW-CONVERGENCE.md`。回归 80 例全绿，`verify_rules` clean。
+
 ## 2.6.0（2026-10-30，已提交）
 
 - **文档：新增 [`docs/hooks-guide.md`](docs/hooks-guide.md)**（README / README_EN 中链接）——面向小白的三分钟比喻（门禁卡 + 借阅登记）＋ 与 harness 无关的共同机制（治理文件、`c<size>:sha256` 内容指纹、连续覆盖区间、EOF 哨兵、一次性令牌、七型审计事件）＋ **三种 harness 逐项实现拆解**（Hermes 项目插件的 `pre/post_tool_call`；Codex CLI 的事件接线、Bash 分派与 `apply_patch` 可读 deny、fail-open 边界；Claude Code 的写前拦截 + `Stop`/`SessionEnd` 转录回放归因，含跨 Stop 账本、写后消费、同轮二次写三个坑）＋ 真值表 ＋ 排查 FAQ ＋ 接入新 harness 的六步清单 ＋ 术语表。

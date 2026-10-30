@@ -35,8 +35,8 @@
 
 ## 3. 不在覆盖内（必须与能力一起声明）
 
-1. **CC 经 Bash 的一切写入不拦截、无逐条归因**；只能由 Stop/SessionEnd 的差集审计事后发现「哪些文件变了」。
-2. `python -c` / `sh -c` / `perl -e` / `env|sudo|xargs` 包装等：未读时按 B′ **拒绝**；已读后审计放行（不解析内层）。
+1. **CC 经 Bash 的一切写入不拦截、不订阅**；`Stop`/`SessionEnd` 可依 payload 的 `transcript_path` 做转录回放**事后归因**（`cc-bash-write` / `cc-bash-gap`，复算 `would_deny`，不表示写入被阻止），另有差集审计兜底。
+2. `python -c` / `sh -c` / `perl -e` / `env|sudo|xargs` 包装等：未读时按 B′ **拒绝**；已读后**直接放行且不产生审计事件**（不解析内层，属已知盲区）。
 3. **W2 的 `suspect` 只能靠 `mtime_ns` 兜底**：同一命令内「改完改回」且 `mtime_ns` 也被伪造（`touch -r`）时不可见——属主动绕过（`AGENT_RULES.md` §12.3 边界外）。
 4. **W4 只做 advisory + 审计，不在 `stop` 上 deny**：完成声明的机械阻断靠流程（Stop 输出 `systemMessage`、`completion-gate` 落盘），不是硬门禁。
 5. **clone 未 pin 版本**：`template_anchor` 记录 `template_head` 供审计，但不会拒绝「指向旧/可疑克隆」；同 uid 下无法更强。

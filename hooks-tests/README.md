@@ -1,6 +1,6 @@
 # hooks-tests — 工作区写前守门（Codex / Claude Code）测试集
 
-> 模板层资产（`dev` 分支，政策 2.6.0）。`hooks-tests/` 本身**不登记** `TEMPLATE_FILES`；被测的五个 hook 脚本与两份客户端配置已登记（共 28 项）。
+> 模板层资产（`dev` 分支，政策 2.6.1）。`hooks-tests/` 本身**不登记** `TEMPLATE_FILES`；被测的六个 hook 脚本与两份客户端配置已登记（共 28 项）。
 
 ## 被测对象
 
