@@ -1,6 +1,6 @@
 # hooks-tests — 工作区写前守门（Codex / Claude Code）测试集
 
-> 模板层资产（`dev` 分支，政策 2.5.2）。`hooks-tests/` 本身**不登记** `TEMPLATE_FILES`；被测的五个 hook 脚本与两份客户端配置已登记（共 27 项）。
+> 模板层资产（`dev` 分支，政策 2.6.0）。`hooks-tests/` 本身**不登记** `TEMPLATE_FILES`；被测的五个 hook 脚本与两份客户端配置已登记（共 28 项）。
 
 ## 被测对象
 
@@ -15,20 +15,20 @@
 ## 运行
 
 ```bash
-for t in test_wtarget test_bash_dispatch test_apply_patch_ansi test_w2_anchor test_authz test_template_anchor; do
+for t in test_wtarget test_bash_dispatch test_apply_patch_ansi test_w2_anchor test_authz test_template_anchor test_cc_transcript test_cc_wiring; do
   python3 -B hooks-tests/$t.py
 done
 python3 -B hooks-tests/replay_wtarget.py --unit   # 同一识别器矩阵（回放脚本的单测模式）
 ```
 
-当前规模：`test_wtarget` 4 类（内含 86 条断言矩阵）、`test_bash_dispatch` 18、`test_apply_patch_ansi` 9、`test_w2_anchor` 3、`test_authz` 5、`test_template_anchor` 4——**共 43 例**，全绿。
+当前规模（8 套）：`test_wtarget` 4 类（内含 86 条断言矩阵）、`test_bash_dispatch` 18、`test_apply_patch_ansi` 9、`test_w2_anchor` 3、`test_authz` 5、`test_template_anchor` 4、`test_cc_transcript` 32、`test_cc_wiring` 5——**共 80 例**，全绿。
 
 要求 Python ≥ 3.10（纯 stdlib，不装依赖）。测试全部是**进程级**：真实启动 `.workspace/hooks/hook.py`、stdin 喂 payload；**不是**原生 Codex / Claude Code 会话 E2E（原生行为证据见各轮 `*-TEST-REPORT.md` 与 `ROUNDS-FACTS.md`）。
 
 ## 覆盖与边界（诚实口径）
 
 - 覆盖：CC `Write|Edit` 写前守门；Codex `apply_patch`（heredoc / 双引号 / `$'…'`）；Codex Bash 静态可判写（`>`/`>>`/`tee`/`sed -i`/`perl -i`/`truncate`/`cp`/`mv`/`install`/`dd of=`）；解释器/包装类未读 deny（B′）；不可判形态审计放行（`unresolved-command`）；W2 指纹锚（含 `suspect`）；豁免令牌（单次、精确集合）；W4 门禁三键判定。
-- 审计事件五型：`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate`。
+- 审计事件七型：`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate` / `cc-bash-write` / `cc-bash-gap`。
 - `unresolved-command` **只记** `tool_use_id`、`digest=sha256(command)[:16]`、`class`；不落命令正文，也不做 native tool-use 对账——因此审计本身不可直读归因，只能拿候选命令重算 digest 比对。
-- **CC 的 Bash 写不在覆盖内**：不订阅该事件，不拦截、无逐条归因；只能靠会话级差集（Stop/SessionEnd 的 `worktree-change`）与治理文件指纹锚事后发现。
+- **CC 的 Bash 写不订阅、不拦截**：`Stop`/`SessionEnd` 时可依平台 payload 给的 `transcript_path` 做**转录回放事后归因**（`cc-bash-write` / `cc-bash-gap`，复算 `would_deny`）；`would_deny=true` **不表示写入被阻止**，转录可被同 uid 删改，不遍历 `~/.claude/projects/**`，命令原文默认只记 digest（`audit_command_text=true` 才落）。
 - 已知不可判但**不拦**（`unresolved` 且非 `interpreter_wrapper`）：变量/通配目标、子 shell 首词元、`git apply`、`cd`/`pushd` 串联等；`python*`/`sh`/`bash`/`perl`/`make`/`env`/`sudo` 等包装属 B′，未读即 deny。

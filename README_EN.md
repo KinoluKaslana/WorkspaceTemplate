@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v2.2.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.6.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -140,6 +140,8 @@ Clause IDs (`<!-- id:Rn -->`, maintained by [`scripts/mark_rules.py`](scripts/ma
 
 The template ships a **Hermes project-level plugin** (`.hermes/plugins/workspace-gate/`) that turns "read the governance files before writing workspace files" from a soft reminder into a **mechanical block** — see `AGENT_RULES.md` §12:
 
+> **Want the mechanics?** The full write-up — beginner analogy, the read-evidence / fingerprint / coverage semantics, a per-harness breakdown, and a troubleshooting FAQ — is in **[docs/hooks-guide.md](docs/hooks-guide.md)** (Chinese).
+
 | Item | Fact |
 |---|---|
 | Location | `.hermes/plugins/workspace-gate/` (`plugin.yaml` + `__init__.py` + `selfcheck.py`; template-layer locked files, hash-verified) |
@@ -161,6 +163,19 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # expect: workspace-gate
 #     with the workspace path and the resolved target in the message
 # (3) state file: <workspace>/.workspace/.hook-state/<session_id>.json records what the session read
 ```
+
+## Client Governance Hooks (Codex / Claude Code)
+
+The template also ships a **client-side pre-write gate** (see `AGENT_RULES.md` §13): `.workspace/hooks/{hook,gate_core,wtarget,authz,template_anchor}.py` plus `.codex/hooks.json` and `.claude/settings.json`. Coverage truth table:
+
+| Write path | Codex | Claude Code |
+|---|---|---|
+| `apply_patch` / `Write`/`Edit` | Blocked + audited | Blocked + audited |
+| Bash statically decidable writes (`>`/`>>`/`tee`/`sed -i` …) | Blocked when unread / audited | **Not blocked**; post-hoc attribution by transcript replay at `Stop`/`SessionEnd` (`cc-bash-write`) |
+| Bash interpreter/wrapper (`python*`/`sh`/`bash`/…) | Blocked when unread (B′) | **Not blocked**; attributed post hoc (`class=interpreter_wrapper`) |
+| Other undecidable Bash shapes | Audit only (`unresolved-command`) | **Not blocked**; `cc-bash-gap` with a reason code when attribution is impossible |
+
+Boundary that must be stated alongside: **Claude Code Bash writes are neither subscribed nor blocked** — all it gets is **post-hoc attribution at session boundaries** (`would_deny` recomputed from the transcript). Three limits: `would_deny=true` does **not** mean the write was prevented; the transcript is same-uid mutable, so this is not a security boundary; read evidence requires byte-equal transcript content against disk (truncated/short reads grant nothing). Never infer that the whole repo's writes are governed; hook timeouts / load failures / untrusted projects are client-side fail-open. Per-harness details: **[docs/hooks-guide.md](docs/hooks-guide.md)**; event mapping and trust steps: `TOOLS.md` §1.1.
 
 ## Workspace Lifecycle Skills
 
@@ -219,6 +234,8 @@ Inventory is not installation. External skills remain read-only technical refere
 │       ├── workspace-init/  # Adopt a legacy workspace (nine-step migration)
 │       ├── git-init/        # Create a git repo later (five steps + bootstrap record)
 │       └── delivery-closure/ # Six-step delivery closure (mandatory before declaring done)
+├── docs/
+│   └── hooks-guide.md      # Per-harness hook deep dive (Chinese): mechanics, purpose, troubleshooting
 ├── notes/
 │   ├── INDEX.md             # Generated experience index (compact routing)
 │   ├── _INVERTED.md         # Inverted index / related graph (on demand)

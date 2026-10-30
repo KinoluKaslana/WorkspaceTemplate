@@ -129,12 +129,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "39feaf19d3c0126236d7b060db3695aa1223c3c450b84870eb4ccd897351da43",
+    "file_sha256": "968df0968b1808568a464eb82ee7f16656d63418a0991495317be3089e50e527",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "5b06d41e5f200213bdcd33ebdf4c9343dbde454a6459d80e633bf43edeaf5722",
+    "file_sha256": "a003d8bf7c81bf5553d97ba7016b363be4ee77381b9f8b58b225584e42865d53",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -204,7 +204,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "ee6ef426f17c4257f596fc53c1b59316e7eaec0d13bce9456116b5e129c9c90f",
+    "file_sha256": "866a6c37cfc4c7b6f9c3619b9bc97f1e3742a71a2a903d4e1becad9d799e36fb",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
@@ -224,7 +224,7 @@
   },
   ".workspace/hooks/cc_transcript.py": {
     "clauses": {},
-    "file_sha256": "1d420334cd263b4dc8d4f39c308778504b3570f351f7a1b88639dbdedeb1c204",
+    "file_sha256": "61f720f81f4b4252f6423deb0048dd25985513cf231b5bd16921a07b28a87504",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {

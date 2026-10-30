@@ -408,14 +408,15 @@ def _cc_attribution(ws: str, client: str, sid: str, cwd: str, data: dict, source
             core.append_audit_event(ws, client, sid, {
                 "type": "cc-bash-gap", "reason": "no-transcript-path", "source": source})
             return
-        offset = cc_transcript.load_offset(ws, sid)
         cached = cc_transcript.load_state(ws, sid)
         result = cc_transcript.analyze(ws, sid, path, cwd, start_offset=cached["offset"],
-                                       pending=cached.get("pending") or {})
+                                       pending=cached.get("pending") or {},
+                                       books=cached.get("books") or {})
         for record in result.get("events", []):
             core.append_audit_event(ws, client, sid, record)
         cc_transcript.save_state(ws, sid, int(result.get("offset") or 0),
-                                 result.get("stats", {}), result.get("pending") or {})
+                                 result.get("stats", {}), result.get("pending") or {},
+                                 result.get("books") or {})
     except Exception as exc:  # 审计失败不得影响生命周期输出
         core.log(ws, f"cc_attribution failed: {type(exc).__name__}: {exc}")
 

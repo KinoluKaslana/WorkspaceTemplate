@@ -53,6 +53,7 @@ class CcWiring(unittest.TestCase):
     def write_transcript(self, command, with_result=True):
         path = self.proj_dir / f"{self.sid}.jsonl"
         use = {"type": "assistant", "sessionId": self.sid,
+               "cwd": str(self.ws),
                "timestamp": "2026-10-22T09:00:00.000Z",
                "message": {"role": "assistant", "content": [
                    {"type": "tool_use", "id": "call_x", "name": "Bash",
@@ -60,6 +61,7 @@ class CcWiring(unittest.TestCase):
         lines = [json.dumps(use, ensure_ascii=False)]
         if with_result:
             res = {"type": "user", "sessionId": self.sid,
+                   "cwd": str(self.ws),
                    "timestamp": "2026-10-22T09:00:01.000Z",
                    "message": {"role": "user", "content": [
                        {"type": "tool_result", "tool_use_id": "call_x",
@@ -103,6 +105,7 @@ class CcWiring(unittest.TestCase):
         self.assertEqual([e for e in self.audit_events() if e.get("type") == "cc-bash-write"], [])
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps({"type": "user", "sessionId": self.sid,
+                                 "cwd": str(self.ws),
                                  "timestamp": "2026-10-22T09:00:02.000Z",
                                  "message": {"role": "user", "content": [
                                      {"type": "tool_result", "tool_use_id": "call_x",
@@ -120,6 +123,48 @@ class CcWiring(unittest.TestCase):
         writes = [e for e in self.audit_events() if e.get("type") == "cc-bash-write"]
         unique = {(e.get("tool_use_id"), e.get("digest")) for e in writes}
         self.assertEqual(len(unique), 1, writes)
+
+    def test_read_survives_across_stops(self):
+        """Stop 轮 1 的整文件读证据必须跨轮存活：轮 2 写同一 gate 不得误判 would_deny。"""
+        path = self.proj_dir / f"{self.sid}.jsonl"
+        body = (self.ws / GATE).read_bytes().decode("utf-8").split("\n")
+        if body and body[-1] == "":
+            body = body[:-1]
+        numbered = "\n".join(f"{i + 1}\t{line}" for i, line in enumerate(body))
+        use = {"type": "assistant", "sessionId": self.sid, "cwd": str(self.ws),
+               "timestamp": "2026-10-22T09:00:00.000Z",
+               "message": {"role": "assistant", "content": [
+                   {"type": "tool_use", "id": "call_read", "name": "Read",
+                    "input": {"file_path": str(self.ws / GATE), "offset": 1}}]}}
+        res = {"type": "user", "sessionId": self.sid, "cwd": str(self.ws),
+               "timestamp": "2026-10-22T09:00:00.500Z",
+               "message": {"role": "user", "content": [
+                   {"type": "tool_result", "tool_use_id": "call_read",
+                    "is_error": False, "content": numbered}]}}
+        path.write_text(json.dumps(use, ensure_ascii=False) + "\n"
+                        + json.dumps(res, ensure_ascii=False) + "\n", encoding="utf-8")
+        self.invoke("stop", transcript_path=str(path))          # 轮 1：读全，无写
+        # 轮 2：新增一条对同一 gate 的写命令
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "assistant", "sessionId": self.sid,
+                                 "cwd": str(self.ws),
+                                 "timestamp": "2026-10-22T09:05:00.000Z",
+                                 "message": {"role": "assistant", "content": [
+                                     {"type": "tool_use", "id": "call_write", "name": "Bash",
+                                      "input": {"command": f"printf 'x' >> {GATE}"}}]}},
+                                ensure_ascii=False) + "\n")
+            fh.write(json.dumps({"type": "user", "sessionId": self.sid,
+                                 "cwd": str(self.ws),
+                                 "timestamp": "2026-10-22T09:05:00.500Z",
+                                 "message": {"role": "user", "content": [
+                                     {"type": "tool_result", "tool_use_id": "call_write",
+                                      "is_error": False, "content": ""}]}},
+                                ensure_ascii=False) + "\n")
+        self.invoke("stop", transcript_path=str(path))          # 轮 2：写
+        writes = [e for e in self.audit_events() if e.get("type") == "cc-bash-write"]
+        self.assertEqual(len(writes), 1, writes)
+        self.assertFalse(writes[0]["would_deny"], writes[0])
+        self.assertEqual(writes[0]["read_state"], "complete")
 
 
 if __name__ == "__main__":

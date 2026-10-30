@@ -18,10 +18,30 @@ Claude Code 不订阅 Bash hook，但每个 hook payload 都带 `transcript_path
 - 读证据只认**内容逐行可校验**的 Read：剥离行号与 `<system-reminder>` 尾注后必须与
   参考修订逐行相等；`is_error` 的 Read、末尾 `... [truncated]`、短读未到 EOF、
   内容不符一律不授证。
-- 参考修订优先取「第一次写该 gate 之前」的整文件读（CC 没有写前拦截，审计时文件
-  已被本次会话改写）；取不到才回落到磁盘现状。
+- 参考修订三选一（事件里的 `revision` 如实输出）：
+  ① 本轮有该 gate 的**整文件写前读** → `transcript`（读到的内容，优先于任意写）；
+  ② 本轮**被写且无读** → `persisted`（持久化账本里的 sha/total/coverage，**不重新哈希
+  磁盘**：写操作本身就改了磁盘，按写后内容取修订会与旧读账指纹不符，把「轮 1 读全 →
+  轮 2 写同一 gate」复算成 `missing` —— 真机假阳性 F3）；③ 本轮既未读也未写 → `disk`
+  （外部改动检测）。账本里没有该 gate（首轮就写）时回落 `disk`（coverage 空 ⇒ deny）。
+- **写即消费（F3b + F4）**：gate 被写的那一轮，写事件本身仍按**写前**账本判定（F3 的修复），
+  但**每处理完一条命中 gate 的写步骤就立即**把该 gate 的读账消费掉（`coverage = []`、
+  `revision = post-write`、`consumed = True`）——否则同一轮里「读一次 → 连写两次」的第二条
+  仍看到读时的完整 coverage，被误放行（R98：第一条写就消费许可）。轮末再把该 gate 的账本
+  收成**写后修订**（`sha` = 当前磁盘内容指纹、`total` = 当前行数、`coverage = []`）供跨
+  `Stop` 使用，只有**最后一次写之后**的整文件读能重建 `coverage`。顺序敏感：写中间的读属于
+  已不存在的中间修订，后续再有写则前面的读同样作废。账本 `revision` 因此出现第四值
+  `post-write`。解释器包装/不可判形态的写目标未知，不消费账本（已知边界，见 `analyze()`）。
+- `persisted` 分支的能力边界：会话写与外部改动落在**同一轮**时，转录里没有可区分二者的
+  信号，一律按账本放行；gate 文件的外部改动由 `Stop`/`SessionEnd` 的
+  `unsanctioned-gatefile-change`（文件级指纹锚）兜底，不靠本复算。
 - `tool_use` 与 `tool_result` 可能跨 Stop 分批落盘：未拿到 result 的命令进 pending，
   下一轮补齐后再算，不落 `result=ok`。
+- 读证据**跨 Stop 持久**：每轮把每个 gate 的 coverage/revision/total/内容指纹并入 sidecar
+  的 `books`，下一轮以它为基线合并；修订（内容指纹）变化即撤销旧读账。CC 的 `Stop`
+  每轮触发，不持久会把「轮 1 读全 → 轮 2 写」复算成 `missing`（假阳性）。
+- 转录里一条 `cwd` 都没有时 fail-closed：无法排除 slug 碰撞（`/a-b/c` vs `/a/b-c`），
+  记 `cc-bash-gap(transcript-cwd-missing)` 并跳过本轮记录（offset 仍前进，不重放）。
 """
 from __future__ import annotations
 
@@ -194,6 +214,79 @@ def _fmt(intervals: list[list[int]]) -> str:
     return "、".join(str(a) if a == b else f"{a}..{b}" for a, b in intervals) or "无"
 
 
+def _content_fingerprint(raw: bytes) -> str:
+    """修订指纹：只剥掉文末单个 LF（EOF 哨兵）。
+
+    transcript 回放拼出的参考修订不带文末 LF，磁盘修订带；不归一化会让同一内容
+    在两种来源下指纹不同，从而把「上一轮读全」误撤销。
+    """
+    body = raw[:-1] if raw.endswith(b"\n") else raw
+    return hashlib.sha256(body).hexdigest()
+
+
+def gate_key(ws: str, gate: str) -> str:
+    """持久化账本的键：gate 相对工作区的路径（sidecar 不存绝对路径）。"""
+    try:
+        return os.path.relpath(os.path.normpath(gate), os.path.normpath(ws)).replace(os.sep, "/")
+    except ValueError:
+        return os.path.normpath(gate).replace(os.sep, "/")
+
+
+def _book_entry(ws: str, books: object, gate: str) -> dict | None:
+    """从持久化账本取某 gate 的旧读账（键为相对路径，容错绝对路径）。"""
+    if not isinstance(books, dict):
+        return None
+    for key in (gate_key(ws, gate), gate):
+        entry = books.get(key)
+        if isinstance(entry, dict):
+            return entry
+    return None
+
+
+def _carry_coverage(prev: object, prev_total: int, total: int) -> list[list[int]]:
+    """把上一轮（同内容）的覆盖区间搬到本轮的行号空间。
+
+    上一轮读到 EOF（`b >= 旧 total`）等价于本轮读到 EOF：磁盘修订比 transcript
+    参考多一个 EOF 哨兵行，故末端要重锚到本轮 total，否则会误判 partial。
+    """
+    if not isinstance(prev, list):
+        return []
+    out: list[list[int]] = []
+    for item in prev:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        try:
+            a, b = int(item[0]), int(item[1])
+        except (TypeError, ValueError):
+            continue
+        if prev_total > 0 and b >= prev_total:
+            b = total  # 上一轮读到 EOF == 本轮读到 EOF
+        out.append([max(1, a), min(b, total)])
+    return merge_intervals(out)
+
+
+def _ledger_coverage(entry: dict, total: int) -> list[list[int]]:
+    """原样取账本里的覆盖区间（**不做 EOF 重锚**：覆盖区间与 `total` 同源，不再搬运）。
+
+    与 `_carry_coverage` 的区别：后者要在「账本 total ≠ 本轮 total」时把 EOF 锚点搬到
+    新行号空间；本函数用于「本轮被写且无读」的 gate，参考修订直接取账本，两个 total
+    是同一个值，搬运只会制造偏移。
+    """
+    out: list[list[int]] = []
+    for item in (entry.get("coverage") or []):
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        try:
+            a, b = int(item[0]), int(item[1])
+        except (TypeError, ValueError):
+            continue
+        a = max(1, a)
+        b = min(b, total) if total > 0 else b
+        if b >= a:
+            out.append([a, b])
+    return merge_intervals(out)
+
+
 def _strip_lineno(text: str) -> str:
     return "\n".join(_LINENO.sub("", line) for line in text.splitlines())
 
@@ -261,6 +354,47 @@ def _read_state(coverage: list[list[int]], total: int) -> str:
     return "complete"
 
 
+def _consume_book(book: dict) -> None:
+    """**轮内写即消费**：把某 gate 的读账就地置为「写后修订、证据已消费」。
+
+    调用点在「命中 gate 的写步骤判定并落事件之后」，因此该写本身仍按**写前**证据
+    判定；之后的写（同一轮内后续步骤）看到 `coverage=[]` ⇒ `read_state=missing`。
+    写后内容在本轮转录里尚不可知（磁盘现在存的是本轮**最后一次**写的结果，不能拿来
+    当中间修订），故只清证据并标记 `consumed`，由之后的全文件读重建参考修订
+    （见 `_adopt_post_write_revision`）。
+    """
+    book["raw"] = b""
+    book["total"] = 0
+    book["coverage"] = []
+    book["sha"] = _content_fingerprint(b"")
+    book["revision"] = "post-write"
+    book["consumed"] = True
+
+
+def _adopt_post_write_revision(step: dict, book: dict) -> bool:
+    """被消费的账本遇到「写之后的全文件读」：用该读内容当新的参考修订。
+
+    只有 `offset==1` 且未给 `limit` 的整文件读才算（拿局部读当整篇修订会错位行号）。
+    中间修订（写后、下一次写前）没有任何权威副本可对照——磁盘已被后来的写改过，
+    写前转录修订已失效——故这里以该读自身为修订基线；这是同轮「写 → 读」重建
+    coverage 的唯一可用证据，已在模块 docstring 记为已知边界。
+    """
+    inp = step.get("input") or {}
+    try:
+        if int(inp.get("offset") or 1) != 1 or inp.get("limit") is not None:
+            return False
+    except (TypeError, ValueError):
+        return False
+    lines = _read_lines(step)
+    if not lines:
+        return False
+    raw = "\n".join(lines).encode("utf-8")
+    book.update({"raw": raw, "total": total_lines(raw), "coverage": [],
+                 "sha": _content_fingerprint(raw), "revision": "post-write",
+                 "consumed": False})
+    return True
+
+
 def git_changed_files(ws: str) -> list[str] | None:
     """工作区未提交变更（含未跟踪）的绝对路径；非 git 仓返回 None。"""
     try:
@@ -323,7 +457,8 @@ def _reference_revision(steps: list[dict], gate: str, cwd: str) -> list[str] | N
             if not lines:
                 continue
             try:
-                disk = total_lines(open(gate, "rb").read())
+                with open(gate, "rb") as fh:
+                    disk = total_lines(fh.read())
             except OSError:
                 disk = 0
             if step["input"].get("limit") is None or len(lines) >= disk - 1:
@@ -337,12 +472,38 @@ def _reference_revision(steps: list[dict], gate: str, cwd: str) -> list[str] | N
 
 def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
             gate_rel: str | None = None, start_offset: int = 0,
-            pending: dict | None = None) -> dict:
-    """转录 → 事件列表。纯读取，不写状态（调用方负责持久化 offset/pending）。"""
+            pending: dict | None = None, books: dict | None = None) -> dict:
+    """转录 → 事件列表。纯读取，不写状态（调用方负责持久化 offset/pending/books）。
+
+    `books` 是上一轮持久化的读账（键为 gate 相对路径），本轮以它为基线：
+    内容指纹相同才继承覆盖区间，指纹变化即撤销（旧修订的读账不得贴到新修订上）。
+
+    参考修订三选一，事件里的 `revision` 如实输出：
+    - `transcript`：本轮有该 gate 的整文件写前读；
+    - `persisted`：本轮**被写且无读** ⇒ 取账本里的写前修订（sha/total/coverage），
+      **不重新哈希磁盘**（写操作本身就改了磁盘）；
+    - `disk`：本轮既未读也未写（外部改动检测），或账本里没有该 gate（首轮就写）。
+
+    写即消费：**每处理完一条命中 gate 的写步骤就立即**消费该 gate 的读账（`coverage=[]`、
+    `revision=post-write`、`consumed=True`，该写自身仍按写前证据判定），使**同一轮内之后的
+    写**看到 `read_state=missing`；该轮结束时再把被写 gate 的账本收成**写后修订**
+    （`sha`/`total` = 当前磁盘内容与行数、`coverage = []`、`revision = post-write`），
+    只有**最后一次写之后**的整文件读能把 coverage 重建回来（顺序敏感）。因此「读完连写两次」
+    的第二条（不分轮内外）会 `read_state=missing` / `would_deny=true`，重读后恢复 allow。
+
+    已知边界：`interpreter_wrapper` 与 `unresolved` 形态的写目标不可静态确定，不消费
+    任何 gate 的账本（否则一次无关的 `python3 script.py` 也会消耗全部 gate 读许可）。
+    同轮「写 → 读」重建 coverage 时，中间修订没有权威副本可对照（磁盘已被后来的写改过，
+    写前转录修订已失效），只能以该次整文件读自身为修订基线（局部读不采用 ⇒ deny）。
+
+    返回值里的 `books` 供调用方写回 sidecar。
+    """
+    baseline = books if isinstance(books, dict) else {}
     ok, why = validate_path(transcript_path, session_id, cwd)
     if not ok:
         return {"events": [{"type": "cc-bash-gap", "reason": why, "source": "transcript"}],
-                "offset": start_offset, "pending": pending or {}, "stats": {"rejected": why}}
+                "offset": start_offset, "pending": pending or {}, "books": dict(baseline),
+                "stats": {"rejected": why}}
     path = _real(str(transcript_path))
     read = read_records(path, start_offset)
     events: list[dict] = []
@@ -357,7 +518,15 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
     if seen_cwd and _real(cwd) not in seen_cwd:
         return {"events": events + [{"type": "cc-bash-gap", "reason": "transcript-cwd-mismatch",
                                      "source": "transcript"}],
-                "offset": read["offset"], "pending": {}, "stats": {"rejected": "cwd-mismatch"}}
+                "offset": read["offset"], "pending": {}, "books": dict(baseline),
+                "stats": {"rejected": "cwd-mismatch"}}
+    if read["records"] and not seen_cwd:
+        # 一条 cwd 都没有 ⇒ 无法排除 slug 碰撞（/a-b/c 与 /a/b-c 同 slug）：fail-closed，
+        # 不分析这批记录；offset 仍前进，避免同一批记录每轮重放成事件洪水。
+        return {"events": events + [{"type": "cc-bash-gap", "reason": "transcript-cwd-missing",
+                                     "source": "transcript", "records": len(read["records"])}],
+                "offset": read["offset"], "pending": {}, "books": dict(baseline),
+                "stats": {"rejected": "cwd-missing", "records": len(read["records"])}}
 
     uses, results = index_records(read["records"])
     steps: list[dict] = []
@@ -381,35 +550,79 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
         if not events and start_offset == 0:
             events.append({"type": "cc-bash-gap", "reason": "no-tool-use", "source": "transcript"})
         return {"events": events, "offset": read["offset"], "pending": new_pending,
+                "books": dict(baseline),
                 "stats": {"steps": 0, "incomplete": bool(read["incomplete"])}}
 
     gates = resolve_gate_files(ws, gate_rel)
-    books: dict[str, dict] = {}
+    gate_set = {os.path.normpath(g) for g in gates}
+
+    # F3：先预扫本轮 Bash 的静态写目标，再建 books。gate 在本轮「被写且无读」时参考修订
+    # 必须取持久化账本——写操作本身就改了磁盘，按写后磁盘重取修订会与账本指纹不符，
+    # 把「轮 1 读全 → 轮 2 写同一 gate」复算成 missing（真机假阳性）。
+    classified: dict[str, dict] = {}
+    written_gates: set[str] = set()
+    for step in steps:
+        if step["kind"] != "Bash":
+            continue
+        command = str(step["input"].get("command") or "")
+        if not command:
+            continue
+        res = wtarget.classify(command, cwd, gates)
+        classified[step["id"]] = res
+        for target in res.get("targets", []):
+            if os.path.normpath(target) in gate_set:
+                written_gates.add(os.path.normpath(target))
+
+    # 本轮读账：每格 = 本轮参考修订 + 继承自上一轮的覆盖区间。
+    books_state: dict[str, dict] = {}
     for gate in gates:
         ref_lines = _reference_revision(steps, gate, cwd)
+        prev = _book_entry(ws, baseline, gate)
         if ref_lines:
             raw, source = ("\n".join(ref_lines)).encode("utf-8"), "transcript"
+            total = total_lines(raw)
+            fingerprint = _content_fingerprint(raw)
+            coverage: list[list[int]] = []
+            if prev and prev.get("sha") == fingerprint:
+                # 同内容才继承；指纹不同 = 修订已变，旧读账一律作废（清空后按本轮重算）。
+                coverage = _carry_coverage(prev.get("coverage"), int(prev.get("total") or 0), total)
+        elif gate in written_gates and isinstance(prev, dict) and prev.get("sha"):
+            # 本轮被写、本轮无该 gate 的（写前整文件）读：参考修订 = 账本里的**写前**修订。
+            # 不重新哈希磁盘（磁盘已被本轮写改过），total/coverage 与账本同源，原样继承。
+            raw, total = b"", int(prev.get("total") or 0)
+            fingerprint, source = str(prev.get("sha")), "persisted"
+            coverage = _ledger_coverage(prev, total)
         else:
+            # 既未读也未写（或账本里没有该 gate）：用磁盘现状检测外部改动。
             try:
-                raw = open(gate, "rb").read()
+                with open(gate, "rb") as fh:
+                    raw = fh.read()
             except OSError:
                 raw = b""
             source = "disk"
-        books[gate] = {"raw": raw, "total": total_lines(raw),
-                       "coverage": [], "revision": source}
+            total = total_lines(raw)
+            fingerprint = _content_fingerprint(raw)
+            coverage = []
+            if prev and prev.get("sha") == fingerprint:
+                coverage = _carry_coverage(prev.get("coverage"), int(prev.get("total") or 0), total)
+        books_state[gate] = {"raw": raw, "total": total, "coverage": coverage,
+                             "revision": source, "sha": fingerprint}
 
     writes: list[dict] = []
+    last_write_at: dict[str, int] = {}
     stats = {"steps": len(steps), "reads": 0, "bash": 0, "would_deny": 0,
              "sidechain": 0, "incomplete": bool(read["incomplete"])}
 
-    for step in steps:
+    for step_no, step in enumerate(steps):
         if step.get("sidechain"):
             stats["sidechain"] += 1
         if step["kind"] == "Read":
             target = os.path.normpath(os.path.join(cwd, str(step["input"].get("file_path") or "")))
-            book = books.get(target)
+            book = books_state.get(target)
             if not book:
                 continue
+            if book.get("consumed") and not _adopt_post_write_revision(step, book):
+                continue  # 写后的局部读不能当整篇修订 → 不授证（fail-closed）
             iv = _verified_interval(step, book["raw"], book["total"])
             if not iv:
                 continue
@@ -422,14 +635,17 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
         if not command:
             continue
         stats["bash"] += 1
-        res = wtarget.classify(command, cwd, gates)
-        states = {gate: _read_state(book["coverage"], book["total"]) for gate, book in books.items()}
+        res = classified.get(step["id"]) or wtarget.classify(command, cwd, gates)
+        states = {gate: _read_state(book["coverage"], book["total"])
+                  for gate, book in books_state.items()}
         targets = [os.path.normpath(t) for t in res.get("targets", [])]
         gate_targets = [g for g in gates if g in targets]
         if gate_targets:
             would = any(states[g] != "complete" for g in gate_targets)
             state = min((states[g] for g in gate_targets), key=_state_rank)
-            revision = books[gate_targets[0]]["revision"]
+            revision = books_state[gate_targets[0]]["revision"]
+            for g in gate_targets:
+                last_write_at[g] = step_no
         elif res.get("class") == "interpreter_wrapper":
             would = any(states[g] != "complete" for g in gates)
             state = min(states.values(), key=_state_rank) if states else "missing"
@@ -461,10 +677,40 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
             event["command"] = command
         events.append(event)
         writes.append(event)
+        # F4：同一轮内**写完立刻消费**该 gate 的读账（本条写已按写前证据判定完毕）。
+        # 不清账的话，本轮之后的写仍会看到读时的完整 coverage ⇒ 「同一轮读一次、连写两次」
+        # 的第二条被误放行（R98 要求第一条写即消费许可）。
+        for g in gate_targets:
+            _consume_book(books_state[g])
         if res["kind"] == "unresolved" and res.get("class") != "interpreter_wrapper":
             events.append({"type": "cc-bash-gap", "reason": "unresolved-command",
                            "source": "transcript", "digest": event["digest"],
                            "class": res.get("class"), "tool_use_id": step["id"]})
+
+    # F3b：写治理文件即消费许可。上面的写事件仍按**写前**账本判定（F3 修复不变），但该轮
+    # 结束必须把被写 gate 的账本换成**写后修订**——否则下一轮「未读直接写」继续以写前账本
+    # 放行，许可永不撤销。顺序敏感：只有**最后一次写之后**的读能重建 coverage。
+    for gate, step_no in last_write_at.items():
+        try:
+            with open(gate, "rb") as fh:
+                post_raw = fh.read()
+        except OSError:
+            post_raw = b""
+        post_total = total_lines(post_raw)
+        post_coverage: list[list[int]] = []
+        for step in steps[step_no + 1:]:
+            if step["kind"] != "Read":
+                continue
+            target = os.path.normpath(os.path.join(cwd, str(step["input"].get("file_path") or "")))
+            if target != gate:
+                continue
+            iv = _verified_interval(step, post_raw, post_total)
+            if iv:
+                post_coverage.append(iv)
+        books_state[gate] = {"raw": post_raw, "total": post_total,
+                             "coverage": merge_intervals(post_coverage),
+                             "revision": "post-write",
+                             "sha": _content_fingerprint(post_raw)}
 
     changed = git_changed_files(ws)
     if changed is not None:
@@ -473,7 +719,24 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
         if uncovered:
             events.append({"type": "cc-bash-gap", "reason": "changed-but-untargeted",
                            "source": "transcript", "files": sorted(uncovered)[:20]})
-    return {"events": events, "offset": read["offset"], "pending": new_pending, "stats": stats}
+    return {"events": events, "offset": read["offset"], "pending": new_pending,
+            "books": _persist_books(ws, books_state), "stats": stats}
+
+
+def _persist_books(ws: str, books_state: dict[str, dict]) -> dict:
+    """把本轮读账折成 sidecar 形态：`{gate 相对路径: {coverage, revision, total, sha}}`。
+
+    只留可复用的最小字段（不落 raw 正文），区间先合并以免 sidecar 随 Stop 轮数膨胀。
+    """
+    out: dict[str, dict] = {}
+    for gate, book in books_state.items():
+        out[gate_key(ws, gate)] = {
+            "coverage": merge_intervals(book["coverage"]),
+            "revision": book["revision"],
+            "total": book["total"],
+            "sha": book["sha"],
+        }
+    return out
 
 
 # ---- 增量偏移与 pending（按会话 sidecar，原子写）----
@@ -484,30 +747,31 @@ def offset_path(ws: str, session_id: str) -> str:
 
 
 def load_state(ws: str, session_id: str) -> dict:
+    """读 sidecar。旧 sidecar 无 `books` 时按空字典迁移（offset/pending 原样保留）。"""
     try:
         with open(offset_path(ws, session_id), encoding="utf-8") as fh:
             data = json.load(fh)
         if isinstance(data, dict):
             return {"offset": int(data.get("offset") or 0),
                     "pending": data.get("pending") if isinstance(data.get("pending"), dict) else {},
-                    "stats": data.get("stats") if isinstance(data.get("stats"), dict) else {}}
+                    "stats": data.get("stats") if isinstance(data.get("stats"), dict) else {},
+                    "books": data.get("books") if isinstance(data.get("books"), dict) else {}}
     except Exception:
         pass
-    return {"offset": 0, "pending": {}, "stats": {}}
+    return {"offset": 0, "pending": {}, "stats": {}, "books": {}}
 
 
-def load_offset(ws: str, session_id: str) -> int:
-    return load_state(ws, session_id)["offset"]
-
-
-def save_state(ws: str, session_id: str, offset: int, stats: dict, pending: dict) -> None:
+def save_state(ws: str, session_id: str, offset: int, stats: dict, pending: dict,
+               books: dict | None = None) -> None:
+    """写 sidecar。`books` 省略（旧调用）时沿用已持久化的读账，不静默清空。"""
     path = offset_path(ws, session_id)
+    keep = books if isinstance(books, dict) else load_state(ws, session_id).get("books") or {}
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-cc-")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump({"offset": int(offset), "stats": stats, "pending": pending},
-                      fh, ensure_ascii=False)
+            json.dump({"offset": int(offset), "stats": stats, "pending": pending,
+                       "books": keep}, fh, ensure_ascii=False)
         os.replace(tmp, path)
     except Exception:
         pass

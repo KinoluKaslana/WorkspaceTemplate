@@ -31,11 +31,11 @@
 
 | 文件 | SHA-256 |
 |---|---|
-| `.workspace/hooks/hook.py` | `ee6ef426f17c4257f596fc53c1b59316e7eaec0d13bce9456116b5e129c9c90f` |
+| `.workspace/hooks/hook.py` | `866a6c37cfc4c7b6f9c3619b9bc97f1e3742a71a2a903d4e1becad9d799e36fb` |
 | `.workspace/hooks/gate_core.py` | `8da4614815ef3b54250b9fa8ce791b2da4ebd605f12bd50fc2d010b10fdaa8bb` |
 | `.workspace/hooks/wtarget.py` | `689672e6a96f28df9c486460766417567c505f11afc52c6db2b86fe719f97751` |
 | `.workspace/hooks/authz.py` | `2bf60ed12f50e845c087f8f6a7ae7089dfb5c24a1634f1525f85d3cc420a018a` |
-| `.workspace/hooks/cc_transcript.py` | `1d420334cd263b4dc8d4f39c308778504b3570f351f7a1b88639dbdedeb1c204` |
+| `.workspace/hooks/cc_transcript.py` | `178cf53d025985281b3168e9c3d83ac50c6cbbf501f1235b0a53a396913dcf23` |
 | `.workspace/hooks/template_anchor.py` | `1e13a2d838a683037dfdf07c8f8e84c272d76286934738df4b4db2963218166d` |
 | `.codex/hooks.json` | `0f5576327ed4373884115a9483d578283887894af391336a55d2744fc0972f68` |
 | `.claude/settings.json` | `dce37de09847d24e0e505146058726864281bfd9a30586d49183ced26329e7aa` |

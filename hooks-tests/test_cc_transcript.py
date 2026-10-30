@@ -9,6 +9,9 @@
 - 命令原文开关（默认关）
 - changed-but-untargeted 缺口（真实 git 仓）
 - 偏移幂等（第二次无新事件）
+- 跨 Stop 读证据持久化（读全 → 下一轮写仍 complete；修订变化即撤销）
+- 同轮写即消费（读 + 连写两条 ⇒ 第二条 missing/deny；读写写读写 ⇒ 两条都 allow）
+- 无 cwd 转录 fail-closed（transcript-cwd-missing，不进复算）
 
 运行：python3 -B hooks-tests/test_cc_transcript.py
 """
@@ -29,21 +32,40 @@ import cc_transcript as ct  # noqa: E402
 GATE = "AGENT_RULES.md"
 
 
-def _records(session_id, steps):
-    """steps: [(name, input, result_text, is_error)] → 转录行（tool_use + tool_result）。"""
+def _numbered(raw: bytes, offset: int = 1) -> str:
+    """把任意字节内容渲染成 CC Read 结果形态（`<行号>\\t<正文>`）。"""
+    lines = raw.decode("utf-8").split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+    return "\n".join(f"{offset + i}\t{line}" for i, line in enumerate(lines[offset - 1:]))
+
+
+def _records(session_id, steps, cwd=None, id_base=0):
+    """steps: [(name, input, result_text, is_error)] → 转录行（tool_use + tool_result）。
+
+    `cwd` 是真实转录每行都带的字段（analyze 用它绑定会话工作区）；传 None 模拟
+    「整条转录没有 cwd」的异常形态（必须 fail-closed）。
+    """
     out = [{"type": "queue-operation", "sessionId": session_id}]
+    if cwd:
+        out[0]["cwd"] = cwd
     for idx, (name, inp, text, err) in enumerate(steps):
-        tid = f"call_{idx:02d}"
-        out.append({"type": "assistant", "sessionId": session_id,
-                    "timestamp": f"2026-10-22T08:45:{35 + idx:02d}.000Z",
-                    "message": {"role": "assistant",
-                                "content": [{"type": "tool_use", "id": tid, "name": name,
-                                             "input": inp}]}})
-        out.append({"type": "user", "sessionId": session_id,
-                    "timestamp": f"2026-10-22T08:45:{35 + idx:02d}.500Z",
-                    "message": {"role": "user",
-                                "content": [{"type": "tool_result", "tool_use_id": tid,
-                                             "is_error": err, "content": text}]}})
+        tid = f"call_{id_base + idx:02d}"
+        use = {"type": "assistant", "sessionId": session_id,
+               "timestamp": f"2026-10-22T08:45:{35 + idx:02d}.000Z",
+               "message": {"role": "assistant",
+                           "content": [{"type": "tool_use", "id": tid, "name": name,
+                                        "input": inp}]}}
+        res = {"type": "user", "sessionId": session_id,
+               "timestamp": f"2026-10-22T08:45:{35 + idx:02d}.500Z",
+               "message": {"role": "user",
+                           "content": [{"type": "tool_result", "tool_use_id": tid,
+                                        "is_error": err, "content": text}]}}
+        if cwd:
+            use["cwd"] = cwd
+            res["cwd"] = cwd
+        out.append(use)
+        out.append(res)
     return out
 
 
@@ -69,11 +91,20 @@ class CcTranscript(unittest.TestCase):
 
     # ---- 工具 ----
 
-    def write(self, steps, session_id=None):
+    def write(self, steps, session_id=None, with_cwd=True):
         sid = session_id or self.sid
         path = self.proj_dir / f"{sid}.jsonl"
         with open(path, "w", encoding="utf-8") as fh:
-            for rec in _records(sid, steps):
+            for rec in _records(sid, steps, cwd=str(self.ws) if with_cwd else None):
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        return str(path)
+
+    def append(self, steps):
+        """追加下一轮（新 Stop）的转录行，回放 id 与已有行不冲突。"""
+        path = self.proj_dir / f"{self.sid}.jsonl"
+        base = len(Path(path).read_text(encoding="utf-8").splitlines())
+        with open(path, "a", encoding="utf-8") as fh:
+            for rec in _records(self.sid, steps, cwd=str(self.ws), id_base=base):
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
         return str(path)
 
@@ -225,7 +256,8 @@ class CcTranscript(unittest.TestCase):
         numbered = "\n".join(f"{i+1}\t{l}" for i, l in enumerate(lines))
         Path(path).write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in _records(
             self.sid, [("Read", {"file_path": str(self.ws / "TEST-GATE.md"), "offset": 1}, numbered, False),
-                       ("Bash", {"command": "printf 'x' >> TEST-GATE.md"}, "", False)])) + "\n",
+                       ("Bash", {"command": "printf 'x' >> TEST-GATE.md"}, "", False)],
+            cwd=str(self.ws))) + "\n",
             encoding="utf-8")
         res2 = ct.analyze(str(self.ws), self.sid, path, str(self.ws))
         write2 = [e for e in res2["events"] if e["type"] == "cc-bash-write"][0]
@@ -256,6 +288,20 @@ class CcTranscript(unittest.TestCase):
             ("Bash", {"command": "printf 'd\\n' >> G3.md"}, "", False),
         ])
         (self.ws / "G3.md").write_text("a\nb\nc\nd\n", encoding="utf-8")  # 写已落盘
+        res = self.analyze(path)
+        write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
+        self.assertFalse(write["would_deny"], write)
+        self.assertEqual(write["read_state"], "complete")
+        self.assertEqual(write["revision"], "transcript")
+
+    def test_read_and_write_same_round_still_allows(self):
+        # 同一轮「读 + 写」：参考修订取转录里的写前读（写已真的改了磁盘）⇒ 放行。
+        gate = self.ws / GATE
+        path = self.write([
+            ("Read", {"file_path": str(gate), "offset": 1}, self.gate_text(1), False),
+            ("Bash", {"command": f"printf 'x' >> {GATE}"}, "", False),
+        ])
+        gate.write_bytes(gate.read_bytes() + b"same-round\n")  # 写真的落盘
         res = self.analyze(path)
         write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
         self.assertFalse(write["would_deny"], write)
@@ -369,6 +415,269 @@ class CcTranscript(unittest.TestCase):
         gaps = [e for e in res["events"] if e.get("reason") == "changed-but-untargeted"]
         self.assertTrue(gaps, res["events"])
         self.assertIn(str(self.ws / "probe.txt"), gaps[0]["files"])
+
+    # ---- 跨 Stop 持久化 / 无 cwd fail-closed ----
+
+    def test_read_survives_across_stops(self):
+        # CC 的 Stop 每轮触发：轮 1 读全 gate 的读账必须跨轮存活，
+        # 否则轮 2 写同一 gate 会复算出 read_state=missing（假阳性 would_deny）。
+        # 关键：轮 2 的写**真的改了磁盘**（真机 F3 的形态）。若按写后磁盘重取参考修订，
+        # 指纹必与账本不符 ⇒ coverage 被清空 ⇒ 假阳性。
+        path = self.write([("Read", {"file_path": str(self.ws / GATE), "offset": 1},
+                           self.gate_text(1), False)])
+        stop1 = ct.analyze(str(self.ws), self.sid, path, str(self.ws))
+        book = stop1["books"][GATE]
+        self.assertEqual(book["revision"], "transcript")
+        self.assertEqual(ct._read_state(book["coverage"], book["total"]), "complete")
+        sha_before = book["sha"]
+
+        gate = self.ws / GATE
+        gate.write_bytes(gate.read_bytes() + b"## round-2 write\n")  # 模拟写执行
+        self.assertNotEqual(ct._content_fingerprint(gate.read_bytes()), sha_before)
+
+        path = self.append([("Bash", {"command": f"printf 'x' >> {GATE}"}, "", False)])
+        stop2 = ct.analyze(str(self.ws), self.sid, path, str(self.ws),
+                           start_offset=stop1["offset"], books=stop1["books"])
+        writes = [e for e in stop2["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(writes), 1, stop2["events"])
+        self.assertFalse(writes[0]["would_deny"], writes[0])
+        self.assertEqual(writes[0]["read_state"], "complete")
+        self.assertEqual(writes[0]["revision"], "persisted")
+        self.assertEqual(stop2["stats"]["would_deny"], 0)
+        # F3b：本轮写过 ⇒ 账本换成**写后修订**（写前读证据已消费），下一轮未读直接写必 deny
+        post_raw = gate.read_bytes()
+        self.assertEqual(stop2["books"][GATE]["sha"], ct._content_fingerprint(post_raw))
+        self.assertEqual(stop2["books"][GATE]["total"], ct.total_lines(post_raw))
+        self.assertEqual(stop2["books"][GATE]["coverage"], [])
+        self.assertEqual(stop2["books"][GATE]["revision"], "post-write")
+
+    def test_write_without_prior_read_across_stops(self):
+        # 首轮只有写（无读）⇒ 账本里没有该 gate，走磁盘、coverage 空 ⇒ deny；
+        # 轮 2 再写同一 gate 仍须 deny（空账本不得凭空变成「读过」）。
+        gate = self.ws / GATE
+        path = self.write([("Bash", {"command": f"printf 'x' >> {GATE}"}, "", False)])
+        gate.write_bytes(gate.read_bytes() + b"round-1 write\n")  # 写真的落盘
+        stop1 = ct.analyze(str(self.ws), self.sid, path, str(self.ws))
+        first = [e for e in stop1["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(first), 1, stop1["events"])
+        self.assertTrue(first[0]["would_deny"], first[0])
+        self.assertEqual(first[0]["read_state"], "missing")
+        self.assertEqual(first[0]["revision"], "disk", "账本无该 gate ⇒ 按现状走磁盘")
+        self.assertEqual(stop1["books"][GATE]["coverage"], [])
+
+        path = self.append([("Bash", {"command": f"printf 'y' >> {GATE}"}, "", False)])
+        gate.write_bytes(gate.read_bytes() + b"round-2 write\n")
+        stop2 = ct.analyze(str(self.ws), self.sid, path, str(self.ws),
+                           start_offset=stop1["offset"], books=stop1["books"])
+        writes = [e for e in stop2["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(writes), 1, stop2["events"])
+        self.assertTrue(writes[0]["would_deny"], writes[0])
+        self.assertEqual(writes[0]["read_state"], "missing")
+        self.assertEqual(stop2["books"][GATE]["coverage"], [])
+
+    def test_revision_change_revokes_across_stops(self):
+        # 两轮之间 gate 内容变了、且该轮**没有**对它的写（变化无法归因于会话）
+        # → 旧修订的读账不得贴到新修订上（撤销后重算）。
+        path = self.write([("Read", {"file_path": str(self.ws / GATE), "offset": 1},
+                           self.gate_text(1), False)])
+        stop1 = ct.analyze(str(self.ws), self.sid, path, str(self.ws))
+        gate = self.ws / GATE
+        gate.write_bytes(gate.read_bytes() + "\n## 外部追加一节\n".encode("utf-8"))
+
+        # 轮 2：只写非 gate 文件 ⇒ 该 gate 走磁盘分支，外部改动被发现并撤销读账
+        path = self.append([("Bash", {"command": "printf 'x' >> artifacts/other.txt"}, "", False)])
+        stop2 = ct.analyze(str(self.ws), self.sid, path, str(self.ws),
+                           start_offset=stop1["offset"], books=stop1["books"])
+        # 撤销是「清空后重算」，不是把旧 coverage 挂到新修订上
+        self.assertEqual(stop2["books"][GATE]["coverage"], [])
+        self.assertNotEqual(stop2["books"][GATE]["sha"], stop1["books"][GATE]["sha"])
+
+        # 轮 3：再写同一 gate ⇒ 撤销后的空账本必须 deny，不得复活旧读账
+        path = self.append([("Bash", {"command": f"printf 'x' >> {GATE}"}, "", False)])
+        stop3 = ct.analyze(str(self.ws), self.sid, path, str(self.ws),
+                           start_offset=stop2["offset"], books=stop2["books"])
+        writes = [e for e in stop3["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(writes), 1, stop3["events"])
+        self.assertTrue(writes[0]["would_deny"], writes[0])
+        self.assertEqual(writes[0]["read_state"], "missing")
+
+    def test_external_change_in_write_round_uses_ledger(self):
+        # 边界（F3 修法的已知取舍）：外部改动与会话写落在**同一轮**时，转录里没有可区分
+        # 二者的信号，一律按账本放行 —— gate 的外部改动由 Stop/SessionEnd 的
+        # unsanctioned-gatefile-change（文件级指纹锚）兜底，不由本复算负责。
+        # F3b 之后边界不变（该轮判定仍取账本、would_deny=false），但账本在写后换成写后
+        # sha：写前证据已消费，下一轮未读直接写必 deny（含外部改动在内一律重读）。
+        path = self.write([("Read", {"file_path": str(self.ws / GATE), "offset": 1},
+                           self.gate_text(1), False)])
+        stop1 = ct.analyze(str(self.ws), self.sid, path, str(self.ws))
+        sha_before = stop1["books"][GATE]["sha"]
+        gate = self.ws / GATE
+        gate.write_bytes(gate.read_bytes() + "\n## 外部追加一节\n".encode("utf-8"))
+
+        path = self.append([("Bash", {"command": f"printf 'x' >> {GATE}"}, "", False)])
+        stop2 = ct.analyze(str(self.ws), self.sid, path, str(self.ws),
+                           start_offset=stop1["offset"], books=stop1["books"])
+        writes = [e for e in stop2["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(writes), 1, stop2["events"])
+        self.assertFalse(writes[0]["would_deny"], writes[0])
+        self.assertEqual(writes[0]["revision"], "persisted")
+        post_fp = ct._content_fingerprint(gate.read_bytes())
+        self.assertNotEqual(post_fp, sha_before, "夹具前提：写后内容与账本写前修订不同")
+        self.assertEqual(stop2["books"][GATE]["sha"], post_fp,
+                         "写后账本换成写后修订：persisted 判定不下沉到账本")
+        self.assertEqual(stop2["books"][GATE]["coverage"], [], "写前读证据已消费")
+
+    def test_gate_write_consumes_evidence(self):
+        # F3b（写即消费）：R1 读全 → R2 写（allow）→ R3 写（deny，写完未重读）→ R4 重读
+        # → R5 写（allow）。R2 的写事件仍按写前账本判定（F3 修复不变），但该轮结束账本换
+        # 成写后修订（sha/total = 磁盘现状、coverage = []），否则许可永不撤销。
+        gate = self.ws / GATE
+        path = self.write([("Read", {"file_path": str(gate), "offset": 1},
+                            self.gate_text(1), False)])
+        r1 = ct.analyze(str(self.ws), self.sid, path, str(self.ws))
+        self.assertEqual(ct._read_state(r1["books"][GATE]["coverage"],
+                                        r1["books"][GATE]["total"]), "complete")
+
+        def stop(prev):
+            return ct.analyze(str(self.ws), self.sid, path, str(self.ws),
+                              start_offset=prev["offset"], books=prev["books"])
+
+        # R2：写（读后、跨 Stop）⇒ 写事件 allow，账本换成写后修订
+        gate.write_bytes(gate.read_bytes() + b"w1\n")
+        path = self.append([("Bash", {"command": f"printf 'w1\\n' >> {GATE}"}, "", False)])
+        r2 = stop(r1)
+        w2 = [e for e in r2["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(w2), 1, r2["events"])
+        self.assertFalse(w2[0]["would_deny"], w2[0])
+        self.assertEqual(w2[0]["read_state"], "complete")
+        self.assertEqual(w2[0]["revision"], "persisted")
+        post_raw = gate.read_bytes()
+        self.assertEqual(r2["books"][GATE]["sha"], ct._content_fingerprint(post_raw))
+        self.assertEqual(r2["books"][GATE]["total"], ct.total_lines(post_raw))
+        self.assertEqual(r2["books"][GATE]["coverage"], [], "写前读证据已消费")
+        self.assertEqual(r2["books"][GATE]["revision"], "post-write")
+
+        # R3：再写（未重读）⇒ 账本 coverage 空 ⇒ deny / missing
+        gate.write_bytes(gate.read_bytes() + b"w2\n")
+        path = self.append([("Bash", {"command": f"printf 'w2\\n' >> {GATE}"}, "", False)])
+        r3 = stop(r2)
+        w3 = [e for e in r3["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(w3), 1, r3["events"])
+        self.assertTrue(w3[0]["would_deny"], w3[0])
+        self.assertEqual(w3[0]["read_state"], "missing")
+        self.assertEqual(r3["stats"]["would_deny"], 1)
+
+        # R4：重读（读的是 R3 写后的内容）⇒ 账本覆盖重建为 complete
+        path = self.append([("Read", {"file_path": str(gate), "offset": 1},
+                            self.gate_text(1), False)])
+        r4 = stop(r3)
+        self.assertEqual([e for e in r4["events"] if e["type"] == "cc-bash-write"], [],
+                         "重读轮没有写事件")
+        self.assertEqual(ct._read_state(r4["books"][GATE]["coverage"],
+                                        r4["books"][GATE]["total"]), "complete")
+
+        # R5：写 ⇒ 恢复 allow
+        gate.write_bytes(gate.read_bytes() + b"w3\n")
+        path = self.append([("Bash", {"command": f"printf 'w3\\n' >> {GATE}"}, "", False)])
+        r5 = stop(r4)
+        w5 = [e for e in r5["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(w5), 1, r5["events"])
+        self.assertFalse(w5[0]["would_deny"], w5[0])
+        self.assertEqual(w5[0]["read_state"], "complete")
+
+    def test_read_after_write_same_round_rebuilds_coverage(self):
+        # 顺序敏感：同一轮「写 → 完整读」时，写本身按当时的空账 deny（读在写之后，不算写前
+        # 证据），但该轮结束时写后的这次读把 coverage 重建回 post-write 修订 ⇒ 下一轮写 allow。
+        gate = self.ws / GATE
+        path = self.write([("Bash", {"command": f"printf 'w\\n' >> {GATE}"}, "", False)])
+        gate.write_bytes(gate.read_bytes() + b"w\n")          # 写真的落盘
+        path = self.append([("Read", {"file_path": str(gate), "offset": 1},
+                            self.gate_text(1), False)])        # 写后重读（读到写后内容）
+        stop1 = ct.analyze(str(self.ws), self.sid, path, str(self.ws))
+        writes = [e for e in stop1["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(writes), 1, stop1["events"])
+        self.assertTrue(writes[0]["would_deny"], "读在写之后 ⇒ 写那一刻证据为空")
+        self.assertEqual(writes[0]["read_state"], "missing")
+        self.assertEqual(stop1["books"][GATE]["sha"], ct._content_fingerprint(gate.read_bytes()))
+        self.assertEqual(ct._read_state(stop1["books"][GATE]["coverage"],
+                                        stop1["books"][GATE]["total"]), "complete")
+
+        gate.write_bytes(gate.read_bytes() + b"w2\n")
+        path = self.append([("Bash", {"command": f"printf 'w2\\n' >> {GATE}"}, "", False)])
+        stop2 = ct.analyze(str(self.ws), self.sid, path, str(self.ws),
+                           start_offset=stop1["offset"], books=stop1["books"])
+        writes2 = [e for e in stop2["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(writes2), 1, stop2["events"])
+        self.assertFalse(writes2[0]["would_deny"], writes2[0])
+        self.assertEqual(writes2[0]["read_state"], "complete")
+
+    def test_second_write_same_round_denied(self):
+        # F4（真机 R98：会话 211c332c 同一轮连发两条 printf >> POLICY2.md）：第一条写已消费
+        # 许可、修订已变 ⇒ 第二条**未重读**就写必须是 missing/deny。原实现只在轮末清 coverage，
+        # 同一轮内后续写仍看到读时的完整 coverage（假阴性）。
+        gate = self.ws / GATE
+        before = gate.read_bytes()
+        path = self.write([
+            ("Read", {"file_path": str(gate), "offset": 1}, self.gate_text(1), False),
+            ("Bash", {"command": f"printf 'n1' >> {GATE}"}, "", False),
+            ("Bash", {"command": f"printf 'n2' >> {GATE}"}, "", False),
+        ])
+        gate.write_bytes(before + b"n1n2")  # 两条写真的落盘
+        res = self.analyze(path)
+        writes = [e for e in res["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(writes), 2, res["events"])
+        self.assertFalse(writes[0]["would_deny"], writes[0])
+        self.assertEqual(writes[0]["read_state"], "complete")
+        self.assertEqual(writes[0]["revision"], "transcript")
+        self.assertTrue(writes[1]["would_deny"], writes[1])
+        self.assertEqual(writes[1]["read_state"], "missing")
+        self.assertEqual(writes[1]["revision"], "post-write")
+        self.assertEqual(res["stats"]["would_deny"], 1)
+        # 轮末账本仍是写后修订（跨 Stop 语义不变）
+        post_raw = gate.read_bytes()
+        self.assertEqual(res["books"][GATE]["sha"], ct._content_fingerprint(post_raw))
+        self.assertEqual(res["books"][GATE]["coverage"], [])
+        self.assertEqual(res["books"][GATE]["revision"], "post-write")
+
+    def test_read_between_writes_same_round_allows(self):
+        # 既有语义不得回退：同一轮里「写之后的整文件读」仍能重建 coverage ⇒ 之后的写 allow。
+        gate = self.ws / GATE
+        before = gate.read_bytes()
+        after_n1 = before + b"n1\n"
+        path = self.write([
+            ("Read", {"file_path": str(gate), "offset": 1}, _numbered(before), False),
+            ("Bash", {"command": f"printf 'n1\\n' >> {GATE}"}, "", False),
+            ("Read", {"file_path": str(gate), "offset": 1}, _numbered(after_n1), False),
+            ("Bash", {"command": f"printf 'n2\\n' >> {GATE}"}, "", False),
+        ])
+        gate.write_bytes(after_n1 + b"n2\n")  # 两条写真的落盘
+        res = self.analyze(path)
+        writes = [e for e in res["events"] if e["type"] == "cc-bash-write"]
+        self.assertEqual(len(writes), 2, res["events"])
+        for write in writes:
+            self.assertFalse(write["would_deny"], write)
+            self.assertEqual(write["read_state"], "complete")
+        self.assertEqual(writes[0]["revision"], "transcript")
+        self.assertEqual(writes[1]["revision"], "post-write")
+        self.assertEqual(res["stats"]["would_deny"], 0)
+
+    def test_missing_cwd_is_gap_not_analyzed(self):
+        # 整条转录没有 cwd ⇒ 无法排除 slug 碰撞（/a-b/c 与 /a/b-c）：fail-closed，
+        # 记 transcript-cwd-missing，不做任何写归因；offset 前进避免每轮重放。
+        path = self.write([("Bash", {"command": f"printf 'x' >> {GATE}"}, "", False)],
+                          with_cwd=False)
+        res = ct.analyze(str(self.ws), self.sid, path, str(self.ws))
+        gaps = [e for e in res["events"] if e.get("type") == "cc-bash-gap"]
+        self.assertTrue(any(e.get("reason") == "transcript-cwd-missing" for e in gaps), res["events"])
+        self.assertEqual([e for e in res["events"] if e["type"] == "cc-bash-write"], [],
+                         "无 cwd 的转录不得进入复算")
+        self.assertEqual(res["pending"], {})
+        self.assertEqual(res["offset"], os.path.getsize(path), "offset 必须前进，避免重放")
+        # 下一轮没有新记录 → 不再重复报 gap
+        again = ct.analyze(str(self.ws), self.sid, path, str(self.ws),
+                           start_offset=res["offset"])
+        self.assertFalse([e for e in again["events"]
+                          if e.get("reason") == "transcript-cwd-missing"], again["events"])
 
 
 if __name__ == "__main__":

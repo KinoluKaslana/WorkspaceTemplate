@@ -8,7 +8,7 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v2.2.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.6.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -139,6 +139,8 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 
 模板随仓库分发一个 **Hermes 项目级 plugin**（`.hermes/plugins/workspace-gate/`），把「先读治理文件、再写工作区文件」从软提醒变成**机械拦截**——对应 `AGENT_RULES.md` §12：
 
+> **想先弄懂原理？** 完整技术实现（小白版比喻 → 读证据/指纹/覆盖区间的语义 → 三种 harness 逐项拆解 → 排查 FAQ）见 **[docs/hooks-guide.md](docs/hooks-guide.md)**。
+
 | 项 | 事实 |
 |---|---|
 | 位置 | `.hermes/plugins/workspace-gate/`（`plugin.yaml` + `__init__.py` + `selfcheck.py`，属模板层锁定文件，参与哈希校验） |
@@ -167,11 +169,11 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gat
 | 写路径 | Codex | Claude Code |
 |---|---|---|
 | `apply_patch` / `Write`/`Edit` | 受拦 + 审计 | 受拦 + 审计 |
-| Bash 静态可判写（`>`/`>>`/`tee`/`sed -i` 等） | 受拦（未读 deny）/ 审计 | **未覆盖、无审计** |
-| Bash 解释器/包装类（`python*`/`sh`/`bash`/…） | 受拦（未读 B′ deny） | **未覆盖、无审计** |
-| Bash 其余不可判形态 | 只审计（`unresolved-command`） | **未覆盖、无审计** |
+| Bash 静态可判写（`>`/`>>`/`tee`/`sed -i` 等） | 受拦（未读 deny）/ 审计 | **不拦**；`Stop`/`SessionEnd` 转录回放**事后归因**（`cc-bash-write`） |
+| Bash 解释器/包装类（`python*`/`sh`/`bash`/…） | 受拦（未读 B′ deny） | **不拦**；事后归因（`class=interpreter_wrapper`） |
+| Bash 其余不可判形态 | 只审计（`unresolved-command`） | **不拦**；归因不出则记 `cc-bash-gap`（原因码） |
 
-边界必须一并声明：**Claude Code 经 Bash 的一切写入不订阅、不拦截、无逐条归因**（只能由 `Stop`/`SessionEnd` 的会话级差集与治理文件指纹锚事后发现），不得据此推断整仓写路径受管；hook 超时/加载失败为客户端 fail-open。事件映射、文件指纹与信任步骤见 `TOOLS.md` §1.1。
+边界必须一并声明：**Claude Code 经 Bash 的一切写入不订阅、不拦截**；能拿到的只是**会话边界上的事后归因**——`Stop`/`SessionEnd` 依平台给的 `transcript_path` 回放转录、复算 `would_deny`。三点限制：`would_deny=true` **不表示写入被阻止**；转录可被同 uid 删改，不构成安全边界；读证据依赖转录内容与磁盘逐字节一致（截断/短读不授证）。也不得据此推断整仓写路径受管；hook 超时/加载失败/未信任为客户端 fail-open。逐 harness 实现细节见 **[docs/hooks-guide.md](docs/hooks-guide.md)**，事件映射、文件指纹与信任步骤见 `TOOLS.md` §1.1。
 
 ## 工作区生命周期 skills
 
@@ -230,6 +232,8 @@ Agent 将自动完成：
 │       ├── workspace-init/  # 接管老版本工作区（九步迁移）
 │       ├── git-init/        # 后补创建 git 仓库（五步 + bootstrap 登记）
 │       └── delivery-closure/ # 交付闭环六步检查（声明完成前必走）
+├── docs/
+│   └── hooks-guide.md      # 三 harness hook 技术详解（原理 + 作用 + 排查）
 ├── notes/
 │   ├── INDEX.md             # 自动经验索引（紧凑路由）
 │   ├── _INVERTED.md         # 倒排索引/关联图（按需加载）
