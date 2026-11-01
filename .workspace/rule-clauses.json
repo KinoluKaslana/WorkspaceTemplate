@@ -98,18 +98,18 @@
       "R95": "## 11. 交付闭环 skill 指针",
       "R96": "1. 任务模式交付物声明完成之前，必须执行 `.workspace/skills/delivery-closure/` skill 定义的机械闭环流程（产物清点 → note 判定（合并/新建/豁免）→ 索引回写 → 外部动作与机械验证 → 完成声明格式）；§9 末尾完成标准中「需要的 note 和索引回写已完成」的具体执行含义以该 skill 正文为准。",
       "R97": "## 12. 工作区治理 hook（机械守门）",
-      "R98": "1. **守门判据（机械可查）**：对每个**能够确定**的写入目标分别判定其所属工作区，任一目标缺少可信的完整读取证据即拦截；**不得用其他工作区的配置豁免该目标**。受管写入目标的**相对路径**以「核心同源的 task cwd 锚点」（与文件工具实际读写所用 cwd 同源的记录，不含进程 cwd 兜底）解析；解析不出时默认拦截并要求改用绝对路径——这是**有意保留的过度拦截**；工作区级 `plugin.custom.json` 的 `write_tools` 缩窄/放宽只适用于能确定归属的目标。「完整读取」＝同一会话对治理文件**当前修订**的**连续行证据**累计覆盖 `1..total`（分次读取可累加，但**不允许中间有洞**，只读首尾两行不算；证据绑定文件修订指纹，修订变化即撤销既有覆盖与许可，跨修订拼接不算完整）；**空正文、EOF 越界、重复读取存根、行尾截断标记（`... [truncated]`）、解析失败、缺失总行数一律不增加已读证据**（合法正文恰以裸标记结尾时的保守误拦属已知并接受，治理文件应改写该行）。旧版状态的读许可不继承：`evidence_schema` 落后时迁移清空并留档 `*_legacy*`（需要旧行为兼容时必须由用户显式开启并记录降级审计）。判据是「写入目标路径」而非「会话 cwd」，因此「会话在别处、却写本工作区文件」同样被拦。会话收尾由 `on_session_finalize` 写边界审计条目（`boundaries`／`scope=\"session\"`，按生命周期 epoch 与回合计数去重：同一阶段重复收尾幂等覆盖，恢复后的新阶段追加新条目，恢复由任一活动点标记 `status=\"resumed\"`，不以重新读文件为前提）；该边界只归属**会话 cwd 所属工作区**，同一会话经由绝对路径写入的其他工作区不在该条目内（其读证据仍各自记账）。",
-      "R99": "2. **分工与边界**：hook 只保证机械动作不被绕过，不代替 Agent 理解并遵守规则。hook 未启用、被绕过、或在无法归属会话的状态下放行时，§2/§9/§11 的义务**不变**——不得以「hook 没拦」为由免除任何规则义务。",
+      "R98": "1. **守门判据（机械可查）**：对每个**能够确定**的写入目标分别判定其所属工作区，任一目标缺少可信的完整读取证据即拦截；**不得用其他工作区的配置豁免该目标**。受管写入目标的**相对路径**以「核心同源的 task cwd 锚点」（与文件工具实际读写所用 cwd 同源的记录，不含进程 cwd 兜底）解析；解析不出时默认拦截并要求改用绝对路径——这是**有意保留的过度拦截**；工作区级 `plugin.custom.json` 的 `write_tools` 缩窄/放宽只适用于能确定归属的目标。「完整读取」＝同一会话对治理文件**当前修订**的**连续行证据**累计覆盖 `1..total`（分次读取可累加，但**不允许中间有洞**，只读首尾两行不算；证据绑定文件修订指纹，修订变化即撤销既有覆盖与许可，跨修订拼接不算完整）；**空正文、EOF 越界、重复读取存根、行尾截断标记（`... [truncated]`）、解析失败、缺失总行数一律不增加已读证据**（合法正文恰以裸标记结尾时的保守误拦属已知并接受，治理文件应改写该行）。旧版状态的读许可不继承：`evidence_schema` 落后时迁移清空并留档 `*_legacy*`（需要旧行为兼容时必须由用户显式开启并记录降级审计）。判据是「写入目标路径」而非「会话 cwd」，因此「会话在别处、却写本工作区文件」同样被拦。会话收尾由 `on_session_finalize` 写边界审计条目（`boundaries`／`scope=\"session\"`，按生命周期 epoch 与回合计数去重：同一阶段重复收尾幂等覆盖，恢复后的新阶段追加新条目，恢复由任一活动点标记 `status=\"resumed\"`，不以重新读文件为前提）；该边界只归属**会话 cwd 所属工作区**，同一会话经由绝对路径写入的其他工作区不在该条目内（其读证据仍各自记账）。**会话身份缺失（空 `session_id`）不放行**：对工作区内的写入一律拦截（fail-closed，避免把读证据发给无法归属的会话），非写工具与工作区外写入不受影响（v2.7.0 起）。插件同时订阅 `on_session_start` / `subagent_start` / `subagent_stop`：主会话与每个子 agent 各按其 `session_id` 建账，子 agent **不继承**父会话读证据（v1.6.0 起）。拒绝消息统一带 `[workspace-gate:<code>]` 机器可读前缀（`no-session` / `container-unmapped` / `no-read` / `unresolved-target` / `internal-error`），供客户端层断言与审计检索，`action=block` 语义不变（v1.7.0 起）。插件与客户端 hooks 记账对齐：放行时落 `intents{target,base_sha}`，写后落 `commits` 并追加工作区级 `commits.jsonl`（`client=\"hermes\"`），无 intent 的写落 `unobserved`（`reason=\"no-intent\"`）（v1.8.0 起）。",
+      "R99": "2. **分工与边界**：hook 只保证机械动作不被绕过，不代替 Agent 理解并遵守规则。hook 未启用、被绕过、或在无法归属会话的状态下被拦截/放行时，§2/§9/§11 的义务**不变**——不得以「hook 没拦」为由免除任何规则义务。",
       "R100": "3. **调参与信任边界**：调整守门行为写工作区所有的工作区级覆写文件 `.hermes/plugins/workspace-gate/plugin.custom.json`（键：`enabled` / `gate_files` / `write_tools`）；**不得直接修改锁定脚本**（哈希校验会报告漂移，模板同步时被整文件覆盖）。守门状态文件位于 `.workspace/.hook-state/`（已 gitignore）。守门防「无意识跳过」，不防「主动绕过」：拥有 `terminal`/`execute_code` 的 Agent 可在工具层之外绕行，属沙箱/权限层问题，不在本条款范围内。",
       "R101": "## 13. 客户端治理 hook（Claude Code / Codex）",
-      "R102": "1. **适用与身份**：本 hook 只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份仍由 `.workspace/bootstrap.json` 的存在性承担（与 §12 同源，不依赖 gate 文件同时存在）；脚本位于 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定，实例改动会报漂移。",
+      "R102": "1. **适用与身份**：本 hook 只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份仍由 `.workspace/bootstrap.json` 的存在性承担（与 §12 同源，不依赖 gate 文件同时存在）；脚本位于 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定，实例改动会报漂移。**身份粒度**：状态键为 `session_id`，子 agent 再拼 `.agent_id`（CC 的主线程与子 agent 共用同一 `session_id`，实测；Codex 子 agent 实测 payload 带 `agent_id`，状态键相应拼 `.agent_id`），因此**父会话的读证据不授予子 agent**；`SubagentStart` / `SubagentStop` 事件落 `agent-start` / `agent-stop` 审计。",
       "R103": "2. **守门判据**：Codex `apply_patch`（heredoc / 双引号 / `$'…'`）与 Bash 静态可判写（`>`/`>>`/`tee`/`sed -i`/`perl -i`/`truncate`/`cp`/`mv`/`install`/`dd of=`）在目标属本工作区且未完整读 gate 当前修订时 deny；解释器/包装类（`python*`/`sh`/`bash`/`zsh`/`dash`/`perl`/`make`/`env`/`sudo`/`nice`/`nohup`/`timeout`/`xargs`/`command`/`exec`）未读即 deny（B′）；其余不可判形态**只审计不拦**（`unresolved-command`）。",
-      "R104": "3. **客户端差异（必须明说）**：Claude Code 仅 `Write`/`Edit` 受管，**其 Bash 写入不订阅、不拦截**；`Stop`/`SessionEnd` 时会话级差集（`worktree-change`）与治理文件指纹锚（`unsanctioned-gatefile-change`）仍只到文件/目录级，但**可经转录回放做命令级事后归因**：只读平台在 payload 中给出的 `transcript_path`（校验 project slug 与 session_id，不遍历 `~/.claude/projects/**`），把转录里的 `Bash` 命令按静态可判目标分类，并用转录里的 `Read` 记录重建读证据，复算出 `would_deny`（`cc-bash-write` 事件），未归因形态记 `cc-bash-gap`。**事后归因不等于拦截，`would_deny=true` 不表示写入被阻止**；转录可被同 uid 删改，故它只是审计复算，不得据此推断整仓写路径受管或已被阻止。命令原文默认不落盘（只记 digest），需 `.workspace/gate.custom.json` 的 `audit_command_text=true` 显式开启。",
-      "R105": "4. **证据与审计**：读证据绑内容指纹 `c<size>:<sha256>` 与覆盖区间 `1..total`；审计事件七型（`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate` / `cc-bash-write` / `cc-bash-gap`）；只记路径/哈希/会话/动作，不落正文。**`unresolved-command` 仅含 `tool_use_id`、`client`、`digest`（命令 sha256 前 16 位）与 `class`，不落命令原文、也不做 native tool-use 对账，因此审计本身不可直读归因**——只能以候选命令重算 digest 比对；需要命令级可读归因时必须另行实现对账，不得凭该事件推断具体命令。`worktree-change` 的文件粒度受 git 限制：会话中新出现的**未跟踪目录**在 `git status --porcelain` 中折叠为 `?? dir/`，故 `files` 只到目录级且 `diff_stat` 为空，文件级归因须由 `completion-gate`/artifact 侧补证，不得据目录级条目推断具体写入文件。",
+      "R104": "3. **客户端差异（必须明说）**：Claude Code 仅 `Write`/`Edit` 受管，**其 Bash 写入不订阅、不拦截**；`Stop`/`SessionEnd` 时会话级差集（`worktree-change`）与治理文件指纹锚（`unsanctioned-gatefile-change`）仍只到文件/目录级，但**可经转录回放做命令级事后归因**：只读平台在 payload 中给出的 `transcript_path`（校验 project slug 与 session_id，不遍历 `~/.claude/projects/**`），把转录里的 `Bash` 命令按静态可判目标分类，并用转录里的 `Read` 记录重建读证据，复算出 `would_deny`（`cc-bash-write` 事件），未归因形态记 `cc-bash-gap`；**子 agent 的 `agent_transcript_path` 在 `SubagentStop` 时单独回放**，作用域键含 `.agent_id`，与主会话账本互不覆盖（v2.8.4 起）。**事后归因不等于拦截，`would_deny=true` 不表示写入被阻止**；转录可被同 uid 删改，故它只是审计复算，不得据此推断整仓写路径受管或已被阻止。命令原文默认不落盘（只记 digest），需 `.workspace/gate.custom.json` 的 `audit_command_text=true` 显式开启。",
+      "R105": "4. **证据与审计**：读证据绑内容指纹 `c<size>:<sha256>` 与覆盖区间 `1..total`；审计事件十三型（`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate` / `cc-bash-write` / `cc-bash-gap` / `gate-intent` / `gate-commit` / `unobserved-write` / `agent-start` / `agent-stop` / `gate-deny`）；`gate-deny` 记录拒绝本身（`tool` / `tool_use_id` / `targets` / 原因摘要），作用域键含 `.agent_id`，使拒绝可在 `audit-<client>.jsonl` 独立核验而不必回读客户端转录（v2.8.5 起）；写前后以 `gate-intent{target,base_sha}` → `gate-commit{target,new_sha}` 对账，缺失一侧记 `unobserved-write{reason,detected_by}`（**不表示通过**）；commit 另落工作区级 `commits.jsonl`（按 sha 精确匹配，轮转时按 target 压缩保留最新）；只记路径/哈希/会话/动作，不落正文。**`unresolved-command` 仅含 `tool_use_id`、`client`、`digest`（命令 sha256 前 16 位）与 `class`，不落命令原文、也不做 native tool-use 对账，因此审计本身不可直读归因**——只能以候选命令重算 digest 比对；需要命令级可读归因时必须另行实现对账，不得凭该事件推断具体命令。`worktree-change` 的文件粒度受 git 限制：会话中新出现的**未跟踪目录**在 `git status --porcelain` 中折叠为 `?? dir/`，故 `files` 只到目录级且 `diff_stat` 为空，文件级归因须由 `completion-gate`/artifact 侧补证，不得据目录级条目推断具体写入文件。",
       "R106": "5. **调参与豁免**：行为调参写 `.workspace/gate.custom.json`（`enabled`/`gate_files`/`write_tools`）；合法直改 gate 文件用**操作级单次令牌**（`python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --ttl 300`），令牌单次消耗、目标集合精确匹配、无通配；不得以「父 Agent 身份」作为豁免依据（payload 无身份字段）。",
-      "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（当前 8 个 definition），definition 变更即需重审；CC `-p` 免信任但仓库自带 hook 会被执行，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，本守门防「无意识跳过」，不防主动绕过。"
+      "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（当前 10 个 definition，含 SubagentStart/Stop），definition 变更即需重审；CC `-p` 免信任但仓库自带 hook 会被执行，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，本守门防「无意识跳过」，不防主动绕过。"
     },
-    "file_sha256": "18afaef0294ed5bf06de29214db2aed9ad9f86c6dec2901264edf1172b3cbe48",
+    "file_sha256": "661ee741931dd7d7bb6da67c3bba3e33a46cd486c5dd28af678a3c71870aec1b",
     "marked": 107
   },
   "AGENTS.md": {
@@ -129,12 +129,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "04f990ef03f8b621572a7439b75c89acc548fb3e13c243591376d443fb3d3165",
+    "file_sha256": "3b21d974002e07b2babda3e86e2a6a0c421701c421c92e7af1f93c5332711ce2",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "20a47a52bac63c26db7a801712ca5ac3682102be35ad6e3b4cfe98ed24201fc0",
+    "file_sha256": "7d76506311be0b1b8458cc060f0eec0bfe6b07a47b3348134bab91f9e0e5ac13",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -189,27 +189,27 @@
   },
   ".hermes/plugins/workspace-gate/plugin.yaml": {
     "clauses": {},
-    "file_sha256": "fea64d1cde5fcaabb18579267091ae830883cc45f457e5db974930b0ad797aa5",
+    "file_sha256": "80357bb9775ab58ca7f3425dc76859bd917ec532264e88a821b6eb6d824f511c",
     "marked": 0
   },
   ".hermes/plugins/workspace-gate/__init__.py": {
     "clauses": {},
-    "file_sha256": "b35a668e4a86483af34421a3c2747d9745c50924b20fc6983064ced36aa579f1",
+    "file_sha256": "c6a746006bee793670fec5ffb37a20edb3f115376813aaf976cca30cbb0c2782",
     "marked": 0
   },
   ".hermes/plugins/workspace-gate/selfcheck.py": {
     "clauses": {},
-    "file_sha256": "f2df7d113898c24bc8a068773de9c14ff3b2014dfde550ca79e7e7afc91f4e72",
+    "file_sha256": "999de88a41c96e1f66abc7e0b8efb35b1c57f0faaa3f1a26a6687caa00751cab",
     "marked": 0
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "866a6c37cfc4c7b6f9c3619b9bc97f1e3742a71a2a903d4e1becad9d799e36fb",
+    "file_sha256": "7cd7b4f854cf2d836fe7615bf703850cd1dcc2b18718dfc9c45559e9764461f5",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "8da4614815ef3b54250b9fa8ce791b2da4ebd605f12bd50fc2d010b10fdaa8bb",
+    "file_sha256": "78ce8acbe6667905e6f8dabdc747699e1ae7c47a26c76b252251550388595189",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
@@ -224,7 +224,7 @@
   },
   ".workspace/hooks/cc_transcript.py": {
     "clauses": {},
-    "file_sha256": "61f720f81f4b4252f6423deb0048dd25985513cf231b5bd16921a07b28a87504",
+    "file_sha256": "8a99f5c8da6f4bb3abfa1e55183800f2359dbf69aa488e9eadfaea0ca5f3a7e5",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {
@@ -234,12 +234,12 @@
   },
   ".codex/hooks.json": {
     "clauses": {},
-    "file_sha256": "0f5576327ed4373884115a9483d578283887894af391336a55d2744fc0972f68",
+    "file_sha256": "e886b8c86aa310c3d21e1832d435bb3edcde8f8085fe75018611f4c994a9dcad",
     "marked": 0
   },
   ".claude/settings.json": {
     "clauses": {},
-    "file_sha256": "dce37de09847d24e0e505146058726864281bfd9a30586d49183ced26329e7aa",
+    "file_sha256": "6250b74286024e33bbed83e51429ccc6bf7af7467f32692f28f1f8f011288535",
     "marked": 0
   }
 }

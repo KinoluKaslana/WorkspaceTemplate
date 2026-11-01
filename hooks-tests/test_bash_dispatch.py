@@ -308,6 +308,38 @@ class BashDispatch(unittest.TestCase):
         self.assertNotIn("内部错误", reason)
         self.assertIn("Copy File", reason)
 
+    def test_w11_wrapped_read_credits_evidence(self):
+        """v2.8.1：`/usr/bin/zsh -lc "cat AGENT_RULES.md"` 剥壳后应授证（D3）。"""
+        raw = (self.ws / core.GATE_FILE).read_bytes().decode("utf-8", "replace")
+        out = self.invoke("post_bash", "codex", hook_event_name="PostToolUse", tool_name="Bash",
+                          tool_input={"command": '/usr/bin/zsh -lc "cat AGENT_RULES.md"'},
+                          tool_response={"stdout": raw, "exit_code": 0})
+        self.assertEqual(out.get("returncode", 0), 0)
+        st = core.load_state(str(self.ws), "codex", self.sid)
+        entry = (st.get("reads") or {}).get(core.GATE_FILE) or {}
+        self.assertTrue(entry.get("complete"), f"剥壳后仍未授证：{entry}")
+        # 授证后可写
+        out2 = self.invoke("pre_bash", "codex", tool_name="Bash",
+                           tool_input={"command": "printf 'x' > w11.txt"})
+        self.assertFalse(self.denied(out2), "读证据成立后写应放行")
+
+    def test_w12_wrapped_overshoot_still_rejected(self):
+        out = self.invoke("post_bash", "codex", hook_event_name="PostToolUse", tool_name="Bash",
+                          tool_input={"command": '/usr/bin/zsh -lc "sed -n \'1,400p\' AGENT_RULES.md"'},
+                          tool_response={"stdout": "irrelevant", "exit_code": 0})
+        st = core.load_state(str(self.ws), "codex", self.sid)
+        entry = (st.get("reads") or {}).get(core.GATE_FILE) or {}
+        self.assertFalse(entry.get("complete"), "越界读不得授证")
+
+    def test_w13_wrapper_with_expansion_not_stripped(self):
+        raw = (self.ws / core.GATE_FILE).read_bytes().decode("utf-8", "replace")
+        self.invoke("post_bash", "codex", hook_event_name="PostToolUse", tool_name="Bash",
+                    tool_input={"command": '/usr/bin/zsh -lc "cat $HOME/AGENT_RULES.md"'},
+                    tool_response={"stdout": raw, "exit_code": 0})
+        st = core.load_state(str(self.ws), "codex", self.sid)
+        entry = (st.get("reads") or {}).get(core.GATE_FILE) or {}
+        self.assertFalse(entry.get("complete"), "含展开的包装不得授证")
+
     def test_w10_write_missing_path_readable(self):
         # Write 缺 file_path → 可读 deny（指向 file_path），不是内部错误。
         out = self.invoke("pre_write", "cc", tool_name="Write", tool_input={})

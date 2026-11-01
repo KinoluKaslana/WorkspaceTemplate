@@ -145,7 +145,7 @@ def post(path, sid, status="ok", tool="read_file", lines=1, total=None, extra=No
 # A. basic path judgment
 check("A1 abs in-ws, unread", True, pre("write_file", {"path": str(WS / "x.txt")}, "s1"))
 check("A2 abs outside ws", False, pre("write_file", {"path": str(OUT / "x.txt")}, "s1"))
-check("A3 empty session_id -> no gate", False, pre("write_file", {"path": str(WS / "x.txt")}, ""))
+check("A3 empty session_id -> BLOCK (v1.5.0 fail-closed)", True, pre("write_file", {"path": str(WS / "x.txt")}, ""))
 check("A4 ../ escapes ws", False, pre("write_file", {"path": str(WS / ".." / "outside" / "t.txt")}, "s1"))
 check("A5 ~ outside ws", False, pre("write_file", {"path": "~/nope.txt"}, "s1"))
 check("A6 symlink escape (lexical hit)", True,
@@ -836,6 +836,77 @@ D2 = build_ws(ROOT, "v142delete2")
 check("P9-2 no-permission + gate missing -> write BLOCK", True,
       pre("write_file", {"path": str(D2 / "x.txt")}, "p9b"))
 # P9-3: gate 存在但 bootstrap 缺失（疑似残缺工作区）→ 仍不守门（near-miss 语义保持）
+
+# P10 [v1.5.0 / 政策 2.7.0]：空 session_id 不再跳过守门（fail-closed）
+D3 = build_ws(ROOT, "emptysid")
+check("P10-1a empty session_id + workspace write -> BLOCK", True,
+      pre("write_file", {"path": str(D3 / "x.txt")}, ""))
+check("P10-1b empty session_id + workspace patch -> BLOCK", True,
+      pre("patch", {"path": str(D3 / "AGENT_RULES.md"), "old_string": "a"}, ""))
+check("P10-1c empty session_id + unknown relative write -> BLOCK", True,
+      pre("write_file", {"path": "rel/unknown.txt"}, ""))
+check("P10-1d empty session_id + read_file -> pass (read path unchanged)", False,
+      pre("read_file", {"path": str(D3 / "AGENT_RULES.md")}, ""))
+check("P10-1e empty session_id + absolute write outside workspace -> pass", False,
+      pre("write_file", {"path": str(ROOT / "outside.txt")}, ""))
+# P11 [v1.6.0 / 政策 2.8.0]：生命周期事件注册子 agent 身份；子账本不继承父读证据
+L1 = build_ws(ROOT, "lifecycle")
+parent = "lc-parent"
+child = "lc-child"
+wg._on_session_start(session_id=parent, model="test-model", platform="cli")
+wg._subagent_start(parent_session_id=parent, child_session_id=child,
+                   child_subagent_id="sub-1", child_role="worker", child_goal="do things")
+st_parent = wg._load_state(L1, parent)
+st_child = wg._load_state(L1, child)
+expect("P11-1a parent state 记录 main + 子身份", True,
+       str(st_parent.get("agents", {}).get("main", {}).get("session_id")) == parent
+       and child in st_parent.get("agents", {}))
+expect("P11-1b child state 独立登记", True,
+       str(st_child.get("agents", {}).get("main", {}).get("parent_session_id")) == parent)
+types_parent = [e.get("type") for e in (st_parent.get("agent_events") or [])]
+types_child = [e.get("type") for e in (st_child.get("agent_events") or [])]
+expect("P11-2 父子都落 agent-start", True,
+       "agent-start" in types_parent and "agent-start" in types_child)
+post(str(L1 / "AGENT_RULES.md"), parent)
+check("P11-3 父读全后子写仍 BLOCK（不继承）", True,
+      pre("write_file", {"path": str(L1 / "child.txt")}, child))
+check("P11-4 父自己写放行", False,
+      pre("write_file", {"path": str(L1 / "parent.txt")}, parent))
+wg._subagent_stop(parent_session_id=parent, child_session_id=child, child_status="ok", duration_ms=5)
+types_child2 = [e.get("type") for e in (wg._load_state(L1, child).get("agent_events") or [])]
+expect("P11-5 subagent_stop 落 agent-stop", True, "agent-stop" in types_child2)
+
+# P12 [v1.7.0 / 政策 2.8.2]：拒绝消息带机器可读码（供客户端层断言），且 action 语义不变
+res_coded = pre("write_file", {"path": str(L1 / "coded.txt")}, child)
+expect("P12-1 未读拒绝带 [workspace-gate:no-read] 码", True,
+       "[workspace-gate:no-read]" in (res_coded or ""))
+blk = wg._block("示例原因", code="no-session", session="s", tool="write_file", target="/t")
+expect("P12-2 _block 保留 action=block", True, blk.get("action") == "block")
+expect("P12-3 _block 码前缀可 grep", True, blk.get("message", "").startswith("[workspace-gate:no-session] "))
+
+# P13 [v1.8.0]：Hermes 插件与 hooks 对齐的三值记账（intent → commit / unobserved）
+P13 = build_ws(ROOT, "accounting")
+sid13 = "acc-main"
+post(str(P13 / "AGENT_RULES.md"), sid13)
+tgt13 = str(P13 / "acc.txt")
+check("P13-1 读后写放行", False, pre("write_file", {"path": tgt13}, sid13))
+st13 = wg._load_state(P13, sid13)
+expect("P13-2 允许时落 intent", True, tgt13 in (st13.get("intents") or {}))
+(P13 / "acc.txt").write_text("A", encoding="utf-8")
+wg._post_tool_call(tool_name="write_file", args={"path": tgt13}, session_id=sid13, status="ok")
+st13 = wg._load_state(P13, sid13)
+expect("P13-3 写后落 commit", True, any(c.get("target") == tgt13 for c in (st13.get("commits") or [])))
+led13 = P13 / ".workspace" / ".hook-state" / "commits.jsonl"
+rows13 = [json.loads(l) for l in led13.read_text(encoding="utf-8").splitlines() if l.strip()] if led13.is_file() else []
+expect("P13-4 commits.jsonl 记 hermes 行", True,
+       any(r.get("client") == "hermes" and r.get("target") == tgt13 for r in rows13))
+tgt13b = str(P13 / "acc-unobs.txt")
+(P13 / "acc-unobs.txt").write_text("B", encoding="utf-8")
+wg._post_tool_call(tool_name="write_file", args={"path": tgt13b}, session_id=sid13, status="ok")
+st13 = wg._load_state(P13, sid13)
+expect("P13-5 无 intent 的写落 unobserved", True,
+       any(u.get("target") == tgt13b and u.get("reason") == "no-intent" for u in (st13.get("unobserved") or [])))
+
 print()
 
 print()

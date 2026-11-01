@@ -8,7 +8,7 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v2.6.1-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.8.5-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -140,6 +140,7 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 模板随仓库分发一个 **Hermes 项目级 plugin**（`.hermes/plugins/workspace-gate/`），把「先读治理文件、再写工作区文件」从软提醒变成**机械拦截**——对应 `AGENT_RULES.md` §12：
 
 > **想先弄懂原理？** 完整技术实现（小白版比喻 → 读证据/指纹/覆盖区间的语义 → 三种 harness 逐项拆解 → 排查 FAQ）见 **[docs/hooks-guide.md](docs/hooks-guide.md)**。
+> **想接新 harness？** 事件清单（何时触发 / 为何必须 / 缺了会怎样）+ 接入 7 步 + 验收断言见 **[docs/hooks-catalog.md](docs/hooks-catalog.md)**。
 
 | 项 | 事实 |
 |---|---|
@@ -233,7 +234,8 @@ Agent 将自动完成：
 │       ├── git-init/        # 后补创建 git 仓库（五步 + bootstrap 登记）
 │       └── delivery-closure/ # 交付闭环六步检查（声明完成前必走）
 ├── docs/
-│   └── hooks-guide.md      # 三 harness hook 技术详解（原理 + 作用 + 排查）
+│   ├── hooks-guide.md      # 三 harness hook 技术详解（原理 + 作用 + 排查）
+│   └── hooks-catalog.md    # 事件清单 + 新 harness 接入 7 步 + 验收断言
 ├── notes/
 │   ├── INDEX.md             # 自动经验索引（紧凑路由）
 │   ├── _INVERTED.md         # 倒排索引/关联图（按需加载）

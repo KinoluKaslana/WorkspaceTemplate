@@ -2,6 +2,68 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 2.8.5（2026-11-02）
+
+- **`gate-deny` 审计事件**：拒绝本身进审计（`tool` / `tool_use_id` / `targets` / 原因摘要），作用域键含 `.agent_id`，`Stop`/`SubagentStop`/`SessionEnd` flush 到 `audit-<client>.jsonl`。此前拒绝只存在于客户端转录，无法独立核验。`test_cc_wiring` 增 1 例（6 例）。
+- **`scoped_id` 幂等**：客户端把 agent 折进 `session_id` 时不再二次拼接（实测出现过 `cc-<sid>.<agent>.<agent>.json`）。
+- **活体拒绝腿压测（CC 2.1.87-dev，21 次）**：子 agent `tools: Write`（结构上无读工具）→ **10/10** 被拒且文件未落盘（子转录工具集仅 `Write`，审计有 `gate-deny`）；`tools: [Write, Read]` 对照 **5/5** 放行；父读后子冷写 **3/3** 仍拒（账户隔离）；`Bash` 写治理文件 **3/3 未拦截**（已声明的盲区，记 gap 不算 PASS）。带 `Bash` 的 `[Write, Bash]` 白名单未被客户端应用，该变体作废。
+- **口径**：这是「结构性剥读下的 fail-closed 边界测试」，不等于正常配置能兜住对抗性写入。Codex 子 agent 活体拒绝腿仍 NOT-OBSERVED（子 agent 两次都回「没有具体任务」）；Hermes 的拒绝腿属提示词服从型，不得与 CC 等价。
+- 政策 2.8.4 → 2.8.5。
+
+## 2.8.4（2026-11-01）
+
+- **CC 子 agent 转录归因接通**：`SubagentStop` 现在按 payload 的 `agent_transcript_path` 单独回放子转录（作用域键含 `.agent_id`，与主会话账本互不覆盖）。`cc_transcript.validate_path` 接受子 agent 形状 `<slug>/<session_id>/subagents/agent-<agent_id>.jsonl`（父会话不匹配仍拒）。新增 `test_cc_transcript` 用例 1 例（33）。
+- **确定性验证（不依赖模型是否听话）**：
+  - `verify_subagent_attribution.py`：构造「子 agent 转录里有 Bash 写 gate 文件」的样本 → 真实 `hook.py subagent_stop` → 审计产出 `cc-bash-write{would_deny=true}`，子作用域账本成立 → **PASS**。
+  - `verify_codex_subagent_scope.py`：父会话读 gate 后，子 agent（`agent_id` 不同）写 → **deny（父读不传子）**；子自己读后写 → 放行 → **PASS**。
+- **如实披露**：两次**活体**尝试（CC 子 agent 执行 Bash 写、Codex 子 agent 未读直接写）模型都没有照指令做（CC 子 agent 只读文件、Codex 子 agent 回「没有任务」），因此「真模型回合里的子 agent 拒绝腿」仍记为 **NOT-OBSERVED**，上述结论只覆盖确定性路径。
+- 政策 2.8.3 → 2.8.4（R104 补子 agent 转录回放口径）。
+
+## 2.8.3（2026-11-01）
+
+- **插件 v1.8.0：与客户端 hooks 记账对齐**。放行写时落 `intents{target, base_sha}`；`post_tool_call` 处理写工具后落 `commits` 并追加工作区级 `commits.jsonl`（`client="hermes"`，字段与 hooks 同构）；无 intent 的写落 `unobserved{reason="no-intent"}`。`selfcheck` 增 P13-1..5。此前 Hermes 侧只记「读过没有」，无法与 CC/Codex 的 intent/commit 对账。
+- **新增 `docs/hooks-catalog.md`**：三 harness 事件矩阵（何时触发 / 为何必须 / 缺了会怎样）、新 harness 接入 7 步与三条验收断言、6 条已知坑。经 LUNA + GLM 逐条对照 `file:line` 核验。
+- **Codex 子 agent 排查结论**：「workspace Python mode is unconfigured」**不是 Codex 运行时错误**，而是子 agent 读到 §0 首次启动协议后按规则要求用户选择 Python 模式；子 agent 没有用户通道 → 反复空转、零工具调用。修复：① 子 agent 沿用父会话已记录模式，父也未配置则报告阻塞并停止（R2 补充）；② 压测夹具先把 `python.mode` 配置好再测子 agent。
+- **政策 2.8.2 → 2.8.3**：R2 补「子 Agent 无用户通道时不得反复追问」；R98 补插件三值记账口径。
+
+## 2.8.2（2026-10-31）
+
+- **拒绝可观测（插件 v1.7.0）**：`_block()` 统一加 `[workspace-gate:<code>]` 机器可读前缀（`no-session` / `container-unmapped` / `no-read` / `unresolved-target` / `internal-error`），并落一条 best-effort 审计（`BLOCK code=… session=… tool=… target=…`）。**只加可观测性，不动判定**：`action` 仍为 `block`，消息仍指示先读哪份文件；审计写失败不影响 block。`selfcheck` 增 P12-1..3。
+- **拒绝腿（客户端派发）实测**：新增 `deny_leg_probe.py` 走真实分派链 `model_tools._pre_dispatch_guards(skip=False)` → `_dispatch_pre_tool_call_hooks` → 插件 block：未读写 → `error_type=plugin_block`、目标文件未创建；真实读一次后同调用放行 → **PASS**。这是「客户端尊重 block 且不执行工具」的首个确定性证据（不含 LLM）。
+- **真模型回合的自然拒绝：未观测到（如实记录）**。预登记探针（`DENY-PRE-OVERSIZE.md`，N=5，>100KB gate 文件迫使分页）**5/5 次模型仍完整读**后合规放行 → K=0，不追加轮次、不换提示词，也不把它写成命中率。
+- **同轮验证「不影响其他 harness」**：CC/Codex 不加载本插件；其既有控制运行复跑（`test_cc_wiring` 5、`test_cc_transcript` 32 等九套 92 例全绿）、Codex 真机 `apply_patch` 写 smoke 通过、`verify_rules` clean。
+- **四席研判收敛**（GLM / LUNA / deepseek-v4-pro / 主理人）：O2（无模型真实分派）为主证 + O5（机器码与审计）为辅证；O1（toolset 去读工具）经实测不可行（`-t write_file` → `Unknown toolsets`，`file` 组打包读写）；超长文件夹具降级为「预登记、全量披露的存在性探针」。三方一致要求：不得把插件层结论写成客户端层。
+
+## 2.8.1（2026-10-30）
+
+- **Codex 读证据被 shell 包装击穿（D3）修复**：Codex 每条 Bash 都是 `/usr/bin/zsh -lc "…"`，读识别只认裸 `cat`/`sed -n a,bp` → 读证据永远是 0，模型只能自铸令牌或停摆（真机压测复现：读后写仍 deny）。新增 `hook._strip_shell_wrap()`：整串字面解析**恰 3 词**、`exe ∈ {bash, sh, zsh}`、`flag ∈ {-c, -lc}`、递归 ≤3；读识别与 `_bash_patch` 共用。剥壳失败（含 `$`/反引号/反斜杠/引号不闭合）一律原样返回 → 不授证。新增 `test_bash_dispatch` W11/W12/W13（wrapped cat 授证、wrapped 越界不授证、含展开不剥）。
+- **Hermes 插件生命周期（v1.5.0 → v1.6.0）**：注册 `on_session_start` / `subagent_start` / `subagent_stop`；主会话与子 agent 各按自身 `session_id` 建账（`agents` 映射 + `agent_events` 有界缓冲），子 agent **不继承**父会话读证据。`selfcheck` 新增 P11（父子登记、agent-start/stop、父读后子写仍 BLOCK）。
+- **压测（同工作区并发）**：
+  - Hermes 插件层 2 主 × 2 子：reader 子允许、未读子 BLOCK；父账本登记 2 个子身份，`agent-start/stop` 成对。
+  - Codex 2 会话并发（修复后）：读后写 allow + `gate-intent`/`gate-commit`，未读写 deny；两者互不影响。
+  - **Hermes 客户端层（重启后）部分成立**：根因是陈旧的 `.hermes/plugins/workspace-gate/__pycache__/__init__.cpython-311.pyc`（10-22 生成）被加载，日志一直打 `v1.4.3`；清掉 `__pycache__` 并重启 gateway 后加载 **v1.6.0**。2 主 × 各 2 子并发：父账本登记子身份、`agent-start/stop` 成对、子读证据互不继承。**客户端级 deny 腿仍未验证**（未读子由模型自行拒绝写入，不是 hook 拦截）。
+- **仍未闭合**：CC 子 agent 的 Bash 写只有会话级转录归因；Hermes 插件不记录 worktree 基线/未观测写（与客户端 hooks 的 `unobserved` 不对等）；hook 未送达仍为客户端 fail-open。政策 2.8.0 → 2.8.1。
+
+## 2.8.0（2026-10-30）
+
+- **agent 作用域账本（P1）**：状态键 = `session_id`，子 agent 再拼 `.agent_id`（`gate_core.scoped_id/split_scoped_id`，`hook.py::_session` 从 payload 取 `agent_id`）。CC 主线程与子 agent 共用同一 `session_id`（实测 dump：`SessionStart` 无 `agent_id`、`SubagentStart`/子调用带 `agent_id`），因此**父会话的读证据不再授予子 agent**。
+- **子 agent 生命周期**：`.claude/settings.json` 与 `.codex/hooks.json` 增订 `SubagentStart` / `SubagentStop` → `hook.py subagent_start/subagent_stop` 落 `agent-start` / `agent-stop`，子 agent 状态在 SubagentStop 时冲刷进审计。
+- **intent / commit 两阶段**：allow 时落 `gate-intent{target, base_sha}`，写后 `evaluate_post_write` 落 `gate-commit{target, new_sha}`（sha 与磁盘一致才算）；无对应 intent 的写落 `unobserved-write{reason, detected_by}`，**不表示通过**。工作区级 `commits.jsonl` 记录 commit（按 sha 精确匹配；轮转时按 target 压缩保留最新，不丢历史判定所需的最新记录）。
+- **worktree 差集按会话基线**：`SessionStart` 记 `worktree_baseline`，`Stop/SessionEnd` 只报相对基线变化；跨会话/跨 agent 的合法写通过全局 commit 账本排除，避免把别人的写误报成自己的 `unobserved`。
+- **审计事件 7 → 12 型**：新增 `gate-intent` / `gate-commit` / `unobserved-write` / `agent-start` / `agent-stop`。政策 2.7.0 → 2.8.0（§13 R102 身份粒度、R105 事件与对账口径）。
+- **回归**：新增 `hooks-tests/test_agent_scope.py`（8 例：作用域键、父子隔离双向、intent 的 base_sha、commit 的 new_sha、无意图写落 unobserved、worktree 差集、hook 子进程按 agent 落状态）；九套合计 **89 例** 全绿，`verify_rules` clean，`selfcheck` 全绿。
+- **压测（CC 侧）**：同工作区 2 主会话 × 2 子 agent 并发——子 A（读后写）allow + intent/commit；子 B（未读）**deny**；`agent-start/stop` 各 4 条；主会话 worktree 审计不再把子写误报为 `unobserved`；另以 Bash 旁路写 `rogue.txt` 产出真实 `unobserved-write`。
+- **未完成/边界**：Codex 子 agent payload 与压测受本地代理网络故障阻塞（仅确认二进制含 `SubagentStart`）；CC 子 agent 的 **Bash 写**仍只有会话级转录归因（`agent_transcript_path` 未回放）；Hermes 插件未接 `on_session_start`/`subagent_start`；hook 未送达仍为客户端 fail-open。
+
+
+## 2.7.0（2026-10-30）
+
+- **空 `session_id` 改为 fail-closed（行为变更）**：Hermes 项目插件原先在 `session_id` 为空时**跳过守门**（日志 `trust boundary`）。多 Agent/多 harness 并发测试证实这条通道会被用作无身份写入的口子（CC 主线程与子 agent 共用同一 `session_id`、Hermes persistence-disabled fork 与父共享 id、身份本身是客户端自报），因此改为：**写工具 + 目标落在工作区内（或相对目标无法解析 / 目标缺失）→ 一律 deny**；非写工具与工作区外绝对路径写入不受影响。插件 `1.4.3 → 1.5.0`（`plugin.yaml` 与激活日志同步）。
+- **政策 §12 R98 补边界句**：会话身份缺失时不放行，写入工作区文件一律拦截（fail-closed），非写工具与工作区外写入不受影响；R99 措辞同步为「被拦截/放行时义务不变」。政策 `2.6.1 → 2.7.0`。
+- **回归**：`selfcheck.py` 旧用例 `A3 empty session_id -> no gate` 改判为 **BLOCK**，新增 `P10-1a..1e`（空 id + 工作区写 / patch / 未知相对路径 → BLOCK；空 id + `read_file` / 工作区外绝对路径 → 放行）。全部通过。
+- **文档**：`docs/hooks-guide.md` §3.2 与 §6 真值表、`hooks-tests/README.md`、两份 README 徽章同步到 2.7.0。
+- **未包含（仍为提案）**：agent 粒度账本（`(harness, session_id, agent_id?)`）、`intent/commit` 两阶段与 `unobserved` 三值记账——见工作区 `mc-261030/SESSION-ID-DECISION.md`，待单独排期。
+
 ## 2.6.1（2026-10-30）
 
 - **文档终审修订（`deepseek-v4-pro` + `glm-5.3` 两席、三轮研判，逐条回代码核对）**：`docs/hooks-guide.md` 修正 9 处——① §2.1 明确 gate 清单**按 harness 分流且互不联动**（Codex/CC 读 `.workspace/gate.custom.json`；Hermes 读 `plugin.custom.json`）；② §2.2 补「结构随 harness 不同、判据相同」（`gate_core` 的 `{anchor,fingerprint,fingerprint_source,coverage,complete}` vs Hermes 的 `read`+`coverage`+`coverage_rev`）；③ §2.2 第 3 点拆清「`sed` 严格区间越界 → `request-past-eof`」与「`read_file` 越界被夹到末尾」；④ §2.5 `unresolved-command` 补 `client`；⑤ §3.1 日志行示例改 `v1.4.3`；⑥ §3.2 补「空 `session_id` 直接跳过守门（trust boundary）」、`pre_llm_call` 按 epoch 提醒、状态文件名消毒；⑦ §4.2 补 `bash -c`/`sh -lc` **最多剥 8 层**、无引号 heredoc 拒 `$`/反引号/**反斜杠**；⑧ §4.3 标明「原生 patch 无 `PostToolUse`」为实测（`ALPHA-HOOK.md` §3 第 6 条）；⑨ §6 表与 Q4 改「Codex 实时拦截 + Post 记账」「包装类已读后直接放行且**无审计事件**」。

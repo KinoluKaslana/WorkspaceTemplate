@@ -1,23 +1,106 @@
 {
   "hooks": {
     "SessionStart": [
-      {"hooks": [{"type": "command", "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" session_start", "timeout": 10, "statusMessage": "workspace-gate"}]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" session_start",
+            "timeout": 10,
+            "statusMessage": "workspace-gate"
+          }
+        ]
+      }
     ],
     "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" prompt_submit", "timeout": 10}]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" prompt_submit",
+            "timeout": 10
+          }
+        ]
+      }
     ],
     "PreToolUse": [
-      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" pre_write", "timeout": 10, "statusMessage": "workspace-gate"}]}
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" pre_write",
+            "timeout": 10,
+            "statusMessage": "workspace-gate"
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      {"matcher": "Read", "hooks": [{"type": "command", "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" post_read", "timeout": 10}]},
-      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" post_write", "timeout": 10}]}
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" post_read",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" post_write",
+            "timeout": 10
+          }
+        ]
+      }
     ],
     "Stop": [
-      {"hooks": [{"type": "command", "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" stop", "timeout": 10}]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" stop",
+            "timeout": 10
+          }
+        ]
+      }
     ],
     "SessionEnd": [
-      {"hooks": [{"type": "command", "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" session_end", "timeout": 10}]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_CLIENT=cc python3 \"${CLAUDE_PROJECT_DIR}/.workspace/hooks/hook.py\" session_end",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_CLIENT=cc /usr/bin/python3 \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.workspace/hooks/hook.py\" subagent_start",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_CLIENT=cc /usr/bin/python3 \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.workspace/hooks/hook.py\" subagent_stop",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

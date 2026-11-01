@@ -1,6 +1,6 @@
 # hooks-tests — 工作区写前守门（Codex / Claude Code）测试集
 
-> 模板层资产（`dev` 分支，政策 2.6.1）。`hooks-tests/` 本身**不登记** `TEMPLATE_FILES`；被测的六个 hook 脚本与两份客户端配置已登记（共 28 项）。
+> 模板层资产（`dev` 分支，政策 2.8.1）。`hooks-tests/` 本身**不登记** `TEMPLATE_FILES`；被测的六个 hook 脚本与两份客户端配置已登记（共 28 项）。
 
 ## 被测对象
 
@@ -21,7 +21,7 @@ done
 python3 -B hooks-tests/replay_wtarget.py --unit   # 同一识别器矩阵（回放脚本的单测模式）
 ```
 
-当前规模（8 套）：`test_wtarget` 4 类（内含 86 条断言矩阵）、`test_bash_dispatch` 18、`test_apply_patch_ansi` 9、`test_w2_anchor` 3、`test_authz` 5、`test_template_anchor` 4、`test_cc_transcript` 32、`test_cc_wiring` 5——**共 80 例**，全绿。
+当前规模（9 套）：`test_wtarget` 4 类（内含 86 条断言矩阵）、`test_bash_dispatch` 21、`test_apply_patch_ansi` 9、`test_w2_anchor` 3、`test_authz` 5、`test_template_anchor` 4、`test_cc_transcript` 33、`test_cc_wiring` 6、`test_agent_scope` 9——**共 94 例**，全绿。
 
 要求 Python ≥ 3.10（纯 stdlib，不装依赖）。测试全部是**进程级**：真实启动 `.workspace/hooks/hook.py`、stdin 喂 payload；**不是**原生 Codex / Claude Code 会话 E2E（原生行为证据见各轮 `*-TEST-REPORT.md` 与 `ROUNDS-FACTS.md`）。
 

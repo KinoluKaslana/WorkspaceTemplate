@@ -83,6 +83,24 @@ class CcWiring(unittest.TestCase):
                     events.extend(json.loads(line).get("events", []))
         return events
 
+    def test_pre_write_deny_is_audited(self):
+        """v2.8.5：deny 不只出现在客户端转录，审计里要有 gate-deny（作用域键含 agent）。"""
+        agent = "bbbbccccddddeeeeffff000011112222"
+        out = self.invoke("pre_write", agent_id=agent,
+                          tool_name="Write", tool_use_id="call_deny_1",
+                          tool_input={"file_path": str(self.ws / "denied.txt"), "content": "x"})
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
+        # 子作用域账本里的 gate-deny（flush 前的缓冲即可作为证据，Stop/SessionEnd 会写进 audit）
+        child_state = self.ws / ".workspace" / ".hook-state" / f"cc-{self.sid}.{agent}.json"
+        self.assertTrue(child_state.is_file(), "子作用域账本应存在")
+        events = json.loads(child_state.read_text(encoding="utf-8")).get("events") or []
+        self.invoke("session_end", session_id=f"{self.sid}.{agent}")
+        denials = [e for e in events if e.get("type") == "gate-deny"]
+        self.assertTrue(denials, "审计里应有 gate-deny")
+        self.assertEqual(denials[0]["tool"], "Write")
+        self.assertEqual(denials[0]["tool_use_id"], "call_deny_1")
+        self.assertTrue(denials[0]["targets"][0].endswith("denied.txt"))
+
     def test_stop_records_would_deny(self):
         path = self.write_transcript(f"printf 'x' >> {GATE}")
         out = self.invoke("stop", transcript_path=path)

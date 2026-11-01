@@ -243,6 +243,168 @@ def consume_authz(ws_root: str, targets: list[str]) -> dict | None:
 
 # ------------------------------------------------------------ 状态（flock + 原子写）
 
+
+# ------------------------------------------------------------ agent 作用域（2.7.0 / P1）
+AGENT_SCOPE_SEP = "."
+
+
+def scoped_id(session_id: str, agent_id: object = None) -> str:
+    """把 (session, agent) 折叠成状态键；无 agent 时保持原样（主线程）。
+
+    状态文件名沿用 `_state_path` 的 `{client}-{sid}.json`，scoped 键形如
+    `<session>.<agent>`，因此同一会话的不同 agent 各有独立账本与锁。
+    """
+    if not isinstance(session_id, str) or not session_id:
+        raise ValueError("missing session identity")
+    if not isinstance(agent_id, str) or not agent_id.strip():
+        return session_id
+    agent = agent_id.strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", agent):
+        agent = sha256_hex(agent.encode("utf-8"))[:32]
+    # 幂等：有些客户端会把 agent 折进 session_id 一起给，重复拼接会让同一子 agent
+    # 出现两个账本（v2.8.5 实测：cc-<sid>.<agent>.<agent>.json）。
+    if session_id.endswith(f"{AGENT_SCOPE_SEP}{agent}"):
+        return session_id
+    return f"{session_id}{AGENT_SCOPE_SEP}{agent}"
+
+
+def split_scoped_id(key: object) -> tuple[str, str | None]:
+    if not isinstance(key, str):
+        return "", None
+    base, sep, agent = key.partition(AGENT_SCOPE_SEP)
+    return (base, agent) if sep and agent else (key, None)
+
+
+def file_sha(path: object) -> str | None:
+    try:
+        return sha256_hex(Path(str(path)).read_bytes())
+    except OSError:
+        return None
+
+
+def record_intent(state: dict, targets: list[str]) -> list[dict]:
+    """写前意图：target + 写前内容 sha（不存在则 None）。"""
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    recs = []
+    events = state.get("events")
+    if not isinstance(events, list):
+        events = []
+    for target in targets:
+        rec = {"type": "gate-intent", "target": os.path.normpath(str(target)),
+               "base_sha": file_sha(target), "ts": ts}
+        events.append(rec)
+        recs.append(rec)
+    state["events"] = events[-200:]
+    return recs
+
+
+def worktree_snapshot(ws_root: str) -> dict[str, str | None]:
+    """工作区快照：git status 列出的路径 → 内容 sha（用于「本次会话新增变化」）。"""
+    snap: dict[str, str | None] = {}
+    try:
+        st = subprocess.run(["git", "-C", ws_root, "status", "--porcelain"],
+                            capture_output=True, text=True, timeout=5)
+        if st.returncode != 0:
+            return snap
+        for line in (st.stdout or "").splitlines():
+            if len(line) < 4:
+                continue
+            rel = line[3:].strip()
+            if " -> " in rel:
+                rel = rel.split(" -> ")[-1].strip()
+            if not rel:
+                continue
+            abs_path = os.path.normpath(os.path.join(ws_root, rel))
+            snap[rel] = file_sha(abs_path) if os.path.isfile(abs_path) else None
+    except Exception:
+        return snap
+    return snap
+
+
+def sibling_commits(ws_root: str, client: str, session_id: str) -> set[str]:
+    """同一会话（含其所有子 agent 作用域）已 commit 的目标集合。
+
+    worktree 差集是**按会话**算的，而 commit 落在各 agent 的作用域账本里；
+    不合并就会把「子 agent 合法写」误报成 unobserved-write。
+    """
+    base, _ = split_scoped_id(session_id)
+    out: set[str] = set()
+    try:
+        d = Path(ws_root) / STATE_DIRNAME
+        prefix = f"{client}-{base}"
+        for path in d.glob(f"{client}-{base}*.json"):
+            stem = path.name[len(client) + 1:-5]
+            if stem != base and not stem.startswith(base + AGENT_SCOPE_SEP):
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            for e in (data.get("events") or []):
+                if isinstance(e, dict) and e.get("type") == "gate-commit":
+                    t = e.get("target")
+                    if isinstance(t, str):
+                        out.add(t)
+    except Exception:
+        return out
+    return out
+
+
+def _append_commit_ledger(ws_root: str, client: str, session_id: str, rec: dict) -> None:
+    """工作区级 commit 账本（跨会话/跨 agent）：worktree 差集按它判定「已观测」。"""
+    try:
+        d = Path(ws_root) / STATE_DIRNAME
+        d.mkdir(parents=True, exist_ok=True)
+        p = d / "commits.jsonl"
+        if p.exists() and p.stat().st_size > LOG_ROTATE_BYTES:
+            # 压缩而不是丢弃：按 target 只保留最新一条（体积按 target 数有界）。
+            latest: dict[str, dict] = {}
+            try:
+                for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                    try:
+                        entry = json.loads(line)
+                    except Exception:
+                        continue
+                    t = entry.get("target")
+                    if isinstance(t, str):
+                        latest[t] = entry
+            except Exception:
+                latest = {}
+            with open(p, "w", encoding="utf-8") as fh:
+                for entry in latest.values():
+                    fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        with open(p, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"client": client, "session_id": session_id, **rec},
+                                ensure_ascii=False) + "\n")
+    except Exception as exc:
+        log(ws_root, f"commit ledger append failed: {exc}")
+
+
+def committed_targets(ws_root: str, current_sha: dict[str, str | None]) -> set[str]:
+    """从工作区级账本读出「当前磁盘 sha 与账本记录一致」的目标集合。"""
+    out: set[str] = set()
+    try:
+        p = Path(ws_root) / STATE_DIRNAME / "commits.jsonl"
+        if not p.is_file():
+            return out
+        text = p.read_text(encoding="utf-8", errors="replace")
+        lines = text.splitlines()
+        # 压缩后体积按 target 数有界；这里不硬截行数，避免「轮转后判定不到」。
+        if len(lines) > 50000:
+            lines = lines[-50000:]
+        for line in lines:
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            t = rec.get("target")
+            sha = rec.get("new_sha")
+            if isinstance(t, str) and isinstance(sha, str) and current_sha.get(t) == sha:
+                out.add(t)
+    except Exception:
+        return out
+    return out
+
 def _state_path(ws_root: str, client: str, session_id: str) -> Path:
     if client not in ("cc", "codex") or not isinstance(session_id, str) or not session_id:
         raise ValueError("missing or invalid client/session identity")
@@ -631,6 +793,7 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
                         "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
                     })
                     state["events"] = state["events"][-50:]
+                    record_intent(state, targets)
                     save_state(ws_root, client, session_id, state)
                     return {"action": "allow", "reason": "authorized-gatefile-write", "ws": ws_root}
             gate_rel = unread[0]
@@ -644,7 +807,8 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
                                           physical=_physical_lines(current)),
                 "ws": ws_root,
             }
-        # 全部治理文件当前修订均已读，持久化撤销留档。
+        # 全部治理文件当前修订均已读，持久化撤销留档；同时记写前意图（target+base_sha）。
+        record_intent(state, targets)
         save_state(ws_root, client, session_id, state)
     return {"action": "allow", "reason": "ok", "ws": ws_root}
 
@@ -774,6 +938,9 @@ def evaluate_session_start(ws_root: str, client: str, session_id: str,
         if permission_mode:
             state["env"]["permission_mode"] = permission_mode
         _mark_activity(state)
+        if not isinstance(state.get("worktree_baseline"), dict):
+            snap = worktree_snapshot(ws_root)
+            state["worktree_baseline"] = dict(list(snap.items())[:500])
         ch = state["reminder"]["channels"]
         unread = [g for g in conf["gate_files"]
                   if not (state["reads"].get(g) or {}).get("complete")]
@@ -838,21 +1005,53 @@ def evaluate_session_end(ws_root: str, client: str, session_id: str,
 
 def evaluate_post_write(ws_root: str, client: str, session_id: str,
                         targets: list[str]) -> dict:
-    """写后撤销：该文件既有记账按新修订失效（下次写前须重读）。对账留痕由调用方记日志。"""
+    """写后：撤销被写 gate 的读证据，并落 commit / unobserved-write。
+
+    - `gate-commit`：该 target 有写前 `gate-intent`，且写后 sha 与磁盘一致；
+    - `unobserved-write`：磁盘确有内容但找不到对应意图（或 target 不存在），
+      表示「这次变化没有经过本 gate 的观测」，**不得读成 allow**。
+    """
     conf = load_conf(ws_root)
     gate_abs_map = {g: _norm_join(ws_root, g) for g in conf["gate_files"]}
-    touched = []
+    touched, commits, unobserved = [], [], []
     with _StateLock(ws_root, client, session_id):
         state = load_state(ws_root, client, session_id)
+        events = state.get("events") if isinstance(state.get("events"), list) else []
         for target in targets:
-            norm = os.path.normpath(os.path.expanduser(target))
+            norm = os.path.normpath(os.path.expanduser(str(target)))
             _mark_activity(state)
+            new_sha = file_sha(norm)
+            # 找最近一条未被 commit 的同目标意图
+            intent = None
+            for ev in reversed(events):
+                if not isinstance(ev, dict) or ev.get("type") != "gate-intent":
+                    continue
+                if ev.get("target") != norm or ev.get("committed"):
+                    continue
+                intent = ev
+                break
+            ts = time.strftime("%Y-%m-%d %H:%M:%S")
+            if intent is not None and new_sha is not None:
+                intent["committed"] = True
+                rec = {"type": "gate-commit", "target": norm, "new_sha": new_sha,
+                       "base_sha": intent.get("base_sha"), "intent_ts": intent.get("ts"),
+                       "ts": ts}
+                commits.append(rec)
+                _append_commit_ledger(ws_root, client, session_id, rec)
+            else:
+                rec = {"type": "unobserved-write", "target": norm, "new_sha": new_sha,
+                       "reason": "no-intent" if intent is None else "target-missing",
+                       "detected_by": "post-write", "ts": ts}
+                unobserved.append(rec)
+            events.append(rec)
             for gate_rel, gate_abs in gate_abs_map.items():
                 if norm == gate_abs and gate_rel in state["reads"]:
                     _revocation(state, gate_rel, "post-write-invalidation")
                     touched.append(gate_rel)
+        state["events"] = events[-200:]
         save_state(ws_root, client, session_id, state)
-    return {"action": "none", "revoked": touched}
+    return {"action": "none", "revoked": touched,
+            "committed": commits, "unobserved": unobserved}
 
 
 # ------------------------------------------------------------ 指纹锚（W2/A）
@@ -1047,3 +1246,36 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
         "source": source,
         "diff_stat": (diff.stdout or "").strip(),
     })
+    # 未观测写：worktree 里有内容变化、但本会话没有对应 gate-commit 的目标。
+    # report-only，最多 20 条；不代表 deny，只是"没有经过 gate 观测"。
+    try:
+        state = load_state(ws_root, client, session_id)
+        baseline = state.get("worktree_baseline") if isinstance(state.get("worktree_baseline"), dict) else {}
+        current = worktree_snapshot(ws_root)
+        changed = {rel for rel, sha in current.items() if baseline.get(rel) != sha}
+        committed = {e.get("target") for e in (state.get("events") or [])
+                     if isinstance(e, dict) and e.get("type") == "gate-commit"}
+        # 只认同 sha 的 commit（commits.jsonl 记录），不按路径无条件跳过：否则
+        # 「被 commit 过、随后又被未观测改动」会漏报（DS 复核 ②/④）。
+        abs_sha = {os.path.normpath(os.path.join(ws_root, rel)): sha
+                   for rel, sha in current.items()}
+        committed |= committed_targets(ws_root, abs_sha)
+        gate_abs = { (_norm_join(ws_root, g)) for g in load_conf(ws_root)["gate_files"] }
+        pending = []
+        for rel in [f for f in files if f in changed][:200]:
+            abs_path = os.path.normpath(os.path.join(ws_root, rel))
+            if not os.path.isfile(abs_path):
+                continue
+            if abs_path in committed:
+                continue
+            if abs_path in gate_abs:
+                continue
+            pending.append({"type": "unobserved-write", "target": abs_path,
+                            "new_sha": file_sha(abs_path),
+                            "reason": "changed-without-commit",
+                            "detected_by": "worktree-diff",
+                            "ts": time.strftime("%Y-%m-%d %H:%M:%S")})
+        for rec in pending[:20]:
+            append_audit_event(ws_root, client, session_id, rec)
+    except Exception as exc:
+        log(ws_root, f"worktree unobserved-audit failed: {exc}")

@@ -139,6 +139,24 @@ class CcTranscript(unittest.TestCase):
         ghost.write_bytes(ghost_bytes)  # 复原，后续断言不受影响
         self.assertEqual(ct.validate_path(None, self.sid, str(self.ws))[1], "no-transcript-path")
 
+    def test_validate_subagent_transcript(self):
+        """v2.8.4：子 agent 转录 <slug>/<parent>/subagents/agent-<id>.jsonl 可校验，父会话不匹配则拒。"""
+        sub = self.proj_dir / self.sid / "subagents"
+        sub.mkdir(parents=True, exist_ok=True)
+        p = sub / "agent-abc123.jsonl"
+        p.write_text("", encoding="utf-8")
+        scoped = f"{self.sid}.abc123"
+        self.assertEqual(ct.validate_path(str(p), scoped, str(self.ws)), (True, "ok"))
+        self.assertEqual(ct.validate_path(str(p), "other.abc123", str(self.ws))[1],
+                         "transcript-session-mismatch")
+        bad = self.proj_dir / self.sid / "agents"
+        bad.mkdir(parents=True, exist_ok=True)
+        bp = bad / "agent-abc123.jsonl"
+        bp.write_text("", encoding="utf-8")
+        self.assertEqual(ct.validate_path(str(bp), scoped, str(self.ws))[1], "transcript-shape")
+        self.assertEqual(ct.validate_path(str(sub / "nope.jsonl"), scoped, str(self.ws))[1],
+                         "transcript-shape")
+
     def test_incremental_read_tolerates_half_line(self):
         path = self.write([("Bash", {"command": "echo x > a.txt"}, "", False)])
         full = ct.read_records(path)

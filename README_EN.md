@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v2.6.1-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v2.8.5-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -141,6 +141,7 @@ Clause IDs (`<!-- id:Rn -->`, maintained by [`scripts/mark_rules.py`](scripts/ma
 The template ships a **Hermes project-level plugin** (`.hermes/plugins/workspace-gate/`) that turns "read the governance files before writing workspace files" from a soft reminder into a **mechanical block** — see `AGENT_RULES.md` §12:
 
 > **Want the mechanics?** The full write-up — beginner analogy, the read-evidence / fingerprint / coverage semantics, a per-harness breakdown, and a troubleshooting FAQ — is in **[docs/hooks-guide.md](docs/hooks-guide.md)** (Chinese).
+> **Adding a new harness?** Event catalogue (when it fires / why it is required / what breaks without it), the 7-step adoption path and acceptance assertions: **[docs/hooks-catalog.md](docs/hooks-catalog.md)** (Chinese).
 
 | Item | Fact |
 |---|---|
@@ -235,7 +236,8 @@ Inventory is not installation. External skills remain read-only technical refere
 │       ├── git-init/        # Create a git repo later (five steps + bootstrap record)
 │       └── delivery-closure/ # Six-step delivery closure (mandatory before declaring done)
 ├── docs/
-│   └── hooks-guide.md      # Per-harness hook deep dive (Chinese): mechanics, purpose, troubleshooting
+│   ├── hooks-guide.md      # Per-harness hook deep dive (Chinese): mechanics, purpose, troubleshooting
+│   └── hooks-catalog.md    # Event catalogue + new-harness adoption path (Chinese)
 ├── notes/
 │   ├── INDEX.md             # Generated experience index (compact routing)
 │   ├── _INVERTED.md         # Inverted index / related graph (on demand)

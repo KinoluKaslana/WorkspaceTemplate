@@ -93,15 +93,27 @@ def validate_path(transcript_path: object, session_id: str, cwd: str) -> tuple[b
     if not path.startswith(root + os.sep):
         return False, "transcript-outside-projects"
     rel = os.path.relpath(path, root).split(os.sep)
-    if len(rel) != 2:
+    base_sid = session_id.split(".")[0]
+    if len(rel) == 2:
+        # 主会话转录：<slug>/<session_id>.jsonl
+        slug, name = rel
+        if slug != slug_for_cwd(cwd):
+            return False, "transcript-slug-mismatch"
+        if not name.endswith(".jsonl"):
+            return False, "transcript-shape"
+        if os.path.splitext(name)[0] != session_id:
+            return False, "transcript-session-mismatch"
+    elif len(rel) == 4 and rel[2] == "subagents":
+        # 子 agent 转录（v2.8.4）：<slug>/<parent_session_id>/subagents/agent-<agent_id>.jsonl
+        slug, parent, _sub, name = rel
+        if slug != slug_for_cwd(cwd):
+            return False, "transcript-slug-mismatch"
+        if parent != base_sid:
+            return False, "transcript-session-mismatch"
+        if not (name.startswith("agent-") and name.endswith(".jsonl")):
+            return False, "transcript-shape"
+    else:
         return False, "transcript-shape"
-    slug, name = rel
-    if slug != slug_for_cwd(cwd):
-        return False, "transcript-slug-mismatch"
-    if not name.endswith(".jsonl"):
-        return False, "transcript-shape"
-    if os.path.splitext(name)[0] != session_id:
-        return False, "transcript-session-mismatch"
     if not os.path.isfile(path):
         return False, "transcript-missing"
     return True, "ok"

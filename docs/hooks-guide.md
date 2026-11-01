@@ -1,7 +1,7 @@
 # 工作区级 Hook 技术指南
 
 > 面向两类读者：**完全没接触过 hook 的人**（先看第 0–2 章，用比喻理解机制），以及**要改代码/排查问题的人**（第 3–6 章是逐 harness 的实现拆解）。
-> 对应政策：`AGENT_RULES.md` §12（Hermes 侧）与 §13（Codex / Claude Code 侧），当前政策版本 **2.6.1**。
+> 对应政策：`AGENT_RULES.md` §12（Hermes 侧）与 §13（Codex / Claude Code 侧），当前政策版本 **2.8.5**。
 
 ---
 
@@ -100,7 +100,7 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 - **目标精确匹配**：不支持通配；多目标要逐条列出。
 - **改完即失效**：写治理文件会改变它的指纹，旧读证据按 §2.2 自动作废，下次写之前必须重读。
 
-### 2.5 审计事件七型（只记「谁/哪/动作」，不落正文）
+### 2.5 审计事件（只记「谁/哪/动作」，不落正文）
 
 | 事件 | 含义 |
 |---|---|
@@ -111,6 +111,11 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 | `completion-gate` | `Stop` 时的完成声明门禁（advisory，不产生 deny） |
 | `cc-bash-write` | Claude Code 事后归因：转录里的某条 Bash 写（含 `would_deny`/`read_state`） |
 | `cc-bash-gap` | Claude Code 归因失败/跳过（原因码：`no-transcript-path`/`transcript-*`/`changed-but-untargeted` 等） |
+| `gate-intent` | 写前意图：`{target, base_sha}`（allow 时落） |
+| `gate-commit` | 写后对账：`{target, new_sha}`，sha 与磁盘一致才算「经过 gate」 |
+| `unobserved-write` | 有变化但无对应 intent/commit（`reason` + `detected_by`），**不表示通过** |
+| `agent-start` / `agent-stop` | 子 agent 创建/结束（`agent_id` / `agent_type`）；账本键 `session.agent` |
+| `gate-deny` | 一次拒绝本身：`tool` / `tool_use_id` / `targets` / 原因摘要；子 agent 的拒绝记在 `session.agent` 键下（v2.8.5 起） |
 
 ---
 
@@ -141,7 +146,19 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 | `pre_llm_call` | 提醒「你还没读治理文件」；每个活动阶段（epoch）至多一次——会话被 finalize（archived）后再恢复，可再提醒一次 |
 | `on_session_end` / `on_session_finalize` | 边界审计（按回合有界追加，恢复会话时分阶段记录） |
 
-两条必须知道的口径：① **判定逻辑内部异常一律 block**（fail-closed）；② **空 `session_id` 直接跳过守门**（日志记 `trust boundary`）——会话身份缺失时这道门失效，方向与 ① 相反，属客户端信任边界，不是判定逻辑。
+两条必须知道的口径：① **判定逻辑内部异常一律 block**（fail-closed）；② **空 `session_id` 也 block**（v1.5.0 / 政策 2.7.0 起）：写工作区文件时无法归属会话即拒绝，非写工具与工作区外绝对路径写入不受影响——不再有「身份缺失就跳过」的 fail-open 通道。
+
+**拒绝消息带机器可读码**（v1.7.0 / 政策 2.8.2 起），形如 `[workspace-gate:no-read] WorkspaceTemplate 守门…`：
+
+| 码 | 含义 | 怎么解 |
+|---|---|---|
+| `no-read` | 本会话对该 gate 文件没有当前修订的完整读证据 | 先 `read_file` 完整读（分页要读完） |
+| `no-session` | 调用没带 `session_id`，无法归属 | 换带会话身份的客户端，或写到工作区外用绝对路径 |
+| `unresolved-target` | 相对路径无法从核心 task 锚点解析到工作区 | 改用绝对路径 |
+| `container-unmapped` | 容器 backend 的路径在主机侧映射不回来 | 在主机侧会话写 |
+| `internal-error` | 插件自身异常（fail-closed） | 查 `~/.hermes/logs/workspace-gate-plugin.log` |
+
+码只用于观测/断言与日志检索，**不改变判定**：`action` 仍是 `block`，工具仍不执行；同一条拒绝还会在插件日志落 `BLOCK code=… session=… tool=… target=…`。
 
 ### 3.3 数据流
 
@@ -311,7 +328,7 @@ claude -p "执行一条 Bash：printf x >> POLICY2.md" \
 | 写前拦截（原生文件工具） | ✅ `write_file`/`patch` | ✅ 原生 `apply_patch` | ✅ `Write`/`Edit` |
 | 写前拦截（Bash 静态写） | ⛔ 不在该层 | ✅ `>`/`>>`/`tee`/`sed -i`… | ⛔ 不订阅 |
 | Bash 写的覆盖方式 | ⛔ 该层没有 Bash 事件 | **实时拦截**（`PreToolUse`）+ `PostToolUse` 记账 | **仅事后归因**（转录回放 `cc-bash-write`） |
-| 无法识别会话（空 `session_id`） | **跳过守门**（信任边界，fail-open） | 无此路径 | 无此路径 |
+| 无法识别会话（空 `session_id`） | **拒绝工作区写**（fail-closed，v1.5.0） | 无此路径 | 无此路径 |
 | 读证据 | 行号 + 内容指纹 + 覆盖区间 | 同左 | 同左（从转录重建） |
 | 写治理文件需令牌 | 由 §12 判据覆盖 | ✅ `authz.py mint` | ✅ 同左 |
 | 完成声明门禁（advisory） | 会话结束时审计 | ✅ `Stop` → `completion-gate` | ✅ `Stop` → 同左 |
@@ -355,7 +372,7 @@ Codex 侧：未读时按 B′ 拒（解释器/包装类）；**已读后直接�
 ## 9. 自测与回归
 
 ```bash
-# 8 套测试（当前共 80 例）
+# 9 套测试（当前共 94 例）
 for t in hooks-tests/test_*.py; do printf "%-40s " "$t"; python3 -B "$t" 2>&1 | tail -1; done
 
 # 治理文件完整性（文件哈希 + 条款级）
@@ -372,6 +389,7 @@ python3 scripts/verify_rules.py --workspace .
 | `test_template_anchor` | W4 完成声明门禁（clean / tampered / clone 缺失） |
 | `test_cc_transcript` | 转录回放：路径三重校验、读证据、跨 Stop 账本、写后消费、同轮二次写 |
 | `test_cc_wiring` | 真实启动 hook.py 的 Stop/SessionEnd 接线 |
+| `test_agent_scope` | 作用域键、父子读证据隔离、intent/commit、无意图写落 unobserved、worktree 差集 |
 
 ---
 

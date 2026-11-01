@@ -26,7 +26,26 @@ class _PatchParseError(ValueError):
     """
 
 
-def _deny(reason: str) -> None:
+def _deny(reason: str, *, ws=None, client=None, sid=None, tool=None, targets=None,
+          tool_use_id: str = "") -> None:
+    """拒绝 + 一条 report-only 的 `gate-deny` 审计（v2.8.5）。
+
+    拒绝证据此前只存在于客户端转录；审计里补一条，才能在 audit-<client>.jsonl
+    里独立核验（作用域键含 .agent_id，子 agent 的拒绝不会记到父账户）。
+    审计失败绝不影响 deny 输出。
+    """
+    if ws and client and sid:
+        try:
+            core.append_audit_event(ws, client, sid, {
+                "type": "gate-deny",
+                "tool": tool,
+                "tool_use_id": tool_use_id,
+                "targets": [str(t) for t in (targets or [])][:8],
+                "reason_head": reason[:160],
+                "reason_digest": core.sha256_hex(reason.encode("utf-8"))[:16],
+            })
+        except Exception:
+            pass
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
@@ -54,12 +73,17 @@ def _client(data: dict) -> str:
 
 
 def _session(data: dict) -> tuple[str, str]:
+    """返回 (作用域键, cwd)。作用域键 = session；子 agent 再拼 `.agent_id`。
+
+    v2.7.0：CC 的主线程与子 agent 共用同一 session_id（实测），只看 session
+    会把子 agent 的读写并进父会话；把 agent_id 并入键后各自独立记账。
+    """
     sid = data.get("session_id")
     cwd = data.get("cwd")
     if not isinstance(sid, str) or not sid or not isinstance(cwd, str) or not cwd:
         raise ValueError("missing session identity")
     cwd = os.path.abspath(os.path.expanduser(cwd))
-    return sid, cwd
+    return core.scoped_id(sid, data.get("agent_id")), cwd
 
 
 def _absolute(path: object, cwd: str) -> str:
@@ -221,6 +245,28 @@ def _decode_ansi_c(text: str) -> str | None:
     return "".join(out)
 
 
+
+_SHELL_WRAPPERS = {"bash", "sh", "zsh"}
+_SHELL_FLAGS = {"-c", "-lc"}
+
+
+def _strip_shell_wrap(command: str, depth: int = 0) -> str:
+    """剥掉客户端的 shell 包装（`/usr/bin/zsh -lc "cat …"`），最多 3 层。
+
+    只接受「恰 3 词 + exe ∈ {bash,sh,zsh} + flag ∈ {-c,-lc}」的字面形态；
+    其余（含 `$`/反引号/反斜杠/引号不闭合/词数不符）一律原样返回——识别不到
+    就不授证，避免把「包一层壳」当成绕过读证据的手段。
+    """
+    if depth >= 3 or not isinstance(command, str):
+        return command
+    words = _literal_shell_words(command)
+    if not words or len(words) != 3:
+        return command
+    exe = os.path.basename(words[0])
+    if exe in _SHELL_WRAPPERS and words[1] in _SHELL_FLAGS:
+        return _strip_shell_wrap(words[2], depth + 1)
+    return command
+
 def _bash_patch(command: object, depth: int = 0) -> str | None:
     """Literal heredoc/argument and bash|sh -c|-lc only; never evaluate shell.
 
@@ -299,6 +345,7 @@ def _failed_response(obj: dict) -> bool:
 
 
 def _record_read(data: dict, client: str, cwd: str) -> None:
+
     if data.get("hook_event_name") != "PostToolUse" or _failed_response(data):
         return
     tool = data.get("tool_name")
@@ -342,6 +389,8 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         }
     else:
         command = inp.get("command")
+        if isinstance(command, str):
+            command = _strip_shell_wrap(command)
         words = _literal_shell_words(command) if isinstance(command, str) else None
         if not words:
             return
@@ -380,18 +429,22 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         return
     conf = core.load_conf(ws)
     recorded = False
-    with core._StateLock(ws, client, data["session_id"]):
-        state = core.load_state(ws, client, data["session_id"])
+    skey = core.scoped_id(data["session_id"], data.get("agent_id"))
+    with core._StateLock(ws, client, skey):
+        state = core.load_state(ws, client, skey)
         for gate_rel in conf["gate_files"]:
             result = core.record_read(state, ws, gate_rel, client, read_info)
             if result.get("recorded"):
                 recorded = True
                 break
-        core.save_state(ws, client, data["session_id"], state)
+            last_reason = result.get("reason")
+        core.save_state(ws, client, skey, state)
+        if not recorded:
+            core.log(ws, f"post_read not recorded: {last_reason}")
     if recorded and client == "codex":
         owner = core.find_workspace(cwd)
         if owner:
-            core.remember_read_workspace(owner, ws, client, data["session_id"])
+            core.remember_read_workspace(owner, ws, client, skey)
 
 
 def _cc_attribution(ws: str, client: str, sid: str, cwd: str, data: dict, source: str) -> None:
@@ -462,13 +515,47 @@ def handle(event: str, data: dict) -> None:
         if owner:
             core.reconcile_session_reads(owner, client, sid,
                                          "Stop" if event == "stop" else "PreToolUse")
+    if event == "subagent_stop":
+        ws = core.find_workspace(cwd)
+        if ws:
+            core.append_audit_event(ws, client, sid, {
+                "type": "agent-stop",
+                "agent_id": data.get("agent_id"),
+                "agent_type": data.get("agent_type"),
+                "transcript": (data.get("agent_transcript_path") or "")[:200],
+            })
+            # v2.8.4：子 agent 的 shell 写同样只能事后归因——按 agent_transcript_path
+            # 单独回放子转录（作用域键已含 .agent_id，账本与主会话互不覆盖）。
+            agent_tp = data.get("agent_transcript_path")
+            if client == "cc" and isinstance(agent_tp, str) and agent_tp.strip():
+                _cc_attribution(ws, client, sid, cwd,
+                                {**data, "transcript_path": agent_tp}, "subagent_stop")
+            with core._StateLock(ws, client, sid):
+                core._append_audit(ws, client, core.load_state(ws, client, sid))
+        print("{}")
+        return
+    if event == "subagent_start":
+        ws = core.find_workspace(cwd)
+        if ws:
+            with core._StateLock(ws, client, sid):
+                st = core.load_state(ws, client, sid)
+                st.setdefault("agents", {})
+                core.save_state(ws, client, sid, st)
+            core.append_audit_event(ws, client, sid, {
+                "type": "agent-start",
+                "agent_id": data.get("agent_id"),
+                "agent_type": data.get("agent_type"),
+                "parent_session_id": data.get("session_id"),
+            })
+        print("{}")
+        return
     if event == "stop":
         # W3：客户端无关差集审计 + W4 完成声明门禁（均 report-only / advisory）。
         # 恒不 deny：从不声明完成或请求续轮。
         ws = core.find_workspace(cwd)
         if ws:
             core.worktree_audit(ws, client, sid, "stop")
-            _cc_attribution(ws, client, sid, cwd, data, "stop")
+            _cc_attribution(ws, client, core.split_scoped_id(sid)[0], cwd, data, "stop")
             gate = _template_anchor_gate(ws)
             core.append_audit_event(ws, client, sid, {
                 "type": "completion-gate",
@@ -485,8 +572,8 @@ def handle(event: str, data: dict) -> None:
             raise ValueError("Bash dispatch identity mismatch")
         inp = data.get("tool_input")
         command = inp.get("command") if isinstance(inp, dict) else None
-        cmd_str = command if isinstance(command, str) else ""
-        patch = _bash_patch(command)
+        cmd_str = _strip_shell_wrap(command) if isinstance(command, str) else ""
+        patch = _bash_patch(cmd_str)
         if patch is not None:
             data = {**data, "tool_input": {"command": patch}}
             event = "pre_write" if event == "pre_bash" else "post_write"
@@ -503,12 +590,14 @@ def handle(event: str, data: dict) -> None:
             if res["kind"] == "write" and res["targets"]:
                 result = core.evaluate_pre_write(cwd, client, sid, res["targets"])
                 if result.get("action") == "deny":
-                    _deny(result["reason"])
+                    _deny(result["reason"], ws=ws, client=client, sid=sid, tool="Bash",
+                          targets=res["targets"], tool_use_id=data.get("tool_use_id") or "")
             elif res["class"] == "interpreter_wrapper":
                 owner = ws or cwd
                 req = core.evaluate_read_required(owner, client, sid)
                 if req.get("action") == "deny":
-                    _deny(req["reason"])
+                    _deny(req["reason"], ws=ws, client=client, sid=sid, tool="Bash",
+                          tool_use_id=data.get("tool_use_id") or "")
             elif ws and res["kind"] == "unresolved":
                 core.append_audit_event(ws, client, sid, {
                     "type": "unresolved-command",
@@ -519,8 +608,16 @@ def handle(event: str, data: dict) -> None:
                 })
             return
         else:
-            # post_bash + patch is None：保持现状。
+            # post_bash + patch is None
             if client == "codex":
+                ws = core.find_workspace(cwd)
+                if ws:
+                    conf = core.load_conf(ws)
+                    gfs = [core._norm_join(ws, g) for g in conf["gate_files"]]
+                    res = wtarget.classify(cmd_str, cwd, gfs)
+                    if res.get("kind") == "write" and res.get("targets"):
+                        core.evaluate_post_write(ws, client, sid, res["targets"])
+                        return
                 event = "post_read"
             else:
                 # CC 的 Bash stdout 被截断，无法做内容锚定；绝不记账。
@@ -551,7 +648,9 @@ def handle(event: str, data: dict) -> None:
         # Never skip the core merely because the first target is outside.
         result = core.evaluate_pre_write(cwd, client, sid, targets)
         if result.get("action") == "deny":
-            _deny(result["reason"])
+            _deny(result["reason"], ws=core.find_workspace(cwd), client=client, sid=sid,
+                  tool=data.get("tool_name"), targets=targets,
+                  tool_use_id=data.get("tool_use_id") or "")
     elif event == "post_read":
         _record_read(data, client, cwd)
     elif event == "post_write":
@@ -572,7 +671,7 @@ def handle(event: str, data: dict) -> None:
             # W3：先落 worktree-change（report-only），再 evaluate_session_end
             # 把累积事件一并 flush 进 audit-<client>.jsonl。
             core.worktree_audit(ws, client, sid, "session_end")
-            _cc_attribution(ws, client, sid, cwd, data, "session_end")
+            _cc_attribution(ws, client, core.split_scoped_id(sid)[0], cwd, data, "session_end")
             core.evaluate_session_end(ws, client, sid, data.get("completed"),
                                       data.get("interrupted"), reason=data.get("reason"))
     else:

@@ -909,8 +909,18 @@ def _mark_read(state, ws, abs_path, evidence):
     return changed
 
 
-def _block(reason):
-    return {"action": "block", "message": reason}
+def _block(reason, code="gate", **ctx):
+    """返回 block 指令；message 带机器可读码，并落一条 best-effort 审计（v1.7.0）。
+
+    码只用于观测与断言，不参与判定；审计写失败绝不影响 block 结果。
+    """
+    message = f"[workspace-gate:{code}] {reason}"
+    try:
+        extra = " ".join(f"{k}={ctx[k]}" for k in ("session", "tool", "target") if ctx.get(k))
+        _log(f"BLOCK code={code} {extra}".strip())
+    except Exception:
+        pass
+    return {"action": "block", "message": message}
 
 
 def _load_conf(ws):
@@ -937,6 +947,75 @@ def _load_conf(ws):
     return conf
 
 
+def _sha256_file(path):
+    """文件字节 sha256；不存在/不可读 → None（不当作证据）。"""
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _record_intent(state, target):
+    """写前记账：允许的写落一条 intent（target → base_sha），供写后 commit 对账。"""
+    intents = state.get("intents")
+    if not isinstance(intents, dict):
+        intents = {}
+    intents[str(target)] = {"base_sha": _sha256_file(target),
+                            "ts": time.strftime("%Y-%m-%d %H:%M:%S")}
+    if len(intents) > 64:  # 有界：只留最近 64 个未对账目标
+        for k in list(intents)[:-64]:
+            intents.pop(k, None)
+    state["intents"] = intents
+
+
+def _append_commit_row(ws, session_id, target, new_sha, intent):
+    """工作区级提交账（与 hooks 的 commits.jsonl 同格式，便于跨 harness 对账）。"""
+    row = {
+        "client": "hermes",
+        "session_id": session_id,
+        "type": "gate-commit",
+        "target": str(target),
+        "new_sha": new_sha,
+        "base_sha": (intent or {}).get("base_sha"),
+        "intent_ts": (intent or {}).get("ts"),
+        "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    try:
+        d = Path(ws) / ".workspace" / ".hook-state"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / "commits.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception as e:
+        _log(f"commits.jsonl append failed: {e!r}")
+
+
+def _record_commit(state, ws, session_id, target):
+    """写后对账：有 intent → commit；无 intent → unobserved（三值记账，v1.8.0）。"""
+    intents = state.get("intents")
+    if not isinstance(intents, dict):
+        intents = {}
+    intent = intents.pop(str(target), None)
+    state["intents"] = intents
+    new_sha = _sha256_file(target)
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    if intent is None:
+        unobs = state.get("unobserved")
+        if not isinstance(unobs, list):
+            unobs = []
+        unobs.append({"target": str(target), "reason": "no-intent",
+                      "detected_by": "post_tool_call", "ts": ts})
+        state["unobserved"] = unobs[-64:]
+        return "unobserved"
+    commits = state.get("commits")
+    if not isinstance(commits, list):
+        commits = []
+    commits.append({"target": str(target), "new_sha": new_sha,
+                    "base_sha": intent.get("base_sha"), "intent_ts": intent.get("ts"), "ts": ts})
+    state["commits"] = commits[-64:]
+    _append_commit_row(ws, session_id, target, new_sha, intent)
+    return "commit"
+
+
 def _pre_tool_call(
     tool_name=None,
     args=None,
@@ -948,7 +1027,23 @@ def _pre_tool_call(
         if not tool_name:
             return None
         if not session_id:
-            _log("pre_tool_call: empty session_id — gate skipped (trust boundary)")
+            # v1.5.0（政策 2.7.0）：空 session_id 由「跳过守门」改为 fail-closed。
+            # 会话身份缺失时无法归属读证据，若放行则等于给所有未读会话发通行证。
+            if tool_name not in WRITE_TOOLS:
+                _log("pre_tool_call: empty session_id, non-write tool -> pass")
+                return None
+            targets, unresolved = _resolve_target_paths(
+                args, tool_name, session_id, parent_session_id, kwargs.get("task_id")
+            )
+            inside = [t for t in targets if _find_workspace(t)]
+            if inside or unresolved or not targets:
+                return _block(
+                    code="no-session", tool=tool_name,
+                    reason="WorkspaceTemplate 守门：无法确定会话身份（session_id 缺失），"
+                    "拒绝写入工作区文件（v1.5.0 / R98 fail-closed）。"
+                    "请在新会话中重试，或改用能提供会话身份的客户端；"
+                    "工作区外的写入请使用绝对路径。"
+                )
             return None
         task_id = kwargs.get("task_id")
         # V140-1：容器侧路径在主机上无法映射回真实工作区（核心把主机 cwd bind-mount 成
@@ -956,7 +1051,8 @@ def _pre_tool_call(
         container = _backend_container_mode(task_id)
         if container and tool_name in WRITE_TOOLS:
             return _block(
-                "WorkspaceTemplate 守门：容器 backend 的路径无法在主机上映射回真实工作区，"
+                code="container-unmapped", tool=tool_name, session=session_id,
+                reason="WorkspaceTemplate 守门：容器 backend 的路径无法在主机上映射回真实工作区，"
                 "无法证明写入目标的归属（V140-1，fail-closed）。请在主机侧会话中用"
                 "绝对路径写入，或由模板维护者在核心提供 backend→host 映射后放开。"
             )
@@ -974,6 +1070,7 @@ def _pre_tool_call(
                 continue
             conf = _load_conf(ws)
             if not conf["enabled"] or tool_name not in conf["write_tools"]:
+                _log(f"pre_tool_call skip: ws={ws} tool={tool_name} enabled={conf['enabled']} write_tools={conf['write_tools']}")
                 continue
             with _state_lock(ws, session_id):
                 state = _load_state(ws, session_id)
@@ -982,10 +1079,14 @@ def _pre_tool_call(
                     _revoke_if_stale(state, ws, fname, _revision_fingerprint(ws / fname))
                 _save_state(ws, session_id, state)
                 unread = [f for f in conf["gate_files"] if not state["read"].get(f)]
+                if not unread:
+                    _record_intent(state, target)
+                    _save_state(ws, session_id, state)
                 if unread:
                     detail = _unread_detail(state, ws, unread)
                     return _block(
-                        f"WorkspaceTemplate 守门（{ws}）：写工作区文件前请先 read_file 完整读取 "
+                        code="no-read", tool=tool_name, session=session_id, target=str(target),
+                        reason=f"WorkspaceTemplate 守门（{ws}）：写工作区文件前请先 read_file 完整读取 "
                         f"{'、'.join(unread)}（治理规则入口）。{detail}目标：{target}"
                     )
         # 2) 无法解析的相对目标：回到保守边界（审查 F4 的短期安全回退）——默认写工具集一律拦，
@@ -994,7 +1095,8 @@ def _pre_tool_call(
         if unresolved:
             if tool_name in WRITE_TOOLS:
                 return _block(
-                    "WorkspaceTemplate 守门：无法从核心 task 锚点解析相对路径写入目标"
+                    code="unresolved-target", tool=tool_name, session=session_id,
+                    reason="WorkspaceTemplate 守门：无法从核心 task 锚点解析相对路径写入目标"
                     f"（{', '.join(unresolved[:3])}）所属工作区（未知目标按保守策略拦截，"
                     "工作区级 custom 不适用于无法归属的目标）。请改用绝对路径，"
                     f"或先 read_file 完整读取 {GATE_FILE} 后改用绝对路径写入。"
@@ -1004,7 +1106,8 @@ def _pre_tool_call(
     except Exception as e:
         _log(f"pre_tool_call error (fail-closed): {e!r}")
         return _block(
-            "WorkspaceTemplate 守门内部错误（fail-closed）：请人工检查 workspace-gate plugin。"
+            code="internal-error", tool=tool_name,
+            reason="WorkspaceTemplate 守门内部错误（fail-closed）：请人工检查 workspace-gate plugin。"
         )
 
 
@@ -1019,6 +1122,26 @@ def _pre_tool_call(
 # 记账时磁盘内容」——该证明需要核心在 ReadResult 原子携带快照哈希（核心契约需求）。
 
 
+def _post_write_accounting(tool_name, args, session_id, parent_session_id, task_id):
+    """写后对账（v1.8.0）：与 hooks 的 intent→commit→unobserved 三值记账对齐。"""
+    try:
+        targets, _unresolved = _resolve_target_paths(
+            args, tool_name, session_id, parent_session_id, task_id
+        )
+    except Exception as e:
+        _log(f"post_tool_call resolve failed: {e!r}")
+        return
+    for target in targets:
+        ws = _find_workspace(target)
+        if ws is None:
+            continue
+        with _state_lock(ws, session_id):
+            state = _load_state(ws, session_id)
+            kind = _record_commit(state, ws, session_id, target)
+            _save_state(ws, session_id, state)
+        _log(f"post_tool_call {kind}: {target}")
+
+
 def _post_tool_call(
     tool_name=None,
     args=None,
@@ -1030,6 +1153,9 @@ def _post_tool_call(
     **kwargs,
 ):
     try:
+        if tool_name in WRITE_TOOLS and status in (None, "ok") and session_id:
+            _post_write_accounting(tool_name, args, session_id, parent_session_id, task_id)
+            return None
         if tool_name != "read_file":
             return None
         if status != "ok":
@@ -1248,10 +1374,129 @@ def _on_session_finalize(session_id="", parent_session_id=None, **kwargs):
         return None
 
 
+
+# ---------------------------------------------------------------- 生命周期（v1.6.0 / 2.8.0）
+def _now() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _bounded_append(state: dict, key: str, rec: dict, limit: int = 50) -> None:
+    events = state.get(key)
+    if not isinstance(events, list):
+        events = []
+    events.append(rec)
+    del events[:-limit]
+    state[key] = events
+
+
+def _on_session_start(session_id="", model=None, platform=None, parent_session_id=None, **kwargs):
+    """创建时注册会话身份（2.8.0）：账本按 session_id，主线程名额 `agents["main"]`。"""
+    try:
+        if not session_id:
+            return None
+        cwd = _resolve_session_cwd(session_id, parent_session_id)
+        ws = _find_workspace(cwd) if cwd else None
+        if ws is None:
+            return None
+        with _state_lock(ws, session_id):
+            st = _load_state(ws, session_id)
+            agents = st.get("agents") if isinstance(st.get("agents"), dict) else {}
+            agents["main"] = {"session_id": session_id, "model": model,
+                              "platform": platform, "started_at": _now()}
+            st["agents"] = agents
+            _bounded_append(st, "agent_events", {"type": "session-start",
+                                                 "session_id": session_id, "ts": _now()})
+            _save_state(ws, session_id, st)
+        _log(f"on_session_start ws={ws} sid={session_id}")
+    except Exception as e:  # noqa: BLE001
+        _log(f"on_session_start error: {e!r}")
+    return None
+
+
+def _subagent_start(parent_session_id=None, child_session_id=None, child_subagent_id=None,
+                    child_role=None, child_goal=None, **kwargs):
+    """子 agent 创建（2.8.0）：为 child_session_id 建独立账本，并在父账本登记。
+
+    Hermes 的子 agent 有自己的 session_id（不是父的），因此读证据天然隔离；
+    这里只补身份登记与审计。
+    """
+    try:
+        if not child_session_id:
+            return None
+        cwd = _resolve_session_cwd(child_session_id, parent_session_id)
+        ws = _find_workspace(cwd) if cwd else None
+        if ws is None and parent_session_id:
+            pcwd = _resolve_session_cwd(parent_session_id)
+            ws = _find_workspace(pcwd) if pcwd else None
+        if ws is None:
+            return None
+        with _state_lock(ws, child_session_id):
+            st = _load_state(ws, child_session_id)
+            agents = st.get("agents") if isinstance(st.get("agents"), dict) else {}
+            agents["main"] = {"session_id": child_session_id,
+                              "parent_session_id": parent_session_id,
+                              "subagent_id": child_subagent_id,
+                              "role": child_role, "started_at": _now()}
+            st["agents"] = agents
+            _bounded_append(st, "agent_events", {"type": "agent-start",
+                                                 "child_session_id": child_session_id,
+                                                 "role": child_role, "ts": _now()})
+            _save_state(ws, child_session_id, st)
+        if parent_session_id:
+            with _state_lock(ws, parent_session_id):
+                pst = _load_state(ws, parent_session_id)
+                agents = pst.get("agents") if isinstance(pst.get("agents"), dict) else {}
+                agents[str(child_session_id)] = {"parent": parent_session_id,
+                                                 "subagent_id": child_subagent_id,
+                                                 "role": child_role, "goal_chars": len(str(child_goal or "")),
+                                                 "started_at": _now()}
+                pst["agents"] = agents
+                _bounded_append(pst, "agent_events", {"type": "agent-start",
+                                                      "child_session_id": child_session_id,
+                                                      "role": child_role, "ts": _now()})
+                _save_state(ws, parent_session_id, pst)
+        _log(f"subagent_start parent={parent_session_id} child={child_session_id}")
+    except Exception as e:  # noqa: BLE001
+        _log(f"subagent_start error: {e!r}")
+    return None
+
+
+def _subagent_stop(parent_session_id=None, child_session_id=None, child_status=None,
+                   duration_ms=None, **kwargs):
+    try:
+        if not child_session_id:
+            return None
+        cwd = _resolve_session_cwd(child_session_id, parent_session_id)
+        ws = _find_workspace(cwd) if cwd else None
+        if ws is None and parent_session_id:
+            pcwd = _resolve_session_cwd(parent_session_id)
+            ws = _find_workspace(pcwd) if pcwd else None
+        if ws is None:
+            return None
+        for sid, role in ((child_session_id, "child"), (parent_session_id, "parent")):
+            if not sid:
+                continue
+            with _state_lock(ws, sid):
+                st = _load_state(ws, sid)
+                _bounded_append(st, "agent_events", {"type": "agent-stop",
+                                                     "child_session_id": child_session_id,
+                                                     "status": child_status,
+                                                     "duration_ms": duration_ms,
+                                                     "ts": _now()})
+                _save_state(ws, sid, st)
+        _log(f"subagent_stop child={child_session_id} status={child_status}")
+    except Exception as e:  # noqa: BLE001
+        _log(f"subagent_stop error: {e!r}")
+    return None
+
+
 def register(ctx):
-    _log(f"workspace-gate active (v1.4.3, hermes_home={_hermes_home()})")
+    _log(f"workspace-gate active (v1.6.0, hermes_home={_hermes_home()})")
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     ctx.register_hook("post_tool_call", _post_tool_call)
     ctx.register_hook("pre_llm_call", _pre_llm_call)
+    ctx.register_hook("on_session_start", _on_session_start)
     ctx.register_hook("on_session_end", _on_session_end)
     ctx.register_hook("on_session_finalize", _on_session_finalize)
+    ctx.register_hook("subagent_start", _subagent_start)
+    ctx.register_hook("subagent_stop", _subagent_stop)
