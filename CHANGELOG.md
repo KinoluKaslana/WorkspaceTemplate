@@ -2,6 +2,14 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 2.9.1（2026-11-02）
+
+- **PATCH 段：删历史旁注 + 同义压缩**（无判定语义变化、R 号零变动、custom 引用不受影响）。
+  - 20 条改写：R18/R39/R41/R42/R61/R63/R67/R72/R73/R81/R90/R93/R96/R98/R100/R102/R103/R104/R105/R107。
+  - `AGENT_RULES.md` 16,545 → **15,013 字符（−9.3%，≈−0.9k tokens/会话）**。
+  - 保留的全部是义务句；删掉的是版本旁注、重复限定语与举例性解释（细节见 `mc-261030/apply_patch_compress.py` 的逐条映射）。
+- 验证：107 个条款标记完好；`mark_rules check` 通过；registry 重建后 `verify_rules` clean；94 例测试与 selfcheck 全绿。
+
 ## 2.9.0（2026-11-02）
 
 - **新增 skill `workspace-git-branch-upgrade`**（`.workspace/skills/workspace-git-branch-upgrade/SKILL.md`）：把已有仓库从 `main` 迁到 `dev`/目标分支，覆盖前置检查（remote/忽略/子模块/仓库类型）、三态迁移（新建 `switch -c`、远端跟踪 `--track`、仅落后 `merge --ff-only`；**禁止 `switch -C` 重置**）、默认分支指针（只改本地 `origin/HEAD`，不改服务端）、模板校验三条判据（exit 0 + `clean` + `template_clean`）、记录回写（`default_branch` 是记录不是当前分支）、验证清单与双态回滚。
