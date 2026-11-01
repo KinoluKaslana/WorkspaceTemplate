@@ -2,6 +2,13 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 2.9.0（2026-11-02）
+
+- **新增 skill `workspace-git-branch-upgrade`**（`.workspace/skills/workspace-git-branch-upgrade/SKILL.md`）：把已有仓库从 `main` 迁到 `dev`/目标分支，覆盖前置检查（remote/忽略/子模块/仓库类型）、三态迁移（新建 `switch -c`、远端跟踪 `--track`、仅落后 `merge --ff-only`；**禁止 `switch -C` 重置**）、默认分支指针（只改本地 `origin/HEAD`，不改服务端）、模板校验三条判据（exit 0 + `clean` + `template_clean`）、记录回写（`default_branch` 是记录不是当前分支）、验证清单与双态回滚。
+- **方案来源**：GLM-5.3 主笔 → deepseek-v4-pro 与 gpt-6-sol 交叉评审 → 主理人裁决；两席共提 13 处修正（其中 DS 的「TEMPLATE_FILES=20 项」被判错，实测 28 项）。
+- **登记**：`TEMPLATE_FILES` 28 → 29（`verify_rules.py`）；`skills/REGISTRY.md` 与 `TOOLS.md` §4.3 各补一条；R18 指向新 skill。
+- 政策 2.8.5 → **2.9.0**（MINOR：新增能力，无判定语义变化）。
+
 ## 2.8.5（2026-11-02）
 
 - **`gate-deny` 审计事件**：拒绝本身进审计（`tool` / `tool_use_id` / `targets` / 原因摘要），作用域键含 `.agent_id`，`Stop`/`SubagentStop`/`SessionEnd` flush 到 `audit-<client>.jsonl`。此前拒绝只存在于客户端转录，无法独立核验。`test_cc_wiring` 增 1 例（6 例）。

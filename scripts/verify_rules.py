@@ -57,6 +57,7 @@ TEMPLATE_FILES = [
     ".workspace/skills/workspace-init/SKILL.md",
     ".workspace/skills/git-init/SKILL.md",
     ".workspace/skills/delivery-closure/SKILL.md",
+    ".workspace/skills/workspace-git-branch-upgrade/SKILL.md",
     ".hermes/plugins/workspace-gate/plugin.yaml",
     ".hermes/plugins/workspace-gate/__init__.py",
     ".hermes/plugins/workspace-gate/selfcheck.py",

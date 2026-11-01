@@ -18,7 +18,7 @@
       "R15": "1. **抹除模板 git 标记**：确认 `.git` 的 remote 指向模板库（`KinoluKaslana/WorkspaceTemplate`）后，先导出本地独有 commit 为 patch 备份（若有），再删除 `.git`。remote 指向他处或存在无法确认的提交历史时，**暂停并请用户裁决**，不得擅自删除。",
       "R16": "2. **询问建仓决策**：用户选择（a）立即建仓——Agent 引导 `git init` + 首次提交 + 用户自己的 remote（多设备同步）；或（b）暂不建仓——保持纯文件工作区，后续用户可随时要求执行 git-init skill。",
       "R17": "3. **记录到 bootstrap**：`git` 节记录 `status`（`initialized` / `declined`）、remote、初始化日期；`declined` 不是终态，后续执行 git-init skill 时翻转为 `initialized`。",
-      "R18": "4. 本节流程由 `.workspace/skills/workspace-init/`（首次初始化）与 `.workspace/skills/git-init/`（后补建仓）两个 skill 承载；详细步骤以 skill 正文为准。",
+      "R18": "4. 本节流程由 `.workspace/skills/workspace-init/`（首次初始化）与 `.workspace/skills/git-init/`（后补建仓）两个 skill 承载；**已有仓库的分支迁移（如 main → dev）由 `.workspace/skills/workspace-git-branch-upgrade/` 承载**（v2.9.0 起），详细步骤以 skill 正文为准。",
       "R19": "## 1. 角色、业务与工作模式",
       "R20": "- **问答/只读模式**：仅在对话中解答、评审或给出片段；可做范围内的只读检查，但不写文件、不安装依赖、不改变外部状态、不向第三方发送用户数据。",
       "R21": "- **任务模式**：需要创建/修改/删除文件、安装依赖、调用会改变外部状态的服务、运行未知工件或交付持久化结果。",
@@ -109,7 +109,7 @@
       "R106": "5. **调参与豁免**：行为调参写 `.workspace/gate.custom.json`（`enabled`/`gate_files`/`write_tools`）；合法直改 gate 文件用**操作级单次令牌**（`python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --ttl 300`），令牌单次消耗、目标集合精确匹配、无通配；不得以「父 Agent 身份」作为豁免依据（payload 无身份字段）。",
       "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（当前 10 个 definition，含 SubagentStart/Stop），definition 变更即需重审；CC `-p` 免信任但仓库自带 hook 会被执行，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，本守门防「无意识跳过」，不防主动绕过。"
     },
-    "file_sha256": "661ee741931dd7d7bb6da67c3bba3e33a46cd486c5dd28af678a3c71870aec1b",
+    "file_sha256": "a435652143ac40d08460de5c9318424a5a43f28d08e6945867d8b15ee73bf620",
     "marked": 107
   },
   "AGENTS.md": {
@@ -129,12 +129,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "3b21d974002e07b2babda3e86e2a6a0c421701c421c92e7af1f93c5332711ce2",
+    "file_sha256": "cabbdb2205ff5ca7b2b9a44f3c9a352ae3ac6a365e2404bdfcd564847f4d89ea",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "7d76506311be0b1b8458cc060f0eec0bfe6b07a47b3348134bab91f9e0e5ac13",
+    "file_sha256": "5f9817ec52be94dcc37c0f4b268996962142f8be5b3e26537259b5d64950f18f",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -159,7 +159,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "0c59de62679c677afc4ee6d0d9fdf376bb03fee2a6a26fa87a79a2b31883ed77",
+    "file_sha256": "ec5234f435346e6216afb004eaa2c7ac0197d7321ec9b07e1ba959cd9493582b",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -185,6 +185,11 @@
   ".workspace/skills/delivery-closure/SKILL.md": {
     "clauses": {},
     "file_sha256": "cdbb49aa6058105ab2109b5a5d031f9bafff0af2645ce4490a3234b522d59f26",
+    "marked": 0
+  },
+  ".workspace/skills/workspace-git-branch-upgrade/SKILL.md": {
+    "clauses": {},
+    "file_sha256": "383a9d4393e3f683263cb4ac468e09e3537da1c286585a74646ca2c1e0f2ea69",
     "marked": 0
   },
   ".hermes/plugins/workspace-gate/plugin.yaml": {
