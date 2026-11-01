@@ -1,6 +1,7 @@
 # 工作区守门需要哪些 hook（三 harness 对照 + 新 harness 照搬清单）
 
-> 适用：政策 **2.8.3**，插件 `workspace-gate` **v1.8.0**，客户端 hooks `.workspace/hooks/hook.py`。
+> 适用：政策 **2.10.0**，插件 `workspace-gate` **v1.8.0**，客户端 hooks `.workspace/hooks/hook.py`。
+> **本文是实现说明，不构成政策**：授权、禁止、例外与判定标准只写在 `AGENT_RULES.md`；本文与政策冲突时以政策为准，且不得以读本文替代必读规则。
 > 目的：让「先读治理文件、再写工作区文件」在任何 harness 上都能被**机械判定**，而不是靠模型自觉。
 
 ## 0. 一句话模型
@@ -35,11 +36,21 @@
 | 写前拦截 | `PreToolUse` matcher `Write\|Edit` | `PreToolUse` matcher `apply_patch` | `pre_tool_call`（`WRITE_TOOLS={write_file,patch}`） |
 | 命令类 | 不订阅 `Bash` → 只能 `Stop`/`SessionEnd` 回放 | `PreToolUse`/`PostToolUse` matcher `^Bash$` | 无独立命令事件（工具调用统一走 `pre_tool_call`） |
 | 读证据 | `PostToolUse` matcher `Read`（**只认原生 Read**） | `PostToolUse` matcher `^Bash$`（剥壳后认 `cat` / `sed -n a,bp`） | `post_tool_call`（`read_file` 正文 + 行号区间） |
-| 身份 | `session_id` + 可选 `agent_id`（子 agent 与父共用 `session_id`，实测） | `session_id`；子 agent 的 `agent_id`/转录字段**待实测**，作用域键按 `session_id`(+`.agent_id` 若有) 拼 | `session_id`（子 agent 有自己的 session） |
+| 身份 | `session_id` + 可选 `agent_id`（子 agent 与父共用 `session_id`，实测） | `session_id`；子 agent 实测 payload 带 `agent_id`，作用域键拼 `session_id.agent_id` | `session_id`（子 agent 有自己的 session） |
 | 生命周期 | `SessionStart`/`SubagentStart`/`SubagentStop`/`SessionEnd` | 同左 | `on_session_start`/`subagent_start`/`subagent_stop`/`on_session_end` |
 | 传参 | JSON stdin：`cwd`、`transcript_path`、`tool_input`、`tool_response` 等 | 同左（实测：`cwd, hook_event_name, model, permission_mode, session_id, transcript_path, tool_input, tool_name, tool_use_id, tool_response, turn_id`） | Python kwargs：`tool_name, args, session_id, task_id, tool_call_id, turn_id, api_request_id, status, result`，**无 `cwd`** |
 
 **新 harness 至少要给**：创建期就有且稳定的 `session_id`、工具名、工具入参、工具返回、**当前工作目录或可解析的绝对路径**，以及「写前 / 写后 / 读后」三个时刻的回调。缺 `cwd` 时必须能给出可解析的相对目标锚点（Hermes 用 `task_id` 的 task cwd）；两者都没有就只能保守拒绝（§4.3）。
+
+## 2.6 审计事件与拒绝码（实现清单）
+
+**审计事件（13 型，落 `audit-<client>.jsonl`）**：`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate` / `cc-bash-write` / `cc-bash-gap` / `gate-intent` / `gate-commit` / `unobserved-write` / `agent-start` / `agent-stop` / `gate-deny`。
+
+**插件拒绝码（`[workspace-gate:<code>]`）**：`no-session`（无会话身份）/ `container-unmapped`（容器路径映射不回）/ `no-read`（缺当前修订的完整读证据）/ `unresolved-target`（相对路径无锚点）/ `internal-error`（插件异常，fail-closed）。
+
+**Codex 静态可判写清单**：`>` / `>>` / `tee` / `sed -i` / `perl -i` / `truncate` / `cp` / `mv` / `install` / `dd of=`；解释器/包装类（`python*` / `sh` / `bash` / `zsh` / `dash` / `perl` / `make` / `env` / `sudo` / `nice` / `nohup` / `timeout` / `xargs` / `command` / `exec`）未读即 deny；其余形态只审计。
+
+**hook 脚本**：`.workspace/hooks/` 六个（`hook` / `gate_core` / `wtarget` / `authz` / `template_anchor` / `cc_transcript`）+ `.codex/hooks.json` + `.claude/settings.json`，均随 `TEMPLATE_FILES` 哈希锁定。
 
 ## 3. 接入新 harness 的 7 步
 
@@ -71,7 +82,7 @@
 3. **Hermes 的 `pre_tool_call` 没有 `cwd`**：相对路径的主锚点是 `task_id` 的核心同源 task cwd（`session_id` 只用于提醒与归属面，不发许可）；两者都拿不到 → 无法归属 → 拦。
 4. **空 `session_id` 时工作区内的写一律拦**（政策 2.7.0 / R98）：包括无法解析的相对目标；**非写工具与工作区外绝对路径写入不受影响**。
 5. **hook 未送达 = 客户端 fail-open**：客户端不调钩子时，守门只能事后用 `unobserved` 暴露，不能阻止。所以口径是 **advisory**（写前拦截 + 事后可判定），不是安全边界。
-6. **子 agent 的 shell 写**（CC `Bash`）不经过 `PreToolUse`，主会话在 `Stop`/`SessionEnd` 可回放归因；子 agent 的 `agent_transcript_path` **本仓尚未接入命令级归因**（只把前 200 字符记进审计）。
+6. **子 agent 的 shell 写**（CC `Bash`）不经过 `PreToolUse`：主会话在 `Stop`/`SessionEnd` 回放归因，子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放（作用域含 `.agent_id`，v2.8.4 起）。
 
 ## 5. 术语
 
