@@ -270,6 +270,10 @@ def main(argv: list[str]) -> int:
                 else:
                     shutil.copy2(tgt, bak)
                     tgt.unlink()
+                    parent = tgt.parent
+                    while parent != ws and parent.is_dir() and not any(parent.iterdir()):
+                        parent.rmdir()
+                        parent = parent.parent
                 pruned.append(rel)
             report["pruned"] = pruned
 
