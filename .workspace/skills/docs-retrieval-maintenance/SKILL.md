@@ -165,10 +165,7 @@ python3 -B scripts/verify_rules.py --workspace .       # clean=true
 触发原因；`build` 前后节数；`hit_report` 改动前后逐题对比；别名增删清单 + 每条 `miss_id`；
 五条验收命令的实际输出摘要。
 
-## 变更记录
+## 维护
 
-- 1.2.0（2026-11-02）：补前置事实；把"停用/删除/重指"拆成三档（消除"90 天无命中即删"与"删除需人工"的矛盾）；新增系数变更快照流程。
-- 1.1.0（2026-11-02）：确立**自主分级**（索引全自动 / 别名有条件自主 / 阈值与 boost 需人工）；
-  新增 `scripts/docs_alias_audit.py`（死指针、指纹漂移、来源合规、留一验证、`--restore`）；
-  新增 `docs/.miss-log.jsonl` 作为别名唯一合法来源；清空历史 `probe-only` 别名（判据集 9/10，缺口如实保留）。
-- 1.0.0（2026-11-02）：首版。源自 6/10→10/10 的修复过程；固定「先调参、后别名、上限 8、四条验收」。
+- 版本历史见仓库 `CHANGELOG.md`；本 skill 的版本按语义化规则递增（PATCH 措辞 / MINOR 能力 / MAJOR 边界）。
+- 改动本 skill 后运行 `python3 scripts/skill_audit.py --strict`（契约节 + REGISTRY/TOOLS 双登记）。

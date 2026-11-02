@@ -9,7 +9,7 @@
 
 用法：
   python3 scripts/template_sync.py --workspace . --ref alpha            # 分支
-  python3 scripts/template_sync.py --workspace . --ref v3.1.0           # 标签
+  python3 scripts/template_sync.py --workspace . --ref <tag>            # 标签
   python3 scripts/template_sync.py --workspace . --ref 13eeb83          # 提交
   python3 scripts/template_sync.py --workspace . --ref dev --apply --verify --json
   python3 scripts/template_sync.py --workspace . --list-refs            # 可选来源一览

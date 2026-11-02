@@ -1,6 +1,6 @@
 # 工作区守门需要哪些 hook（三 harness 对照 + 新 harness 照搬清单）
 
-> 适用：政策 **3.1.0**，插件 `workspace-gate` **v1.9.0**，客户端 hooks `.workspace/hooks/hook.py`。
+> 适用：当前 `AGENT_RULES.md`（版本见其第 4 行）与 `workspace-gate` 插件（版本见 `plugin.yaml`）；客户端 hooks 见 `.workspace/hooks/hook.py`。
 > **本文是实现说明，不构成政策**：授权、禁止、例外与判定标准只写在 `AGENT_RULES.md`；本文与政策冲突时以政策为准，且不得以读本文替代必读规则。
 > 目的：让「先读治理文件、再写工作区文件」在任何 harness 上都能被**机械判定**，而不是靠模型自觉。
 

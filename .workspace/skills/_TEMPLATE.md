@@ -59,6 +59,7 @@ version: 0.1.0
 - 同步 `skills/REGISTRY.md` 与 `TOOLS.md`；需要重排用 `--sync-registry`；
 - 版本语义：PATCH=措辞/示例；MINOR=新增步骤或能力；MAJOR=改变职责边界或验收口径。
 
-## 变更记录
+## 维护
 
-- 0.1.0（<日期>）：首版。
+- 版本历史见仓库 `CHANGELOG.md`；版本按语义化递增（PATCH 措辞 / MINOR 能力 / MAJOR 边界）。
+- 改动后跑 `python3 scripts/skill_audit.py --strict`。

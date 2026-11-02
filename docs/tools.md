@@ -101,6 +101,3 @@ python3 scripts/pyenv_init.py --mode mcp --mcp-server s --mcp-tool t --apply
 
 带 `--json` 的脚本把机器可读结果放 stdout；`verify_rules.py --json <path>` 写文件；人类提示在同段 JSON 的 `hint` 字段或 stderr。
 
-## 8. 变更记录
-
-- 2026-11-02：首版，对应 10 个脚本与 policy 3.3.1。

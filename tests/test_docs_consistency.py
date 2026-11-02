@@ -55,20 +55,19 @@ class DocsConsistency(unittest.TestCase):
         missing = [p.name for p in (ROOT / "scripts").glob("*.py") if p.name not in doc]
         self.assertEqual(missing, [], f"docs/tools.md 未覆盖脚本：{missing}")
 
-    def test_d4_architecture_numbers(self):
-        arch = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+    def test_d4_no_stale_version_snapshots(self):
+        """文档不得写死易漂移的版本快照；版本只以 AGENT_RULES.md 为准。"""
         policy = re.search(r"模板政策版本：`([\d.]+)`", (ROOT / "AGENT_RULES.md").read_text(encoding="utf-8")).group(1)
-        self.assertIn(policy, arch, f"architecture.md 未写当前政策版本 {policy}")
-        sys.path.insert(0, str(ROOT / "scripts"))
-        try:
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("tpl_vr", ROOT / "scripts" / "verify_rules.py")
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            n = len(mod.TEMPLATE_FILES)
-        finally:
-            sys.path.pop(0)
-        self.assertIn(str(n), arch, f"architecture.md 未写 TEMPLATE_FILES 条数 {n}")
+        offenders = []
+        for md in DOCS:
+            if md.name == "README.md" and md.parent == ROOT:
+                continue
+            text = md.read_text(encoding="utf-8")
+            for m in re.finditer(r"政策 \*\*([\d.]+)\*\*|policy \*\*([\d.]+)\*\*", text):
+                v = m.group(1) or m.group(2)
+                if v != policy:
+                    offenders.append(f"{md.relative_to(ROOT)}: 写了旧版本 {v}（当前 {policy}）")
+        self.assertEqual(offenders, [], "; ".join(offenders))
 
     def test_d5_readme_lists_all_skills(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

@@ -51,9 +51,9 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 客户端记忆边界 | 工作区经验只写 `notes/`；各客户端全局记忆（Hermes memory / Claude Auto Memory / Codex 内置记忆）至多保留一条指向 `notes/INDEX.md` 的指针（§9.1） |
 | 安全默认值 | 外部 skills 默认只读；不自动执行 Hook、安装依赖、联网或发送用户数据 |
 
-## alpha 分支（policy 3.x）新增了什么
+## 设计要点
 
-alpha 是**实验线**，把"规则常驻、机械可验"推进到子 Agent 与工具层。相对 2.x 的主要变化：
+模板把「规则常驻、机械可验」落到子 Agent 与工具层，关键设计如下：
 
 | 变化 | 一句话 | 证据 |
 |---|---|---|
@@ -179,7 +179,7 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 **怎么确认守门真的在场**（不要用 `hermes plugins list`——实测它只列 bundled 插件，项目插件即使已生效也不出现）：
 
 ```bash
-# ① 在场信号：plugin 每次加载都会写一行（v1.2.0 起）
+# ① 在场信号：plugin 每次加载都会写一行
 tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gate active (v1.4.3, hermes_home=…)  ← 版本号随插件升级变化
 # ② 行为验证：在工作区内、未读规则时尝试写文件，应被拦截并报出工作区路径与 target
 # ③ 状态文件：<工作区根>/.workspace/.hook-state/<session_id>.json 记录该会话已读文件

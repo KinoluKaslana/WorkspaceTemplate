@@ -10,7 +10,7 @@
 | `.workspace/hooks/gate_core.py` | 唯一判定核心（`SCHEMA=5`、读证据记账、修订绑定、写前 deny、`consume_authz`、`anchor_check`、`worktree_audit`、生命周期对账） |
 | `.workspace/hooks/wtarget.py` | Bash 写目标窄识别器（`kind/targets/class`），**已接入** `hook.py` 的 `pre_bash` 判定链 |
 | `.codex/hooks.json` | Codex 侧事件配置（SessionStart / UserPromptSubmit / PreToolUse `^Bash$`+`apply_patch` / PostToolUse / Stop / SessionEnd；8 个 definition） |
-| `.claude/settings.json` | Claude Code 侧配置（**只订阅 `Write\|Edit` 与 `Read`，不订阅 Bash**——按用户 2026-10-22 约束） |
+| `.claude/settings.json` | Claude Code 侧配置（**只订阅 `Write\|Edit` 与 `Read`，不订阅 Bash**） |
 
 ## 运行
 

@@ -150,12 +150,7 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
 - **custom 文件的 `overrides:` 必须指向当前注册表的 ID**：写之前先查 `rule-clauses.json`。
 - 实例无 git 时备份是唯一恢复点；`.custom.md` 必须包含在备份里。
 
-## 变更记录
+## 维护
 
-- 3.2.1（2026-11-02）：补「Python 运行时不动」——同步只改 `bootstrap.template`，`python` 节必须保持（`python_mode_preserved=true`）。
-- 3.2.0（2026-11-02）：备份/回滚改为 MANIFEST 驱动（含"删除本次新增文件"）；更正 PATCH"静默合并"的含义（不逐项确认 ≠ 不报告）。
-- 3.1.1（2026-11-02）：补「职责边界」——只管模板源与模板层文件；工作区自身仓库的分支由用户维护。
-- 3.1.0（2026-11-02）：新增 `--prune`（删除上游已移除的模板层文件，先备份）；前置事实补"上游删除只报告不删"。
-- 3.0.0（2026-11-02）：**泛用化**——`ref` 支持分支/标签/提交，来源可换 remote/仓库，新增 `--list-refs`、自动克隆、README 自动保留；删除写死的分支枚举与 `TEMPLATE_FILES` 条数。
-- 2.1.0（2026-11-02）：新增"指定分支"与 `scripts/template_sync.py` 机械入口。
-- 2.0.0：锁定替换 + custom 覆写架构。
+- 版本历史见仓库 `CHANGELOG.md`；本 skill 的版本按语义化规则递增（PATCH 措辞 / MINOR 能力 / MAJOR 边界）。
+- 改动本 skill 后运行 `python3 scripts/skill_audit.py --strict`（契约节 + REGISTRY/TOOLS 双登记）。

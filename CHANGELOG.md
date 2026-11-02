@@ -25,6 +25,19 @@
 - 新增 `docs/.aliases.json`：只存「口语短语 → 已有节」指针（当前 1 条），目标标题或文件指纹不符即忽略。
 - 结果：10 题命中 **6/10 → 10/10**；`R98` 仍排第一；噪声查询仍为空；测试 **7 → 11 例**。token/成本结论不变（打分只改排序，不改查询轮次）。
 
+## 合并前修剪：过程类语句（2026-11-02）
+
+原则：只删「我们怎么走到这里」的叙述与逐版本历史；运行所需元数据（当前版本号、条款 ID、frontmatter version、验收命令、行为事实）一律保留。历史唯一归宿是本文件。
+
+- **政策**：删 `实测子 agent 会因 §0 询问空转（v2.8.3 补充）` 旁注、`子 Agent 写授权（3.0.0）`、`子 Agent 任务书（3.0.0，extends R66）` 的版本括注。
+- **skills**：6 个 skill 的逐版本 `## 变更记录` 全部移除，改由本文件承载；补稳定的 `## 维护` 节（版本规则 + 审计命令）。`_TEMPLATE.md` 同步改为 `## 维护`。
+- **契约**：`skill_audit.py` 的必备节由「变更记录」改为「维护」，`tests/test_skill_audit.py` 同步。
+- **docs**：删 `docs/README.md` 顶部版本快照、`docs/skills.md`/`docs/tools.md` 的变更记录节、`hooks-catalog.md` 的过期版本串（3.1.0）、`hooks-guide.md` 的三处「vX.Y.Z 起」；`docs/skills.md` 小节标题去掉版本括号。保留 `docs/architecture.md` 的版本锚点行（版本入口）。
+- **README**：`## alpha 分支（3.x）新增了什么` → `## 设计要点`（去分支名，保留内容）；去掉「（v1.2.0 起）」。
+- **脚本**：`docs_index.py` 的 `policy 3.1.0` 括注、`template_sync.py` 的 `--ref v3.1.0` 示例改为 `<tag>`。
+- **删除过程文档** `ALPHA-HOOK.md`（"已并入 dev，未发布"的落地说明）；`hooks-guide.md` 对它的引用改为直接陈述事实（Codex 不为原生 patch 发 `PostToolUse`）。
+- **保留**（三席一致）：`实测` 作为来源标记（R102）、`docs-retrieval.md` 的实验日期（界定批次）、`hooks-guide.md` 的「本轮被写/本轮没读」（守门时序语义）、`CHANGELOG.md` 全文。
+
 ## 文档体系（2026-11-02，不改政策版本）
 
 - **README 更新**（中英）：alpha 3.x 变化表、三种 Python 模式、6 个 skill 表、目录结构、文档索引入口；修正「venv 是必须项」「守门只需 read_file 过」等过宽表述。

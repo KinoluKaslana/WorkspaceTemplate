@@ -19,7 +19,7 @@
 **未表态时的默认**：按 uv 走；uv 不可用且用户不愿安装，再回到手动 venv / MCP，二者由用户选，不得静默降级。
 **既有工作区不回改**：`python.mode` 一旦配置（`uv` / `local-venv` / `mcp`），模板升级、迁移、仓库同步**均不得改写**；uv 默认只作用于 `unconfigured` 的新工作区。切模式只能由用户明确要求。
 
-**子 Agent 无用户通道时不得反复追问**：沿用父会话已记录的模式（`.workspace/bootstrap.json` 的 `python.mode`）；父也未配置时，报告该阻塞并停止依赖 Python 的操作，把决定交回父 Agent/用户——实测子 agent 会因 §0 的首次启动询问反复空转（v2.8.3 补充）。
+**子 Agent 无用户通道时不得反复追问**：沿用父会话已记录的模式（`.workspace/bootstrap.json` 的 `python.mode`）；父也未配置时，报告该阻塞并停止依赖 Python 的操作，把决定交回父 Agent/用户。
 
 ### 0.1 创建本地版本化 venv（uv 默认 / 手动） <!-- id:R3 -->
 
@@ -178,7 +178,7 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 
 模板随仓库分发 Hermes 项目级 plugin（`.hermes/plugins/workspace-gate/`，模板层锁定）：写工作区文件前必须先 `read_file` 读 `AGENT_RULES.md`，否则机械拦截。它是 §2/§9/§11 的兜底手段（skill 治心、hook 治手），实现细节见 `docs/hooks-catalog.md`：
 
-1. **守门判据（机械可查）**：对每个**能确定**的写入目标分别判定所属工作区，任一目标缺可信的完整读证据即拦；**不得用其他工作区配置豁免该目标**。相对路径按「核心同源 task cwd 锚点」解析，解析不出即拦并要求绝对路径（**有意保留的过度拦截**）；`plugin.custom.json` 的 `write_tools` 只适用于能确定归属的目标。「完整读取」＝同一会话对治理文件**当前修订**的**连续行证据**覆盖 `1..total`：分次可累加、**不得有洞**、只读首尾不算；证据绑修订指纹，修订变化即撤销覆盖与许可，**跨修订拼接不算完整**；空正文、EOF 越界、去重存根、`...`、解析失败、缺总行数一律不记证据。旧状态不继承（`evidence_schema` 落后时迁移清空并留档 `*_legacy*`）。判据是**写入目标路径**，不是会话 cwd。**空 `session_id` 不放行**（fail-closed）；非写工具与工作区外写不受影响。拒绝消息带 `[workspace-gate:<code>]` 前缀（码表见 catalog §2.6）；放行/写后账本与边界审计口径见 catalog §2.7。**子 Agent 写授权（3.0.0）**：子作用域受管写须同时满足 ①目标**精确命中**有效委托（未过期、未撤销、gate 指纹一致）②该委托的父会话对当前修订仍有完整读证据；否则按 `no-read` 拦（fail-closed）。**子 Agent 自读不构成授权**，越界一律拦。委托由父用 `.workspace/hooks/delegations.py mint` 签发（签发前校验父证据）；同 uid 信任边界见 R107。 <!-- id:R98 -->
+1. **守门判据（机械可查）**：对每个**能确定**的写入目标分别判定所属工作区，任一目标缺可信的完整读证据即拦；**不得用其他工作区配置豁免该目标**。相对路径按「核心同源 task cwd 锚点」解析，解析不出即拦并要求绝对路径（**有意保留的过度拦截**）；`plugin.custom.json` 的 `write_tools` 只适用于能确定归属的目标。「完整读取」＝同一会话对治理文件**当前修订**的**连续行证据**覆盖 `1..total`：分次可累加、**不得有洞**、只读首尾不算；证据绑修订指纹，修订变化即撤销覆盖与许可，**跨修订拼接不算完整**；空正文、EOF 越界、去重存根、`...`、解析失败、缺总行数一律不记证据。旧状态不继承（`evidence_schema` 落后时迁移清空并留档 `*_legacy*`）。判据是**写入目标路径**，不是会话 cwd。**空 `session_id` 不放行**（fail-closed）；非写工具与工作区外写不受影响。拒绝消息带 `[workspace-gate:<code>]` 前缀（码表见 catalog §2.6）；放行/写后账本与边界审计口径见 catalog §2.7。**子 Agent 写授权**：子作用域受管写须同时满足 ①目标**精确命中**有效委托（未过期、未撤销、gate 指纹一致）②该委托的父会话对当前修订仍有完整读证据；否则按 `no-read` 拦（fail-closed）。**子 Agent 自读不构成授权**，越界一律拦。委托由父用 `.workspace/hooks/delegations.py mint` 签发（签发前校验父证据）；同 uid 信任边界见 R107。 <!-- id:R98 -->
 2. **分工与边界**：hook 只保证机械动作不被绕过，不代替 Agent 理解并遵守规则。hook 未启用、被绕过、或在无法归属会话的状态下被拦截/放行时，§2/§9/§11 的义务**不变**——不得以「hook 没拦」为由免除任何规则义务。 <!-- id:R99 -->
 3. **调参与信任边界**：调参写 `.hermes/plugins/workspace-gate/plugin.custom.json`（`enabled`/`gate_files`/`write_tools`）；**不得直接改锁定脚本**（哈希校验报漂移、同步时被覆盖）。守门防「无意识跳过」，不防「主动绕过」：`terminal`/`execute_code` 可绕行，属沙箱/权限层。实现文档（`docs/…`）只陈述机械事实，不得出现义务句；授权、禁止、例外与判定口径的权威表述只在本文件，冲突以本文件为准。 <!-- id:R100 -->
 
@@ -192,4 +192,4 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 4. **证据与审计**：读证据绑指纹 `c<size>:<sha256>` 与覆盖 `1..total`；审计十三型（清单见 catalog §2.6）。`gate-deny` 记拒绝本身，作用域含 `.agent_id`，可在 `audit-<client>.jsonl` 独立核验。写前 `gate-intent` → 写后 `gate-commit` 对账，缺失一侧记 `unobserved-write`（**不表示通过**）。只记路径/哈希/会话/动作，不落正文。`unresolved-command` 只含 `tool_use_id`/`client`/`digest`/`class`，不落原文、不可直读归因；`worktree-change` 粒度受 git 限制，文件级归因须由 `completion-gate` 补证。账本轮转与压缩规则见 catalog §2.7。 <!-- id:R105 -->
 5. **调参与豁免**：行为调参写 `.workspace/gate.custom.json`（`enabled`/`gate_files`/`write_tools`）；合法直改 gate 文件用**操作级单次令牌**（`python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --ttl 300`），令牌单次消耗、目标集合精确匹配、无通配；不得以「父 Agent 身份」作为豁免依据（payload 无身份字段）。 <!-- id:R106 -->
 6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（10 个 definition，含 SubagentStart/Stop），变更需重审；CC `-p` 免信任但会执行仓内 hook，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，守门只防「无意识跳过」。 <!-- id:R107 -->
-7. **子 Agent 任务书（3.0.0，extends R66）**：派发前必须交付，至少含 ①用户目标与验收 ②精确工作区与**可写目标集合**（逐项绝对路径，禁通配）③只读范围 ④禁止动作（显式含 R67 中央文件）⑤授权来源（父会话标识 + 父已读政策的声明）；并据以为该子会话签发委托记录。**可写集合不得超出父自身已授权范围，不得包含治理文件与 R67 中央文件**；未列出的目标子 Agent 一律不得写。 <!-- id:R108 -->
+7. **子 Agent 任务书（extends R66）**：派发前必须交付，至少含 ①用户目标与验收 ②精确工作区与**可写目标集合**（逐项绝对路径，禁通配）③只读范围 ④禁止动作（显式含 R67 中央文件）⑤授权来源（父会话标识 + 父已读政策的声明）；并据以为该子会话签发委托记录。**可写集合不得超出父自身已授权范围，不得包含治理文件与 R67 中央文件**；未列出的目标子 Agent 一律不得写。 <!-- id:R108 -->

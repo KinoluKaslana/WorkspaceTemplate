@@ -34,7 +34,7 @@
 
 ## 2. 六个 skill 的细节
 
-### 2.1 `template-update`（3.2.1）
+### 2.1 `template-update`
 
 ```bash
 python3 scripts/template_sync.py --workspace . --list-refs        # 看有哪些分支/标签
@@ -47,7 +47,7 @@ python3 scripts/template_sync.py --workspace . --ref alpha --apply --verify --js
 - 备份含 `MANIFEST.txt`；**回滚 = 放回旧文件 + 删除本次新增**。
 - 铁律：只改 `bootstrap.template.*`，**不动** `bootstrap.python`（`python_mode_preserved=true`）。
 
-### 2.2 `workspace-repo-sync`（1.1.1）
+### 2.2 `workspace-repo-sync`
 
 ```bash
 python3 scripts/workspace_preflight.py            # 9 项登记事实核验（先跑）
@@ -59,7 +59,7 @@ git fetch --all --prune && git status -sb         # 只读看清差异
 - 冲突回滚：`merge --abort` / `rebase --abort`；`reset --hard` 仅在用户明确同意、工作树干净时。
 - 拉后复验：`notes/rebuild_index.py` → `docs_index build`（有 docs 时）→ `verify_rules` → `skill_audit` → `selfcheck` → `preflight`。
 
-### 2.3 `workspace-init`（1.2.0）
+### 2.3 `workspace-init`
 
 - 检测版本：`grep -c 'id:R[0-9]' AGENT_RULES.md`（**全文件计数**；早期版本用 `head -20`，对现行模板必然误判）。
 - 备份集必须 ⊇ 替换集（读 `TEMPLATE_FILES`），空备份即停。
@@ -71,13 +71,13 @@ git fetch --all --prune && git status -sb         # 只读看清差异
 顺序固定：`git init` → `.gitignore` 核验 → bootstrap/TOOLS 登记 → **审查暂存清单** → 提交 → 核提交树。
 撤销建仓：先导出 `git format-patch`，再 `rm -rf .git`，bootstrap 回写 `declined`。
 
-### 2.5 `delivery-closure`（1.1.0）
+### 2.5 `delivery-closure`
 
 - 产物清点：有仓用 `git status --short`；**无仓必须改用文件时间戳列举**（`git status` 空 ≠ 无改动）。
 - 第 5 步外部动作逐项机械验证；`docs/*.md` 改动走 `docs-retrieval-maintenance` 的五条验收。
 - 三档口径：**完成**（全绿）/ **已交付带限制**（披露且用户接受）/ **阻塞**（P0 失败）。
 
-### 2.6 `docs-retrieval-maintenance`（1.2.0）
+### 2.6 `docs-retrieval-maintenance`
 
 ```bash
 python3 scripts/docs_index.py build && python3 scripts/docs_index.py check
@@ -108,6 +108,3 @@ python3 scripts/skill_audit.py --sync-registry     # 按目录重写 REGISTRY �
 
 触发时机：政策 MAJOR/MINOR 落地后、模板同步后、新增/改名 skill 后、每季度或发布前。审计只判机械项，**触发语是否真的在对的时机命中**仍需人工复核。
 
-## 5. 变更记录
-
-- 2026-11-02：首版，对应 policy 3.3.1 / 插件 1.9.0 / 6 个 skill。

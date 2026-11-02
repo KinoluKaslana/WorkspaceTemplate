@@ -111,7 +111,7 @@ python3 scripts/skill_audit.py --strict  # 期望：exit 0
 - bootstrap `git` 节与真实仓库状态可能漂移（用户手动改 remote）；本 skill 每次执行都以 `git remote -v` 实测为准，发现不一致先校正 bootstrap 再继续。
 - 多设备同步冲突（push 被拒）不属本 skill 范围：报告冲突，让用户决定 rebase/merge 策略。
 
-## 变更记录
+## 维护
 
-- 1.0.1（2026-11-02）：补职责边界（建仓后分支归用户自管）。
-- 1.0.0：首版。
+- 版本历史见仓库 `CHANGELOG.md`；本 skill 的版本按语义化规则递增（PATCH 措辞 / MINOR 能力 / MAJOR 边界）。
+- 改动本 skill 后运行 `python3 scripts/skill_audit.py --strict`（契约节 + REGISTRY/TOOLS 双登记）。

@@ -98,7 +98,7 @@
       "R95": "## 11. 交付闭环 skill 指针",
       "R96": "1. 任务模式声明交付物完成之前，必须执行 `.workspace/skills/delivery-closure/` 的机械闭环（产物清点 → note 判定 → 索引回写 → 外部动作与机械验证 → 完成声明格式）；§9 完成标准中「note 与索引回写」的执行含义以该 skill 为准。",
       "R97": "## 12. 工作区治理 hook（机械守门）",
-      "R98": "1. **守门判据（机械可查）**：对每个**能确定**的写入目标分别判定所属工作区，任一目标缺可信的完整读证据即拦；**不得用其他工作区配置豁免该目标**。相对路径按「核心同源 task cwd 锚点」解析，解析不出即拦并要求绝对路径（**有意保留的过度拦截**）；`plugin.custom.json` 的 `write_tools` 只适用于能确定归属的目标。「完整读取」＝同一会话对治理文件**当前修订**的**连续行证据**覆盖 `1..total`：分次可累加、**不得有洞**、只读首尾不算；证据绑修订指纹，修订变化即撤销覆盖与许可，**跨修订拼接不算完整**；空正文、EOF 越界、去重存根、`...`、解析失败、缺总行数一律不记证据。旧状态不继承（`evidence_schema` 落后时迁移清空并留档 `*_legacy*`）。判据是**写入目标路径**，不是会话 cwd。**空 `session_id` 不放行**（fail-closed）；非写工具与工作区外写不受影响。拒绝消息带 `[workspace-gate:<code>]` 前缀（码表见 catalog §2.6）；放行/写后账本与边界审计口径见 catalog §2.7。**子 Agent 写授权（3.0.0）**：子作用域受管写须同时满足 ①目标**精确命中**有效委托（未过期、未撤销、gate 指纹一致）②该委托的父会话对当前修订仍有完整读证据；否则按 `no-read` 拦（fail-closed）。**子 Agent 自读不构成授权**，越界一律拦。委托由父用 `.workspace/hooks/delegations.py mint` 签发（签发前校验父证据）；同 uid 信任边界见 R107。",
+      "R98": "1. **守门判据（机械可查）**：对每个**能确定**的写入目标分别判定所属工作区，任一目标缺可信的完整读证据即拦；**不得用其他工作区配置豁免该目标**。相对路径按「核心同源 task cwd 锚点」解析，解析不出即拦并要求绝对路径（**有意保留的过度拦截**）；`plugin.custom.json` 的 `write_tools` 只适用于能确定归属的目标。「完整读取」＝同一会话对治理文件**当前修订**的**连续行证据**覆盖 `1..total`：分次可累加、**不得有洞**、只读首尾不算；证据绑修订指纹，修订变化即撤销覆盖与许可，**跨修订拼接不算完整**；空正文、EOF 越界、去重存根、`...`、解析失败、缺总行数一律不记证据。旧状态不继承（`evidence_schema` 落后时迁移清空并留档 `*_legacy*`）。判据是**写入目标路径**，不是会话 cwd。**空 `session_id` 不放行**（fail-closed）；非写工具与工作区外写不受影响。拒绝消息带 `[workspace-gate:<code>]` 前缀（码表见 catalog §2.6）；放行/写后账本与边界审计口径见 catalog §2.7。**子 Agent 写授权**：子作用域受管写须同时满足 ①目标**精确命中**有效委托（未过期、未撤销、gate 指纹一致）②该委托的父会话对当前修订仍有完整读证据；否则按 `no-read` 拦（fail-closed）。**子 Agent 自读不构成授权**，越界一律拦。委托由父用 `.workspace/hooks/delegations.py mint` 签发（签发前校验父证据）；同 uid 信任边界见 R107。",
       "R99": "2. **分工与边界**：hook 只保证机械动作不被绕过，不代替 Agent 理解并遵守规则。hook 未启用、被绕过、或在无法归属会话的状态下被拦截/放行时，§2/§9/§11 的义务**不变**——不得以「hook 没拦」为由免除任何规则义务。",
       "R100": "3. **调参与信任边界**：调参写 `.hermes/plugins/workspace-gate/plugin.custom.json`（`enabled`/`gate_files`/`write_tools`）；**不得直接改锁定脚本**（哈希校验报漂移、同步时被覆盖）。守门防「无意识跳过」，不防「主动绕过」：`terminal`/`execute_code` 可绕行，属沙箱/权限层。实现文档（`docs/…`）只陈述机械事实，不得出现义务句；授权、禁止、例外与判定口径的权威表述只在本文件，冲突以本文件为准。",
       "R101": "## 13. 客户端治理 hook（Claude Code / Codex）",
@@ -108,9 +108,9 @@
       "R105": "4. **证据与审计**：读证据绑指纹 `c<size>:<sha256>` 与覆盖 `1..total`；审计十三型（清单见 catalog §2.6）。`gate-deny` 记拒绝本身，作用域含 `.agent_id`，可在 `audit-<client>.jsonl` 独立核验。写前 `gate-intent` → 写后 `gate-commit` 对账，缺失一侧记 `unobserved-write`（**不表示通过**）。只记路径/哈希/会话/动作，不落正文。`unresolved-command` 只含 `tool_use_id`/`client`/`digest`/`class`，不落原文、不可直读归因；`worktree-change` 粒度受 git 限制，文件级归因须由 `completion-gate` 补证。账本轮转与压缩规则见 catalog §2.7。",
       "R106": "5. **调参与豁免**：行为调参写 `.workspace/gate.custom.json`（`enabled`/`gate_files`/`write_tools`）；合法直改 gate 文件用**操作级单次令牌**（`python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --ttl 300`），令牌单次消耗、目标集合精确匹配、无通配；不得以「父 Agent 身份」作为豁免依据（payload 无身份字段）。",
       "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（10 个 definition，含 SubagentStart/Stop），变更需重审；CC `-p` 免信任但会执行仓内 hook，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，守门只防「无意识跳过」。",
-      "R108": "7. **子 Agent 任务书（3.0.0，extends R66）**：派发前必须交付，至少含 ①用户目标与验收 ②精确工作区与**可写目标集合**（逐项绝对路径，禁通配）③只读范围 ④禁止动作（显式含 R67 中央文件）⑤授权来源（父会话标识 + 父已读政策的声明）；并据以为该子会话签发委托记录。**可写集合不得超出父自身已授权范围，不得包含治理文件与 R67 中央文件**；未列出的目标子 Agent 一律不得写。"
+      "R108": "7. **子 Agent 任务书（extends R66）**：派发前必须交付，至少含 ①用户目标与验收 ②精确工作区与**可写目标集合**（逐项绝对路径，禁通配）③只读范围 ④禁止动作（显式含 R67 中央文件）⑤授权来源（父会话标识 + 父已读政策的声明）；并据以为该子会话签发委托记录。**可写集合不得超出父自身已授权范围，不得包含治理文件与 R67 中央文件**；未列出的目标子 Agent 一律不得写。"
     },
-    "file_sha256": "0284bed0d478c2986deee7ea61d4601f802a0747bb931ad86083876d18e2b7e5",
+    "file_sha256": "5796b8de7239f263a6bf955273f73a573f5a3a93a819952928d3b1221f6f7c23",
     "marked": 108
   },
   "AGENTS.md": {
@@ -130,7 +130,7 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "17427c27392aa870877c11746ccea3558f96ff5e0b73092026d38d4829002471",
+    "file_sha256": "db2767461971dc032d2430b397f783a1ad876c4a5a83f810966ebcf721d7792d",
     "marked": 0
   },
   "README_EN.md": {
@@ -165,7 +165,7 @@
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "44cea56272407405d11d9337883ce5a4814b55f9b4f75da1f0fd7929df38d5b5",
+    "file_sha256": "5ac9b82ef1da330f8dd0bdc9bde3a09d051d10e7722ddac13fe274f24fb30f65",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -175,27 +175,27 @@
   },
   ".workspace/skills/workspace-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "5fc3a8543782a3c16be512df0e06a0becbf88538aef54a3dc07e961f8a5000fb",
+    "file_sha256": "8afd6c3a58b6a985826045953bf7d3f5fe658218fe5001be0200e9b426d7b926",
     "marked": 0
   },
   ".workspace/skills/git-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "3a824e6db0a27d350feb8fee6ceb4e596a34f684a185c79969db906ff52394c6",
+    "file_sha256": "ade2298496cd720054821771eb2ac28477cd303495a63ad4d4bb51ed41877884",
     "marked": 0
   },
   ".workspace/skills/delivery-closure/SKILL.md": {
     "clauses": {},
-    "file_sha256": "406331ca0e4cfdc75606f7bac348a62b00ad2bef2aaafe32e17f04944e838af4",
+    "file_sha256": "5b96f6ce92e0cf244a7dfa53ff215c3e42c5e281ae1b1b905dba56de9c52a56c",
     "marked": 0
   },
   ".workspace/skills/docs-retrieval-maintenance/SKILL.md": {
     "clauses": {},
-    "file_sha256": "b7287b1b19189380abb6496163db400e2ab6dbd28ff42f4f5a141dab376d4234",
+    "file_sha256": "00b4a0342815943e927804665813ff817ad4b8ebb6ab17e047fb05aeea0504f3",
     "marked": 0
   },
   "scripts/docs_index.py": {
     "clauses": {},
-    "file_sha256": "e4e59c09b80c16da08abb8d4727e6f1bcfebe7f4e32bc800b6989fd5cd0a06f0",
+    "file_sha256": "315db2a3e8c8e38b1074f06110ca46643a5bbc7a96451f26acfbef2b334596a8",
     "marked": 0
   },
   "scripts/docs_hit_report.py": {
@@ -210,12 +210,12 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "e1d4272bfaeaa2be398302a3b228c6ca61d6363ee3901b9f26184a825e67aed6",
+    "file_sha256": "eb837e1c6e6f1a916b51badd04f008940980a57a69e6efd7ec415115a0fc1334",
     "marked": 0
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "46ec29b126e86ca8fd6ac4ad39e6c4a1190f115cc200d57016f1c808fd672194",
+    "file_sha256": "1b16ae46ba6292cf1702dcbb42233d5f695eedd0b6412f430a3afbf9b63c40ca",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
@@ -240,17 +240,17 @@
   },
   "tests/test_skill_audit.py": {
     "clauses": {},
-    "file_sha256": "23742fedafd738c46bc1d1da41b5772a0915b019c45bf9ced1a282ce001ec671",
+    "file_sha256": "274cfcdaaa992004b56298d1b4f569bf776ddffe6e44bee13500292b2e1c4b9e",
     "marked": 0
   },
   ".workspace/skills/_TEMPLATE.md": {
     "clauses": {},
-    "file_sha256": "d1980f0f41a073ebc62dc6fa01353c859c3fec960d67d66e02d75fb217ca6a92",
+    "file_sha256": "d8751ea5a076b6ce51289cf335150c3641e1b578858c45218e654b9ad9bd3832",
     "marked": 0
   },
   "docs/README.md": {
     "clauses": {},
-    "file_sha256": "436333617b96d06979243f192ee9044d3dc8f532da1aa2b0df031d6dfea51519",
+    "file_sha256": "c1b3e569683028b72aed73b8c00d2d0aea9fbffc5daa1a069909e0be386c37cd",
     "marked": 0
   },
   "docs/architecture.md": {
@@ -260,22 +260,22 @@
   },
   "docs/skills.md": {
     "clauses": {},
-    "file_sha256": "4699fe7b059ba4c3a3011318cade4ff53a34dca07bd306d900e25dd2c2ed34a3",
+    "file_sha256": "ea23f1dcc4bd2d2a7e58ff481a01a7e3a68f401d91c857dabbfbf572e57c8fed",
     "marked": 0
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "a1d4a8afcc7494cbee128a44d0abd75e2cb9be86dd6dc06884058eff184977c7",
+    "file_sha256": "eabd869dbfbcb66cf5de832b1b222c83fb04d9214799eb8a07112fc45155aebf",
     "marked": 0
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "00c047e7f2fe11966efeb9ee119b67c35edd244be3f4e3bce1605825ba11c745",
+    "file_sha256": "6c4e94761f2a9d3c692bd21e6c5c280f081747c7d718f060bfbe01af8b259cbe",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
     "clauses": {},
-    "file_sha256": "ec5ef687d0637a9aa007ed3b8f8a2b32aecf1e4d5a081604b2479b0b2d87dde2",
+    "file_sha256": "347a1918ba4cb1ce7eac5711ed4757fe6ea2889c3267c9657aaaee2c830c7bf1",
     "marked": 0
   },
   "docs/docs-retrieval.md": {
@@ -285,12 +285,12 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "1db545f668492fcdf19fa68f47635d9dd59a2f4cca7ff5811f50ecf68a977912",
+    "file_sha256": "1c44d295194c86d4f17c6027a2629bbc7952c0653363cfb9a2c70bba8dbde236",
     "marked": 0
   },
   ".workspace/skills/workspace-repo-sync/SKILL.md": {
     "clauses": {},
-    "file_sha256": "7d5634eda685bb0c0ce00eab30c6e6d1043ac4512bda9c45f0e413268ac4a4c6",
+    "file_sha256": "da700feafa595cac3f93b9400883b38a14da64728eaeefa8ac41e75ea94abc91",
     "marked": 0
   },
   "tests/test_alias_audit.py": {

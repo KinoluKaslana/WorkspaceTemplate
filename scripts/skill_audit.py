@@ -130,7 +130,7 @@ def main(argv: list[str]) -> int:
         # 8 维契约必备节（缺项即 finding）
         required = {"触发": r"触发|Use when", "前置": r"前置", "步骤": r"步骤|流程",
                     "边界": r"边界|不负责|不归", "失败": r"失败|陷阱|已知坑",
-                    "验收": r"验收|验证", "变更记录": r"变更记录"}
+                    "验收": r"验收|验证", "维护": r"维护"}
         missing_secs = [k for k, pat in required.items() if not re.search(pat, text)]
         if missing_secs:
             f.append("缺契约节：" + ",".join(missing_secs))

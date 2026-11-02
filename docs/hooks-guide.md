@@ -115,7 +115,7 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 | `gate-commit` | 写后对账：`{target, new_sha}`，sha 与磁盘一致才算「经过 gate」 |
 | `unobserved-write` | 有变化但无对应 intent/commit（`reason` + `detected_by`），**不表示通过** |
 | `agent-start` / `agent-stop` | 子 agent 创建/结束（`agent_id` / `agent_type`）；账本键 `session.agent` |
-| `gate-deny` | 一次拒绝本身：`tool` / `tool_use_id` / `targets` / 原因摘要；子 agent 的拒绝记在 `session.agent` 键下（v2.8.5 起） |
+| `gate-deny` | 一次拒绝本身：`tool` / `tool_use_id` / `targets` / 原因摘要；子 agent 的拒绝记在 `session.agent` 键下 |
 
 ---
 
@@ -146,7 +146,7 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 | `pre_llm_call` | 提醒「你还没读治理文件」；每个活动阶段（epoch）至多一次——会话被 finalize（archived）后再恢复，可再提醒一次 |
 | `on_session_end` / `on_session_finalize` | 边界审计（按回合有界追加，恢复会话时分阶段记录） |
 
-两条必须知道的口径：① **判定逻辑内部异常一律 block**（fail-closed）；② **空 `session_id` 也 block**（v1.5.0 / 政策 2.7.0 起）：写工作区文件时无法归属会话即拒绝，非写工具与工作区外绝对路径写入不受影响——不再有「身份缺失就跳过」的 fail-open 通道。
+两条必须知道的口径：① **判定逻辑内部异常一律 block**（fail-closed）；② **空 `session_id` 也 block**：写工作区文件时无法归属会话即拒绝，非写工具与工作区外绝对路径写入不受影响——不再有「身份缺失就跳过」的 fail-open 通道。
 
 **拒绝消息带机器可读码**（v1.7.0 / 政策 2.8.2 起），形如 `[workspace-gate:no-read] WorkspaceTemplate 守门…`：
 
@@ -235,7 +235,7 @@ Bash 命令字符串
 ### 4.3 读与写之间
 
 - Codex 的 Bash 读：`cat AGENT_RULES.md`、`sed -n 'a,bp' AGENT_RULES.md` 会被 `post_bash` 识别为读并记账（正文必须与磁盘逐字节一致；`sed` 区间越界不记）。
-- 原生 `apply_patch` 工具：走 `pre_write` 判定；但 Codex 目前**不为原生 patch 发 `PostToolUse`**（`.codex/hooks.json` 虽订阅了该 matcher，实测客户端不发；见 `ALPHA-HOOK.md` §3 第 6 条），所以「写后立即撤销」在 Codex 上靠下一次 Pre / `Stop` / `SessionEnd` 的修订复核兜底。
+- 原生 `apply_patch` 工具：走 `pre_write` 判定；但 Codex 目前**不为原生 patch 发 `PostToolUse`**（`.codex/hooks.json` 虽订阅了该 matcher，但 Codex 实际不为原生 patch 发 `PostToolUse`），所以「写后立即撤销」在 Codex 上靠下一次 Pre / `Stop` / `SessionEnd` 的修订复核兜底。
 
 ### 4.4 验证方法（真机，不写代码）
 

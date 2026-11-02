@@ -2,7 +2,7 @@
 """skill_audit.py 回归（契约节 / 双登记 / 计数 / 名称集合 / --sync-registry）。
 
 A1 完整 skill → 通过
-A2 缺契约节（变更记录）→ 报缺节
+A2 缺契约节（维护）→ 报缺节
 A3 REGISTRY 计数与行数不符 → 报计数
 A4 REGISTRY 名称集合与目录不符 → 报名称
 A5 --sync-registry 重写表与计数后 → 审计通过
@@ -56,9 +56,9 @@ true
 true   # 期望 exit 0
 ```
 
-## 变更记录
+## 维护
 
-- 1.0.0：首版。
+- 版本历史见 CHANGELOG.md；改动后跑 skill_audit --strict。
 """
 
 
@@ -102,7 +102,7 @@ class SkillAudit(unittest.TestCase):
         self.assertEqual(rc, 0, out)
 
     def test_a2_missing_section(self):
-        body = FULL.format(name="demo").replace("## 变更记录", "## 别的")
+        body = FULL.format(name="demo").replace("## 维护", "## 别的")
         ws = build(self.root, {"demo": body})
         rc, out = audit(ws)
         self.assertEqual(rc, 1, out)
