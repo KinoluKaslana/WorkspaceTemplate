@@ -61,7 +61,9 @@ function payload(event, exec, ctx, extra = {}) {
     // 实测：agent.id 就是会话 id；再当 agent_id 传会得到 "a.a" 双拼键
     agent_id: agentId(exec) === sessionId(exec) ? '' : agentId(exec),
     cwd: cwdOf(),
-    tool_name: exec?.name,
+    // dsh 的 bash/pwsh 走同一套 shell 静态分析，hook 侧认 "Bash"
+    tool_name: SHELL_TOOLS.has(String(exec?.name ?? '')) ? 'Bash' : exec?.name,
+    dsh_tool: exec?.name,
     tool_input: exec?.arguments ?? {},
     tool_use_id: exec?.callId,
     ...extra,

@@ -46,12 +46,22 @@ dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 
 ## 3. 映射表
 
-| dsh 工具 | hook 事件 | 说明 |
+| dsh 工具 | hook 事件 | 实测行为（dsh 0.2.1-rc.4） |
 |---|---|---|
-| `read` | `post_read` | 记录读证据（正文经启发式提取；取不到就不记账） |
-| `write` / `edit` / `str_replace_editor` | `pre_write` / `post_write` | 目标取 `file_path` 或 `path`，两者都缺 → 拒绝（不猜） |
-| `bash` / `pwsh` | `pre_bash` | 走既有的 shell 静态可判写分析；不可判形态只审计 |
+| `read` | `post_read` | 记读证据；正文解析要求「行号连续 + 标准尾注」 |
+| `write` / `edit` / `str_replace_editor` | `pre_write` / `post_write` | 目标取 `file_path` 或 `path`；两者都缺 → 拒绝（不猜） |
+| `bash` / `pwsh` → hook 侧 `Bash` | `pre_bash` | 未读时：静态重定向 **拒**、解释器写 **拒**；变量间接 / `awk` 重定向 **放行（盲区）** |
 | 其他 | — | 不拦 |
+
+**bash 实测矩阵**（未读状态，同一 hook 直接驱动）：
+
+```
+echo hi > zz.txt                  → deny（静态可判写）
+python3 -c "open('a.txt','w')..." → deny（解释器 B′）
+f=b.txt; echo hi > $f             → ALLOW  ← 盲区
+awk 'BEGIN{print "x" > "c.txt"}'  → ALLOW  ← 盲区（真实回合已确认文件被创建）
+ls -la                            → ALLOW
+```
 
 拒绝理由带 `[workspace-gate:no-read]` 前缀（R98 码表）。
 
@@ -90,11 +100,26 @@ dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 //   "<path>…</path>\n<type>file</type>\n<content>\n1: …\n\n(End of file - total 203 lines)\n</content>"}]}
 ```
 
-**已知限制**：
+**V1–V7 实跑结论**（2026-11-02，headless + 账号，真实模型回合）：
 
-- 子 agent 的会话身份：插件用 `exec.agent.id`；若 dsh 给子 agent 复用了父 id，子会话的账本会与父合并（未实测子 agent）。
-- windowed read（`offset/limit`）逐段累计；只要求覆盖 `1..total`，不要求一次读完。
-- `read` 正文解析只接受「行号连续 + 标准尾注」；形态变化即不记账（安全方向：拒绝写入）。
+| # | 项 | 结果 | 证据 |
+|---|---|---|---|
+| V1 | 子 agent 身份 | 子 `agent.id` 独立（`0c498da2-…`，父是 `session-…`），账本独立，父读证据**不**继承，子写被拒 | `.hook-state/dsh-<child>.json` reads 空；sub1.txt 未创建 |
+| V2 | 分段读 | 只读 1..50/204 → 写入**拒**；补齐 1..204 → 放行 | 账本 coverage `[[1,50]]` vs `[[1,204]]` |
+| V3 | hook 缺失 | **放行** + 日志 `hook-missing` | `v3.txt` 创建；`.dsh-gate.log` |
+| V4 | 不可判 bash | 解释器 **拒**；变量间接 / `awk` **放行**（盲区） | 见上方矩阵；`v4e.txt` 被创建 |
+| V5 | hook 超时 | 20s 超时 → **放行** + `hook-timeout` | `v5.txt` 创建 |
+| V6 | 失败 read | 读不存在文件不入账；随后写入仍拒 | deny 在 read 失败后仍触发 |
+| V7 | 修订变化 | 写后账本记 `post-write-invalidation`，第二次写入**拒** | revocations 记录；第二轮追加未发生 |
+| V8 | `edit` 工具 | 未读时 `edit` 被拒（日志 `tool:edit`），文件未变 | e2e-edit.txt 仍为 `hello` |
+| V9 | 会话隔离 | 前序会话已有完整读证据，新会话写仍被拒 | 多次 fresh session → deny |
+
+**已知限制（如实）**：
+
+- **bash 盲区**：变量间接与 `awk`/重定向类外部程序写不被识别——这是已声明的盲区，不是待修 bug（要修需要 shell 解析器）。
+- 子 agent **没有委托机制**：dsh 子会话必须自己读政策才能写；父不能代授（与 CC/Codex 的 `delegations.py` 不对齐，属已知差异）。
+- `pwsh` 只在 Linux 上得到 shell 解析路径，未在 Windows 实测。
+- `str_replace_editor` 未在真实回合出现（模型优先用 `edit`）；`pwsh` 无法在 Linux 验证——标为**无法验证**，不算通过。
 
 ## 5.1 在 headless 里跑（账号登录，无 API key）
 

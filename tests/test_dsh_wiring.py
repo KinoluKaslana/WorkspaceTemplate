@@ -79,6 +79,22 @@ class DshGate(unittest.TestCase):
                         tool_input={"file_path": str(self.ws / "AGENT_RULES.md"), "content": "x"})
         self.assertEqual(out.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
 
+    def test_d5_bash_static_write_denied(self):
+        out = self.hook("pre_bash", session_id="s5", tool_name="Bash",
+                        tool_input={"command": "echo hi > zz.txt"})
+        hso = out.get("hookSpecificOutput", {})
+        self.assertEqual(hso.get("permissionDecision"), "deny")
+        self.assertIn("守门", hso.get("permissionDecisionReason", ""))
+        self.assertNotIn("内部错误", hso.get("permissionDecisionReason", ""))
+
+    def test_d6_bash_unresolved_forms_are_known_blind_spot(self):
+        """变量间接 / awk 重定向目前不拦——这是已声明的盲区，用测试锁住事实。"""
+        for cmd in ("f=b.txt; echo hi > $f", "awk 'BEGIN{print 1 > \"c.txt\"}'"):
+            out = self.hook("pre_bash", session_id="s6", tool_name="Bash",
+                            tool_input={"command": cmd})
+            self.assertNotEqual(out.get("hookSpecificOutput", {}).get("permissionDecision"),
+                                "deny", cmd)
+
     @unittest.skipUnless(shutil.which("node"), "未安装 node")
     def test_d4_plugin_end_to_end(self):
         harness = ROOT / "tests" / "dsh_harness.mjs"

@@ -334,12 +334,12 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "da4d1efe1eb7bb465469ceb2b33ebd0e8b419b15e72516806c26c2aa870be094",
+    "file_sha256": "1044ba413fee7564c64fec662e20117a6e71efd04e4741c7f849f3e1b8e2da2c",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
     "clauses": {},
-    "file_sha256": "6e44b6dcd143b90742546ce63975ffd1c6d3d2bad351ec269f1f63fcaec5f94e",
+    "file_sha256": "38ec5c8fc5e96f456c8a2ff960dd30bd8b6c6a1d32b2e9fce27aa254c066a0c8",
     "marked": 0
   },
   ".dsh/workspace-gate/cordis.yml": {
@@ -359,7 +359,7 @@
   },
   "tests/test_dsh_wiring.py": {
     "clauses": {},
-    "file_sha256": "27d28270518a2895b0798275a9bb913680af729f2e2dc78078d63fea61563dbf",
+    "file_sha256": "4f2831a1c8289dd06a4c52505dffcdfc9e4e1ecf8e44498a8125912e678b9fa7",
     "marked": 0
   },
   "scripts/clause_lint.py": {
@@ -414,7 +414,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "dc52c35056d3f8a360dfdab2a0b2065ed177d1711fa170aaa73070198b1829f3",
+    "file_sha256": "9c199fa92a0f40b72feea251cec8cd40058a0f7b63e1d7a66245b7d148253d6f",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {

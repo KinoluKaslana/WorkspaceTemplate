@@ -683,7 +683,7 @@ def handle(event: str, data: dict) -> None:
         print("{}")
         return
     if event in ("pre_bash", "post_bash"):
-        if client not in ("cc", "codex") or data.get("tool_name") != "Bash":
+        if client not in ("cc", "codex", "dsh") or data.get("tool_name") != "Bash":
             raise ValueError("Bash dispatch identity mismatch")
         inp = data.get("tool_input")
         command = inp.get("command") if isinstance(inp, dict) else None
