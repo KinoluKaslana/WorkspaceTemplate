@@ -165,7 +165,7 @@
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "d743040a4c3059fd9d653017e03bdc63a327414db1fa6044165e7f0cec06d8ea",
+    "file_sha256": "9badf138e1f3eba19408c78f9684504f6b0d82c54aaf44056116834fcc78380e",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -180,7 +180,7 @@
   },
   ".workspace/skills/git-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "e13ce30f5f38ca020f51efee743b90022f4a8d420d07a7570c22204d42673a4a",
+    "file_sha256": "9c03e8a7e796bb247095edb3f3e4d578040dcdf5b4bb0de41b94ee2dfe484a49",
     "marked": 0
   },
   ".workspace/skills/delivery-closure/SKILL.md": {

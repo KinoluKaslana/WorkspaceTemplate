@@ -20,6 +20,12 @@
 | docs-retrieval-maintenance | docs 改动/索引过期/别名目标改名/命中报告不达标时维护检索索引与别名表（Agent 专用，用户不手改） | `.workspace/skills/docs-retrieval-maintenance/SKILL.md` | workspace-skills |
 | delivery-closure | 声明完成前的交付闭环（产物清点/note 判定/索引回写/验证/声明格式） | `.workspace/skills/delivery-closure/SKILL.md` | workspace-skills |
 
+## 职责边界（workspace-skills）
+
+- 这些 skill 只管**模板层**相关动作：模板文件同步、模板源 ref 选择、以及工作区初始化/建仓登记。
+- **工作区自身 git 仓库的分支切换、迁移、历史改写由用户自行维护**；skill 不提供也不执行这类流程，`bootstrap.git.default_branch` 只作事实记录。
+- 业务工作流 skill（如交付闭环、docs 检索维护）不越界改写政策或授权。
+
 ## 维护节奏（workspace-skills）
 
 | 触发 | 动作 | 判据 |

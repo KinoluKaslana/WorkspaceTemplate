@@ -1,12 +1,14 @@
 ---
 name: git-init
 description: "Use when the user asks to create/initialize a git repository for a workspace that previously declined one (bootstrap git.status=declined), or to re-record git info in bootstrap. 为此前未建仓的工作区创建 git 仓库并登记 bootstrap 时使用。"
-version: 1.0.0
+version: 1.0.1
 ---
 
 # Git Init — 工作区 git 仓库创建 skill
 
 为工作区创建独立 git 仓库（多设备同步用），并把仓库信息记入 `bootstrap.json`。适用于：初始化时选择"暂不建仓"（`git.status: declined`）后用户改变主意，或任何"给这个工作区建 git 仓库"的请求。
+
+**职责边界**：只管**创建**仓库与**首次记录**分支/remote。建仓之后的**分支切换、迁移、历史改写**属用户自管，本 skill 不执行也不给建议流程；分支名只作为当时的事实写入 `bootstrap.git` 与 `TOOLS.md`。
 
 ## 前置检查
 
@@ -78,3 +80,8 @@ python3 -c "import json; print(json.load(open('.workspace/bootstrap.json'))['git
 - `git.add -A` 前扫一眼 `git status`：任务目录里的临时导出、大二进制文件应先入 `.gitignore` 或征求用户意见，避免首次提交塞满仓库。
 - bootstrap `git` 节与真实仓库状态可能漂移（用户手动改 remote）；本 skill 每次执行都以 `git remote -v` 实测为准，发现不一致先校正 bootstrap 再继续。
 - 多设备同步冲突（push 被拒）不属本 skill 范围：报告冲突，让用户决定 rebase/merge 策略。
+
+## 变更记录
+
+- 1.0.1（2026-11-02）：补职责边界（建仓后分支归用户自管）。
+- 1.0.0：首版。

@@ -1,13 +1,16 @@
 ---
 name: template-update
 description: "Use when syncing a workspace's template layer from any template source revision (branch, tag, or commit) — not tied to one branch. 从任意模板来源（分支/标签/提交）更新工作区模板层时使用。"
-version: 3.1.0
+version: 3.1.1
 ---
 
 # Template Update — 工作区模板同步 skill（任意来源 ref）
 
 把一个由模板实例化的工作区，更新到模板仓库**任意一个来源修订**：分支、标签或提交都行。
 本 skill 定义**无歧义的机械流程**，Agent 只按流程执行，不做自由发挥。
+
+**职责边界（先说清）**：本 skill 只处理**模板仓库**的来源与 ref——同步模板层文件、并在该模板源上选分支/标签/提交。
+**工作区自身 git 仓库**的分支（创建后切到哪条、要不要迁移）由**用户自行维护**：本 skill 不切换、不迁移、不改写工作区仓库的分支或远程。
 
 **v3.0 泛用化**：不再假定"追最新 main"，也不再枚举 `main/dev/alpha`。
 `ref` 是一个参数，可以是 `main`、`release/2026`、`v3.1.0` 标签、或某个 commit sha；
@@ -127,6 +130,7 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
 
 ## 变更记录
 
+- 3.1.1（2026-11-02）：补「职责边界」——只管模板源与模板层文件；工作区自身仓库的分支由用户维护。
 - 3.1.0（2026-11-02）：新增 `--prune`（删除上游已移除的模板层文件，先备份）；前置事实补"上游删除只报告不删"。
 - 3.0.0（2026-11-02）：**泛用化**——`ref` 支持分支/标签/提交，来源可换 remote/仓库，新增 `--list-refs`、自动克隆、README 自动保留；删除写死的分支枚举与 `TEMPLATE_FILES` 条数。
 - 2.1.0（2026-11-02）：新增"指定分支"与 `scripts/template_sync.py` 机械入口。
