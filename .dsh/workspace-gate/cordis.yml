@@ -1,0 +1,5 @@
+# 把 workspace-gate 插进 dsh 的插件树（insert = 追加，不改动既有条目）。
+# 用相对路径：dsh 会把相对模块路径锚定在本 patch 文件所在目录。
+- insert:
+    - id: workspace-gate-dsh
+      name: './plugin.js'

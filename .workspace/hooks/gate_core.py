@@ -406,7 +406,7 @@ def committed_targets(ws_root: str, current_sha: dict[str, str | None]) -> set[s
     return out
 
 def _state_path(ws_root: str, client: str, session_id: str) -> Path:
-    if client not in ("cc", "codex") or not isinstance(session_id, str) or not session_id:
+    if client not in ("cc", "codex", "dsh") or not isinstance(session_id, str) or not session_id:
         raise ValueError("missing or invalid client/session identity")
     sid = session_id if re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", session_id) else (
         "~" + sha256_hex(session_id.encode("utf-8")))

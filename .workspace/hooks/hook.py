@@ -27,7 +27,7 @@ class _PatchParseError(ValueError):
 
 
 def _deny(reason: str, *, ws=None, client=None, sid=None, tool=None, targets=None,
-          tool_use_id: str = "") -> None:
+          tool_use_id: str = "", code: str = "") -> None:
     """拒绝 + 一条 report-only 的 `gate-deny` 审计（v2.8.5）。
 
     拒绝证据此前只存在于客户端转录；审计里补一条，才能在 audit-<client>.jsonl
@@ -46,6 +46,8 @@ def _deny(reason: str, *, ws=None, client=None, sid=None, tool=None, targets=Non
             })
         except Exception:
             pass
+    if code:
+        reason = f"[workspace-gate:{code}] " + reason
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
@@ -62,7 +64,7 @@ def _context(text: str, event_name: str) -> None:
 
 def _client(data: dict) -> str:
     explicit = data.get("client")
-    if explicit in ("cc", "codex"):
+    if explicit in ("cc", "codex", "dsh"):
         return explicit
     tool = str(data.get("tool_name", ""))
     if tool in ("apply_patch", "Bash") or isinstance(data.get("turn_id"), str):
@@ -107,6 +109,15 @@ def _write_targets(data: dict, client: str, cwd: str) -> list[str]:
     # codex) is reassigned to tool_input={"command": <patch>}, while CC's native
     # Write/Edit carries file_path. This keeps a CC Bash patch parseable without
     # moving its ledger off client="cc" (its read evidence is recorded under cc).
+    if client == "dsh":
+        # dsh（DeepSeek Harness）：写工具实参名未在真实回合中验证，按已知候选
+        # （file_path / path）容错读取；两者都缺即拒绝，不猜目标。
+        path = inp.get("file_path") or inp.get("path")
+        if not isinstance(path, str) or not path.strip():
+            raise _PatchParseError(
+                "dsh 写工具未提供可识别的目标路径（file_path / path 均为空）；"
+                "请单独调用写入工具并给出明确路径")
+        return [_absolute(path, cwd)]
     if "command" in inp:
         patch = inp.get("command")
         if not isinstance(patch, str):
@@ -344,11 +355,74 @@ def _failed_response(obj: dict) -> bool:
     return False
 
 
+def _dsh_text(value: object, depth: int = 0) -> str | None:
+    """从 dsh 的 tool_response 里尽力取出正文（形状未在真实回合验证，按候选容错）。
+
+    候选：字符串；{content|text|output|stdout: str}；[{type:'text', text: str}]；
+    以上嵌在 {result|data: ...} 里。取不到就返回 None（不入账，方向安全）。
+    """
+    if depth > 3:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ("content", "text", "output", "stdout", "result", "data"):
+            got = _dsh_text(value.get(key), depth + 1)
+            if got:
+                return got
+        return None
+    if isinstance(value, list):
+        parts = [_dsh_text(v, depth + 1) for v in value]
+        joined = "".join(p for p in parts if p)
+        return joined or None
+    return None
+
+
 def _record_read(data: dict, client: str, cwd: str) -> None:
 
     if data.get("hook_event_name") != "PostToolUse" or _failed_response(data):
         return
     tool = data.get("tool_name")
+    if client == "dsh":
+        if tool != "read":
+            return
+        inp = data.get("tool_input")
+        if not isinstance(inp, dict):
+            return
+        path = inp.get("path") or inp.get("file_path")
+        if not isinstance(path, str) or not path.strip():
+            return
+        body = _dsh_text(data.get("tool_response"))
+        if not body:
+            return                       # 拿不到正文 → 不记账（方向安全）
+        target = _absolute(path, cwd)
+        try:
+            total = len(Path(target).read_text(encoding="utf-8", errors="replace").split("\n"))
+        except OSError:
+            return
+        off = inp.get("offset", 1)
+        lim = inp.get("limit")
+        if type(off) is not int or off < 1:
+            return
+        if lim is not None and (type(lim) is not int or lim < 1):
+            return
+        end = total if lim is None else min(total, off + lim - 1)
+        read_info = {"read_ok": True, "path": target, "offset": off,
+                     "limit": end - off + 1, "total_lines": total,
+                     "tool_response": body}
+        # 落到与 cc/codex 相同的记账路径
+        ws = core.find_workspace(read_info["path"])
+        if not ws:
+            return
+        conf = core.load_conf(ws)
+        skey = core.scoped_id(data["session_id"], data.get("agent_id"))
+        with core._StateLock(ws, client, skey):
+            st = core.load_state(ws, client, skey)
+            for gate_rel in conf["gate_files"]:
+                if core.record_read(st, ws, gate_rel, client, read_info).get("recorded"):
+                    break
+            core.save_state(ws, client, skey, st)
+        return
     if client == "cc" and tool != "Read":
         return
     if client == "codex" and tool != "Bash":
@@ -650,7 +724,8 @@ def handle(event: str, data: dict) -> None:
         if result.get("action") == "deny":
             _deny(result["reason"], ws=core.find_workspace(cwd), client=client, sid=sid,
                   tool=data.get("tool_name"), targets=targets,
-                  tool_use_id=data.get("tool_use_id") or "")
+                  tool_use_id=data.get("tool_use_id") or "",
+                  code="no-read" if client == "dsh" else "")
     elif event == "post_read":
         _record_read(data, client, cwd)
     elif event == "post_write":
@@ -689,7 +764,7 @@ def main(argv: list[str] | None = None) -> int:
         # 实测依据（2026-09-17 /tmp/payload-dumps/session_end-*.json）：Codex SessionEnd
         # payload 无 turn_id/model，纯字段探测会误判为 cc，导致账本前缀分裂。
         env_client = os.environ.get("GATE_CLIENT")
-        if env_client in ("cc", "codex"):
+        if env_client in ("cc", "codex", "dsh"):
             data["client"] = env_client
         handle(event, data)
     except _PatchParseError as exc:

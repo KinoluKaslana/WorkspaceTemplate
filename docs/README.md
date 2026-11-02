@@ -8,6 +8,7 @@
 |---|---|---|
 | 第一次用模板建工作区 | [`../README.md`](../README.md) 的「快速开始」 | 本页「三条必跑命令」 |
 | 想把模板同步到某个分支/标签 | [`skills.md`](skills.md) → `template-update` | [`tools.md`](tools.md) → `template_sync.py` |
+| 要给 DeepSeek Harness（dsh）接守门 | [`dsh.md`](dsh.md) | [`../.dsh/workspace-gate/plugin.js`](../.dsh/workspace-gate/plugin.js) |
 | 要给 Codex / Claude Code 接守门 | [`hooks-guide.md`](hooks-guide.md) | [`hooks-catalog.md`](hooks-catalog.md) |
 | 要接入新的 harness | [`hooks-catalog.md`](hooks-catalog.md) §3（7 步） | [`tools.md`](tools.md) → `workspace_preflight.py` |
 | 要维护 skills 或新增 skill | [`skills.md`](skills.md) §契约 | `.workspace/skills/_TEMPLATE.md` |

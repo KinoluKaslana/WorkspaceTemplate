@@ -227,7 +227,7 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gat
 # ③ 状态文件：<工作区根>/.workspace/.hook-state/<session_id>.json 记录该会话已读文件
 ```
 
-## 客户端治理 hook（Codex / Claude Code）
+## 客户端治理 hook（Codex / Claude Code / DeepSeek Harness）
 
 模板另随仓库分发一套**客户端写前守门 hook**（对应 `AGENT_RULES.md` §13）：`.workspace/hooks/{hook,gate_core,wtarget,authz,template_anchor,cc_transcript}.py` + `.codex/hooks.json` + `.claude/settings.json`，把「先读治理文件、再写工作区文件」落到 Codex CLI / Claude Code 的项目级 hook 层。覆盖面真值表：
 
@@ -239,6 +239,14 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gat
 | Bash 其余不可判形态 | 只审计（`unresolved-command`） | **不拦**；归因不出则记 `cc-bash-gap`（原因码） |
 
 边界必须一并声明：**Claude Code 经 Bash 的一切写入不订阅、不拦截**；能拿到的只是**会话边界上的事后归因**——`Stop`/`SessionEnd` 依平台给的 `transcript_path` 回放转录、复算 `would_deny`。三点限制：`would_deny=true` **不表示写入被阻止**；转录可被同 uid 删改，不构成安全边界；读证据依赖转录内容与磁盘逐字节一致（截断/短读不授证）。也不得据此推断整仓写路径受管；hook 超时/加载失败/未信任为客户端 fail-open。逐 harness 实现细节见 **[docs/hooks-guide.md](docs/hooks-guide.md)**，事件映射、文件指纹与信任步骤见 `TOOLS.md` §1.1。
+
+**DeepSeek Harness（dsh）** 走 Cordis 插件而不是 JSON hook 配置：`.dsh/workspace-gate/` 里是一个 `insert` 补丁 + 一个把 `ToolExecution` 翻译成工作区 hook 载荷的 `plugin.js`（判定仍由 `.workspace/hooks/hook.py` 做，三端共用一套读证据）。启用：
+
+```bash
+dsh --profile web --patch .dsh/workspace-gate/cordis.yml
+```
+
+dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走静态可判写，`read` 记读证据；插件异常/hook 超时放行并记 `.workspace/.dsh-gate.log`，拿不到会话身份则 fail-closed。**真实模型回合里的拦截尚未跑过**（本机无 DeepSeek key），已验证的是：配置挂载、真实启动时的 `apply`、以及 7 条走真实 `plugin.js`+`hook.py` 的合成用例。细节与未验证项见 **[docs/dsh.md](docs/dsh.md)**。
 
 ## 工作区生命周期 skills
 

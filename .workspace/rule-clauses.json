@@ -134,12 +134,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "de85c633078ea62fe565cf6a2ef5b135bd37bfa74d96d00032b8db039ded1338",
+    "file_sha256": "dce4beddf5d3a7d20d39c24984b4a67d8734570b34c9f92a7ad27e7b5b55a334",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "597d1e4a941e908dcc529c1bd8b49a309f33c08fd78b5efe83378fefc5a00229",
+    "file_sha256": "6daf4ae52019df6ecfa0e22d6374a7d3bb8c25bfc8418691a92565cdcf28dfd6",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -164,7 +164,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "73545f3f531ea12e968313c588353b961654bd9d9fa3df1734ddffcdce718ead",
+    "file_sha256": "7c87f060b400f1303c29488545019913c754b4146c42ad0715ecef3fb0b382c8",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -254,12 +254,12 @@
   },
   "docs/README.md": {
     "clauses": {},
-    "file_sha256": "f894e06d511e916f5614b3244d79d41c8575dca08aba0ec5532a01018bd52c9a",
+    "file_sha256": "d9a5e1d346ca4e3d4622c07582a50ee007b1e278c357d5adc5d3a66d5f1fbdc6",
     "marked": 0
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "b344f2e5f645926b4dd5207248e43954ed0530c4bbc870cc214ed4ed7f364239",
+    "file_sha256": "0bfeeca37baba06556ee86ca8c10391c14402ba1a930c4ba806295aee1dd9692",
     "marked": 0
   },
   "docs/skills.md": {
@@ -332,6 +332,36 @@
     "file_sha256": "a28026815439f30417ff313128d1da0f8f32bf30d2a69aea1713f582dba0f3c3",
     "marked": 0
   },
+  "docs/dsh.md": {
+    "clauses": {},
+    "file_sha256": "9f50c3b71d0dce597e47fa8fc0dbb97cb513fc4bc5e2d34d1b7cc79a8c66e177",
+    "marked": 0
+  },
+  ".dsh/workspace-gate/plugin.js": {
+    "clauses": {},
+    "file_sha256": "1cdb1d83f0046e8e8eddbaf6b137d1af056177fdcaa62839d6be3f37388d5664",
+    "marked": 0
+  },
+  ".dsh/workspace-gate/cordis.yml": {
+    "clauses": {},
+    "file_sha256": "525b43d4341483a232b52d821835335048d011a84297ec9aa1ebc74eee6ae925",
+    "marked": 0
+  },
+  ".dsh/workspace-gate/package.json": {
+    "clauses": {},
+    "file_sha256": "912433d48adeb0ff3c4f6a830c56ccddd852c7d4e2a22970c817a0fd4c6eaa3b",
+    "marked": 0
+  },
+  "tests/dsh_harness.mjs": {
+    "clauses": {},
+    "file_sha256": "bd7163543f389cd4b475adb56c5e1f742979f58b1e1068c1145fed02dfbfbb4f",
+    "marked": 0
+  },
+  "tests/test_dsh_wiring.py": {
+    "clauses": {},
+    "file_sha256": "a7372e776272d9210fedbd88d8837a2fe0351f3842bd0f602c0fa12e6796d106",
+    "marked": 0
+  },
   "scripts/clause_lint.py": {
     "clauses": {},
     "file_sha256": "1565b1dfa8cabc5ab61feefdf9270e47cc5ef6a4534f29bea847d3c29170a411",
@@ -384,12 +414,12 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "7cd7b4f854cf2d836fe7615bf703850cd1dcc2b18718dfc9c45559e9764461f5",
+    "file_sha256": "ca458185864fe2444e932cb1edcc43b60279bfaea9460c9fbb5caa60d629b378",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "5c7b34b94ec2246bd5443cdf93f0f6f80f16c606f3fdb7a29dee1d3216bfdb1e",
+    "file_sha256": "295a6893dc56cd8bc5901e49aba6867937811b229c33f59bec964c2c752d9b54",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {

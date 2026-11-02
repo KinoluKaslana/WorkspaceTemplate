@@ -2,6 +2,17 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 工具新增：DeepSeek Harness（dsh）接入（2026-11-02，dev，不改政策版本）
+
+dsh 是 Cordis 插件内核（`@deepseek-ai/dsh` 0.2.1-rc.4 实测），拦截点是 `tools/pre-execute` / `tools/post-execute` 事件而非 JSON 配置，因此新增**原生插件**而不是复用 Codex/CC 的桥。
+
+- `.dsh/workspace-gate/`：`plugin.js`（把 `ToolExecution` 翻译成工作区 hook 载荷、把决策映射回 `{kind:'deny', reason}`）+ `cordis.yml`（`insert` 补丁）+ `package.json`。
+- `hook.py` / `gate_core.py` 增加 `dsh` 客户端分支：`write|edit|str_replace_editor` → `pre_write`（`file_path` / `path` 容错，二者皆缺即拒）；`bash|pwsh` → `pre_bash`；`read` → `post_read`（正文用启发式提取，取不到不记账）；拒绝理由补 `[workspace-gate:no-read]` 前缀。
+- 失败姿态：插件异常 / hook 超时（20s）/ spawn 失败 → 放行 + `.workspace/.dsh-gate.log`；**拿不到会话身份 → fail-closed**。
+- 证据等级：配置挂载（`--dump-config`）✓、真实 `dsh web` 启动的 `apply` ✓、真实 plugin+hook 的 7 条合成用例 ✓；**真实模型回合拦截未跑**（无 API key），未验证项写在 `docs/dsh.md` §5。
+- 同步修掉两个真 bug：`gate_core._state_path` 只接受 `cc/codex`（dsh 直接 ValueError）、插件 spawn 未写 stdin 导致 hook 阻塞超时。
+- `TEMPLATE_FILES` 64 → 70；测试 171 → 174。
+
 ## 工具新增：把 4 条 manual 转成可判定命令（2026-11-02，不改政策版本）
 
 按预注册判据 C1（产物）/C2（静态配置）/C3（痕迹）逐条筛，只转「违反会留下可检产物」的四条；意图/过程类一律保持 manual，拒绝"自我声明式假绿"。

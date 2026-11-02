@@ -1,0 +1,6 @@
+{
+  "name": "workspace-gate-dsh",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek Harness (dsh) plugin: read-before-write gate bridging to .workspace/hooks/hook.py"
+}

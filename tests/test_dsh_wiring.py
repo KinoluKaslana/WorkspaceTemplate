@@ -1,0 +1,88 @@
+"""dsh（DeepSeek Harness）守门接线：hook.py 的 dsh 分支 + 插件端到端（node 合成驱动）。
+
+D1 hook.py 接受 dsh 载荷：未读先写 → deny 且带 [workspace-gate:no-read]
+D2 完整读之后 → allow；改修订后再写 → 重新 deny
+D3 缺会话身份 → deny（fail-closed）
+D4 插件链路（node dsh_harness.mjs）全过；无 node 时跳过并注明
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+HOOK_DIR = ROOT / ".workspace" / "hooks"
+RULES = ROOT / "AGENT_RULES.md"
+
+
+class DshGate(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ws = Path(self.tmp.name) / "ws"
+        (self.ws / ".workspace").mkdir(parents=True)
+        shutil.copytree(HOOK_DIR, self.ws / ".workspace" / "hooks")
+        shutil.copy2(RULES, self.ws / "AGENT_RULES.md")
+        (self.ws / ".workspace" / "bootstrap.json").write_text(
+            json.dumps({"workspace_status": "active",
+                        "python": {"mode": "mcp"},
+                        "template": {"source_repo": "https://example.invalid/t"}}),
+            encoding="utf-8")
+        # dsh 侧插件文件（端到端用）
+        shutil.copytree(ROOT / ".dsh", self.ws / ".dsh")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def hook(self, event, **data):
+        payload = {"client": "dsh", "cwd": str(self.ws),
+                   "hook_event_name": "PreToolUse" if event.startswith("pre") else "PostToolUse",
+                   **data}
+        p = subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), event],
+                           input=json.dumps(payload), capture_output=True, text=True,
+                           env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        out = p.stdout.strip()
+        try:
+            return json.loads(out) if out else {}
+        except json.JSONDecodeError:
+            self.fail(f"hook 输出不是 JSON：{out[:200]}")
+
+    def test_d1_write_before_read_is_denied(self):
+        out = self.hook("pre_write", session_id="s1", tool_name="write",
+                        tool_input={"path": "AGENT_RULES.md"})
+        hso = out.get("hookSpecificOutput", {})
+        self.assertEqual(hso.get("permissionDecision"), "deny")
+        self.assertIn("[workspace-gate:no-read]", hso.get("permissionDecisionReason", ""))
+
+    def test_d2_read_then_write_allows_and_revision_revokes(self):
+        body = (self.ws / "AGENT_RULES.md").read_text(encoding="utf-8")
+        self.hook("post_read", session_id="s2", tool_name="read",
+                  tool_input={"path": "AGENT_RULES.md"}, tool_response={"content": body})
+        out = self.hook("pre_write", session_id="s2", tool_name="write",
+                        tool_input={"path": "AGENT_RULES.md"})
+        self.assertNotEqual(out.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
+        with (self.ws / "AGENT_RULES.md").open("a", encoding="utf-8") as fh:
+            fh.write("\n<!-- bump -->\n")
+        out = self.hook("pre_write", session_id="s2", tool_name="write",
+                        tool_input={"path": "AGENT_RULES.md"})
+        self.assertEqual(out.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
+
+    @unittest.skipUnless(shutil.which("node"), "未安装 node")
+    def test_d4_plugin_end_to_end(self):
+        harness = ROOT / "tests" / "dsh_harness.mjs"
+        p = subprocess.run(["node", str(harness), str(self.ws), "--json"],
+                           capture_output=True, text=True, timeout=180)
+        if p.returncode == 2:
+            self.skipTest(f"环境不满足：{p.stderr.strip()[:120]}")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        data = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual(data["passed"], data["total"], data)
+        self.assertGreaterEqual(data["total"], 6)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

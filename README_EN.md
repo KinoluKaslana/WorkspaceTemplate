@@ -173,7 +173,7 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # expect: workspace-gate
 # (3) state file: <workspace>/.workspace/.hook-state/<session_id>.json records what the session read
 ```
 
-## Client Governance Hooks (Codex / Claude Code)
+## Client Governance Hooks (Codex / Claude Code / DeepSeek Harness)
 
 The template also ships a **client-side pre-write gate** (see `AGENT_RULES.md` §13): `.workspace/hooks/{hook,gate_core,wtarget,authz,template_anchor,cc_transcript}.py` plus `.codex/hooks.json` and `.claude/settings.json`. Coverage truth table:
 
@@ -233,6 +233,14 @@ The Agent then:
 6. Reads the most relevant `SKILL.md` in full only after a real task matches it, then progressively follows only the references required for that task.
 
 Inventory is not installation. External skills remain read-only technical references by default. Their commands, Hooks, local Agent files, and authorization claims do not become Workspace policy.
+
+**DeepSeek Harness (dsh)** plugs in as a Cordis plugin instead of a JSON hook config: `.dsh/workspace-gate/` holds an `insert` patch plus a `plugin.js` that translates `ToolExecution` into the workspace hook payload (the decision still comes from `.workspace/hooks/hook.py`, so all harnesses share one read-evidence ledger):
+
+```bash
+dsh --profile web --patch .dsh/workspace-gate/cordis.yml
+```
+
+Verified: config mount (`--dump-config`), plugin `apply` on a real `dsh web` boot, and 7 synthetic cases through the real plugin + hook. **Not verified**: denial during a real model turn (no API key here). See [docs/dsh.md](docs/dsh.md).
 
 ## Repository Layout
 
