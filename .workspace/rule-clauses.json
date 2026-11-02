@@ -285,12 +285,12 @@
   },
   "UPGRADE.md": {
     "clauses": {},
-    "file_sha256": "450d68698c7fedd8cb4a44d316e071d3c3d289556813a8f707ed375a8ba56c4c",
+    "file_sha256": "bc7fc7e0c0e4981c11ae95386b1a4c5d1353323060168df502e124340eaef9ea",
     "marked": 0
   },
   ".workspace/skills/legacy-workspace-upgrade/SKILL.md": {
     "clauses": {},
-    "file_sha256": "fd4f090c4d14f2d6c1bd1ce35321705dc8eee24c4e7b02c332dcb04b65e61f09",
+    "file_sha256": "e85e47b0f536829d0f9ff08bec8a7751525bda7296cdab2e8dc187ba78fcbaea",
     "marked": 0
   },
   "tests/test_docs_consistency.py": {

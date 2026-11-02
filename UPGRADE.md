@@ -67,9 +67,15 @@ PY
 
 ```bash
 python3 notes/rebuild_index.py                    # 生成 notes/INDEX.md 与 _INVERTED.md
+python3 scripts/docs_index.py build               # 生成 docs/.index.json
 python3 scripts/skill_audit.py --sync-registry    # 新建/重写 REGISTRY 的入口表与计数
 python3 scripts/skill_audit.py --tools-snippet    # 打印需补进 TOOLS.md 的行
 ```
+
+**旧 `bootstrap.python` 记录不全时**（`preflight` 报 `python` mismatch）：
+- `runtime.identifier` 写**venv 目录的绝对路径**（如 `/path/.venv-314`，不是 `.../bin/python`），`runtime.version` 写该 venv 的 `X.Y.Z`；
+- 记录指向的 venv 已不存在（换机/搬目录）→ 按 §0.1 **重建同模式 venv**，`python.mode` 不变；
+- 模式本身为 `unconfigured` 才走 `scripts/pyenv_init.py`（uv 默认）。
 
 把最后一条打印的行追加到 `TOOLS.md` 的 workspace-skills 小节（没有就新建），例如：
 
@@ -92,6 +98,8 @@ python3 scripts/workspace_preflight.py                               # 无 misma
 ```
 
 任一条红 → 用第 2 步备份回滚，不要在漂移状态下继续。
+`preflight` 的 `mismatch` 必须为 0；`warn`（如本机无 `.git`、`TOOLS §1` 缺本机行）需在报告里逐条解释。
+幂等复核：再跑一次 `template_sync` 的 dry-run，应显示 `→ 将替换 0 个文件`。
 
 ## 5. 升级之后
 

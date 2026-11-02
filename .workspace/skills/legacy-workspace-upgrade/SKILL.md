@@ -54,9 +54,12 @@ python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref ma
 
 ```bash
 python3 notes/rebuild_index.py
+python3 scripts/docs_index.py build
 python3 scripts/skill_audit.py --sync-registry
 python3 scripts/skill_audit.py --tools-snippet    # 按输出补 TOOLS.md
 ```
+
+旧 `bootstrap.python` 缺 `runtime.identifier` 时：写**venv 目录绝对路径**（非 `bin/python`）+ `runtime.version`；记录指向的 venv 已不存在则按 §0.1 重建**同模式** venv；仅 `unconfigured` 才走 `pyenv_init.py`。
 
 ### 第 4 步：验收
 
@@ -84,7 +87,8 @@ python3 scripts/workspace_preflight.py
 python3 scripts/verify_rules.py --workspace . --vs-template "$TPL"   # 期望 clean: true
 python3 scripts/skill_audit.py --strict                              # 期望 exit 0，0 findings
 python3 scripts/mark_rules.py check AGENT_RULES.md                   # 期望 all clauses marked
-python3 scripts/workspace_preflight.py                               # 期望 mismatch=0
+python3 scripts/workspace_preflight.py                               # 期望 mismatch=0（warn 逐条解释）
+python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref main   # 幂等：应 0 个文件
 ```
 
 ## 维护
