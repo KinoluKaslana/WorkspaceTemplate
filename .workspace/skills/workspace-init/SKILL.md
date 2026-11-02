@@ -1,7 +1,7 @@
 ---
 name: workspace-init
 description: "Use when initializing or adopting a workspace created from an OLD WorkspaceTemplate version (pre-v2.0), or any workspace whose governance files predate the locked-template + custom-override architecture. 初始化/接管老版本模板工作区时使用。"
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Workspace Init — 老版本工作区初始化 skill
@@ -11,7 +11,24 @@ version: 1.0.0
 ## 触发条件
 
 - 用户说"初始化这个工作区 / 接管这个工作区 / 把 XX 工作区升到新模板体系"；
-- 或 Agent 检测到：`bootstrap.json` 缺 `template` 节 / `AGENT_RULES.md` 无条款 ID 标记 / `.git` remote 指向 `KinoluKaslana/WorkspaceTemplate`。
+- 或 Agent 检测到：`bootstrap.json` 缺 `template` 节 / `AGENT_RULES.md` 无条款 ID 标记 / `.git` remote 指向 `KinoluKaslana/WorkspaceTemplate`；
+- 或**全新实例化**（无 `bootstrap.json` 且无 `AGENT_RULES.md`）：跳过第 4 步迁移，直接按模板复制 + 第 5–8 步落地。
+
+**误触发**：工作区已是当前版本（有条款标记且 `bootstrap.template.current_policy_version` 与目标一致）——那是 `template-update` 的活。
+**漏触发**：只有 `bootstrap.json` 缺失、其余文件齐全的"半初始化"工作区。
+
+## 职责边界
+
+- **归本 skill**：老版本/半初始化工作区的接管与迁移；首次实例化落地；bootstrap 血缘回写。
+- **不归**：日常模板同步 → `template-update`；建仓 → `git-init`；跨设备拉推 → `workspace-repo-sync`。
+- **不动**：用户业务文件、私有目录、`notes/` 正文。
+
+## 前置事实（先读，不可跳过）
+
+1. 目标模板源可读（`TEMPLATE_DIR` 或 `template_sync.py --clone-url` 可克隆）；
+2. 工作区在可写路径，且**动手前**已确认无其他 Agent 正在写（同 uid 无锁，靠人工确认）；
+3. 用户已同意迁移（涉及覆盖模板层与删除 `.git`，属 R59 高影响动作）；
+4. 任一不成立 → **停下报告**，不降级执行。
 
 ## 总原则
 
@@ -27,7 +44,7 @@ version: 1.0.0
 ```bash
 WS=<工作区绝对路径>
 ls -la "$WS"; cat "$WS/.workspace/bootstrap.json" 2>/dev/null || echo "无 bootstrap"
-head -20 "$WS/AGENT_RULES.md" 2>/dev/null | grep -o 'id:R[0-9]*' | head -3   # 有标记 = 已是 v2.0+
+grep -c 'id:R[0-9]' "$WS/AGENT_RULES.md" 2>/dev/null || echo 0   # >0 = 已有条款标记（全文件计数，勿只看前 N 行）
 git -C "$WS" remote -v 2>/dev/null; git -C "$WS" status --short 2>/dev/null | head; git -C "$WS" log --oneline -5 2>/dev/null
 ls "$WS"/*.custom.md 2>/dev/null; ls "$WS/notes/" 2>/dev/null | head
 ```
@@ -51,7 +68,29 @@ registry 用**模板最新版**：报告 `[file] MISSING`（工作区缺 v2.0 �
 
 ### 第 4 步：pre-v2.0 → v2.0 迁移（本地语义外置）
 
-1. **备份**：`mkdir -p "$WS/.workspace/backup-init-<date>" && cp "$WS"/AGENT_RULES.md "$WS"/AGENTS.md "$WS"/CLAUDE.md "$WS"/HERMES.md "$WS"/TOOLS.md "$WS"/.workspace/bootstrap.json "$WS/.workspace/backup-init-<date>/"`。
+1. **备份（必须覆盖"将被替换的全部文件"，不是挑几个）**：
+   ```bash
+   BK="$WS/.workspace/backup-init-<date>"; mkdir -p "$BK"
+   python3 - "$TEMPLATE_DIR" "$WS" "$BK" <<'PY'
+   import shutil, sys
+   from pathlib import Path
+   sys.path.insert(0, str(Path(sys.argv[1]) / "scripts"))
+   from verify_rules import TEMPLATE_FILES
+   tpl, ws, bk = (Path(x) for x in sys.argv[1:4])
+   for rel in TEMPLATE_FILES:                 # 与第 4 步替换清单同源
+       src = ws / rel
+       if src.is_file():
+           (bk / rel).parent.mkdir(parents=True, exist_ok=True)
+           shutil.copy2(src, bk / rel)
+   for extra in ("TOOLS.md", ".workspace/bootstrap.json"):
+       p = ws / extra
+       if p.is_file():
+           (bk / extra).parent.mkdir(parents=True, exist_ok=True)
+           shutil.copy2(p, bk / extra)
+   PY
+   diff -r "$BK" "$WS" >/dev/null 2>&1 && echo "警告：备份为空，停止" && exit 1
+   ```
+   备份集必须 ⊇ 第 4 步的替换集（历史上漏备份 `scripts/`、`skills/`、`rule-clauses.json` 导致回滚不完整）。
 2. **提取本地差异**：`diff "$WS/AGENT_RULES.md" "$TEMPLATE_DIR/AGENT_RULES.md" > /tmp/rules.diff`（逐 hunk 人工审读——老工作区的本地章节如人格定义、路径约定都在这里）。
 3. **写入 custom 层**：把每个"工作区独有"的规则块整理进 `$WS/AGENT_RULES.custom.md`，每条标注 `overrides: R<id>`（改写了哪条模板条款）或 `extends:`（纯新增）。不确定对应关系时标 `extends:` 并在报告注明。
 4. **模板层还原**：从 `$TEMPLATE_DIR` 复制全部模板层文件（AGENT_RULES.md、AGENTS/CLAUDE/HERMES、README*、scripts/*、notes/rebuild_index.py、_TEMPLATE.md、.workspace/skills/、.workspace/rule-clauses.json），`diff` 验证逐字节一致。
@@ -88,7 +127,7 @@ remote 指向他处 / 历史无法确认 → **暂停，向用户展示发现并
 
 ### 第 7 步：skills 登记核验
 
-确认 `skills/REGISTRY.md` 有 `workspace-skills` 命名空间（template-update / workspace-init / git-init / delivery-closure 四个入口）；`bootstrap.json` 的 `skills.registered_roots` 含 `workspace-skills`。缺则补登记（TOOLS.md 同步「workspace-skills」小节条目）。
+确认 `skills/REGISTRY.md` 有 `workspace-skills` 命名空间，且**入口集合 = `.workspace/skills/*/SKILL.md` 目录集合**（不要写死名单）；跑 `python3 scripts/skill_audit.py --strict`，需要重排时用 `--sync-registry`；`bootstrap.json` 的 `skills.registered_roots` 含 `workspace-skills`。缺则补登记（TOOLS.md 同步「workspace-skills」小节条目）。
 
 ### 第 8 步：全量验证
 
@@ -102,6 +141,11 @@ remote 指向他处 / 历史无法确认 → **暂停，向用户展示发现并
 ### 第 9 步：初始化报告
 
 `盘点结果 → 迁移清单（迁入 custom 的规则块）→ Python 模式 → git 决策与 patch 备份位置 → 校验三项结果 → 版本（工作区旧版 → 模板版）`。建 note 记录初始化结论（按 AGENT_RULES §9）。
+
+## 变更记录
+
+- 1.1.0（2026-11-02）：修完备性缺口——条款标记检测改全文件计数（原 `head -20` 对现行模板必然误判为"无标记"）；备份清单改为与替换清单同源；登记核验按目录派生；补"全新实例化"触发、职责边界、前置事实。
+- 1.0.0：首版。
 
 ## 陷阱
 

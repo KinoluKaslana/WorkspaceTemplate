@@ -1,7 +1,7 @@
 ---
 name: workspace-repo-sync
 description: "Use when syncing the workspace's own git repo across devices (notes/TOOLS/artifacts changed elsewhere), or when recorded tool paths may belong to another machine. 跨设备同步工作区自身仓库时使用：先核验登记事实与工具真实性，再让用户裁决差异。"
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Workspace Repo Sync — 工作区自身仓库的跨设备同步
@@ -22,6 +22,13 @@ version: 1.0.0
 
 **硬规则**：不 `push --force`；不自动解决 `TOOLS.md`/`notes/`/`WORKSPACE.md` 的语义冲突；
 不改写另一台设备的登记行。
+
+## 前置事实（先读，不可跳过）
+
+1. 本工作区 `bootstrap.json` 存在且 `git.status=initialized`；`declined` 时**不做任何 git 步骤**（只做第 0 步预检与记录回写）；
+2. `git remote -v` 有 origin，且与 `bootstrap.git.remote` 一致；不一致先按第 6 步裁决；
+3. 网络可用（`git fetch` 能到远端）；不可用 → 只做本地检查，报告"无法确认远端状态"；
+4. 用户在场可裁决（分叉策略与冲突处置必须由用户选）。
 
 ## 第 0 步：预检（必跑，先看再动）
 
@@ -75,24 +82,36 @@ git diff --stat @{u}...HEAD     # 本地待推
 ## 第 3 步：执行同步
 
 ```bash
+git rev-parse HEAD > /tmp/pre-sync.head      # 记录同步前 HEAD（回滚锚点）
 git pull --ff-only            # 首选
 # 若被拒且用户选 merge：git pull --no-rebase
 # 若用户选 rebase：git pull --rebase
 ```
 
+**冲突回滚**（用户决定放弃本次合并时）：
+
+```bash
+git merge --abort      # merge 冲突时
+git rebase --abort     # rebase 冲突时
+git reset --hard "$(cat /tmp/pre-sync.head)"   # 已经 merge 成功但要撤销（会丢本次合并，先确认已推/未推）
+```
+`reset --hard` 属高影响动作：执行前确认工作区无未提交改动（`git status --short` 为空），并取得用户明确同意。
+
 - 冲突时**停下**，逐文件列出冲突块，按第 2 步裁决人工合并；不 `--ours/--theirs` 一把梭。
 - 任何情况下不 `push --force`；确实需要改写历史时，明确告诉用户后果并让用户执行。
 
-## 第 4 步：拉后重建与复验（缺一不可）
+## 第 4 步：拉后重建与复验（缺一不可，逐条给期望输出）
 
-```bash
-python3 notes/rebuild_index.py                 # notes 索引（R72）
-python3 scripts/docs_index.py build            # 仅当 docs/ 存在
-python3 scripts/verify_rules.py --workspace .  # 模板层完整性
-python3 scripts/skill_audit.py --strict        # skills 登记与引用
-python3 .hermes/plugins/workspace-gate/selfcheck.py   # 守门插件
-python3 scripts/workspace_preflight.py         # 再跑一次预检
-```
+| 命令 | 期望输出 |
+|---|---|
+| `python3 notes/rebuild_index.py` | exit 0，末行含 `INDEX.md` 与活跃 note 数 |
+| `python3 scripts/docs_index.py build`（仅当 `docs/` 存在） | 输出 `{"sections": N, ...}`；随后 `check` 返回 `ok:true` |
+| `python3 scripts/verify_rules.py --workspace .` | `clean: true`，`findings: []` |
+| `python3 scripts/skill_audit.py --strict` | exit 0，`共 N 个 skill，0 个有 findings` |
+| `python3 .hermes/plugins/workspace-gate/selfcheck.py` | 末行 `ALL CHECKS PASSED` |
+| `python3 scripts/workspace_preflight.py` | `mismatch=0`（warn 允许，但要在报告列出） |
+
+任一条不符 → **不要继续推送**，先按第 6 步定位是登记问题还是内容问题。
 
 ## 第 5 步：推送（仅用户要求）
 
@@ -107,6 +126,17 @@ git push origin <branch>       # 不用 --force
 - `TOOLS.md` §1：本机行改成实测值，核验日期更新；**其他主机行原样保留**。
 - `bootstrap.json`：只改设备无关的共享事实（remote、policy 版本）；`git.default_branch` 是记录，不是当前分支。
 - 发现登记本身有误（如 remote 写错）→ 报告用户并给出改法，不擅自改写。
+
+## 验收（同步完成后，可被复跑）
+
+```bash
+python3 scripts/workspace_preflight.py --json   # 期望：mismatch=0（warn 需在报告列出）
+python3 scripts/verify_rules.py --workspace .   # 期望：clean=true
+python3 scripts/skill_audit.py --strict         # 期望：exit 0，0 findings
+git status -sb                                  # 期望：ahead/behind 归零或与用户确认的状态一致
+```
+
+四条全过才可报告"同步完成"；任何一条红 → 按「失败模式与处置」处理，不推进推送。
 
 ## 跨设备工具真实性核验清单
 
@@ -139,5 +169,6 @@ git push origin <branch>       # 不用 --force
 
 ## 变更记录
 
+- 1.1.0（2026-11-02）：补前置事实（无仓不做 git 步骤）、同步前 HEAD 锚点与冲突回滚、复验表逐条给期望输出。
 - 1.0.0（2026-11-02）：首版。跨设备场景来自实际记录冲突（TOOLS §1 单值被两端互相改写）；
   固定"先预检、按主机分列、用户裁决分叉、拉后四验"的流程。

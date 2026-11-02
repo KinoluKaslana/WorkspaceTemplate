@@ -65,6 +65,8 @@ TEMPLATE_FILES = [
     "scripts/skill_audit.py",
     "scripts/workspace_preflight.py",
     "tests/test_workspace_preflight.py",
+    "tests/test_skill_audit.py",
+    ".workspace/skills/_TEMPLATE.md",
     ".workspace/skills/workspace-repo-sync/SKILL.md",
     "tests/test_alias_audit.py",
     "tests/test_docs_index.py",

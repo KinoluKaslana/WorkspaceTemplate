@@ -1,7 +1,7 @@
 ---
 name: docs-retrieval-maintenance
 description: "Use when docs/ changed, the retrieval index is stale, an alias target was renamed, or the hit report drops. 维护 docs 检索索引与别名表：索引可全自动，别名仅在有真实查询缺口日志时可自主新增（用户不手改）。"
-version: 1.1.0
+version: 1.2.0
 ---
 
 # docs 检索维护 — 索引与别名表的 Agent 维护规程
@@ -11,6 +11,14 @@ version: 1.1.0
 
 **不负责**：写政策（`AGENT_RULES.md`）、写正文（`docs/*.md`）、回答业务问题。
 **不代替读取**：检索返回**定位**，拿依据仍须 `read_file` 读整节；gate 的 `coverage` 只认读工具。
+
+## 前置事实（先读，不可跳过）
+
+1. `docs/` 目录存在且可读；不存在时本 skill 全部动作 n/a（报告一句即可，不创建空索引）；
+2. `scripts/docs_index.py`、`docs_hit_report.py`、`docs_alias_audit.py` 可执行（模板层完好）；
+3. 判据集 `tests/docs_probe.json` 存在；缺失时只能做 `build/check`，**不得**声称"命中达标"；
+4. `docs/.miss-log.jsonl` 可追加（别名唯一合法来源）；
+5. 任一不成立 → 停下报告，不降级为"手工改索引"。
 
 ## 0. 自主级别（本 skill 的核心裁决）
 
@@ -87,7 +95,16 @@ python3 scripts/docs_index.py query "hello world" # 期望 results: []
 
 **禁止**：用 `tests/docs_probe.json` 的题面做 `phrases`；用判据集 MISS 作为新增理由；把别名当答案库。
 
-删除条件：目标不存在；`audit --strict` 判冗余（留一验证后命中仍达标）；或超过 90 天无任何命中。
+**停用 / 删除 / 重指，三档分开（不得混用）**：
+
+| 情形 | 动作 | 自主级别 |
+|---|---|---|
+| 目标文件或标题不存在 | **自动停用**（从表中移除该条，记录停用理由） | 全自动 |
+| `audit --strict` 判冗余（留一验证后仍达标） | **提案删除**，等用户确认 | 需人工 |
+| 超过 90 天无任何命中记录 | **提案删除**（附"从未命中"证据） | 需人工 |
+| 标题改名需重指 | **提案重指**（给新 heading + 指纹） | 需人工 |
+
+> 旧版本这里写"或超过 90 天无命中即删"，与"删除需人工"自相矛盾；以本表为准。
 
 ## 4. 防自欺（Goodhart）机制
 
@@ -95,6 +112,15 @@ python3 scripts/docs_index.py query "hello world" # 期望 results: []
 2. **来源可核验**：`docs_alias_audit.py` 校验每条别名的 `source`/`miss_id` 是否真的存在于日志且为 MISS；缺失即 `SOURCE` 违规。
 3. **留一验证**：审计逐条禁用别名后重跑判据集，命中仍达标 → 标 `REDUND`，要求删除。冗余条没有存在价值。
 4. **债务计数**：`source:"probe-only"` 的条目一律计入 `probe_only_debt`，`--strict` 下判失败——不允许"为了让 10/10 而留一条"。
+
+## 4.5 系数变更也必须有快照
+
+调 `docs_index.py` 的系数（标题 IDF 权重 / 覆盖率指数 / 二元权重 / 阈值）时：
+
+1. 先 `cp scripts/docs_index.py scripts/.docs_index.bak.<ts>.py`（快照）；
+2. 一次只改一个系数，改完跑 `docs_hit_report.py` + 噪声对拍；
+3. 命中下降 → `cp` 快照回 `scripts/docs_index.py`，重跑确认回到基线；
+4. 快照在验收通过后可删；**不要**用 `git checkout` 还原（会连带丢掉未提交的其它改动）。
 
 ## 5. 回滚（不依赖 git）
 
@@ -141,6 +167,7 @@ python3 -B scripts/verify_rules.py --workspace .       # clean=true
 
 ## 变更记录
 
+- 1.2.0（2026-11-02）：补前置事实；把"停用/删除/重指"拆成三档（消除"90 天无命中即删"与"删除需人工"的矛盾）；新增系数变更快照流程。
 - 1.1.0（2026-11-02）：确立**自主分级**（索引全自动 / 别名有条件自主 / 阈值与 boost 需人工）；
   新增 `scripts/docs_alias_audit.py`（死指针、指纹漂移、来源合规、留一验证、`--restore`）；
   新增 `docs/.miss-log.jsonl` 作为别名唯一合法来源；清空历史 `probe-only` 别名（判据集 9/10，缺口如实保留）。

@@ -1,7 +1,7 @@
 ---
 name: git-init
 description: "Use when the user asks to create/initialize a git repository for a workspace that previously declined one (bootstrap git.status=declined), or to re-record git info in bootstrap. 为此前未建仓的工作区创建 git 仓库并登记 bootstrap 时使用。"
-version: 1.0.1
+version: 1.1.0
 ---
 
 # Git Init — 工作区 git 仓库创建 skill
@@ -28,20 +28,30 @@ version: 1.0.1
 - remote：用户自己的仓库地址（多设备同步），或纯本地仓（暂不配 remote）；
 - 首次提交范围：默认全部治理文件 + 工作区文件（`.gitignore` 已忽略 `.venv-*` 等）。
 
-### 第 2 步：创建仓库
+### 第 2 步：创建仓库（先登记、后提交、再核提交树）
+
+顺序固定：**init → .gitignore 核验 → bootstrap/TOOLS 登记 → 审查暂存清单 → 提交**。
+先提交后登记会让首次提交缺 `bootstrap.json`/`TOOLS.md` 的登记内容，且 `git add -A` 会把无关文件一起纳入。
 
 ```bash
 cd <工作区根>
 git init -b main
+# 第 3 步的 .gitignore 核验在此完成
+# 第 4 步的 bootstrap/TOOLS 登记在此完成
 git add -A
+git status --short          # 必读：逐条确认将被提交的文件都在预期范围内
+git diff --cached --stat    # 期望：只有治理文件 + 工作区业务文件，无 .venv-*、无备份目录、无 .hook-state
 git commit -m "chore: initialize workspace repository (from WorkspaceTemplate instance)"
+git show --stat --oneline HEAD   # 期望：提交树 == 上一步审查过的暂存清单
 ```
 
-用户提供了 remote 时：
+**提交范围纪律**：`git add -A` 之前必须看过 `git status --short`；发现 `.venv-*`、`backup-*`、`.hook-state`、临时任务目录 → 先补 `.gitignore` 再 add，不要用 `git add -A` 硬吃。
+
+用户提供了 remote 时（**仅在用户明确要求推送时执行**，R63）：
 
 ```bash
 git remote add origin <用户提供的地址>
-git push -u origin main    # 需用户凭据/授权；失败不回滚本地仓，报告阻塞即可
+git push -u origin <branch>    # 需用户凭据/授权；失败不回滚本地仓，报告阻塞即可
 ```
 
 ### 第 3 步：.gitignore 核验
@@ -72,6 +82,26 @@ python3 -c "import json; print(json.load(open('.workspace/bootstrap.json'))['git
 ```
 
 报告：`仓库状态 → remote 与分支 → bootstrap git 节内容 → 首次提交哈希`。
+
+## 失败与回滚
+
+| 失败特征 | 处置 |
+|---|---|
+| `git commit` 前发现暂存清单含不该提交的文件 | `git reset` 清暂存 → 补 `.gitignore` → 重来（不提交半成品） |
+| `git commit` 之后发现提交范围错误（含大文件/秘密） | **不要** `--amend` 静默掩盖：报告用户，按 R59 决定是否 `reset --soft` 重做；若已推送，改写历史需用户明确授权 |
+| `git remote add` 失败/remote 写错 | `git remote remove origin` 后重加；bootstrap 的 remote 字段同步更正 |
+| 用户反悔、要撤销建仓 | `rm -rf .git` + 把 `bootstrap.git.status` 回写 `declined`（先确认无未推送提交；有则先导出 `git format-patch` 备份） |
+| 提交成功但登记没写 | 立即补 `bootstrap.json` + `TOOLS.md` 并**重新提交**（不得只在工作区留改动） |
+
+## 验收（命令 + 期望输出）
+
+```bash
+git rev-parse --is-inside-work-tree     # 期望：true
+git log --oneline -1                    # 期望：一条初始化提交
+git status --short                      # 期望：空（或仅用户声明的未跟踪文件）
+python3 -c "import json;d=json.load(open('.workspace/bootstrap.json'));print(d['git']['status'], d['git']['remote'])"   # 期望：initialized <remote 或 None>
+python3 scripts/skill_audit.py --strict  # 期望：exit 0
+```
 
 ## 陷阱
 

@@ -1,7 +1,7 @@
 ---
 name: delivery-closure
 description: "Use before declaring any task-mode deliverable complete (persistent artifacts produced). 声明任务完成前的交付闭环检查——产物清点/note 判定/索引回写/部署验证六步机械流程时使用。"
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Delivery Closure — 交付闭环 skill
@@ -28,9 +28,13 @@ version: 1.0.0
 
 ```bash
 # 在 Workspace 根执行
-git status --short                            # 有仓时：列出全部改动
-ls -la <task-slug>-<yy-mm-dd>/ 2>/dev/null    # 任务目录产物
+git status --short 2>/dev/null || echo "NO-GIT"   # 有仓时列出全部改动；bootstrap.git.status=declined 时为空
+ls -la <task-slug>-<yy-mm-dd>/ 2>/dev/null        # 任务目录产物
+find . -newer <任务起点标记文件> -type f -not -path './.venv-*' -not -path './.git/*' 2>/dev/null | head -50
 ```
+
+**无仓兜底（`git.status=declined` 或 `git status` 报错）**：`git status --short` 会输出空，**不得据此判定"没有改动"**。
+必须改用 `find -newer` 或任务目录列举，并在报告里注明"清点方式=文件时间戳列举（本工作区无 git）"。
 
 逐个产物确认三件事：**存在、非空、路径在授权范围内**（§3）。清单原样写进第 6 步报告。
 
@@ -68,6 +72,7 @@ exit 0 且无 `[WARN]` 才算通过；有 warning 说明 note 图结构损坏（
 |---|---|
 | 已上线站点/书稿 | 部署脚本 → `curl -sS -o /dev/null -w '%{http_code}' <URL>` 应为 200，内容抽查含预期标题 |
 | 代码改动 | 测试/lint 通过（exit 0）；按授权提交后 `git log -1 --stat` 核对 |
+| `docs/*.md` 改动 | `python3 scripts/docs_index.py build && check`、`python3 scripts/docs_hit_report.py --min 9`、`python3 scripts/docs_alias_audit.py --strict`，三条全过（细则见 `docs-retrieval-maintenance` §6） |
 | 发布/版本 | tag/release 存在性验证 |
 
 无外部动作时在报告注明「第 5 步不适用」。验证必须**在本流程内执行**，引用任务早期的旧输出不算数（产物可能已变）。
@@ -82,6 +87,17 @@ exit 0 且无 `[WARN]` 才算通过；有 warning 说明 note 图结构损坏（
 4. **外部动作与验证**：命令 + 观测值（200 / exit 0 / …），或「不适用」；
 5. **限制/未决项**：未完成的步骤 + 原因；
 6. 仅当 1–4 全绿时，才可写「任务完成」。
+
+## 完成 vs 未完成（口径）
+
+- 六步全绿 → 可称"已完成"。
+- 有单项未做但已披露、且用户接受 → 只能称"**已交付，带限制**"，并逐条列出限制；**不得**用"完成"这个词。
+- 任何 P0 级验证失败（产物缺失、索引损坏、守门拒写未解决）→ 既不能称完成，也不能称已交付，只能报"阻塞"。
+
+## 变更记录
+
+- 1.1.0（2026-11-02）：补无仓清点兜底（`git status` 空 ≠ 无改动）；第 5 步增加 `docs` 改动行；补"完成/已交付带限制/阻塞"三档口径与变更记录。
+- 1.0.0：首版。
 
 ## 陷阱
 

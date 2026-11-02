@@ -1,7 +1,7 @@
 ---
 name: template-update
 description: "Use when syncing a workspace's template layer from any template source revision (branch, tag, or commit) — not tied to one branch. 从任意模板来源（分支/标签/提交）更新工作区模板层时使用。"
-version: 3.1.1
+version: 3.2.0
 ---
 
 # Template Update — 工作区模板同步 skill（任意来源 ref）
@@ -33,6 +33,7 @@ version: 3.1.1
    - 模板层·锁定替换 = `TEMPLATE_FILES` 全集；
    - custom 层·永不触碰 = `*.custom.md`；
    - 工作区所有·永不触碰 = `WORKSPACE.md`、`TOOLS.md`、`notes/*.md` 正文、`skills/REGISTRY.md`、`bootstrap.json` 的本地值、`<task-slug>-*/`、一切用户文件。
+5. **PATCH 的"静默"**指**不逐项确认**，不是"不写报告"：报告仍要列出改动文件与前后版本，只是不需要用户逐条批准。
 5. **版本语义**：PATCH = 修复（静默合并）；MINOR = 新增（报告后合并）；MAJOR = 破坏性变更（逐项确认）。版本语义只影响**报告详略与确认粒度**，机械流程相同。
 6. **条款 ID**：模板层条款带 `<!-- id:Rn -->`；`.workspace/rule-clauses.json` 是注册表（随模板分发）；custom 用 `overrides: R<id>` / `extends:` 引用。
 7. **不是所有工作区都由模板创建**：bootstrap 无 `template` 节时先向用户确认来源，不强行套用。
@@ -64,9 +65,28 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --list-refs   # �
 ### 第 3 步：备份
 
 ```bash
-mkdir -p .workspace/backup-$(date +%Y%m%d-%H%M%S)-sync
+BK=".workspace/backup-$(date +%Y%m%d-%H%M%S)-sync"; mkdir -p "$BK"
+python3 - "$BK" <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, "scripts")
+from verify_rules import TEMPLATE_FILES
+bk = Path(sys.argv[1]); ws = Path(".")
+manifest = []
+for rel in TEMPLATE_FILES:
+    src = ws / rel
+    if src.is_file():
+        (bk / rel).parent.mkdir(parents=True, exist_ok=True)
+        (bk / rel).write_bytes(src.read_bytes())
+        manifest.append(rel)
+(bk / "MANIFEST.txt").write_text("\n".join(manifest) + "\n", encoding="utf-8")
+print(f"backed up {len(manifest)} files -> {bk}")
+PY
 ```
-脚本 `--apply` 会自动把将被替换的文件 + `*.custom.md` + `bootstrap.json` 备份到此目录；手工流程也必须先备份再动手。
+
+脚本 `--apply` 会自动做同样的事（含 `MANIFEST.txt`），并额外备份 `*.custom.md` 与 `bootstrap.json`。
+**回滚必须用 MANIFEST 反向清单**：先按 MANIFEST 把旧文件放回，再删除"本次新增、旧清单里没有"的文件——
+否则新版多出来的文件会留在工作区，`verify_rules` 会报 EXTRA。
 
 ### 第 4 步：锁定替换（机械，无合并）
 
@@ -130,6 +150,7 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
 
 ## 变更记录
 
+- 3.2.0（2026-11-02）：备份/回滚改为 MANIFEST 驱动（含"删除本次新增文件"）；更正 PATCH"静默合并"的含义（不逐项确认 ≠ 不报告）。
 - 3.1.1（2026-11-02）：补「职责边界」——只管模板源与模板层文件；工作区自身仓库的分支由用户维护。
 - 3.1.0（2026-11-02）：新增 `--prune`（删除上游已移除的模板层文件，先备份）；前置事实补"上游删除只报告不删"。
 - 3.0.0（2026-11-02）：**泛用化**——`ref` 支持分支/标签/提交，来源可换 remote/仓库，新增 `--list-refs`、自动克隆、README 自动保留；删除写死的分支枚举与 `TEMPLATE_FILES` 条数。

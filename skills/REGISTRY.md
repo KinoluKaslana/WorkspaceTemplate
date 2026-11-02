@@ -8,18 +8,18 @@
 
 | 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |
 |---|---|---|---|---|
-| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（5 入口：template-update / workspace-init / git-init / delivery-closure / docs-retrieval-maintenance / workspace-repo-sync） | `TOOLS.md`「workspace-skills」小节 |
+| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（6 入口：delivery-closure / docs-retrieval-maintenance / git-init / template-update / workspace-init / workspace-repo-sync） | `TOOLS.md`「workspace-skills」小节 |
 
 ## Skill 入口
 
 | 路由 ID | 触发摘要 | 入口 | 所属命名空间 |
 |---|---|---|---|
-| template-update | 同步模板更新到本工作区（"同步模板/更新工作区到最新模板"或检测到模板版本落后） | `.workspace/skills/template-update/SKILL.md` | workspace-skills |
-| workspace-init | 初始化/接管老版本模板工作区（无 template 血缘、无条款标记、.git 指向模板库、pre-v2.0 结构迁移） | `.workspace/skills/workspace-init/SKILL.md` | workspace-skills |
-| git-init | 为工作区创建 git 仓库并登记 bootstrap（"建 git 仓库"；bootstrap git.status=declined 后翻转为 initialized） | `.workspace/skills/git-init/SKILL.md` | workspace-skills |
-| docs-retrieval-maintenance | docs 改动/索引过期/别名目标改名/命中报告不达标时维护检索索引与别名表（Agent 专用，用户不手改） | `.workspace/skills/docs-retrieval-maintenance/SKILL.md` | workspace-skills |
-| delivery-closure | 声明完成前的交付闭环（产物清点/note 判定/索引回写/验证/声明格式） | `.workspace/skills/delivery-closure/SKILL.md` | workspace-skills |
-| workspace-repo-sync | 跨设备同步**工作区自身** git 仓库（notes/TOOLS 在别端变化）：先 preflight 核验登记与工具真实性，再让用户裁决分叉与冲突 | `.workspace/skills/workspace-repo-sync/SKILL.md` | workspace-skills |
+| delivery-closure | Use before declaring any task-mode deliverable complete (persistent artifacts produced). 声明任务完成前的交付闭环检查——产物清点/note 判定/索引回写/部署验证六步机械流程时使用。 | `.workspace/skills/delivery-closure/SKILL.md` | workspace-skills |
+| docs-retrieval-maintenance | Use when docs/ changed, the retrieval index is stale, an alias target was renamed, or the hit report drops. 维护 docs 检索索引与别名表：索引可全自动，别名仅在有真实查询缺口日志时可自主新增（用户不手改）。 | `.workspace/skills/docs-retrieval-maintenance/SKILL.md` | workspace-skills |
+| git-init | Use when the user asks to create/initialize a git repository for a workspace that previously declined one (bootstrap git.status=declined), or to re-record git info in bootstrap. 为此前未建仓的工作区创建 git 仓库并登记 bootstrap 时使用。 | `.workspace/skills/git-init/SKILL.md` | workspace-skills |
+| template-update | Use when syncing a workspace's template layer from any template source revision (branch, tag, or commit) — not tied to one branch. 从任意模板来源（分支/标签/提交）更新工作区模板层时使用。 | `.workspace/skills/template-update/SKILL.md` | workspace-skills |
+| workspace-init | Use when initializing or adopting a workspace created from an OLD WorkspaceTemplate version (pre-v2.0), or any workspace whose governance files predate the locked-template + custom-override architecture. 初始化/接管老版本模板工作区时使用。 | `.workspace/skills/workspace-init/SKILL.md` | workspace-skills |
+| workspace-repo-sync | Use when syncing the workspace's own git repo across devices (notes/TOOLS/artifacts changed elsewhere), or when recorded tool paths may belong to another machine. 跨设备同步工作区自身仓库时使用：先核验登记事实与工具真实性，再让用户裁决差异。 | `.workspace/skills/workspace-repo-sync/SKILL.md` | workspace-skills |
 
 ## 职责边界（workspace-skills）
 
@@ -36,7 +36,7 @@
 | 新增/改名 skill | 同步更新本表与 `TOOLS.md`；`description` 以 `Use when/before` 开头 | 同上 |
 | 每季度或每次发布前 | 全量审计 + 人工读一遍触发语是否仍准确 | 审计 0 findings |
 
-审计脚本：`scripts/skill_audit.py`（检查 frontmatter/触发语/版本/条款引用路径引用/双登记）。
+审计脚本：`scripts/skill_audit.py`（检查 frontmatter/触发语/版本/条款与路径引用/双登记/**8 维契约节**/计数与名称集合）；`findings>0` 即 exit 1，可直接进验收链；登记重排用 `--sync-registry`（按目录重写入口表与计数，不手改）。
 它只判机械项，**触发语是否真的能让人和模型在对的时机加载**仍需人工复核。
 
 ## 更新约定

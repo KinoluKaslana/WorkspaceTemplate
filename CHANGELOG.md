@@ -25,6 +25,21 @@
 - 新增 `docs/.aliases.json`：只存「口语短语 → 已有节」指针（当前 1 条），目标标题或文件指纹不符即忽略。
 - 结果：10 题命中 **6/10 → 10/10**；`R98` 仍排第一；噪声查询仍为空；测试 **7 → 11 例**。token/成本结论不变（打分只改排序，不改查询轮次）。
 
+## skills 完备性收敛（2026-11-02，不改政策版本）
+
+**来源**：GLM/SOL 双主写辩论 + DS/主理人裁判；判据为「触发/前置/契约/边界/可执行/失败回滚/验收/维护」8 维。
+
+- 新增契约模板 `.workspace/skills/_TEMPLATE.md`：8 维骨架 + frontmatter 规范，新 skill 照此落盘。
+- `scripts/skill_audit.py`：新增契约节检查（缺节即 finding）、REGISTRY **名称集合**比对（不只比数量）、`--sync-registry`（按目录重写入口表与计数）；**exit code 改为 `findings>0 → 1`**（原先非 strict 恒 0，脚本无法 gate）。
+- 修实际缺陷：
+  - `workspace-init`：条款标记检测由 `head -20` 改为全文件计数（原写法对现行模板**必然**误判"无标记"→ 误走迁移路径）；备份清单改为与替换清单同源（原备份 ⊂ 替换，回滚不完整）；登记核验按目录派生；补全新实例化触发/边界/前置/变更记录。
+  - `git-init`：顺序改为 init → .gitignore → 登记 → **审查暂存清单** → 提交 → 核对提交树；补失败与回滚（含撤销建仓）、验收命令。
+  - `template-update`：备份/回滚改为 `MANIFEST.txt` 驱动（含"删除本次新增文件"）；更正 PATCH「静默」的含义（不逐项确认 ≠ 不报告）。
+  - `workspace-repo-sync`：无 `.git` 时不做 git 步骤；补同步前 HEAD 锚点与冲突回滚（merge/rebase abort、reset --hard 前置条件）；复验表逐条给期望输出；补前置与验收。
+  - `delivery-closure`：`git status` 为空时改用文件时间戳列举（原逻辑在无仓工作区静默漏盘）；第 5 步补 `docs` 改动行；补「完成 / 已交付带限制 / 阻塞」三档口径与变更记录。
+  - `docs-retrieval-maintenance`：补前置；「停用 / 删除 / 重指」三档拆分（消除「90 天无命中即删」与「删除需人工」的矛盾）；系数变更加快照回滚。
+- 新增回归 `tests/test_skill_audit.py`（5 例）；`TEMPLATE_FILES` 40 → 42。
+
 ## 3.2.0（2026-11-02）
 
 **MINOR：skills 收敛**
