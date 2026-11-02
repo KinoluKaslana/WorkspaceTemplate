@@ -18,7 +18,7 @@
 
 同时修掉一处**假拒绝**：`pre_bash` 只接受 `cc/codex`，dsh 的 bash 一律走 `ValueError` → 被包装成 "内部错误 deny"。现在 dsh 的 `bash/pwsh` 归一为 hook 的 `Bash` 走同一套静态分析，拒绝理由也从"内部错误"变成真实的「未读」文案。
 
-仍**无法验证**：`pwsh`（需 Windows）；`str_replace_editor`（真实回合未出现该工具调用）。
+仍**无法验证**：`pwsh`（需 Windows 主机）；`str_replace_editor`（**该构建未提供此工具**，模型明确回报不存在；映射留作防御性分支）。
 ## dsh 真实回合验证与修正（2026-11-02，dev，不改政策版本）
 
 账号登录 dsh 后跑真实模型回合（`deepseek-flash`），暴露出四个只有实跑才会发现的问题，全部修复：

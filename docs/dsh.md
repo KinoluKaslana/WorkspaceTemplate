@@ -119,7 +119,8 @@ ls -la                            → ALLOW
 - **bash 盲区**：变量间接与 `awk`/重定向类外部程序写不被识别——这是已声明的盲区，不是待修 bug（要修需要 shell 解析器）。
 - 子 agent **没有委托机制**：dsh 子会话必须自己读政策才能写；父不能代授（与 CC/Codex 的 `delegations.py` 不对齐，属已知差异）。
 - `pwsh` 只在 Linux 上得到 shell 解析路径，未在 Windows 实测。
-- `str_replace_editor` 未在真实回合出现（模型优先用 `edit`）；`pwsh` 无法在 Linux 验证——标为**无法验证**，不算通过。
+- `str_replace_editor`：**该构建（0.2.1-rc.4）未提供此工具**（真实回合模型明确回报「there is no str_replace_editor」）；映射代码是防御性分支，标为**无法验证**。
+- `pwsh`：Linux 上没有该工具，**无法验证**（需要 Windows 主机）。
 
 ## 5.1 在 headless 里跑（账号登录，无 API key）
 
