@@ -167,8 +167,12 @@ def main(argv: list[str]) -> int:
         if prev_commit and subprocess.run(["git", "-C", str(tpl), "cat-file", "-e", f"{prev_commit}^{{commit}}"],
                                           capture_output=True).returncode == 0:
             for name in ("README.md", "README_EN.md"):
-                cur, old = ws / name, git(tpl, "show", f"{prev_commit}:{name}", check=False)
-                if cur.is_file() and old and cur.read_text(encoding="utf-8", errors="replace") != old:
+                cur = ws / name
+                if not cur.is_file():
+                    continue
+                blob = subprocess.run(["git", "-C", str(tpl), "show", f"{prev_commit}:{name}"],
+                                      capture_output=True)
+                if blob.returncode == 0 and blob.stdout and blob.stdout != cur.read_bytes():
                     readme_is_local = True
 
         changed, missing, skipped = [], [], []
