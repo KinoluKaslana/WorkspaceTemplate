@@ -2,6 +2,18 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 工具新增：把 4 条 manual 转成可判定命令（2026-11-02，不改政策版本）
+
+按预注册判据 C1（产物）/C2（静态配置）/C3（痕迹）逐条筛，只转「违反会留下可检产物」的四条；意图/过程类一律保持 manual，拒绝"自我声明式假绿"。
+
+- `scripts/version_check.py` → R2：政策版本 = CHANGELOG 顶层 = `bootstrap.template.current_policy_version`。
+  落地即抓到真实漂移：模板自己的 bootstrap 记录停在 **3.3.1**，已修正为 3.4.0。
+- `scripts/notes_index_check.py` → R80：把 `notes/` 复制到临时目录重跑 `rebuild_index.py`，与仓库的 `INDEX.md`/`_INVERTED.md` 比对（生成时间戳行归一化后逐字节）。
+- `scripts/secret_scan.py` → R61：私钥块 / AWS AKID / GitHub·Slack token / Bearer / password 赋值；只打印脱敏片段。
+- `workspace_preflight.py` 新增 → R11：`python.mode=mcp` 时不得同时存在 `.venv-*` 目录。
+- 结果：command 20 → **24**，manual 20 → **16**；`tests/test_check_scripts.py` 10 例（每个检查都带会变红的负例）。
+- `TEMPLATE_FILES` 60 → 64。
+
 ## 3.4.0（2026-11-02，MINOR）政策双轨：受控词表 + 条款属性
 
 三席（GLM/SOL/DS）同判「不换语言」后的落地。新增 §14（R109–R112）：正文只用四个情态词、条款属性存 `.workspace/clauses.meta.json`、`check` 必须是命令或 `manual:<理由>`、`clause_lint` 独立成门。正文顺带消掉 3 处模糊量词（「通常」×2、「确有必要时」），并把 R8/R24/R94 的义务句补成显式「必须」。

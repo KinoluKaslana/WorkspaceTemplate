@@ -164,7 +164,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "344af51feb983f192bfcf53d4e487a16976c2ccfa3bac33039ea3666a1340024",
+    "file_sha256": "73545f3f531ea12e968313c588353b961654bd9d9fa3df1734ddffcdce718ead",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -224,7 +224,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "115976c92951bcc599bcd6b4525cf4d94f4dfdbbfd623028a82ff3908803180f",
+    "file_sha256": "bfa391d345e8eba744a10130cb7b394239ee3663875db29fd92742f00c26a02c",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -259,7 +259,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "7a100be6fef71707066a6a6e7f5ceedc3b49649d552094e2388d3c7b7d75cbec",
+    "file_sha256": "b344f2e5f645926b4dd5207248e43954ed0530c4bbc870cc214ed4ed7f364239",
     "marked": 0
   },
   "docs/skills.md": {
@@ -269,7 +269,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "d1d964634d54f37ac6784704c458fbab25af18ec893dcc2efc7bd4cd711af276",
+    "file_sha256": "09a85306642334de801cd2e4fe40c1bd954f512851f1644ba302ba6e5a5e78e1",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -312,6 +312,26 @@
     "file_sha256": "cca6ae5062396c9f7c7358e0fa3876f24bd73480ddd259d656b2a27637ea0c78",
     "marked": 0
   },
+  "tests/test_check_scripts.py": {
+    "clauses": {},
+    "file_sha256": "496685f95383b6905b03eca75ea4d68201ec926af430b65e548e2cb0d7031936",
+    "marked": 0
+  },
+  "scripts/version_check.py": {
+    "clauses": {},
+    "file_sha256": "40c2b31be0565f8b8341a500e1e705a4494c5927e83ad2e775bd7f2fdd8750f8",
+    "marked": 0
+  },
+  "scripts/notes_index_check.py": {
+    "clauses": {},
+    "file_sha256": "d8d047637451dc00cc0d9b154b20cd4f8e9ceb5d5cc90a256a5eff4b8fde56f1",
+    "marked": 0
+  },
+  "scripts/secret_scan.py": {
+    "clauses": {},
+    "file_sha256": "7ed73ea56fc51b4027039c2f7f3de33e5e3ca9eb7ae22743eb6e8f4fdc46a691",
+    "marked": 0
+  },
   "scripts/clause_lint.py": {
     "clauses": {},
     "file_sha256": "1565b1dfa8cabc5ab61feefdf9270e47cc5ef6a4534f29bea847d3c29170a411",
@@ -319,12 +339,12 @@
   },
   ".workspace/clauses.meta.json": {
     "clauses": {},
-    "file_sha256": "72f71cc966c6cd1a2e73102503fae47e7c857b8c7419366b8fd5b749e5ae6c6e",
+    "file_sha256": "33a69fbb711bdee3cd88cd02317166633fd8279ccecfaac4569db9d7e8347276",
     "marked": 0
   },
   "docs/policy-language.md": {
     "clauses": {},
-    "file_sha256": "34962216d88e3cbee5e6e82c8a6cfb3e7a8ecddbcf487b37aad73e92c91ca055",
+    "file_sha256": "179c67687e0abc0454c4690bd84251f51a37b8b909ffbe2323f19eaa43dcd8ca",
     "marked": 0
   },
   ".workspace/skills/workspace-repo-sync/SKILL.md": {

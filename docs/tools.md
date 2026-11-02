@@ -9,6 +9,9 @@
 | `verify_rules.py` | 模板层完整性：文件哈希 + 条款 ID + custom 引用；`--vs-template` 做字节级比对 + git 信任锚 | `--workspace . [--vs-template <克隆>] [--json]` | 0 clean / 1 有 findings |
 | `mark_rules.py` | 给条款打稳定 ID（`<!-- id:Rn -->`）并重建注册表 | `registry AGENT_RULES.md` | 0 / 1 |
 | `inspect_skills.py` | 只读盘点 skills 目录（入口、name/description、嵌套） | `<skills-dir> [--include-nested]` | 0 / 1 |
+| `version_check.py` | 版本三元组：政策 ↔ CHANGELOG ↔ bootstrap | `[--json]` | 0 / 1 |
+| `notes_index_check.py` | notes 索引与重建结果一致（防手改/过期） | `[--json]` | 0 / 1 |
+| `secret_scan.py` | 高置信度明文凭据扫描（只打印脱敏片段） | `[--root PATH] [--json]` | 0 / 1 |
 | `clause_lint.py` | 条款属性门：正文用词 ↔ `clauses.meta.json` 声明一致 | `[--strict] [--report] [--json]` | 0 / 1 |
 | `skill_audit.py` | skills 契约节 / 双登记 / 计数与名称集合 / 引用路径 | `[--strict] [--sync-registry] [--tools-snippet] [--json]` | 0 / 1 |
 | `docs_index.py` | docs 确定性索引：`build` / `check` / `query` | `build`；`query <词> --json --top 2` | 0 / 1(stale) / 2(缺索引) / 3(stale 查询) |
@@ -83,6 +86,18 @@ python3 scripts/clause_lint.py --report   # severity / check 类型 / manual 清
 校验 `AGENT_RULES.md` 正文用词与 `.workspace/clauses.meta.json` 声明是否一致：
 键集合、枚举、强条款的 `check`、`manual:` 理由、`reviewed`、以及「可机械判定的触发条件不许标 manual」。
 规则本身见 [`policy-language.md`](policy-language.md)。
+
+## 4.6 三条可判定检查（条款属性绑定）
+
+```bash
+python3 scripts/version_check.py        # R2：政策版本 = CHANGELOG 顶层 = bootstrap 记录
+python3 scripts/notes_index_check.py    # R80：notes 索引必须等于重建结果（防手改/过期）
+python3 scripts/secret_scan.py          # R61：仓库内高置信度明文凭据
+python3 scripts/workspace_preflight.py  # R11：MCP 模式不得同时存在本地 .venv-*
+```
+
+各自的「能证明/不能证明」写在 [`policy-language.md`](policy-language.md) §7；
+新检查必须带**会变红的负例**（`tests/test_check_scripts.py`）。
 
 ## 5. 跨设备：`workspace_preflight.py`
 

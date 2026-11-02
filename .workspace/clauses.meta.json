@@ -7,8 +7,8 @@
  },
  "R2": {
   "severity": "MUST",
-  "trigger": "python-runtime",
-  "check": "manual:政策版本语义（PATCH/MINOR/MAJOR）需人判断，不做机械定级",
+  "trigger": "policy-version",
+  "check": "python3 scripts/version_check.py",
   "reviewed": true
  },
  "R3": {
@@ -62,7 +62,7 @@
  "R11": {
   "severity": "MUST_NOT",
   "trigger": "python-runtime",
-  "check": "manual:是否建本地 venv 需按会话实际环境判断",
+  "check": "python3 scripts/workspace_preflight.py",
   "reviewed": true
  },
  "R12": {
@@ -362,7 +362,7 @@
  "R61": {
   "severity": "MUST",
   "trigger": "security-scope",
-  "check": "manual:凭据受控位置需人确认",
+  "check": "python3 scripts/secret_scan.py",
   "reviewed": true
  },
  "R62": {
@@ -476,7 +476,7 @@
  "R80": {
   "severity": "MUST_NOT",
   "trigger": "delivery-notes",
-  "check": "manual:生成物被手改只能人工发现（索引未纳入哈希清单）",
+  "check": "python3 scripts/notes_index_check.py",
   "reviewed": true
  },
  "R81": {

@@ -63,7 +63,7 @@ E8 是防自欺的关键：`hook` / `template-sync` / `skills-registry` / `docs`
 
 ```
 112 条 / MUST 27 / MUST_NOT 13 / SHOULD 4 / MAY 16 / INFO 52
-check：命令 20 / manual 20 / 空 72（SHOULD·MAY·INFO 不强制）
+check：命令 24 / manual 16 / 空 72（SHOULD·MAY·INFO 不强制）
 0 errors / 0 warnings（findings>0 即 exit 1）
 ```
 
@@ -85,6 +85,19 @@ check：命令 20 / manual 20 / 空 72（SHOULD·MAY·INFO 不强制）
 - **不覆盖 `custom` 层**：`AGENT_RULES.custom.md` 的条款不在此文件管辖，其 `overrides` 由 `verify_rules` 报告；
 - **警告不等于有问题**：它们是需要人看一眼的信号，不是失败。
 
-## 8. 什么时候该翻盘
+## 8. 已从 manual 转成命令的条款（判据 C1–C3）
+
+转档标准：违反义务会留下**可静态检查的产物/配置/痕迹**，且能给出**会变红的负例**。
+
+| 条款 | 命令 | 判据 | 能证明 | 不能证明 |
+|---|---|---|---|---|
+| R2 版本必须更新并记 CHANGELOG | `version_check.py` | C2 静态配置 | 政策版本、CHANGELOG 顶层、bootstrap 记录三者一致 | 该升 PATCH 还是 MINOR/MAJOR |
+| R61 凭据不得进普通文件 | `secret_scan.py` | C3 痕迹 | 仓库内没有匹配高置信度模式的明文凭据 | 凭据是否被发到外部（网络行为不可见） |
+| R80 索引不得手改 | `notes_index_check.py` | C1 产物 | 两个索引文件与「重新生成」逐字节一致（时间戳除外） | 生成脚本本身是否有 bug |
+| R11 MCP 模式不得建本地 venv | `workspace_preflight.py` | C1 产物 | `python.mode=mcp` 时工作区没有 `.venv-*` 目录 | venv 是否被建在别处 |
+
+仍然保持 `manual` 的 16 条（R3/R6/R20/R57/R58/R59/R60/R62/R63/R66/R67/R68/R71/R75/R84/R104）都是**意图或过程**判断（用户是否同意、是否属当次范围、合并前是否检查），不满足 C1–C3。**把"用户确认"做成自我声明的日志或环境变量，等于把 manual 换成假绿**——这类转换一律拒绝。
+
+## 9. 什么时候该翻盘
 
 如果试点后仍出现「同一句话两个 agent 判出不同结果」，且分歧集中在**强度**而非语境，才值得把个别条款改写成受控英文（条款级替换，不是整体翻译）。这条判据写在这里，避免以后靠印象争论。

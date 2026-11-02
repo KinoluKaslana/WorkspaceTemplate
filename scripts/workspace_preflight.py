@@ -108,7 +108,12 @@ def main(argv: list[str]) -> int:
                              "" if ok else ("uv 不可用：安装 uv 或改用 venv/mcp 模式" if mode == "uv"
                                             else "版本不同：确认后更新 bootstrap/TOOLS")))
     elif mode == "mcp":
-        rows.append(item("python", "mcp", "mcp", NA, "MCP 模式：核验 provider/tool 仍可用"))
+        venvs = sorted(p.name for p in ws.glob(".venv-*") if p.is_dir())
+        if venvs:                                  # R11：MCP 模式不得同时建本地 venv
+            rows.append(item("python", "mcp（不得建本地 venv）", ", ".join(venvs), BAD,
+                             "MCP 模式下不得创建本地 venv：删掉或改回 local-venv 模式"))
+        else:
+            rows.append(item("python", "mcp", "mcp", NA, "MCP 模式：核验 provider/tool 仍可用"))
     else:
         rows.append(item("python", "unconfigured", mode, BAD, "按 §0 询问用户后配置"))
 
