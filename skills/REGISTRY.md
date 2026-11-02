@@ -8,7 +8,7 @@
 
 | 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |
 |---|---|---|---|---|
-| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（4 入口：template-update / workspace-init / git-init / workspace-git-branch-upgrade） | `TOOLS.md`「workspace-skills」小节 |
+| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（5 入口：template-update / workspace-init / git-init / workspace-git-branch-upgrade / docs-retrieval-maintenance） | `TOOLS.md`「workspace-skills」小节 |
 
 ## Skill 入口
 
@@ -18,6 +18,7 @@
 | workspace-init | 初始化/接管老版本模板工作区（无 template 血缘、无条款标记、.git 指向模板库、pre-v2.0 结构迁移） | `.workspace/skills/workspace-init/SKILL.md` | workspace-skills |
 | git-init | 为工作区创建 git 仓库并登记 bootstrap（"建 git 仓库"；bootstrap git.status=declined 后翻转为 initialized） | `.workspace/skills/git-init/SKILL.md` | workspace-skills |
 | workspace-git-branch-upgrade | 已有仓库切到 dev/目标分支（含脏树、落后/分叉、回滚、模板校验） | `.workspace/skills/workspace-git-branch-upgrade/SKILL.md` | workspace-skills |
+| docs-retrieval-maintenance | docs 改动/索引过期/别名目标改名/命中报告不达标时维护检索索引与别名表（Agent 专用，用户不手改） | `.workspace/skills/docs-retrieval-maintenance/SKILL.md` | workspace-skills |
 
 ## 更新约定
 

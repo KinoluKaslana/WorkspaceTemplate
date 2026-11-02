@@ -778,6 +778,9 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
                                              len(current.split(b"\n")))):
                 unread.append(gate_rel)
             per_gate[gate_rel] = (current, entry)
+        # 3.0.0：子作用域的写**不**由自身读证据授权，必须走委托（策略 R98 扩展）
+        if split_scoped_id(session_id)[1] is not None and conf["gate_files"]:
+            unread = list(conf["gate_files"])
         if unread:
             # B4 豁免令牌：仅当静态可判目标集合命中任一 gate 文件时尝试消费；
             # 命中 → allow + authorized-gatefile-write 审计；未命中 → 维持既有 C9 deny。
@@ -796,6 +799,27 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
                     record_intent(state, targets)
                     save_state(ws_root, client, session_id, state)
                     return {"action": "allow", "reason": "authorized-gatefile-write", "ws": ws_root}
+            # R98 扩展（3.0.0）：子作用域的写可由「父证据 + 有效委托」授权。
+            # 目标必须精确命中委托集合；委托需未过期、gate 指纹一致、父证据有效。
+            try:
+                import delegations as _dg  # 同目录模块，由 hook.py 注入 sys.path
+                if split_scoped_id(session_id)[1] is not None:  # 仅子作用域走委托
+                    for _t in targets:
+                        _d = _dg.find_valid(ws_root, session_id, _t, client)
+                        if _d:
+                            state["events"].append({
+                                "type": "delegation-allow",
+                                "delegation_id": _d["id"],
+                                "parent_scope": _d["parent_scope"],
+                                "target": _t,
+                                "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            })
+                            state["events"] = state["events"][-50:]
+                            record_intent(state, targets)
+                            save_state(ws_root, client, session_id, state)
+                            return {"action": "allow", "reason": "delegation", "ws": ws_root}
+            except Exception as _exc:
+                log(ws_root, f"delegation check failed: {type(_exc).__name__}: {_exc}")
             gate_rel = unread[0]
             current, entry = per_gate[gate_rel]
             save_state(ws_root, client, session_id, state)

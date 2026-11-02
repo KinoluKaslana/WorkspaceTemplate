@@ -1,5 +1,5 @@
 name: workspace-gate
-version: "1.8.0"
+version: "1.9.0"
 description: WorkspaceTemplate 工作区级治理 hook —— 强制先读治理文件再写工作区文件
 provides_hooks:
   - pre_tool_call

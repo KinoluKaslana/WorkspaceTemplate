@@ -1,6 +1,6 @@
 # 工作区守门需要哪些 hook（三 harness 对照 + 新 harness 照搬清单）
 
-> 适用：政策 **2.10.0**，插件 `workspace-gate` **v1.8.0**，客户端 hooks `.workspace/hooks/hook.py`。
+> 适用：政策 **3.1.0**，插件 `workspace-gate` **v1.9.0**，客户端 hooks `.workspace/hooks/hook.py`。
 > **本文是实现说明，不构成政策**：授权、禁止、例外与判定标准只写在 `AGENT_RULES.md`；本文与政策冲突时以政策为准，且不得以读本文替代必读规则。
 > 目的：让「先读治理文件、再写工作区文件」在任何 harness 上都能被**机械判定**，而不是靠模型自觉。
 
@@ -50,7 +50,23 @@
 
 **Codex 静态可判写清单**：`>` / `>>` / `tee` / `sed -i` / `perl -i` / `truncate` / `cp` / `mv` / `install` / `dd of=`；解释器/包装类（`python*` / `sh` / `bash` / `zsh` / `dash` / `perl` / `make` / `env` / `sudo` / `nice` / `nohup` / `timeout` / `xargs` / `command` / `exec`）未读即 deny；其余形态只审计。
 
-**hook 脚本**：`.workspace/hooks/` 六个（`hook` / `gate_core` / `wtarget` / `authz` / `template_anchor` / `cc_transcript`）+ `.codex/hooks.json` + `.claude/settings.json`，均随 `TEMPLATE_FILES` 哈希锁定。
+**hook 脚本**：`.workspace/hooks/` 七个（`hook` / `gate_core` / `wtarget` / `authz` / `template_anchor` / `cc_transcript` / `delegations`）+ `.codex/hooks.json` + `.claude/settings.json`，均随 `TEMPLATE_FILES` 哈希锁定。
+
+## 2.7 实现细则（自政策 R98/R100/R104/R105 迁出的机械事实）
+
+> 本节只陈述「机器怎么记账」，不构成义务；义务与判定标准仍在 `AGENT_RULES.md`。
+
+**账本与审计落盘**：状态在 `.workspace/.hook-state/`（已 gitignore）。Hermes 插件订阅 `on_session_start`/`subagent_start`/`subagent_stop`；放行落 `intents{target,base_sha}`，写后落 `commits` 并追加工作区级 `commits.jsonl`（`client="hermes"`），无 intent 的写落 `unobserved`；`on_session_finalize` 落边界审计。客户端 hooks 把 `gate-intent`/`gate-commit`/`unobserved-write`/`gate-deny`/`agent-start`/`agent-stop` 写进 `audit-<client>.jsonl`，`commits.jsonl` 按 sha 精确匹配、轮转时按 target 压缩。
+
+**CC 转录回放**：只读 payload 给的 `transcript_path`（校验 slug 与 session，不遍历 `projects/`）；按静态可判目标分类转录里的 `Bash`，用 `Read` 记录重建读证据并复算 `would_deny`（记 `cc-bash-write`），归因不上的记 `cc-bash-gap`。命令原文默认只记 digest，`audit_command_text=true` 才落原文。
+
+**委托记录（delegations）**：`.workspace/.hook-state/delegations.jsonl` 存 `{id,parent_scope,child_scope,targets[],client,gate_fingerprint,issued_at,expires_at,status}`。签发命令：
+```
+python3 .workspace/hooks/delegations.py --workspace . mint \
+  --parent <父会话> --child <子会话> --client hermes --ttl 1800 \
+  --targets /abs/a.txt,/abs/b.txt
+```
+签发前校验父会话对 gate 当前修订的完整读证据；目标必须是绝对路径且不含通配；`check` 只读校验，`revoke` 撤销。插件与 `gate_core` 在 `no-read` 前先查有效委托，命中记 `delegation-allow`。**注意**：同 uid 可改委托文件，与其余账本同一信任边界（R107）。
 
 ## 3. 接入新 harness 的 7 步
 

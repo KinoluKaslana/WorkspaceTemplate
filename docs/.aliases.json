@@ -1,0 +1,5 @@
+{
+  "schema": 1,
+  "note": "查询短语 → 已有节的指针（当前为空）。目标标题不符或文件指纹变化即忽略（不致命）。只用于真实用户问法，不得作为正文来源。新增必须 `source: user-query` 且附 `miss_id` 指向 docs/.miss-log.jsonl；判据集 MISS 不是新增理由。",
+  "aliases": []
+}

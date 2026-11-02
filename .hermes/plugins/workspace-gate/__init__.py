@@ -163,6 +163,7 @@ execute_code 的 agent 可以直接改状态文件、改配置或绕过工具层
 """
 import contextlib
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -947,6 +948,28 @@ def _load_conf(ws):
     return conf
 
 
+_DELEG_MODS: dict[str, object] = {}
+
+
+def _delegations_mod(ws):
+    """按工作区加载 .workspace/hooks/delegations.py（缓存），失败返回 None。"""
+    path = Path(ws) / ".workspace" / "hooks" / "delegations.py"
+    key = str(path)
+    if key in _DELEG_MODS:
+        return _DELEG_MODS[key]
+    if not path.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("wg_delegations", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _DELEG_MODS[key] = mod
+        return mod
+    except Exception as e:
+        _log(f"delegations module load failed: {e!r}")
+        return None
+
+
 def _sha256_file(path):
     """文件字节 sha256；不存在/不可读 → None（不当作证据）。"""
     try:
@@ -1083,6 +1106,18 @@ def _pre_tool_call(
                     _record_intent(state, target)
                     _save_state(ws, session_id, state)
                 if unread:
+                    # R98 扩展（3.0.0）：父证据 + 有效委托可授权子会话写该目标
+                    deleg = _delegations_mod(ws)
+                    if deleg is not None:
+                        try:
+                            row = deleg.find_valid(ws, session_id, target, "hermes")
+                        except Exception as e:
+                            row = None
+                            _log(f"delegation lookup failed: {e!r}")
+                        if row:
+                            _log(f"delegation-allow {row['id']} parent={row['parent_scope']} target={target}")
+                            _save_state(ws, session_id, state)
+                            continue
                     detail = _unread_detail(state, ws, unread)
                     return _block(
                         code="no-read", tool=tool_name, session=session_id, target=str(target),

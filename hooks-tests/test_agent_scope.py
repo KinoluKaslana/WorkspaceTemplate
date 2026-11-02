@@ -73,18 +73,19 @@ class AgentScope(unittest.TestCase):
                                            [str(self.ws / "parent.txt")])
         self.assertEqual(r_parent["action"], "allow")
 
-    def test_child_read_does_not_grant_parent(self):
+    def test_child_self_read_does_not_authorize_anyone(self):
+        """3.0.0：子作用域的写只认委托；子自读既不解锁自己，也不解锁父。"""
         parent = core.scoped_id("s2", None)
         child = core.scoped_id("s2", "agent-x")
         self.read_full(child)
         self.assertEqual(core.evaluate_pre_write(str(self.ws), "codex", child,
-                                                 [str(self.ws / "c.txt")])["action"], "allow")
+                                                 [str(self.ws / "c.txt")])["action"], "deny")
         self.assertEqual(core.evaluate_pre_write(str(self.ws), "codex", parent,
                                                  [str(self.ws / "p.txt")])["action"], "deny")
 
     # -------------------------------------------------- 2) intent
     def test_allow_records_intent_with_base_sha(self):
-        key = core.scoped_id("s3", "agent-int")
+        key = core.scoped_id("s3", None)   # 记账用例用主作用域（子作用域需委托）
         self.read_full(key)
         target = self.ws / "target.txt"
         target.write_text("before\n")
@@ -97,7 +98,7 @@ class AgentScope(unittest.TestCase):
 
     # -------------------------------------------------- 3) commit / unobserved
     def test_post_write_records_commit(self):
-        key = core.scoped_id("s4", "agent-commit")
+        key = core.scoped_id("s4", None)
         self.read_full(key)
         target = self.ws / "out.txt"
         target.write_text("before\n")
