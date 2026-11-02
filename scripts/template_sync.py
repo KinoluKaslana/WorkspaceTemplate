@@ -8,9 +8,11 @@
 默认 **dry-run**，只报告将要发生什么；`--apply` 才写盘。
 
 用法：
-  python3 scripts/template_sync.py --workspace ~/Workspaces/TemplateDev --branch alpha
-  python3 scripts/template_sync.py --workspace ~/Workspaces/TemplateDev --branch alpha --apply
-  python3 scripts/template_sync.py --workspace . --branch dev --apply --verify --json
+  python3 scripts/template_sync.py --workspace . --ref alpha            # 分支
+  python3 scripts/template_sync.py --workspace . --ref v3.1.0           # 标签
+  python3 scripts/template_sync.py --workspace . --ref 13eeb83          # 提交
+  python3 scripts/template_sync.py --workspace . --ref dev --apply --verify --json
+  python3 scripts/template_sync.py --workspace . --list-refs            # 可选来源一览
 
 退出码：0 成功 / 1 前置检查失败 / 2 写盘后校验失败
 """
@@ -81,8 +83,12 @@ def dangling_custom(ws: Path, new_ids: set[str]) -> list[dict]:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", required=True)
-    ap.add_argument("--branch", default="main")
-    ap.add_argument("--template", default=os.environ.get("TEMPLATE_DIR", "~/Github/WorkspaceTemplate"))
+    ap.add_argument("--ref", "--branch", dest="ref", default=None,
+                    help="分支 / 标签 / 提交；缺省用工作区 bootstrap 记录的分支，再缺省 main")
+    ap.add_argument("--remote", default="origin")
+    ap.add_argument("--template", default=os.environ.get("TEMPLATE_DIR"))
+    ap.add_argument("--clone-url", default=None, help="模板克隆不存在时按此 URL 浅克隆")
+    ap.add_argument("--list-refs", action="store_true")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--fetch", action="store_true")
     ap.add_argument("--keep-readme", action="store_true")
@@ -91,26 +97,59 @@ def main(argv: list[str]) -> int:
     a = ap.parse_args(argv)
 
     ws = Path(a.workspace).expanduser().resolve()
-    tpl = Path(a.template).expanduser().resolve()
-    if not (ws / ".workspace" / "bootstrap.json").is_file():
+    boot_path = ws / ".workspace" / "bootstrap.json"
+    if not boot_path.is_file():
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
+    boot = json.loads(boot_path.read_text(encoding="utf-8"))
+    tpl_sec = boot.get("template") or {}
+
+    # 模板克隆：显式参数 > TEMPLATE_DIR > bootstrap 记录的本地克隆 > 默认路径
+    cand = a.template or tpl_sec.get("local_clone") or "~/Github/WorkspaceTemplate"
+    tpl = Path(cand).expanduser().resolve()
+    url = a.clone_url or tpl_sec.get("source_repo")
     if not (tpl / ".git").exists():
-        print(json.dumps({"error": "template-clone-missing", "template": str(tpl)}, ensure_ascii=False))
-        return 1
+        if not url:
+            print(json.dumps({"error": "template-clone-missing", "template": str(tpl),
+                              "hint": "给 --template 或 --clone-url"}, ensure_ascii=False))
+            return 1
+        tpl.parent.mkdir(parents=True, exist_ok=True)
+        p = subprocess.run(["git", "clone", "--quiet", url, str(tpl)], capture_output=True, text=True)
+        if p.returncode != 0:
+            print(json.dumps({"error": "clone-failed", "url": url, "stderr": p.stderr.strip()[:300]},
+                             ensure_ascii=False))
+            return 1
 
     if a.fetch:
-        git(tpl, "fetch", "--all", "--prune")
+        git(tpl, "fetch", "--all", "--prune", "--tags")
 
-    ref = f"origin/{a.branch}"
-    if subprocess.run(["git", "-C", str(tpl), "rev-parse", "--verify", ref],
-                      capture_output=True).returncode != 0:
-        ref = a.branch
-        if subprocess.run(["git", "-C", str(tpl), "rev-parse", "--verify", ref],
-                          capture_output=True).returncode != 0:
-            print(json.dumps({"error": "branch-not-found", "branch": a.branch}, ensure_ascii=False))
-            return 1
-    commit = git(tpl, "rev-parse", ref)
+    if a.list_refs:
+        branches = git(tpl, "for-each-ref", "--format=%(refname:short)", "refs/remotes", "refs/heads", "refs/tags")
+        refs = set()
+        for b in branches.splitlines():
+            b = b.strip()
+            if not b or b.endswith("/HEAD") or b == a.remote:
+                continue
+            refs.add(b.split("/", 1)[1] if b.startswith(f"{a.remote}/") else b)
+        refs = sorted(refs)
+        print(json.dumps({"refs": refs}, ensure_ascii=False))
+        return 0
+
+    wanted = a.ref or tpl_sec.get("last_synced_branch") or "main"
+    candidates = [f"{a.remote}/{wanted}", wanted]
+    resolved = None
+    for c in candidates:
+        if subprocess.run(["git", "-C", str(tpl), "rev-parse", "--verify", "{}^0".format(c)],
+                          capture_output=True).returncode == 0:
+            resolved = c
+            break
+    if resolved is None:
+        print(json.dumps({"error": "ref-not-found", "ref": wanted,
+                          "hint": "用 --list-refs 看可选来源"}, ensure_ascii=False))
+        return 1
+    kind = git(tpl, "cat-file", "-t", resolved)
+    commit = git(tpl, "rev-parse", f"{resolved}^0")
+    ref = resolved
 
     tmp = Path(tempfile.mkdtemp(prefix="tplsync-"))
     wt = tmp / "wt"
@@ -122,21 +161,34 @@ def main(argv: list[str]) -> int:
         old_ids = clause_ids(ws / ".workspace" / "rule-clauses.json")
         new_ids = clause_ids(wt / ".workspace" / "rule-clauses.json")
 
-        changed, missing = [], []
+        # README 处置：显式 --keep-readme 恒保留；否则「工作区 README 与上次同步点不同」视为用户首页，保留
+        prev_commit = (boot.get("template") or {}).get("last_synced_commit")
+        readme_is_local = False
+        if prev_commit and subprocess.run(["git", "-C", str(tpl), "cat-file", "-e", f"{prev_commit}^{{commit}}"],
+                                          capture_output=True).returncode == 0:
+            for name in ("README.md", "README_EN.md"):
+                cur, old = ws / name, git(tpl, "show", f"{prev_commit}:{name}", check=False)
+                if cur.is_file() and old and cur.read_text(encoding="utf-8", errors="replace") != old:
+                    readme_is_local = True
+
+        changed, missing, skipped = [], [], []
         for rel in files:
             src, dst = wt / rel, ws / rel
             if not src.is_file():
                 missing.append(rel)
                 continue
-            if a.keep_readme and rel.startswith("README"):
+            if rel.startswith("README") and (a.keep_readme or readme_is_local):
+                skipped.append(rel)
                 continue
             if not dst.is_file() or src.read_bytes() != dst.read_bytes():
                 changed.append(rel)
 
-        report = {"branch": a.branch, "ref": ref, "commit": commit,
+        report = {"requested_ref": wanted, "resolved_ref": ref, "ref_kind": kind, "commit": commit,
+                  "readme_kept": readme_is_local or a.keep_readme,
                   "version_before": before, "version_after": after,
                   "template_files": len(files),
-                  "changed": changed, "identical": len(files) - len(changed) - len(missing),
+                  "changed": changed, "skipped": skipped,
+                  "identical": len(files) - len(changed) - len(missing) - len(skipped),
                   "missing_in_template": missing,
                   "clauses_added": sorted(new_ids - old_ids),
                   "clauses_removed": sorted(old_ids - new_ids),
@@ -147,7 +199,7 @@ def main(argv: list[str]) -> int:
             if a.json:
                 print(json.dumps(report, ensure_ascii=False))
             else:
-                print(f"[dry-run] {a.branch}@{commit[:8]}  {before} → {after}")
+                print(f"[dry-run] {ref}({kind})@{commit[:8]}  {before} → {after}")
                 print(f"将替换 {len(changed)} 个文件（共 {len(files)}）")
                 for c in changed:
                     print("  ~", c)
@@ -174,7 +226,7 @@ def main(argv: list[str]) -> int:
         copied = []
         for rel in files:
             src = wt / rel
-            if not src.is_file():
+            if not src.is_file() or rel in skipped:
                 continue
             dst = ws / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -186,13 +238,15 @@ def main(argv: list[str]) -> int:
         tpl_sec = boot.setdefault("template", {})
         tpl_sec["current_policy_version"] = after
         tpl_sec["last_synced_at"] = dt.date.today().isoformat()
-        tpl_sec["last_synced_branch"] = a.branch
+        tpl_sec["last_synced_ref"] = wanted
+        if kind == "commit":                      # 分支或标签解析出来的提交
+            tpl_sec["last_synced_branch"] = wanted
         tpl_sec["last_synced_commit"] = commit
         boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
         report.update({"backup": str(backup), "copied": copied,
                        "bootstrap": {"current_policy_version": after,
-                                     "last_synced_branch": a.branch,
+                                     "last_synced_ref": wanted,
                                      "last_synced_commit": commit}})
 
         verify = None
@@ -209,7 +263,7 @@ def main(argv: list[str]) -> int:
         if a.json:
             print(json.dumps(report, ensure_ascii=False))
         else:
-            print(f"{a.branch}@{commit[:8]}  {before} → {after}；替换 {len(copied)} 个文件")
+            print(f"{ref}({kind})@{commit[:8]}  {before} → {after}；替换 {len(copied)} 个文件")
             print("备份:", backup)
             if a.verify:
                 print("verify clean:", (verify or {}).get("clean"))

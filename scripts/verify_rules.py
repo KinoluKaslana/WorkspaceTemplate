@@ -63,6 +63,7 @@ TEMPLATE_FILES = [
     "scripts/docs_hit_report.py",
     "scripts/docs_alias_audit.py",
     "scripts/template_sync.py",
+    "scripts/skill_audit.py",
     "tests/test_alias_audit.py",
     "tests/docs_probe.json",
     ".hermes/plugins/workspace-gate/plugin.yaml",

@@ -19,6 +19,19 @@
 | git-init | 为工作区创建 git 仓库并登记 bootstrap（"建 git 仓库"；bootstrap git.status=declined 后翻转为 initialized） | `.workspace/skills/git-init/SKILL.md` | workspace-skills |
 | workspace-git-branch-upgrade | 已有仓库切到 dev/目标分支（含脏树、落后/分叉、回滚、模板校验） | `.workspace/skills/workspace-git-branch-upgrade/SKILL.md` | workspace-skills |
 | docs-retrieval-maintenance | docs 改动/索引过期/别名目标改名/命中报告不达标时维护检索索引与别名表（Agent 专用，用户不手改） | `.workspace/skills/docs-retrieval-maintenance/SKILL.md` | workspace-skills |
+| delivery-closure | 声明完成前的交付闭环（产物清点/note 判定/索引回写/验证/声明格式） | `.workspace/skills/delivery-closure/SKILL.md` | workspace-skills |
+
+## 维护节奏（workspace-skills）
+
+| 触发 | 动作 | 判据 |
+|---|---|---|
+| 政策 MAJOR/MINOR 落地 | 复核每个 skill 引用的条款 ID、路径、版本号 | `python3 scripts/skill_audit.py --strict` exit 0 |
+| 模板同步完成 | 同上；确认新增 skill 已随 `TEMPLATE_FILES` 落盘并登记 | 同上 + `verify_rules` clean |
+| 新增/改名 skill | 同步更新本表与 `TOOLS.md`；`description` 以 `Use when/before` 开头 | 同上 |
+| 每季度或每次发布前 | 全量审计 + 人工读一遍触发语是否仍准确 | 审计 0 findings |
+
+审计脚本：`scripts/skill_audit.py`（检查 frontmatter/触发语/版本/条款引用路径引用/双登记）。
+它只判机械项，**触发语是否真的能让人和模型在对的时机加载**仍需人工复核。
 
 ## 更新约定
 

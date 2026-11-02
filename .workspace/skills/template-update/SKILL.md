@@ -1,141 +1,128 @@
 ---
 name: template-update
-description: "Use when updating a workspace instantiated from WorkspaceTemplate to the latest template version. 更新基于 WorkspaceTemplate 创建的工作区到最新模板版本时使用。"
-version: 2.1.0
+description: "Use when syncing a workspace's template layer from any template source revision (branch, tag, or commit) — not tied to one branch. 从任意模板来源（分支/标签/提交）更新工作区模板层时使用。"
+version: 3.0.0
 ---
 
-# Template Update — 工作区模板同步 skill
+# Template Update — 工作区模板同步 skill（任意来源 ref）
 
-把一个由 WorkspaceTemplate 实例化的工作区更新到模板最新版本。本 skill 定义**无歧义的机械流程**，Agent 只按流程执行，不做自由发挥。
+把一个由模板实例化的工作区，更新到模板仓库**任意一个来源修订**：分支、标签或提交都行。
+本 skill 定义**无歧义的机械流程**，Agent 只按流程执行，不做自由发挥。
 
-**v2.0 架构（锁定 + custom 覆写）**：模板规则文件是**锁定只读**的（整文件替换，哈希即完整性），本地规则一律外置到 `<file>.custom.md`（custom 优先，见 AGENT_RULES §10）。同步因此不再做行级三方合并——**替换 + 迁移 custom 引用**就是全部。
+**v3.0 泛用化**：不再假定"追最新 main"，也不再枚举 `main/dev/alpha`。
+`ref` 是一个参数，可以是 `main`、`release/2026`、`v3.1.0` 标签、或某个 commit sha；
+**选哪个由用户决定**，未指定时沿用本工作区上次同步的 ref，再缺省 `main` 并明确写进报告。
+
+**v2.0 架构不变（锁定 + custom 覆写）**：模板层文件**整文件替换**，哈希即完整性；本地规则一律外置到 `<file>.custom.md`（custom 优先，见 `AGENT_RULES.md` §10）。同步 = **替换 + 迁移 custom 引用**，没有行级三方合并。
 
 ## 触发条件
 
-- 用户要求"同步模板 / 更新工作区到最新模板 / update workspace template"，**或**
-- `bootstrap.json` 的 `template.current_policy_version` 低于模板仓库最新 `AGENT_RULES.md` 版本，且用户同意同步，**或**
-- `verify_rules.py` 报告模板层文件漂移（HASH-DIFF / clause findings），需要从模板恢复。
+- 用户要求"同步模板 / 更新工作区到某个版本 / 切到某个分支的模板 / update workspace template"；
+- `bootstrap.template.current_policy_version` 与目标 ref 的版本不同，且用户同意同步；
+- `verify_rules.py` 报告模板层漂移（HASH-DIFF / clause findings），需要从模板恢复。
 
 ## 前置事实（先读，不可跳过）
 
-1. 模板正主在 GitHub 仓库 `KinoluKaslana/WorkspaceTemplate`；实例的模板层文件 = 模板原件（逐字节一致），custom 层文件（`*.custom.md`）属工作区所有、同步永不触碰。
-2. 模板升级按语义化版本处理：PATCH = 修复（静默合并）；MINOR = 新增（报告后合并）；MAJOR = 破坏性变更（逐项确认）。版本语义只影响**报告详略与确认粒度**，同步动作本身是同一个机械流程。
-3. **文件分类（v2.0）**：
-   - **模板层·锁定替换**：`AGENT_RULES.md`（含条款 ID 标记）、`AGENTS.md`、`CLAUDE.md`、`HERMES.md`、`README.md`、`README_EN.md`、`notes/rebuild_index.py`、`notes/_TEMPLATE.md`、`scripts/inspect_skills.py`、`scripts/mark_rules.py`、`scripts/verify_rules.py`、`.workspace/skills/template-update/`、`.workspace/skills/workspace-init/`、`.workspace/skills/git-init/`、`.workspace/skills/delivery-closure/`、`.hermes/plugins/workspace-gate/`、`.workspace/rule-clauses.json`。**该清单的唯一事实源是 `scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 28 项）；第 4 步替换命令直接由它驱动，禁止另维护一份手工清单（手工清单漂移是「校验失败 → 回滚」死循环的根因，见「陷阱」）。**
-   - **custom 层·永不触碰**：`*.custom.md`（AGENT_RULES.custom.md、HERMES.custom.md 等）。
-   - **工作区所有·永不触碰**：`WORKSPACE.md`、`TOOLS.md`（本地登记为主；模板仅提供格式节）、`notes/*.md` 笔记正文、`skills/REGISTRY.md`、`.workspace/bootstrap.json` 的本地值、`<task-slug>-*/`、一切用户文件。
-4. **条款 ID**：模板层条款带 `<!-- id:Rn -->` 标记；`.workspace/rule-clauses.json` 是条款注册表（随模板分发）。custom 条款用 `overrides: R<id>` 覆写或 `extends: R<id>` 扩展模板条款。
-5. **并非所有工作区都由模板创建**：bootstrap 无 `template` 节时先向用户确认来源，不强行套用。
-6. **禁止事项**：不得修改模板层文件内容（同步=整文件替换）；不得删除 custom/工作区文件；未跑校验不得报告；`.workspace/backup-<date>/` 不完整不得开始替换。
+1. **来源是参数**：模板仓库地址取 `bootstrap.template.source_repo`，本地克隆取 `--template` → `TEMPLATE_DIR` → `bootstrap.template.local_clone` → `~/Github/WorkspaceTemplate`；都没有时按 `--clone-url`（或 `source_repo`）自动克隆。
+2. **ref 是参数**：`--ref` 可给分支名、标签名或 commit sha；解析顺序 `<remote>/<ref>` → `<ref>`；不存在就停下并用 `--list-refs` 让用户选，**不猜**。
+3. **文件清单唯一事实源**：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（数量随模板演进，**不要在任何文档里写死数字**）。第 4 步由它驱动，禁止另维护手工清单。
+4. **分层**：
+   - 模板层·锁定替换 = `TEMPLATE_FILES` 全集；
+   - custom 层·永不触碰 = `*.custom.md`；
+   - 工作区所有·永不触碰 = `WORKSPACE.md`、`TOOLS.md`、`notes/*.md` 正文、`skills/REGISTRY.md`、`bootstrap.json` 的本地值、`<task-slug>-*/`、一切用户文件。
+5. **版本语义**：PATCH = 修复（静默合并）；MINOR = 新增（报告后合并）；MAJOR = 破坏性变更（逐项确认）。版本语义只影响**报告详略与确认粒度**，机械流程相同。
+6. **条款 ID**：模板层条款带 `<!-- id:Rn -->`；`.workspace/rule-clauses.json` 是注册表（随模板分发）；custom 用 `overrides: R<id>` / `extends:` 引用。
+7. **不是所有工作区都由模板创建**：bootstrap 无 `template` 节时先向用户确认来源，不强行套用。
+8. **禁止**：改模板层文件内容；删 custom 或用户文件；未跑校验就报告；备份不完整就开始替换；把 `skills/REGISTRY.md` 整文件覆盖。
 
 ## 标准流程（七步，顺序固定）
 
-### 第 1 步：定位模板源与目标分支（v2.1 新增）
+### 第 1 步：确定来源与 ref
 
 ```bash
-TEMPLATE_DIR=${TEMPLATE_DIR:-~/Github/WorkspaceTemplate}   # 本地克隆；否则临时浅克隆
-BRANCH=${BRANCH:-main}      # main / dev / alpha …… 由用户指定，不默认追最新开发线
+python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --list-refs   # 看有哪些分支/标签
 ```
 
-- **分支必须显式**：`main` 是发布线、`dev` 是集成分支、`alpha` 是实验线。未指定时用 `main`，并在报告里写明「未指定分支，按 main」。
-- 分支存在性先验：`git -C "$TEMPLATE_DIR" rev-parse --verify origin/$BRANCH`；不存在则停下问用户，不猜分支名。
-- 允许本地克隆脏（有未提交改动）：同步脚本用 `git worktree add --detach` 取目标提交的快照，**不切分支、不动工作树**。
-
-### 第 1.5 步：机械执行（推荐入口）
-
-语义步骤（custom 迁移、MAJOR 逐项确认、README 处置）仍按本文执行，但**取数、比对、备份、替换、回写**交给脚本，避免手写清单漂移：
-
-```bash
-python3 "$TEMPLATE_DIR/scripts/template_sync.py" \
-  --workspace . --branch "$BRANCH"            # dry-run：只报告
-python3 "$TEMPLATE_DIR/scripts/template_sync.py" \
-  --workspace . --branch "$BRANCH" --apply --verify --json
-```
-
-脚本产出：目标 commit、版本前后、将替换/跳过的文件、条款增删、custom 悬空引用、备份路径、`--verify` 的 `clean` 判定。
-**dry-run 与 apply 之间不得改动工作区**；apply 后按第 4.5 / 5 / 6 步继续做语义部分。
+- `--ref` 缺省时，脚本按 `bootstrap.template.last_synced_ref` → `last_synced_branch` → `main` 解析，并在报告里写明"未指定 ref，沿用/回退到 X"。
+- 跨来源（换 remote、换仓库）必须显式给 `--template` 或 `--clone-url`，不要悄悄用旧克隆。
+- 本地克隆脏没问题：脚本用 `git worktree add --detach` 取目标提交快照，**不切分支、不动工作树**。
 
 ### 第 2 步：同步前校验（必跑，禁止凭印象）
 
 ```bash
-<py> scripts/verify_rules.py --workspace .    # 在工作区跑（用模板最新 scripts）
-<py> "$TEMPLATE_DIR/scripts/verify_rules.py" --workspace "$TEMPLATE_DIR" --registry "$TEMPLATE_DIR/.workspace/rule-clauses.json"
+<py> scripts/verify_rules.py --workspace .            # 工作区自身
+<py> "$TEMPLATE_DIR/scripts/verify_rules.py" --workspace "$TEMPLATE_DIR" \
+     --registry "$TEMPLATE_DIR/.workspace/rule-clauses.json"
 ```
 
-- 工作区侧发现 [file]/[clause] 漂移 → 属"用户直接改了模板层文件"：按 findings 逐条报告用户，**默认从模板恢复该文件**（这正是 v2.0 的核心保证——不会误判为同步冲突，因为冲突只可能存在于 custom 层引用）。
-- custom 层 findings（overrides/extends 指向不存在条款）→ 留到第 5 步随模板版本变化一起处理。
+- 工作区侧 `[file]/[clause]` 漂移 = 有人直接改了模板层文件 → 默认从模板恢复（v2.0 核心保证）。
+- custom 层 findings（`overrides/extends` 指向不存在条款）→ 留到第 4.5 步与新版本一起裁决。
 
 ### 第 3 步：备份
 
 ```bash
-mkdir -p .workspace/backup-<yy-mm-dd> && cp AGENT_RULES.md *.custom.md AGENTS.md CLAUDE.md HERMES.md TOOLS.md .workspace/bootstrap.json .workspace/backup-<yy-mm-dd>/ 2>/dev/null; true
+mkdir -p .workspace/backup-$(date +%Y%m%d-%H%M%S)-sync
 ```
+脚本 `--apply` 会自动把将被替换的文件 + `*.custom.md` + `bootstrap.json` 备份到此目录；手工流程也必须先备份再动手。
 
 ### 第 4 步：锁定替换（机械，无合并）
 
-替换清单的唯一事实源 = `scripts/verify_rules.py` 的 `TEMPLATE_FILES`（28 项）。**由它直接驱动拷贝，不要手写文件清单**：
-
 ```bash
-cd "$TEMPLATE_DIR" && <py> - "$OLDPWD" <<'PY'
-import shutil, sys
-from pathlib import Path
-sys.path.insert(0, "scripts")
-from verify_rules import TEMPLATE_FILES
-dst = Path(sys.argv[1])
-copied = []
-for rel in TEMPLATE_FILES:
-    src = Path(rel)
-    if src.is_file():
-        (dst / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst / rel)
-        copied.append(rel)
-print(f"replaced {len(copied)}/{len(TEMPLATE_FILES)} files per TEMPLATE_FILES")
-PY
+python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF"            # dry-run
+python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
+        --apply --verify --json                                                         # 写盘
 ```
 
-写盘后立即 `diff` 每个文件与模板原件——必须全空，否则回滚重做。（README 仅当工作区未替换为自己的首页；已替换则跳过并在报告注明。）
+脚本输出（`--json` 可机器读）：`requested_ref / resolved_ref / ref_kind / commit`、版本前后、
+`changed / skipped / identical` 文件、条款增删、`custom_dangling`、备份路径、`verify.clean`。
+
+- **README 处置**：默认"工作区 README 与上次同步点不同"即视为用户首页，自动保留并记入 `skipped`；`--keep-readme` 强制保留。
+- **dry-run 与 apply 之间不得改动工作区**。
+- 替换后如手工执行：逐文件 `diff` 模板原件，必须全空，否则回滚。
 
 ### 第 4.5 步：custom 引用迁移（唯一的"智能"环节）
 
-对比新旧注册表的条款 ID：模板若**删除/改写**了某条款（新注册表缺该 ID 或文本变化），检查所有 `*.custom.md` 中指向它的 `overrides:`/`extends:`：
+对比新旧注册表条款 ID：
 
 - 引用仍存在 → 不动；
-- 引用失效 → **逐条报告用户**：模板条款没了/变了，custom 覆写的目标需要迁移。给出建议（改指向新条款 ID，或该覆写已无必要可删除），用户确认后修改 custom 文件。custom 语义**永不静默丢弃**。
-- 模板新增条款 → 列出，确认无 custom 冲突即可（custom 优先原则天然处理）。
+- 引用失效 → **逐条报告用户**，给建议（改指新 ID / 该覆写已无必要 / 需人工重写），用户确认后才改 custom 文件；**永不静默丢弃 custom 语义**；
+- 模板新增条款 → 列出，确认无 custom 冲突即可。
 
 ### 第 5 步：状态回写
 
-更新 `.workspace/bootstrap.json`：`template.current_policy_version` = 模板版本、`last_synced_at` = 今天；首次接入的写 `template.source_repo`。
+脚本自动写 `bootstrap.template`：`current_policy_version`、`last_synced_at`、`last_synced_ref`、
+`last_synced_branch`（仅当 ref 解析为分支/标签）、`last_synced_commit`。手工流程必须等价写回。
+`template.source_repo` 只在首次接入时写。
 
 ### 第 6 步：同步后验证（三项全过）
 
 ```bash
-<py> scripts/verify_rules.py --workspace . --vs-template "$TEMPLATE_DIR" --json /tmp/post.json   # 权威校验：字节级比对+git 信任锚
-<py> notes/rebuild_index.py                                                                      # 索引脚本跑通
+<py> scripts/verify_rules.py --workspace . --vs-template "$TEMPLATE_DIR" --json /tmp/post.json
+<py> notes/rebuild_index.py
 ```
 
-- `verify_rules.py` 必须 `clean: true`——**必须带 `--vs-template`**：本地注册表可被重生成（自我作证漏洞），只有对模板克隆的字节级比对 + 克隆自身的 git 干净状态（信任锚：GitHub 对象哈希 → 克隆 HEAD → 工作区逐字节相等）才是权威判定。克隆脏（含未提交改动）时 `[trust]` 发现即视为校验失败。README 豁免：工作区替换为自己的首页时报 `[vs-template] REPLACED`（进入 `info`，**不计入 `clean`**）；`clean` 只看 `findings`。
-- 任一不过 → 用备份回滚全部替换文件，回到第 2 步。
+- `clean: true` 必须来自 `--vs-template`（字节级比对 + 克隆 git 干净状态为信任锚）。
+  克隆脏时 `[trust]` 发现即视为失败——此时改用 `git worktree` 快照目录做 `--vs-template`。
+- README 被保留时报 `[vs-template] REPLACED`，进 `info` 不计 `clean`。
+- 任一不过 → 用第 3 步备份回滚，回到第 2 步。
 
 ### 第 7 步：报告
 
-`结果 → 漂移判定 → 替换清单 → custom 引用迁移裁决 → 版本决策（PATCH/MINOR/MAJOR 报告详略）→ 校验结果 → 备份位置 → 前后版本号`。
-
-## 冲突哲学（v2.0）
-
-冲突只在两处出现，且都有确定答案：
-
-1. **模板层被直接改过**（verify 报 drift）→ 不仲裁，从模板恢复；用户真想保留的语义 → 写进 custom。
-2. **custom 引用失效**（模板条款删除/改写）→ 报告 + 用户裁决迁移，不自动改写。
-
-行级三方合并已随 v1.x BASE 机制退役；如遇到 v1.x 时代工作区（存在 `.workspace/template-base/`），先按本 skill 重建（把当时本地扩展迁入 custom 文件，模板层还原为模板原件），再执行同步。
+`结果 → 来源（repo + ref + kind + commit）→ 漂移判定 → 替换/跳过清单 → custom 引用裁决 →
+版本决策（PATCH/MINOR/MAJOR）→ 校验结果 → 备份位置 → 前后版本号`。
 
 ## 陷阱
 
-- 条款 ID 标记是注册表的锚：**任何人不得手改 `<!-- id:Rn -->`**；模板侧 ID 重排由 mark_rules.py 在模板仓库内完成，实例侧只消费。
-- **模板层文件清单唯一事实源 = `TEMPLATE_FILES`**：第 4 步拷贝、§3 分类、`verify_rules.py` 三者共用这一份清单。给模板新增/删除模板层文件时，只改 `scripts/verify_rules.py` 的 `TEMPLATE_FILES`，然后重跑 `mark_rules.py mark AGENT_RULES.md` 刷新注册表——第 4 步会自动跟着变，无需（也不允许）再改 skill 正文里的清单。
-- **`skills/REGISTRY.md` 属工作区所有**：同步时只允许**增补/更新 workspace-skills 命名空间条目**，绝不整文件覆盖——本地 skills/localskills 登记行是用户资产，覆盖即数据丢失（已发生过一次事故）。
-- `check_template.py`（v1 时代的判定脚本）仍用于文件级对比，但混合文件不再做行级合并；判定为 `drift` 的模板层文件在 v2.0 语义下就是"待恢复"，不是"待合并"。
-- custom 文件里的 `overrides:` 必须指向当前注册表存在的 ID；写 custom 时先查 `rule-clauses.json`。
-- README 已替换为本地首页的工作区，同步时跳过 README（报告注明），否则会覆盖用户首页。
-- 实例无 git 时备份是唯一恢复点；`.custom.md` 必须包含在备份里（它们是用户语义所在））。
+- **别把 ref 写死成某个分支名**：模板可能同时有发布线、集成分支、实验线，选哪个是用户决策；skill 只保证"给什么 ref 就同步什么"。
+- **别在文档里写死 `TEMPLATE_FILES` 条数**：数量跟着模板走，唯一事实源是脚本。
+- **条款 ID 标记不得手改**：模板侧重排由 `mark_rules.py` 在模板仓库完成，实例只消费。
+- **`skills/REGISTRY.md` 属工作区所有**：同步时只允许增补/更新 `workspace-skills` 命名空间条目，绝不整文件覆盖。
+- **README 已替换为首页的工作区**：跳过 README 并在报告注明，否则会覆盖用户首页。
+- **custom 文件的 `overrides:` 必须指向当前注册表的 ID**：写之前先查 `rule-clauses.json`。
+- 实例无 git 时备份是唯一恢复点；`.custom.md` 必须包含在备份里。
+
+## 变更记录
+
+- 3.0.0（2026-11-02）：**泛用化**——`ref` 支持分支/标签/提交，来源可换 remote/仓库，新增 `--list-refs`、自动克隆、README 自动保留；删除写死的分支枚举与 `TEMPLATE_FILES` 条数。
+- 2.1.0（2026-11-02）：新增"指定分支"与 `scripts/template_sync.py` 机械入口。
+- 2.0.0：锁定替换 + custom 覆写架构。

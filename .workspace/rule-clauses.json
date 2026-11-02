@@ -160,12 +160,12 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "7d63fc204557dc93e55e5d6c8a5f3ed103dbf49e07158f017e5278053978ef0f",
+    "file_sha256": "28cb8568239c9ef1e600554360d844d07168ff9e91a9b77fa6b46e31c8585ed7",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "c6f098854c641f7c04aa55c485e98def63f3ab3358c8e0fb915205c13e43fa10",
+    "file_sha256": "8dde7a746f99096d3093a231e0275f79bd5669cbcb6f48c5817a19e609d50c1f",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -215,7 +215,12 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "aa5cf486b70838899332a272d24bac3e8bd586acdd0e3fc501938474ec34e299",
+    "file_sha256": "c9bafb63615ea4b4918b0a13d77d2db5b50548cbf7371701e6127744ae8261a4",
+    "marked": 0
+  },
+  "scripts/skill_audit.py": {
+    "clauses": {},
+    "file_sha256": "8c56cb7bec49d0ae1ee7265d77ac3de6b421ecc685ada82aa435d993de7502e0",
     "marked": 0
   },
   "tests/test_alias_audit.py": {

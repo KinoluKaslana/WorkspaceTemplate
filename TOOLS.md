@@ -143,7 +143,9 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | **workspace-init** | 初始化/接管老版本模板工作区（九步：盘点→模板源→差异判定→pre-v2.0 迁移→venv→git 抹除与决策→登记→验证→报告）。入口 `.workspace/skills/workspace-init/SKILL.md`（v1.0.0）。触发：用户要求初始化，或检测到无 template 血缘/无条款标记/.git 指向模板库 |
 | **git-init** | 为工作区创建 git 仓库并登记 bootstrap git 节（五步：决策→建仓→gitignore 核验→bootstrap 登记→验证）。入口 `.workspace/skills/git-init/SKILL.md`（v1.0.0）。触发："建 git 仓库"或 bootstrap git.status=declined 翻转 |
 | **workspace-git-branch-upgrade** | 已有仓库迁到 dev/目标分支（前置检查→三态迁移→默认分支指针→模板校验→记录回写→验证→回滚）。入口 `.workspace/skills/workspace-git-branch-upgrade/SKILL.md`（v1.0.0）。触发："切换/升级到 dev 分支"、"把仓库从 main 迁到 dev" |
+| **delivery-closure** | 交付闭环六步（产物清点→note 判定→索引回写→外部动作与机械验证→完成声明格式）。入口 `.workspace/skills/delivery-closure/SKILL.md`（v1.0.0）。触发：任务模式产物落盘、准备声明完成 |
 | **docs-retrieval-maintenance** | 维护 `docs/` 检索链路（索引/别名表/命中报告）。入口 `.workspace/skills/docs-retrieval-maintenance/SKILL.md`（v1.1.0）。配套 `scripts/docs_index.py`（build/check/query）、`scripts/docs_hit_report.py`（判据集命中）、`scripts/docs_alias_audit.py`（死指针/指纹/来源合规/留一验证/`--restore`）、判据集 `tests/docs_probe.json`、缺口日志 `docs/.miss-log.jsonl`。触发：docs 改动、`check` 报 stale/unindexed、标题改名、命中低于阈值、用户报搜不到 |
+| **skills 健康检查** | `python3 scripts/skill_audit.py [--strict]`：检查 `.workspace/skills/*` 的 frontmatter、触发语、semver、条款 ID 与路径引用、`REGISTRY.md`/`TOOLS.md` 双登记；维护节奏见 `skills/REGISTRY.md`「维护节奏」 |
 | **template-update（分支同步）** | v2.1.0 起支持指定模板分支：入口仍是 `.workspace/skills/template-update/SKILL.md`；机械入口 `scripts/template_sync.py --workspace . --branch <main|dev|alpha> [--apply --verify]`（dry-run 默认；用 `git worktree` 取目标提交快照，不动模板克隆工作树） |
 | **check_template.py SHA-256** | `bbfa379269a3a3982a3d65997f9dac31f30b0cb939167e98cdc09959bfccd489` |
 | **来源与信任边界** | 模板内置（正主在 WorkspaceTemplate 仓库 `.workspace/skills/`，随模板版本化）；本地副本由同步流程自举刷新，分叉以模板为准 |
