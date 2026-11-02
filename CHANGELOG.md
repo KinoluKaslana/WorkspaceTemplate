@@ -25,6 +25,18 @@
 - 新增 `docs/.aliases.json`：只存「口语短语 → 已有节」指针（当前 1 条），目标标题或文件指纹不符即忽略。
 - 结果：10 题命中 **6/10 → 10/10**；`R98` 仍排第一；噪声查询仍为空；测试 **7 → 11 例**。token/成本结论不变（打分只改排序，不改查询轮次）。
 
+## 自举流程加固（2026-11-02，三席评审后）
+
+评审席位：GLM、SOL 各出一份独立意见，DS 裁决、主理人复核。**两席独立命中同一 P0**：`UPGRADE.md` 的回滚脚本只放回旧文件、不删除本次新增，重犯了 3.2.0 已修的同款问题。
+
+- `template_sync.py`：`--apply` 写 `MANIFEST.txt`（`[replaced]` / `[added]` / `[preserved]`；`--prune` 另记 `[pruned]`）；新增 `--rollback <备份目录>`（放回 replaced/pruned、删除 added）与 `--purge-generated`（清除升级前不存在的 `skills/REGISTRY.md`、`notes/INDEX.md`、`docs/.index.json` 等引导期生成物）。
+- `--keep-readme` 语义修正：只保留用户已有的 `README.md`；`README_EN.md` 缺失时仍安装（否则 `verify_rules` 恒报 `MISSING README_EN.md`）。
+- 标签/裸提交 ref 也回写 `last_synced_branch`（原来只在 commit 分支下写，下次缺省会退回 main）。
+- `skill_audit.py`：TOOLS 登记判定从「全文子串」改为「表格行 `| **name**`」（散文提到不再算已登记）；`--sync-registry` 新建 `REGISTRY.md` 时写入入口计数行。
+- `UPGRADE.md`：补 R59 授权句、`--keep-readme` 必带说明、`$TPL` 跨 shell 处理、备份目录选择、`--purge-generated`、浅克隆与标签限制、TOOLS 按完整 snippet 抄。
+- 文档计数修正（7 skills / 56 files），新增 D6 计数一致性测试；README/README_EN 增加「旧版本工作区怎么升级」可复制 prompt 与新版目录树。
+- 实测：伪造 2.4.0 工作区 → 54 文件 → `--rollback --purge-generated` 后仅剩 `AGENT_RULES.md` 与 `.workspace/`；146 例测试全 OK。
+
 ## 旧版本工作区自举（2026-11-02，policy 3.3.1 内含，不改政策文本）
 
 问题：由 2.x 模板创建的工作区，`.workspace/skills/` 里没有现行 skill，也没有 `scripts/template_sync.py`，因此**无法用工作区自身能力升级**。

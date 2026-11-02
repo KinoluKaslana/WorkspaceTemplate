@@ -74,6 +74,23 @@ class DocsConsistency(unittest.TestCase):
         missing = [n for n in skills() if n not in readme]
         self.assertEqual(missing, [], f"README 未提到：{missing}")
 
+    def test_d6_counts_match_disk(self):
+        """文档里的计数必须与磁盘一致（曾出现 docs 写 6 个 skill / 53 个文件）。"""
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from verify_rules import TEMPLATE_FILES  # noqa: E402
+        n_skills = len(skills())
+        n_tpl = len(TEMPLATE_FILES)
+        arch = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+        m = re.search(r"`TEMPLATE_FILES` \*\*(\d+)\*\* 项", arch)
+        self.assertEqual(int(m.group(1)), n_tpl if m else -1,
+                         f"architecture 的 TEMPLATE_FILES 计数应为 {n_tpl}")
+        m = re.search(r"skills \*\*(\d+)\*\* 个", arch)
+        self.assertEqual(int(m.group(1)), n_skills if m else -1,
+                         f"architecture 的 skills 计数应为 {n_skills}")
+        m = re.search(r"# Workspace skills（(\d+) 个）", (ROOT / "docs" / "skills.md").read_text(encoding="utf-8"))
+        self.assertEqual(int(m.group(1)), n_skills if m else -1,
+                         f"docs/skills.md 标题计数应为 {n_skills}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

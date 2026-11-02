@@ -59,7 +59,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 |---|---|---|
 | 子 Agent 授权模型 | 主 Agent 读完政策并常驻；**子 Agent 不重读全量政策**，写工作区须「目标精确命中委托 + 父证据仍有效」，自读不解锁 | R24 / R98 / R108 + `delegations.py` |
 | 机械守门补强 | 拒绝码前缀、委托审计、`gate-deny` 独立核验、审计十三型 | 插件 1.9.0 + `docs/hooks-catalog.md` §2.6 |
-| skills 契约化 | 6 个 skill 必须齐 8 维；`skill_audit.py` 缺节即失败；REGISTRY 由目录派生 | `docs/skills.md` §1 |
+| skills 契约化 | 7 个 skill 必须齐 8 维；`skill_audit.py` 缺节即失败；REGISTRY 由目录派生 | `docs/skills.md` §1 |
 | Python 三选一 | **uv 默认** / 手动 venv / MCP；已配置不被改写 | R2–R8 + `pyenv_init.py` |
 | 跨设备可核验 | 9 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
 | docs 检索（可选） | 确定性索引，**省账单不省 token**，命中 9/10 | `docs/docs-retrieval.md` |
@@ -90,6 +90,35 @@ cd my-workspace
 **工作区来自旧版本模板、连当前 skill 都没有？** 见 [`UPGRADE.md`](UPGRADE.md)：只需要 Python，从模板快照自举安装，再补 `REGISTRY.md`/`TOOLS.md` 登记。
 
 **已有老版本模板工作区？** 直接对它说"初始化/接管这个工作区"，或让 Agent 执行 [workspace-init skill](#工作区生命周期-skills)——它会完成盘点、把本地改动迁入 custom 层、同步最新模板，并处理 venv 与 git 决策。
+
+### 旧版本工作区怎么升级（自举）
+
+工作区由 2.x 模板创建时，`.workspace/skills/` 里没有现行 skill，也没有 `scripts/template_sync.py`——**它没法用自己的能力升级自己**。这时把下面整段发给那个工作区里的 Agent 即可（完整步骤与回滚见 [`UPGRADE.md`](UPGRADE.md)，skill 见 [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md)）：
+
+```text
+本工作区是用旧版本模板建的，现在要把模板层升到当前版本（含 skill 与脚本）。我授权你修改本工作区的模板层文件，但必须按下面的约束做。
+
+第一步：先完整读这份指南，读完再动手：
+https://raw.githubusercontent.com/KinoluKaslana/WorkspaceTemplate/main/UPGRADE.md
+（取不到就告诉我，不要凭记忆猜步骤。）
+
+第二步：严格按它执行，不许跳步：
+1) 克隆模板快照到临时目录（只读，不许克隆进工作区）；
+2) 先 dry-run，贴出「旧版本 → 新版本」与「将替换 N 个文件」；
+3) 再 --apply，贴出备份目录；
+4) 跑 notes/rebuild_index.py、docs_index.py build、skill_audit.py --sync-registry、
+   skill_audit.py --tools-snippet，并按输出把行补进 TOOLS.md（先 grep 再写）；
+5) 四条验收原样贴输出：verify_rules --vs-template、mark_rules check、
+   skill_audit --strict、workspace_preflight；
+6) 再跑一次 dry-run 证明幂等（应为「将替换 0 个文件」）。
+
+硬约束：不许改 python.mode；不许动业务文件/notes 正文/WORKSPACE.md 业务内容；
+不许 commit/push；任何验收红就用 --rollback 回滚并如实说明。
+
+报告：版本前后 → 文件数 → 备份目录 → 四条验收真实输出 → warn 逐条解释 → 未做的事。
+```
+
+验收通过后，该工作区应能自己复述：`AGENT_RULES.md` 版本行等于模板当前版本、`skill_audit --strict` 为 0 findings、`workspace_preflight` 的 `mismatch` 为 0。此后日常同步改用 `template-update`，跨设备同步用 `workspace-repo-sync`。
 
 ## 第一次打开会发生什么
 
@@ -202,7 +231,7 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gat
 
 ## 工作区生命周期 skills
 
-6 个 skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间），登记于 `skills/REGISTRY.md` 与 `TOOLS.md`，全部满足 8 维契约（触发/前置/契约/边界/执行/失败回滚/验收/维护）：
+7 个 skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间），登记于 `skills/REGISTRY.md` 与 `TOOLS.md`，全部满足 8 维契约（触发/前置/契约/边界/执行/失败回滚/验收/维护）：
 
 | Skill | 版本 | 触发 | 做什么 |
 |---|---|---|---|
@@ -269,7 +298,7 @@ Agent 将自动完成：
 ├── docs/
 │   ├── README.md           # 文档索引（按读者选入口 + 必跑命令）
 │   ├── architecture.md     # 四层模型 / 写路径 / 读证据 / 失败姿态 / 跨设备
-│   ├── skills.md           # 6 个 skill 的触发、边界、组合流程、8 维契约
+│   ├── skills.md           # 7 个 skill 的触发、边界、组合流程、8 维契约
 │   ├── tools.md            # 10 个脚本的用法与退出码
 │   ├── hooks-guide.md      # 三 harness hook 技术详解（原理 + 作用 + 排查）
 │   ├── hooks-catalog.md    # 事件清单 + 新 harness 接入 7 步 + 验收断言

@@ -87,7 +87,7 @@ def main(argv: list[str]) -> int:
     if mode in ("local-venv", "uv"):
         ident = ((py.get("runtime") or {}).get("identifier") or "").strip()
         venv_py = ws / ident / "bin" / "python"
-        want = py.get("version")
+        want = py.get("version") or (py.get("runtime") or {}).get("version")
         if not ident:
             rows.append(item("python", "未记录 identifier", "", BAD, "回写 bootstrap.python.runtime.identifier"))
         elif not venv_py.exists():

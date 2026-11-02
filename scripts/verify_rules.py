@@ -79,6 +79,7 @@ TEMPLATE_FILES = [
     "UPGRADE.md",
     ".workspace/skills/legacy-workspace-upgrade/SKILL.md",
     "tests/test_docs_consistency.py",
+    "tests/test_template_sync_rollback.py",
     ".workspace/skills/workspace-repo-sync/SKILL.md",
     "tests/test_alias_audit.py",
     "tests/test_docs_index.py",

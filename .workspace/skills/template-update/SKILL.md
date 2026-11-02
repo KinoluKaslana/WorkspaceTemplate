@@ -92,9 +92,15 @@ print(f"backed up {len(manifest)} files -> {bk}")
 PY
 ```
 
-脚本 `--apply` 会自动做同样的事（含 `MANIFEST.txt`），并额外备份 `*.custom.md` 与 `bootstrap.json`。
-**回滚必须用 MANIFEST 反向清单**：先按 MANIFEST 把旧文件放回，再删除"本次新增、旧清单里没有"的文件——
-否则新版多出来的文件会留在工作区，`verify_rules` 会报 EXTRA。
+脚本 `--apply` 会自动做同样的事，并写 `MANIFEST.txt`（`[replaced]` / `[added]` / `[preserved]` 三段，另备份 `*.custom.md` 与 `bootstrap.json`）。
+**回滚用脚本，不手抄反向清单**：
+
+```bash
+python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --rollback <备份目录>
+```
+
+它放回 `[replaced]`、删除 `[added]`、复原 `[preserved]`；只放回不删除会让新版多出来的文件留在工作区
+（`verify_rules` 报 EXTRA）。
 
 ### 第 4 步：锁定替换（机械，无合并）
 

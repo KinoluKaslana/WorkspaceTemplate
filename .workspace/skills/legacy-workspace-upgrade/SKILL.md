@@ -29,7 +29,7 @@ version: 1.0.0
 ## 输入输出契约
 
 - 读：`bootstrap.template.{source_repo,local_clone}`、`AGENT_RULES.md` 版本行、`.workspace/skills/` 目录；
-- 写：模板层文件（经 `template_sync.py`）、`.workspace/backup-<ts>-sync/`、`bootstrap.template.*`、`skills/REGISTRY.md`（`--sync-registry`）、`TOOLS.md`（人工补登）；
+- 写：模板层文件（经 `template_sync.py`）、`.workspace/backup-<ts>-sync/`（含 `MANIFEST.txt`）、`bootstrap.template.*`、`skills/REGISTRY.md`（`--sync-registry`）、`TOOLS.md`（人工补登，先 grep 再写）；
 - 报告：来源 ref/commit、版本前后、替换文件数、REGISTRY/TOOLS 补齐情况、四条验收输出。
 
 ## 标准流程
@@ -47,8 +47,10 @@ python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref ma
 ### 第 2 步：写盘（自动备份）
 
 ```bash
-python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref main --apply
+python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref main --apply --keep-readme
 ```
+
+**`--keep-readme` 必带**：旧工作区没有 `last_synced_commit`，脚本会把 `README.md` 当模板页覆盖用户首页。
 
 ### 第 3 步：补工作区自有登记
 
@@ -56,10 +58,10 @@ python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref ma
 python3 notes/rebuild_index.py
 python3 scripts/docs_index.py build
 python3 scripts/skill_audit.py --sync-registry
-python3 scripts/skill_audit.py --tools-snippet    # 按输出补 TOOLS.md
+python3 scripts/skill_audit.py --tools-snippet    # 按完整输出补 TOOLS.md（当前 7 行，少一行即失败）
 ```
 
-旧 `bootstrap.python` 缺 `runtime.identifier` 时：写**venv 目录绝对路径**（非 `bin/python`）+ `runtime.version`；记录指向的 venv 已不存在则按 §0.1 重建**同模式** venv；仅 `unconfigured` 才走 `pyenv_init.py`。
+旧 `bootstrap.python` 缺 `runtime.identifier` 时：写**venv 目录绝对路径**（非 `bin/python`），版本写 `python.version`（`preflight` 读它，缺失才回退 `runtime.version`）；记录指向的 venv 已不存在则按 §0.1 重建**同模式** venv；仅 `unconfigured` 才走 `pyenv_init.py`。
 
 ### 第 4 步：验收
 
@@ -77,9 +79,10 @@ python3 scripts/workspace_preflight.py
 | dry-run 报 `ref-not-found` | `--list-refs` 选对 ref；或先 `git fetch --all --tags` |
 | `--apply` 后 `verify_rules` 报 `HASH-DIFF` | 说明工作区里有人改过模板层：重跑 `--apply`；要保留的语义写进 `*.custom.md` |
 | `skill_audit` 报名称集合/TOOLS 未登记 | 回到第 3 步（`--sync-registry` + `--tools-snippet`） |
-| 任何验收红 | 用 `.workspace/backup-<ts>-sync/` 的 MANIFEST 回滚，不要带漂移继续 |
+| 任何验收红 | `python3 "$TPL/scripts/template_sync.py" --workspace . --rollback <备份目录> --purge-generated`（放回 replaced + 删除 added + 清除生成的 REGISTRY/索引），不要带漂移继续 |
 
 回滚后必须重跑第 4 步确认回到基线。
+第 3 步生成的文件不在 MANIFEST 内：`--rollback --purge-generated` 会删除升级前不存在的 `skills/REGISTRY.md`、`notes/INDEX.md`、`notes/_INVERTED.md`、`docs/.index.json` 等；`TOOLS.md` 补登行需手工删。
 
 ## 验收（可被他人复跑）
 

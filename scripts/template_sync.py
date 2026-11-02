@@ -92,6 +92,76 @@ def dangling_custom(ws: Path, new_ids: set[str]) -> list[dict]:
     return out
 
 
+GENERATED = ("skills/REGISTRY.md", "notes/INDEX.md", "notes/_INVERTED.md",
+             "docs/.index.json", "docs/.aliases.json")
+
+
+def _rollback(ws: Path, backup: Path, purge_generated: bool = False) -> int:
+    """按 MANIFEST 回滚：先放回 replaced，再删除 added，最后恢复 preserved。"""
+    man = backup / "MANIFEST.txt"
+    if not man.is_file():
+        print(f"缺少 MANIFEST.txt：{man}", file=sys.stderr)
+        return 2
+    sec, buf = {}, []
+    for line in man.read_text(encoding="utf-8").splitlines():
+        if line.startswith("[") and line.endswith("]"):
+            if sec:
+                pass
+            cur = line[1:-1]
+            sec.setdefault(cur, [])
+            buf = sec[cur]
+        elif line.strip() and not line.startswith("#") and buf is not None:
+            buf.append(line.strip())
+    restored = 0
+    for rel in sec.get("replaced", []):
+        src = backup / rel
+        if src.is_file():
+            dst = ws / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            restored += 1
+    removed = 0
+    for rel in sec.get("added", []):
+        tgt = ws / rel
+        if tgt.is_file():
+            tgt.unlink()
+            removed += 1
+            parent = tgt.parent
+            while parent != ws and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
+    for rel in sec.get("pruned", []):          # --prune 删掉的上游旧文件：放回
+        src = backup / rel
+        if src.is_file():
+            dst = ws / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            restored += 1
+    for rel in sec.get("preserved", []):
+        src = backup / rel
+        if src.is_file():
+            dst = ws / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+    purged = []
+    if purge_generated:
+        for rel in GENERATED:
+            tgt = ws / rel
+            if tgt.is_file() and not (backup / rel).is_file():
+                tgt.unlink()
+                purged.append(rel)
+                parent = tgt.parent
+                while parent != ws and parent.is_dir() and not any(parent.iterdir()):
+                    parent.rmdir()
+                    parent = parent.parent
+    print(f"回滚完成：放回 {restored}，删除本次新增 {removed}，源 {backup}")
+    if purged:
+        print("已清除引导期生成（升级前不存在）:", ", ".join(purged))
+    elif not purge_generated:
+        print("提示：第 3 步生成的工作区自有文件不在 MANIFEST 内；需要一并清除时加 --purge-generated")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", required=True)
@@ -106,6 +176,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--keep-readme", action="store_true")
     ap.add_argument("--prune", action="store_true",
                     help="删除「上次同步有、本次模板已移除」的模板层文件（先备份）")
+    ap.add_argument("--purge-generated", action="store_true",
+                    help="回滚时一并删除升级前不存在的生成文件（REGISTRY/notes 索引/docs 索引）")
+    ap.add_argument("--rollback", default=None, metavar="BACKUP_DIR",
+                    help="按备份目录的 MANIFEST.txt 回滚（放回 replaced、删除 added）")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
@@ -115,6 +189,9 @@ def main(argv: list[str]) -> int:
     if not boot_path.is_file():
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
+    if a.rollback:
+        return _rollback(ws, Path(a.rollback).expanduser().resolve(), a.purge_generated)
+
     boot = json.loads(boot_path.read_text(encoding="utf-8"))
     tpl_sec = boot.get("template") or {}
 
@@ -197,9 +274,11 @@ def main(argv: list[str]) -> int:
             if not src.is_file():
                 missing.append(rel)
                 continue
-            if rel.startswith("README") and (a.keep_readme or readme_is_local):
-                skipped.append(rel)
-                continue
+            if rel in ("README.md", "README_EN.md") and (a.keep_readme or readme_is_local):
+                # 只保用户已有的首页；README_EN 缺失时仍安装（否则 verify 报 MISSING）
+                if rel == "README.md" or (ws / rel).is_file():
+                    skipped.append(rel)
+                    continue
             if not dst.is_file() or src.read_bytes() != dst.read_bytes():
                 changed.append(rel)
 
@@ -235,16 +314,29 @@ def main(argv: list[str]) -> int:
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         backup = ws / ".workspace" / f"backup-{stamp}-sync"
         backup.mkdir(parents=True, exist_ok=True)
+        replaced, added = [], []
         for rel in files:
             src_dst = ws / rel
             if src_dst.is_file():
                 (backup / rel).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_dst, backup / rel)
+                replaced.append(rel)
+            else:
+                added.append(rel)
         for extra in ("AGENT_RULES.custom.md", "HERMES.custom.md", ".workspace/bootstrap.json"):
             p = ws / extra
             if p.is_file():
                 (backup / extra).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(p, backup / extra)
+
+        preserved = [x for x in ("AGENT_RULES.custom.md", "HERMES.custom.md",
+                                 ".workspace/bootstrap.json") if (backup / x).is_file()]
+        (backup / "MANIFEST.txt").write_text(
+            "# template_sync backup manifest\n"
+            f"# ref={wanted} commit={commit} {before}->{after}\n"
+            "[replaced]\n" + "\n".join(replaced) + "\n"
+            "[added]\n" + "\n".join(added) + "\n"
+            "[preserved]\n" + "\n".join(preserved) + "\n", encoding="utf-8")
 
         copied = []
         for rel in files:
@@ -276,6 +368,9 @@ def main(argv: list[str]) -> int:
                         parent = parent.parent
                 pruned.append(rel)
             report["pruned"] = pruned
+            if pruned:
+                with (backup / "MANIFEST.txt").open("a", encoding="utf-8") as fh:
+                    fh.write("[pruned]\n" + "\n".join(pruned) + "\n")
 
         boot_path = ws / ".workspace" / "bootstrap.json"
         boot = json.loads(boot_path.read_text(encoding="utf-8"))
@@ -284,7 +379,7 @@ def main(argv: list[str]) -> int:
         tpl_sec["current_policy_version"] = after
         tpl_sec["last_synced_at"] = dt.date.today().isoformat()
         tpl_sec["last_synced_ref"] = wanted
-        if kind == "commit":                      # 分支或标签解析出来的提交
+        if kind in ("commit", "tag"):             # 分支、标签或裸提交：记 requested ref
             tpl_sec["last_synced_branch"] = wanted
         tpl_sec["last_synced_commit"] = commit
         boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

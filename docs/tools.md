@@ -13,7 +13,7 @@
 | `docs_index.py` | docs 确定性索引：`build` / `check` / `query` | `build`；`query <词> --json --top 2` | 0 / 1(stale) / 2(缺索引) / 3(stale 查询) |
 | `docs_hit_report.py` | 判据集命中报告（`tests/docs_probe.json`） | `--min 9 --top 2 --json` | 0 达标 / 1 未达标 / 2 stale |
 | `docs_alias_audit.py` | 别名审计：死指针/指纹漂移/来源合规/留一验证 | `[--strict] [--restore] [--json]` | 0 / 1 |
-| `template_sync.py` | 按 ref 同步模板层：dry-run / apply / prune | `--workspace . --ref alpha [--apply --prune --verify --json]` | 0 / 1 前置失败 / 2 校验失败 |
+| `template_sync.py` | 按 ref 同步模板层：dry-run / apply / prune / rollback | `--workspace . --ref alpha [--apply --prune --verify --json]`；`--rollback <备份目录>` | 0 / 1 前置失败 / 2 校验失败 |
 | `workspace_preflight.py` | 跨设备预检：9 项「登记 vs 本机实际」 | `[--workspace .] [--json] [--strict]` | 0 无 mismatch / 1 有 mismatch |
 | `pyenv_init.py` | Python 运行时初始化：uv / 手动 venv / MCP | `--mode uv\|venv\|mcp [--apply] [--json]` | 0 / 1 / 2 参数 / 3 需装 uv / 4 校验失败 / 5 已配置拒绝 |
 

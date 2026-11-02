@@ -3,6 +3,7 @@
 > 适用：工作区由**旧版本** WorkspaceTemplate 创建（如 2.x），`.workspace/skills/` 里没有当前的 `template-update` 3.x、`workspace-repo-sync`、`docs-retrieval-maintenance`，因此**无法用工作区内的 skill 完成升级**。
 > 本文是**自举入口**：只需要 Python ≥3.10，其余全部从模板克隆取用。升级完成后，工作区即可用现行 skill 继续维护。
 > 实现说明，不构成政策；义务与判定口径见 [`AGENT_RULES.md`](AGENT_RULES.md)。
+> **这是高影响动作（`AGENT_RULES.md` §7 R59）**：会整文件替换模板层、写入 `bootstrap.json` 并新建文件。执行前须取得工作区负责人同意；不同意就停在 dry-run。
 
 ## 0. 先判断是否真的需要
 
@@ -21,7 +22,9 @@ test -f scripts/template_sync.py && echo has-sync || echo no-sync
 ## 1. 取模板快照（只读，不碰工作区）
 
 ```bash
+# $TPL 只在当前 shell 有效：下面每段都在同一 shell 里执行，或把它写进文件后 source
 TPL=$(mktemp -d)/tpl
+echo "$TPL" > /tmp/tpl.path          # 换 shell 时用 TPL=$(cat /tmp/tpl.path)
 git clone --depth 1 --branch main https://github.com/KinoluKaslana/WorkspaceTemplate.git "$TPL"
 python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref main
 ```
@@ -33,33 +36,31 @@ python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref ma
 将替换 N 个文件（共 M）
 ```
 
-`--branch` 可换 `dev` / `alpha`；`--ref` 也接受标签与提交。工作区若已登记 `template.local_clone`，可省略 `--template`。
+`--branch` 可换 `dev` / `alpha`。**`--depth 1` 的浅克隆只有一条分支**：要取标签或历史提交，改用完整克隆（去掉 `--depth 1`，或 `git fetch --tags` 后再 `--ref <tag>`），否则会报 `ref-not-found`。工作区若已登记 `template.local_clone`，可省略 `--template`。
 
 ## 2. 备份并写盘
 
 ```bash
-python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref main --apply
+python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref main --apply --keep-readme
 ```
+
+`--keep-readme`：旧工作区多半没有 `last_synced_commit` 记录，脚本会因此把 `README.md` 当成模板页替换掉。若这个 README 是你自己的首页，**必须**带该参数；想让模板 README 覆盖时才省略。
 
 - 自动备份到 `.workspace/backup-<ts>-sync/`（含 `MANIFEST.txt`）；
 - 回写 `bootstrap.template.*`；**不动** `bootstrap.python` 与 `.venv-*`（`python_mode_preserved=true`）。
 
-回滚：
+回滚（任一步校验不过时）：
 
 ```bash
-BK=$(ls -d .workspace/backup-*-sync | tail -1)
-python3 - "$BK" <<'PY'
-import shutil, sys
-from pathlib import Path
-bk = Path(sys.argv[1])
-for src in sorted(bk.rglob("*")):
-    if src.is_file() and src.name != "MANIFEST.txt":
-        dst = Path(".") / src.relative_to(bk)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-print("restored from", bk)
-PY
+ls -d .workspace/backup-*-sync        # 先看有几个备份，确认要回滚到哪一个
+BK=.workspace/backup-<选中的时间戳>-sync
+python3 "$TPL/scripts/template_sync.py" --workspace . --rollback "$BK" --purge-generated
+# 期望：放回 N、删除本次新增 M、清除引导期生成文件；工作区回到升级前的文件集合
 ```
+
+`MANIFEST.txt` 分 `[replaced]` / `[added]` / `[preserved]` 三段；`--rollback` 会放回旧文件并**删除本次新增**（`docs/`、`UPGRADE.md`、`scripts/`、`.workspace/skills/*` 等）。只放回不删除会留下残留，不要手抄 `cp` 脚本。
+`--purge-generated` 会一并删除升级前不存在的生成文件（`skills/REGISTRY.md`、`notes/INDEX.md`、`notes/_INVERTED.md`、`docs/.index.json`、`docs/.aliases.json`）；不带它时只放回 replaced + 删除 added，生成文件会残留。
+`TOOLS.md` 的补登行不在这套机制里：回滚前先记下加了几行，回滚后手工删掉。
 
 ## 3. 补齐工作区自有登记（关键）
 
@@ -73,11 +74,11 @@ python3 scripts/skill_audit.py --tools-snippet    # 打印需补进 TOOLS.md 的
 ```
 
 **旧 `bootstrap.python` 记录不全时**（`preflight` 报 `python` mismatch）：
-- `runtime.identifier` 写**venv 目录的绝对路径**（如 `/path/.venv-314`，不是 `.../bin/python`），`runtime.version` 写该 venv 的 `X.Y.Z`；
+- `python.runtime.identifier` 写**venv 目录的绝对路径**（如 `/path/.venv-314`，不是 `.../bin/python`）；`python.version` 写该 venv 的 `X.Y.Z`（`preflight` 读 `python.version`，缺失时回退 `python.runtime.version`）；
 - 记录指向的 venv 已不存在（换机/搬目录）→ 按 §0.1 **重建同模式 venv**，`python.mode` 不变；
 - 模式本身为 `unconfigured` 才走 `scripts/pyenv_init.py`（uv 默认）。
 
-把最后一条打印的行追加到 `TOOLS.md` 的 workspace-skills 小节（没有就新建），例如：
+把最后一条打印的行追加到 `TOOLS.md` 的 workspace-skills 小节（没有就新建）；**先 `grep -c '<skill 名>' TOOLS.md` 再写**，重复执行不要产生重复行。例如：
 
 ```markdown
 ### workspace-skills（工作区自维护技能）
@@ -87,6 +88,8 @@ python3 scripts/skill_audit.py --tools-snippet    # 打印需补进 TOOLS.md 的
 | **template-update** | 入口 `.workspace/skills/template-update/SKILL.md` |
 | **workspace-repo-sync** | 入口 `.workspace/skills/workspace-repo-sync/SKILL.md` |
 ```
+
+**照 `--tools-snippet` 的完整输出抄，不要只抄上面两行**：模板当前带 7 个 skill，少登记一个就会在 `skill_audit --strict` 里报「未登记于 TOOLS.md」。
 
 ## 4. 验收（四条全绿）
 

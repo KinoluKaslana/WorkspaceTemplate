@@ -1,7 +1,7 @@
 # 架构：政策 · 守门 · 流程 · 工具
 
 > 实现说明，不构成政策。判定口径以 [`AGENT_RULES.md`](../AGENT_RULES.md) 为准。
-> 当前对应：政策 **3.3.1** · 插件 **1.9.0** · `TEMPLATE_FILES` **53** 项 · skills **6** 个 · scripts **10** 个。
+> 当前对应：政策 **3.3.1** · 插件 **1.9.0** · `TEMPLATE_FILES` **56** 项 · skills **7** 个 · scripts **10** 个。
 
 ## 1. 四层模型
 
@@ -18,7 +18,7 @@
 └───────────────┬──────────────────────────────────────────────┘
                 │ 兜底（不是替代）
 ┌───────────────▼──────────────────────────────────────────────┐
-│ ③ 流程层  .workspace/skills/（6 个）                          │
+│ ③ 流程层  .workspace/skills/（7 个）                          │
 │    8 维契约：触发/前置/契约/边界/执行/失败回滚/验收/维护       │
 └───────────────┬──────────────────────────────────────────────┘
                 │ 调用
@@ -85,14 +85,14 @@ Agent 决定写 X
 ```
 模板仓库（正主）            工作区实例
   AGENT_RULES.md   ──整文件替换──►  AGENT_RULES.md（锁定）
-  scripts/…        ──整文件替换──►  scripts/…（锁定，53 项清单）
+  scripts/…        ──整文件替换──►  scripts/…（锁定，56 项清单）
   *.custom.md      ──── 永不触碰 ──► 本地规则（custom 优先）
   WORKSPACE/TOOLS  ──── 永不触碰 ──► 业务与环境事实
 ```
 
 - 同步入口：`scripts/template_sync.py --ref <分支|标签|提交> [--apply] [--prune]`；
 - 同步**不改** `bootstrap.python`（`python_mode_preserved=true` 是硬条件）；
-- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 53 项；**新增/删除模板层文件时，本页与 `docs/README.md` 的数字必须同步**，`tests/test_docs_consistency.py` 会拦）。
+- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 56 项；**新增/删除模板层文件时，本页与 `docs/README.md` 的数字必须同步**，`tests/test_docs_consistency.py` 会拦）。
 
 ## 7. 扩展点
 

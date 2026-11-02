@@ -59,13 +59,16 @@ def clause_ids() -> set[str]:
 
 def sync_registry(rows: list[dict]) -> int:
     """按磁盘目录重写 REGISTRY 的入口表与计数（幂等）；文件不存在时新建。"""
+    names_all = sorted(r["skill"] for r in rows if r["skill"] != "(registry)")
     if not REGISTRY.is_file():
         REGISTRY.parent.mkdir(parents=True, exist_ok=True)
         REGISTRY.write_text(
-            "# Skills 路由登记表\n\n> 本文件只保存路由视图；规范路径、版本/哈希、信任边界与核验日期以 `TOOLS.md` 为准。\n\n"
+            "# Skills 路由登记表\n\n"
+            "> 本文件只保存路由视图；规范路径、版本/哈希、信任边界与核验日期以 `TOOLS.md` 为准。\n\n"
             "## 已登记 skill roots\n\n"
             "| 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |\n|---|---|---|---|---|\n"
-            "| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记 | 待登记 | `TOOLS.md` |\n\n"
+            f"| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记 "
+            f"| 已登记（{len(names_all)} 入口：{' / '.join(names_all)}） | `TOOLS.md` |\n\n"
             "## Skill 入口\n\n", encoding="utf-8")
     reg = REGISTRY.read_text(encoding="utf-8")
     names = sorted(r["skill"] for r in rows if r["skill"] != "(registry)")
@@ -146,7 +149,7 @@ def main(argv: list[str]) -> int:
 
         if f".workspace/skills/{name}/SKILL.md" not in registry:
             f.append("未登记于 skills/REGISTRY.md")
-        if name not in tools:
+        if not re.search(rf"^\|[^\n]*\*\*{re.escape(name)}\*\*", tools, re.M):
             f.append("未登记于 TOOLS.md")
 
         bad += bool(f)

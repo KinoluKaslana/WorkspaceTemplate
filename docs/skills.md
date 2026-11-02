@@ -1,4 +1,4 @@
-# Workspace skills（6 个）
+# Workspace skills（7 个）
 
 > 实现说明，不构成政策。义务与判定标准见 [`AGENT_RULES.md`](../AGENT_RULES.md)；本页只讲**每个 skill 干什么、什么时候进、失败怎么办**。
 
@@ -33,7 +33,7 @@
 
 `skill_audit.py` 缺任何一节 → `findings`；`--strict` 下 exit 1，可直接进验收链。
 
-## 2. 六个 skill 的细节
+## 2. 七个 skill 的细节
 
 ### 2.1 `template-update`
 
