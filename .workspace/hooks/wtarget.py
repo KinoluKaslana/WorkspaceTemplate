@@ -712,3 +712,124 @@ def classify(command: str, cwd: str, gate_files: list[str]) -> dict:
     return {"kind": final_kind, "targets": [], "gate_targets": [],
             "forms": sorted(set(all_forms)), "confidence": "static",
             "class": "static", "reason": "；".join(reasons)}
+
+
+# ---------------------------------------------------------------- PowerShell（pwsh）
+# 依据：dsh 在 Windows 上提供 `pwsh` 工具；其写形态与 POSIX 不同（Set-Content / Out-File /
+# Tee-Object / New-Item -Value / [IO.File]::WriteAllText / `>` 均可写文件）。
+# 实测（Windows PowerShell 5.1，2026-11-02）：下列 10 种形态全部成功创建文件。
+
+_PS_WRITE_CMDLETS = {
+    "set-content": ("path", "filepath", "literalpath"),
+    "add-content": ("path", "filepath", "literalpath"),
+    "clear-content": ("path", "filepath", "literalpath"),
+    "out-file": ("filepath", "path", "literalpath"),
+    "tee-object": ("filepath", "path", "literalpath"),
+    "export-csv": ("path", "literalpath"),
+    "export-clixml": ("path", "literalpath"),
+    "new-item": ("path", "name"),
+    "copy-item": ("destination",),
+    "move-item": ("destination",),
+    "rename-item": ("newname",),
+    "remove-item": ("path", "literalpath"),
+    "set-itemproperty": ("path",),
+}
+_PS_INTERP = {"invoke-expression", "iex", "start-process", "start-job", "invoke-command"}
+_PS_REDIRECT = re.compile(r"(?<![->=])(>>?)\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s;|&)]+))")
+_PS_NULL = {"$null", "nul", "/dev/null"}
+_PS_NET_WRITE = re.compile(
+    r"\[(?:System\.)?IO\.File\]::(?:WriteAllText|AppendAllText|WriteAllLines|WriteAllBytes|Create)\s*\(\s*"
+    r"(?:\"([^\"]+)\"|'([^']+)')")
+
+
+def _ps_words(segment: str) -> list[str]:
+    """粗糙分词：够用于 cmdlet 名与参数，不追求完整 PowerShell 语法。"""
+    return [w.strip("'\"") for w in re.findall(r"[^\s;|()]+", segment) if w.strip("'\"")]
+
+
+def _ps_segments(command: str) -> list[str]:
+    # 不切 `>`，交给重定向正则；只按 `;` 与管道切
+    return [s for s in re.split(r"[;|]", command) if s.strip()]
+
+
+def classify_pwsh(command: str, cwd: str, gate_files: list[str],
+                  shell: str = "pwsh") -> dict:
+    """PowerShell 写目标识别：命中写形态则给目标；含写意图但目标不可解析 → unresolved。"""
+    if not isinstance(command, str) or not command.strip():
+        return {"kind": "other", "targets": [], "gate_targets": [], "forms": [],
+                "confidence": "static", "reason": "empty"}
+
+    targets: list[str] = []
+    forms: list[str] = []
+
+    for m in _PS_REDIRECT.finditer(command):
+        raw = next((g for g in m.groups() if g), "")
+        if not raw or raw.lower() in _PS_NULL or raw.startswith("&"):
+            continue
+        targets.append(raw)
+        forms.append("ps-redirect:" + m.group(1))
+
+    for m in _PS_NET_WRITE.finditer(command):
+        raw = m.group(1) or m.group(2)
+        if raw:
+            targets.append(raw)
+            forms.append("ps-dotnet-write")
+
+    write_intent = False
+    for seg in _ps_segments(command):
+        words = _ps_words(seg)
+        if not words:
+            continue
+        base = os.path.basename(words[0]).lower()
+        if base.endswith(".exe"):
+            base = base[:-4]
+        if base in _PS_INTERP:
+            return {"kind": "unresolved", "targets": [], "gate_targets": [], "forms": ["ps-interp"],
+                    "confidence": "opaque", "reason": f"interpreter:{base}"}
+        if base in _PS_WRITE_CMDLETS:
+            write_intent = True
+            params = _PS_WRITE_CMDLETS[base]
+            found = None
+            for i, w in enumerate(words[1:], 1):
+                name = w.lstrip("-").lower()
+                if name in params and i + 1 < len(words):
+                    found = words[i + 1]
+                    break
+            if found is None:
+                # 位置参数：跳过选项与其值，取第一个像路径的词
+                rest = [w for w in words[1:] if not w.startswith("-")]
+                for w in rest:
+                    if any(ch in w for ch in ("\\", "/", ".")) or w.lower().endswith(
+                            ("txt", "md", "json", "ps1", "log")):
+                        found = w
+                        break
+            if found:
+                targets.append(found)
+                forms.append(f"ps-cmdlet:{base}")
+            else:
+                forms.append(f"ps-cmdlet-nopath:{base}")
+
+    def absolute(token: str) -> str:
+        v = os.path.expanduser(token.strip().strip("'\""))
+        if re.match(r"^[A-Za-z]:[\\/]", v) or v.startswith("\\\\"):
+            return os.path.normpath(v)
+        return os.path.normpath(os.path.join(cwd, v))
+
+    resolved, unresolved = [], []
+    for token in targets:
+        if any(ch in token for ch in ("$", "*", "?")) or token.startswith("&"):
+            unresolved.append(token)
+        else:
+            resolved.append(absolute(token))
+
+    gate_abs = {os.path.normpath(os.path.expanduser(g)) for g in gate_files}
+    if resolved:
+        return {"kind": "write", "targets": sorted(set(resolved)),
+                "gate_targets": sorted({t for t in resolved if t in gate_abs}),
+                "forms": forms, "confidence": "static", "reason": "pwsh-write"}
+    if unresolved or (write_intent and not targets):
+        return {"kind": "unresolved", "targets": [], "gate_targets": [],
+                "forms": forms or ["ps-write-nopath"], "confidence": "opaque",
+                "reason": "pwsh-target-unresolved"}
+    return {"kind": "other", "targets": [], "gate_targets": [], "forms": forms,
+            "confidence": "static", "reason": "pwsh-no-write"}

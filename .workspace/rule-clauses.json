@@ -164,7 +164,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "7c87f060b400f1303c29488545019913c754b4146c42ad0715ecef3fb0b382c8",
+    "file_sha256": "45640de262972fc78d969673d567456cd5cb383d76e94c490208ccad00c36d43",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -259,7 +259,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "0bfeeca37baba06556ee86ca8c10391c14402ba1a930c4ba806295aee1dd9692",
+    "file_sha256": "15145d6e37f0b616bdfbc84f2578b0689576299ad2678f9fe7294d9334fedf67",
     "marked": 0
   },
   "docs/skills.md": {
@@ -334,7 +334,7 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "1a6b9c1fada77283030f34e720e857f00ebd92665c0e62b3b5d729c424db466e",
+    "file_sha256": "88c0f4174919e5278fad975b57400c76166afb2502d28aa7875ab65ebc7e99a6",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
@@ -360,6 +360,11 @@
   "tests/test_dsh_wiring.py": {
     "clauses": {},
     "file_sha256": "4f2831a1c8289dd06a4c52505dffcdfc9e4e1ecf8e44498a8125912e678b9fa7",
+    "marked": 0
+  },
+  "tests/test_pwsh_writes.py": {
+    "clauses": {},
+    "file_sha256": "4b608279eb96f67843650764879a7ede498bd8b881da492a4a19c461485b224f",
     "marked": 0
   },
   "scripts/clause_lint.py": {
@@ -414,7 +419,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "9c199fa92a0f40b72feea251cec8cd40058a0f7b63e1d7a66245b7d148253d6f",
+    "file_sha256": "c0c1e36b5510ed108d2e1f3bc069f5d2b688aa8bef0fabb2cb6266e152d151ea",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
@@ -424,7 +429,7 @@
   },
   ".workspace/hooks/wtarget.py": {
     "clauses": {},
-    "file_sha256": "689672e6a96f28df9c486460766417567c505f11afc52c6db2b86fe719f97751",
+    "file_sha256": "bacfd8d694cf76fb1175500e2e7cefdb9854d2edee7e7a339786bb1d026225ce",
     "marked": 0
   },
   ".workspace/hooks/authz.py": {

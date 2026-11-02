@@ -91,6 +91,7 @@ TEMPLATE_FILES = [
     ".dsh/workspace-gate/package.json",
     "tests/dsh_harness.mjs",
     "tests/test_dsh_wiring.py",
+    "tests/test_pwsh_writes.py",
     "scripts/clause_lint.py",
     ".workspace/clauses.meta.json",
     "docs/policy-language.md",

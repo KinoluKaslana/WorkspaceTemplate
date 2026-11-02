@@ -2,6 +2,21 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## pwsh 写路径补齐（2026-11-02，dev，不改政策版本）
+
+在真实 Windows（PowerShell 5.1，经 win-host 远程执行）验证：`Set-Content` / `Out-File` / `Add-Content` /
+`New-Item -Value` / `>` / `>>` / `Tee-Object` / `[IO.File]::WriteAllText` / `Copy-Item` / `cmd /c` 重定向
+**10 种写法都会真的创建文件**。而旧分类器只认 POSIX，这 10 种全部被判「无写目标」→ **dsh 的 pwsh 工具等于完全不设防**。
+
+- 新增 `wtarget.classify_pwsh()`：识别上述 10 类写形态、`Remove-Item`/`Clear-Content` 等破坏性 cmdlet、
+  `[IO.File]::*` 写 API；写意图存在但目标不可静态确定（`iex`/变量目标）→ **fail-closed**。
+- `hook.py` 在 `dsh_tool=pwsh` 时走该分类器；顺带修 `res["class"]` 在 pwsh 分支的 KeyError
+  （会把只读命令误判成「内部错误 deny」）。
+- 新增 `tests/test_pwsh_writes.py`：10 种写形态 deny、4 种只读 allow、`iex` fail-closed、读后放行。
+- `TEMPLATE_FILES` 70 → 71。
+- **未做**：Windows 上没有安装 dsh，所以「dsh pwsh 工具 → 本 hook」这一跳是按契约接线 + 两侧各自实测，
+  不是端到端；已在 `docs/dsh.md` 写明。
+
 ## dsh 未验证项逐条实证（2026-11-02，dev，不改政策版本）
 
 按预注册判据（SOL 主理、GLM 辅）实跑 V1–V9，并把结果写回 `docs/dsh.md`：

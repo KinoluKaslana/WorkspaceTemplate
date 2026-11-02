@@ -53,6 +53,30 @@ dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 | `bash` / `pwsh` → hook 侧 `Bash` | `pre_bash` | 未读时：静态重定向 **拒**、解释器写 **拒**；变量间接 / `awk` 重定向 **放行（盲区）** |
 | 其他 | — | 不拦 |
 
+**pwsh 实测矩阵**（Windows PowerShell 5.1，经 win-host 在真实 Windows 上执行）：
+
+第一步证明「这些写法真的会写文件」——10 种全部创建成功（`f1..f9` + `src.txt`，`cmd /c` 那行写到了 cmd 自己的 cwd）：
+
+```
+Set-Content / Out-File / Add-Content / New-Item -Value / '>' / '>>' /
+Tee-Object / [IO.File]::WriteAllText / Copy-Item / cmd /c "echo > f"
+```
+
+第二步证明「守门认得它们」——同一命令串喂给 `hook.py pre_bash`（client=dsh, dsh_tool=pwsh）：
+
+```
+10 种写形态 → 全部 deny（理由是「未读治理文件」）
+Get-Content / ls / Get-ChildItem / Measure-Object → allow
+iex (Get-Content x.ps1) → deny（写目标不可静态确定，fail-closed）
+```
+
+> **为什么以前是洞**：`pwsh` 的写形态与 POSIX 完全不同（`Set-Content`/`Out-File` 根本没有 `>`），
+> 旧分类器把它们全判成「无写目标」→ 放行。现在 `wtarget.classify_pwsh()` 覆盖上述 10 类，
+> 并用 `tests/test_pwsh_writes.py` 锁住。
+>
+> **未做**：dsh 本体没有在 Windows 上跑过（Windows 侧没装 dsh），所以「dsh 的 pwsh 工具 → 本 hook」
+> 这一跳是**按契约接线 + 两侧各自实测**，不是端到端。
+
 **bash 实测矩阵**（未读状态，同一 hook 直接驱动）：
 
 ```
@@ -120,7 +144,7 @@ ls -la                            → ALLOW
 - 子 agent **没有委托机制**：dsh 子会话必须自己读政策才能写；父不能代授（与 CC/Codex 的 `delegations.py` 不对齐，属已知差异）。
 - `pwsh` 只在 Linux 上得到 shell 解析路径，未在 Windows 实测。
 - `str_replace_editor`：**该构建（0.2.1-rc.4）未提供此工具**（真实回合模型明确回报「there is no str_replace_editor」）；映射代码是防御性分支，标为**无法验证**。
-- `pwsh`：Linux 上没有该工具，**无法验证**（需要 Windows 主机）。
+- `pwsh`：**已在真实 Windows 上验证命令语义与分类结果**（见上方矩阵）；但 dsh 本体未在 Windows 运行，端到端未验。
 
 ## 5.1 在 headless 里跑（账号登录，无 API key）
 

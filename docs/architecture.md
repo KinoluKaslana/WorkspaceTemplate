@@ -1,7 +1,7 @@
 # 架构：政策 · 守门 · 流程 · 工具
 
 > 实现说明，不构成政策。判定口径以 [`AGENT_RULES.md`](../AGENT_RULES.md) 为准。
-> 当前对应：政策 **3.4.0** · 插件 **1.9.0** · `TEMPLATE_FILES` **70** 项 · skills **7** 个 · scripts **14** 个。
+> 当前对应：政策 **3.4.0** · 插件 **1.9.0** · `TEMPLATE_FILES` **71** 项 · skills **7** 个 · scripts **14** 个。
 
 ## 1. 四层模型
 
@@ -85,14 +85,14 @@ Agent 决定写 X
 ```
 模板仓库（正主）            工作区实例
   AGENT_RULES.md   ──整文件替换──►  AGENT_RULES.md（锁定）
-  scripts/…        ──整文件替换──►  scripts/…（锁定，70 项清单）
+  scripts/…        ──整文件替换──►  scripts/…（锁定，71 项清单）
   *.custom.md      ──── 永不触碰 ──► 本地规则（custom 优先）
   WORKSPACE/TOOLS  ──── 永不触碰 ──► 业务与环境事实
 ```
 
 - 同步入口：`scripts/template_sync.py --ref <分支|标签|提交> [--apply] [--prune]`；
 - 同步**不改** `bootstrap.python`（`python_mode_preserved=true` 是硬条件）；
-- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 70 项；**新增/删除模板层文件时，本页与 `docs/README.md` 的数字必须同步**，`tests/test_docs_consistency.py` 会拦）。
+- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 71 项；**新增/删除模板层文件时，本页与 `docs/README.md` 的数字必须同步**，`tests/test_docs_consistency.py` 会拦）。
 
 ## 7. 扩展点
 

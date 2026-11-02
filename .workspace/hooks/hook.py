@@ -701,18 +701,26 @@ def handle(event: str, data: dict) -> None:
             if ws:
                 conf = core.load_conf(ws)
                 gate_files = [core._norm_join(ws, g) for g in conf["gate_files"]]
-            res = wtarget.classify(cmd_str, cwd, gate_files)
+            is_pwsh = str(data.get("dsh_tool") or "").lower() == "pwsh"
+            res = (wtarget.classify_pwsh(cmd_str, cwd, gate_files)
+                   if is_pwsh else wtarget.classify(cmd_str, cwd, gate_files))
             if res["kind"] == "write" and res["targets"]:
                 result = core.evaluate_pre_write(cwd, client, sid, res["targets"])
                 if result.get("action") == "deny":
                     _deny(result["reason"], ws=ws, client=client, sid=sid, tool="Bash",
                           targets=res["targets"], tool_use_id=data.get("tool_use_id") or "")
-            elif res["class"] == "interpreter_wrapper":
+            elif res.get("class") == "interpreter_wrapper":
                 owner = ws or cwd
                 req = core.evaluate_read_required(owner, client, sid)
                 if req.get("action") == "deny":
                     _deny(req["reason"], ws=ws, client=client, sid=sid, tool="Bash",
                           tool_use_id=data.get("tool_use_id") or "")
+            elif is_pwsh and res["kind"] == "unresolved":
+                # PowerShell 是解释器：写意图存在但目标不可静态确定 → fail-closed
+                _deny("PowerShell 写目标无法静态确定（命令含写意图但解析不出目标）；"
+                      "请把目标写成字面路径重试。",
+                      ws=ws, client=client, sid=sid, tool="pwsh",
+                      tool_use_id=data.get("tool_use_id") or "")
             elif ws and res["kind"] == "unresolved":
                 core.append_audit_event(ws, client, sid, {
                     "type": "unresolved-command",
