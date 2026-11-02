@@ -6,6 +6,8 @@ T2 uv apply：建出 .venv-<ver>，bootstrap.python.mode=uv、记录 uv 路径
 T3 uv 缺失：exit 3 + 安装提示（不自动安装）
 T4 mcp 缺参数：exit 2
 T5 手动 venv apply：mode=local-venv
+T6 已配置工作区 apply → exit 5，模式不被改写
+T7 已配置 + --force → 才允许切换
 运行：python3 -B tests/test_pyenv_init.py
 """
 import json
@@ -87,6 +89,26 @@ class PyenvInit(unittest.TestCase):
         rc, d = run(self.ws, "--mode", "venv", "--apply")
         self.assertEqual(rc, 0, d)
         self.assertEqual(json.loads(self.boot.read_text())["python"]["mode"], "local-venv")
+
+
+    def test_t6_refuse_overwrite_configured(self):
+        boot = json.loads(self.boot.read_text())
+        boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-312"}, "version": "3.12.1"}
+        self.boot.write_text(json.dumps(boot), encoding="utf-8")
+        rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply")
+        self.assertEqual(rc, 5, d)
+        self.assertEqual(d.get("error"), "already-configured")
+        self.assertEqual(json.loads(self.boot.read_text())["python"]["mode"], "local-venv")
+
+    def test_t7_force_switches(self):
+        boot = json.loads(self.boot.read_text())
+        boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-312"}, "version": "3.12.1"}
+        self.boot.write_text(json.dumps(boot), encoding="utf-8")
+        if not HAS_UV:
+            self.skipTest("uv 未安装")
+        rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply", "--force")
+        self.assertEqual(rc, 0, d)
+        self.assertEqual(json.loads(self.boot.read_text())["python"]["mode"], "uv")
 
 
 if __name__ == "__main__":

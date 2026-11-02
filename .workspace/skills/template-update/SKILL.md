@@ -1,7 +1,7 @@
 ---
 name: template-update
 description: "Use when syncing a workspace's template layer from any template source revision (branch, tag, or commit) — not tied to one branch. 从任意模板来源（分支/标签/提交）更新工作区模板层时使用。"
-version: 3.2.0
+version: 3.2.1
 ---
 
 # Template Update — 工作区模板同步 skill（任意来源 ref）
@@ -11,6 +11,8 @@ version: 3.2.0
 
 **职责边界（先说清）**：本 skill 只处理**模板仓库**的来源与 ref——同步模板层文件、并在该模板源上选分支/标签/提交。
 **工作区自身 git 仓库**的分支（创建后切到哪条、要不要迁移）由**用户自行维护**：本 skill 不切换、不迁移、不改写工作区仓库的分支或远程。
+
+**Python 运行时不动**：同步只改 `bootstrap.template.*`，**不得**改写 `bootstrap.python`（`mode` / `runtime` / `version`）与 `.venv-*` 目录。`template_sync.py` 会回报 `python_mode_preserved`，必须为 `true`。
 
 **v3.0 泛用化**：不再假定"追最新 main"，也不再枚举 `main/dev/alpha`。
 `ref` 是一个参数，可以是 `main`、`release/2026`、`v3.1.0` 标签、或某个 commit sha；
@@ -150,6 +152,7 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
 
 ## 变更记录
 
+- 3.2.1（2026-11-02）：补「Python 运行时不动」——同步只改 `bootstrap.template`，`python` 节必须保持（`python_mode_preserved=true`）。
 - 3.2.0（2026-11-02）：备份/回滚改为 MANIFEST 驱动（含"删除本次新增文件"）；更正 PATCH"静默合并"的含义（不逐项确认 ≠ 不报告）。
 - 3.1.1（2026-11-02）：补「职责边界」——只管模板源与模板层文件；工作区自身仓库的分支由用户维护。
 - 3.1.0（2026-11-02）：新增 `--prune`（删除上游已移除的模板层文件，先备份）；前置事实补"上游删除只报告不删"。

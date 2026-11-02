@@ -25,6 +25,15 @@
 - 新增 `docs/.aliases.json`：只存「口语短语 → 已有节」指针（当前 1 条），目标标题或文件指纹不符即忽略。
 - 结果：10 题命中 **6/10 → 10/10**；`R98` 仍排第一；噪声查询仍为空；测试 **7 → 11 例**。token/成本结论不变（打分只改排序，不改查询轮次）。
 
+## 3.3.1（2026-11-02）
+
+**PATCH：既有工作区的 Python 模式不可被模板演进改写**
+
+- R2/R8 补「既有工作区不回改」：`python.mode` 一旦配置（`uv`/`local-venv`/`mcp`），模板升级、迁移、仓库同步都不得改写；uv 默认只作用于 `unconfigured` 的新工作区。
+- `scripts/pyenv_init.py` 增加护栏：已配置工作区执行 `--apply` → **exit 5 `already-configured`**，需 `--force` 才切换。
+- `scripts/template_sync.py` 回报 `python_mode_preserved`（同步前后 `bootstrap.python` 必须一致）。
+- skills：`workspace-init` 1.2.0（先读 mode，已配置则跳过提问/重建）、`template-update` 3.2.1（Python 运行时不动）、`workspace-repo-sync` 1.1.1（不改 mode，登记按主机分列）。
+
 ## 3.3.0（2026-11-02）
 
 **MINOR：Python 运行时增加 uv 通道（默认推荐）**

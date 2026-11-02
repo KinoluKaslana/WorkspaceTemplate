@@ -8,7 +8,7 @@
       "R5": "   **uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。",
       "R6": "3. 初始化只创建运行时，不联网升级包管理器、不预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。",
       "R7": "4. 验证 `<venv>/bin/python` 的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。",
-      "R8": "5. 将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run）。",
+      "R8": "5. 将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。",
       "R9": "### 0.2 选择 MCP Python",
       "R10": "1. 检查会话实际可用的 MCP Python 工具，记录 provider/server、tool 名、版本、文件系统/网络/依赖持久性与输出限制。",
       "R11": "2. 不创建本地 venv，不假设 shell 中的 `python` 与 MCP 运行时等价。本地文件编辑仍使用 Agent 的文件工具；计算才交给已登记的 MCP Python。",
@@ -110,7 +110,7 @@
       "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（10 个 definition，含 SubagentStart/Stop），变更需重审；CC `-p` 免信任但会执行仓内 hook，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，守门只防「无意识跳过」。",
       "R108": "7. **子 Agent 任务书（3.0.0，extends R66）**：派发前必须交付，至少含 ①用户目标与验收 ②精确工作区与**可写目标集合**（逐项绝对路径，禁通配）③只读范围 ④禁止动作（显式含 R67 中央文件）⑤授权来源（父会话标识 + 父已读政策的声明）；并据以为该子会话签发委托记录。**可写集合不得超出父自身已授权范围，不得包含治理文件与 R67 中央文件**；未列出的目标子 Agent 一律不得写。"
     },
-    "file_sha256": "9d84c77cae4b7050fe18b5fdd86b5dce26fe2afd289e43dc83cac7d46930b608",
+    "file_sha256": "701e0c7acd0ddba0fa65570e94bd679484adf6d6564830862a3131d91901b4ac",
     "marked": 108
   },
   "AGENTS.md": {
@@ -130,12 +130,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "b9447e24b74951e8f232c9094e71c9ca929957e80513f6dc9b3a53093c272638",
+    "file_sha256": "98014c1fe0c6019ace55e289b14323090b16b3601660f0b39c293b20e4731743",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "f9a94b080897ec60737b9d6b1b59eef66f695a94b29fb106544d4ecd5a82a509",
+    "file_sha256": "c002ffeb6dcd259f0a012f224513ddd16f39ff98c1c2a0757b91cde557af5c1e",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -165,7 +165,7 @@
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "40a668893fa47108f59f2f5c8a17c241a4ff25cd73011e913678fe24c8a9fe61",
+    "file_sha256": "44cea56272407405d11d9337883ce5a4814b55f9b4f75da1f0fd7929df38d5b5",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -175,7 +175,7 @@
   },
   ".workspace/skills/workspace-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "a2cfd2f0dec920a1d574ad62a3c600f5d1be5ac5aa009737a0a18c927503df17",
+    "file_sha256": "5fc3a8543782a3c16be512df0e06a0becbf88538aef54a3dc07e961f8a5000fb",
     "marked": 0
   },
   ".workspace/skills/git-init/SKILL.md": {
@@ -210,7 +210,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "ffd566776539cbe7e305b5cfad81c59f54dc1fbdff324f6d59a4e3aab39cbe69",
+    "file_sha256": "8ec8d008645a674dd3cad87810f2e29fb6bdb6153ae90d954904b44894bc5265",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -225,12 +225,12 @@
   },
   "scripts/pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "7d72a0890ee902c49b1070c8722384a144de1bf7906ea4fdb2ab592868a18a48",
+    "file_sha256": "46def9cf2d98f17ee8a7430a21493ab6c1e138288e55a2ba6385767d53cf78ba",
     "marked": 0
   },
   "tests/test_pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "858458cd2338ea106492b6cbf464a8fbf51f9521c8c791df8818744f9c2d94f9",
+    "file_sha256": "3d7506ee4735f94a1ce796f1b9180e30d10a395d18dfcf30ed6ff5e65420dde4",
     "marked": 0
   },
   "tests/test_workspace_preflight.py": {
@@ -250,7 +250,7 @@
   },
   ".workspace/skills/workspace-repo-sync/SKILL.md": {
     "clauses": {},
-    "file_sha256": "81a72672e317718087ca9fea41af0e2dea3fb243d062e14617c8d6d8689f600c",
+    "file_sha256": "7d5634eda685bb0c0ce00eab30c6e6d1043ac4512bda9c45f0e413268ac4a4c6",
     "marked": 0
   },
   "tests/test_alias_audit.py": {

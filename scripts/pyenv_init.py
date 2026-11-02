@@ -58,6 +58,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--mcp-tool", default=None)
     ap.add_argument("--allow-install", action="store_true", help="允许执行 uv 官方安装脚本（联网）")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="已配置过 Python 时仍强制切换（默认拒绝，保护既有工作区）")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
@@ -67,7 +69,14 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
     boot = json.loads(boot_p.read_text(encoding="utf-8"))
-    out: dict = {"mode": a.mode, "apply": a.apply}
+    cur_mode = ((boot.get("python") or {}).get("mode")) or "unconfigured"
+    out: dict = {"mode": a.mode, "apply": a.apply, "existing_mode": cur_mode}
+    if a.apply and cur_mode not in ("unconfigured", None) and not a.force:
+        print(json.dumps({
+            "error": "already-configured", "existing_mode": cur_mode,
+            "hint": "既有工作区保持原模式（模板默认只作用于 unconfigured）。确需切换：加 --force，并先与用户确认重建 venv 的影响。",
+        }, ensure_ascii=False))
+        return 5
 
     if a.mode == "uv":
         uv = shutil.which("uv")

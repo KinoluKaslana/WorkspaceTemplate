@@ -279,6 +279,7 @@ def main(argv: list[str]) -> int:
 
         boot_path = ws / ".workspace" / "bootstrap.json"
         boot = json.loads(boot_path.read_text(encoding="utf-8"))
+        python_before = json.dumps(boot.get("python"), sort_keys=True)
         tpl_sec = boot.setdefault("template", {})
         tpl_sec["current_policy_version"] = after
         tpl_sec["last_synced_at"] = dt.date.today().isoformat()
@@ -288,6 +289,9 @@ def main(argv: list[str]) -> int:
         tpl_sec["last_synced_commit"] = commit
         boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+        python_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8")).get("python"),
+                                  sort_keys=True)
+        report["python_mode_preserved"] = (python_before == python_after)
         report.update({"backup": str(backup), "copied": copied,
                        "bootstrap": {"current_policy_version": after,
                                      "last_synced_ref": wanted,

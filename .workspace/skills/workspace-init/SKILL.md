@@ -1,7 +1,7 @@
 ---
 name: workspace-init
 description: "Use when initializing or adopting a workspace created from an OLD WorkspaceTemplate version (pre-v2.0), or any workspace whose governance files predate the locked-template + custom-override architecture. 初始化/接管老版本模板工作区时使用。"
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Workspace Init — 老版本工作区初始化 skill
@@ -98,7 +98,11 @@ registry 用**模板最新版**：报告 `[file] MISSING`（工作区缺 v2.0 �
 
 ### 第 5 步：Python 运行时（必须项，AGENT_RULES §0）
 
-三种模式由用户选：**uv（默认推荐）** / 手动 venv / MCP。机械入口：
+**先判断，再问**：读 `bootstrap.python.mode`——
+- 已配置（`uv` / `local-venv` / `mcp`）→ **保持原样**，不提问、不重建 venv、不切 uv；只在报告里记录"沿用既有模式 X"。
+- `unconfigured` 或缺失 → 按三选一询问（默认 uv）。
+
+三种模式由用户选：**uv（默认推荐）** / 手动 venv / MCP。机械入口（已配置工作区会被 exit 5 拒绝，需 `--force`）：
 
 ```bash
 python3 scripts/pyenv_init.py --mode uv   --python <ver>            # dry-run
@@ -155,6 +159,7 @@ remote 指向他处 / 历史无法确认 → **暂停，向用户展示发现并
 
 ## 变更记录
 
+- 1.2.0（2026-11-02）：明确「已配置的 `python.mode` 不因迁移而改变」，只有 `unconfigured` 才问（默认 uv）。
 - 1.1.0（2026-11-02）：修完备性缺口——条款标记检测改全文件计数（原 `head -20` 对现行模板必然误判为"无标记"）；备份清单改为与替换清单同源；登记核验按目录派生；补"全新实例化"触发、职责边界、前置事实。
 - 1.0.0：首版。
 

@@ -1,7 +1,7 @@
 ---
 name: workspace-repo-sync
 description: "Use when syncing the workspace's own git repo across devices (notes/TOOLS/artifacts changed elsewhere), or when recorded tool paths may belong to another machine. 跨设备同步工作区自身仓库时使用：先核验登记事实与工具真实性，再让用户裁决差异。"
-version: 1.1.0
+version: 1.1.1
 ---
 
 # Workspace Repo Sync — 工作区自身仓库的跨设备同步
@@ -19,6 +19,7 @@ version: 1.1.0
 | 工作区自身仓库的 fetch/pull/push（**用户明确要求时**） | 模板层文件同步 → `template-update` |
 | 拉取后重建索引、复验工具与登记 | 工作区仓库的分支切换/迁移/历史改写 → **用户自管** |
 | 核验「登记事实 ↔ 本机实际」并在用户裁决后回写 | 建仓 → `git-init`；初始化 → `workspace-init` |
+| 拉取后重建索引、复验 | 改 `python.mode` / 重建 venv → **永不**（已配置即保持；只有用户明确要求才走 `pyenv_init --force`） |
 
 **硬规则**：不 `push --force`；不自动解决 `TOOLS.md`/`notes/`/`WORKSPACE.md` 的语义冲突；
 不改写另一台设备的登记行。
@@ -169,6 +170,7 @@ git status -sb                                  # 期望：ahead/behind 归零�
 
 ## 变更记录
 
+- 1.1.1（2026-11-02）：明确同步不改 `python.mode`（跨设备各机可有不同模式，登记按主机分列）。
 - 1.1.0（2026-11-02）：补前置事实（无仓不做 git 步骤）、同步前 HEAD 锚点与冲突回滚、复验表逐条给期望输出。
 - 1.0.0（2026-11-02）：首版。跨设备场景来自实际记录冲突（TOOLS §1 单值被两端互相改写）；
   固定"先预检、按主机分列、用户裁决分叉、拉后四验"的流程。

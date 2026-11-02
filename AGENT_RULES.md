@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`3.3.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`3.3.1`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -17,6 +17,7 @@
 
 用户若已在同一条消息中明确选择，直接执行该选择，不重复提问。三种模式互斥，不默认同时初始化。
 **未表态时的默认**：按 uv 走；uv 不可用且用户不愿安装，再回到手动 venv / MCP，二者由用户选，不得静默降级。
+**既有工作区不回改**：`python.mode` 一旦配置（`uv` / `local-venv` / `mcp`），模板升级、迁移、仓库同步**均不得改写**；uv 默认只作用于 `unconfigured` 的新工作区。切模式只能由用户明确要求。
 
 **子 Agent 无用户通道时不得反复追问**：沿用父会话已记录的模式（`.workspace/bootstrap.json` 的 `python.mode`）；父也未配置时，报告该阻塞并停止依赖 Python 的操作，把决定交回父 Agent/用户——实测子 agent 会因 §0 的首次启动询问反复空转（v2.8.3 补充）。
 
@@ -29,7 +30,7 @@
    **uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。 <!-- id:R5 -->
 3. 初始化只创建运行时，不联网升级包管理器、不预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。 <!-- id:R6 -->
 4. 验证 `<venv>/bin/python` 的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。 <!-- id:R7 -->
-5. 将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run）。 <!-- id:R8 -->
+5. 将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。 <!-- id:R8 -->
 
 若候选解释器不存在、`venv` 模块缺失或创建需要系统包/提权，不绕过审批；向用户报告精确阻塞，征求安装授权或改用 MCP Python。
 
