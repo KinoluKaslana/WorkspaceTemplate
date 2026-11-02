@@ -118,6 +118,7 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
 
 - **别把 ref 写死成某个分支名**：模板可能同时有发布线、集成分支、实验线，选哪个是用户决策；skill 只保证"给什么 ref 就同步什么"。
 - **别在文档里写死 `TEMPLATE_FILES` 条数**：数量跟着模板走，唯一事实源是脚本。
+- **改了 `TEMPLATE_FILES` 内的文件后必须重建注册表**：`python3 scripts/mark_rules.py registry AGENT_RULES.md`，否则实例同步后 `verify_rules` 会报 `HASH-DIFF`（注册表里的哈希还是旧的）。
 - **条款 ID 标记不得手改**：模板侧重排由 `mark_rules.py` 在模板仓库完成，实例只消费。
 - **`skills/REGISTRY.md` 属工作区所有**：同步时只允许增补/更新 `workspace-skills` 命名空间条目，绝不整文件覆盖。
 - **README 已替换为首页的工作区**：跳过 README 并在报告注明，否则会覆盖用户首页。
