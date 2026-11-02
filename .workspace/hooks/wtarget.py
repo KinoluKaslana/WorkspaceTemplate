@@ -732,14 +732,13 @@ _PS_WRITE_CMDLETS = {
     "move-item": ("destination",),
     "rename-item": ("newname",),
     "remove-item": ("path", "literalpath"),
-    "set-item": ("path",),
     "set-itemproperty": ("path",),
 }
 _PS_ALIASES = {
     "sc": "set-content", "ac": "add-content", "ni": "new-item", "cp": "copy-item",
     "copy": "copy-item", "mv": "move-item", "move": "move-item", "ren": "rename-item",
     "rename": "rename-item", "ri": "remove-item", "rm": "remove-item", "del": "remove-item",
-    "erase": "remove-item", "clc": "clear-content", "tee": "tee-object", "si": "set-item",
+    "erase": "remove-item", "clc": "clear-content", "tee": "tee-object",
 }
 _PS_INTERP = {"invoke-expression", "iex", "start-process", "start-job", "invoke-command"}
 _PS_DEST_LAST = {"copy-item", "move-item", "rename-item"}

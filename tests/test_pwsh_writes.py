@@ -44,15 +44,14 @@ BYPASS_CMDS = [
     "ac f12.txt hi",
     "cp src.txt f13.txt",
     "mv f11.txt f14.txt",
-    "Set-Item -Path f15.txt -Value hi",
     "New-Object System.IO.StreamWriter('f16.txt')",
     "[IO.File]::OpenWrite('f17.txt')",
+    # cmd 内层：分类器按写意图拦；本机 PATH 命中 msys64 的 cmd，Windows 上未能实测成文件
     'cmd /c "copy src.txt f18.txt"',
     'cmd /c "type nul > f19.txt"',
     "& 'Set-Content' -Path f20.txt -Value x",
     "1 | % { Set-Content -Path f21.txt -Value x }",
     "foreach ($i in 1..2) { Add-Content f22.txt $i }",
-    'cmd /c "copy src.txt f23.txt"',
 ]
 
 

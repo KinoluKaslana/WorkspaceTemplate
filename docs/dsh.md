@@ -53,7 +53,7 @@ dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 | `bash` / `pwsh` → hook 侧 `Bash` | `pre_bash` | 未读时：静态重定向 **拒**、解释器写 **拒**；变量间接 / `awk` 重定向 **放行（盲区）** |
 | 其他 | — | 不拦 |
 
-**pwsh 实测矩阵**（Windows PowerShell 5.1，经 win-host 在真实 Windows 上执行）：
+**pwsh 实测矩阵**（Windows PowerShell 5.1，经 win-host 在真实 Windows 上执行；下表为**真实创建文件**通过的部分）：
 
 第一步证明「这些写法真的会写文件」——10 种全部创建成功（`f1..f9` + `src.txt`，`cmd /c` 那行写到了 cmd 自己的 cwd）：
 
@@ -73,9 +73,17 @@ iex (Get-Content x.ps1) → deny（写目标不可静态确定，fail-closed）
 另有 9 种**等价但更隐蔽**的写法也一律 deny（别名与 .NET 写对象，不识别就是绕过）：
 
 ```
-sc / ac / cp / mv / Set-Item / New-Object System.IO.StreamWriter /
-[IO.File]::OpenWrite / cmd /c copy / cmd /c "type nul > f"
+sc / ac / cp / mv / & 'Set-Content' / % { … } / foreach { … } /
+New-Object System.IO.StreamWriter / [IO.File]::OpenWrite
 ```
+
+**两个实测反例（不能想当然）**：
+
+- `Set-Item -Path f.txt -Value x` 在 FileSystem provider 上直接报 `NotSupported`，**不会写文件** →
+  不能算写形态，已从写表移除（否则是误报）。
+- `cmd /c …` 在本机 PATH 命中的是 `D:\msys64\usr\bin\cmd`，PowerShell 报
+  「无法在管道中间运行文档」→ **cmd 内层写没能实测**。分类器仍按写意图拦（fail-safe 方向），
+  但文档不得声称「已验证会写」。
 
 `2>&1 | Out-Null` 这类流重定向不算写文件，allow。
 
