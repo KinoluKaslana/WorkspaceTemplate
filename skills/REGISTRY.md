@@ -8,7 +8,7 @@
 
 | 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |
 |---|---|---|---|---|
-| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（4 入口：template-update / workspace-init / git-init / delivery-closure · docs-retrieval-maintenance） | `TOOLS.md`「workspace-skills」小节 |
+| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（5 入口：template-update / workspace-init / git-init / delivery-closure / docs-retrieval-maintenance / workspace-repo-sync） | `TOOLS.md`「workspace-skills」小节 |
 
 ## Skill 入口
 
@@ -19,6 +19,7 @@
 | git-init | 为工作区创建 git 仓库并登记 bootstrap（"建 git 仓库"；bootstrap git.status=declined 后翻转为 initialized） | `.workspace/skills/git-init/SKILL.md` | workspace-skills |
 | docs-retrieval-maintenance | docs 改动/索引过期/别名目标改名/命中报告不达标时维护检索索引与别名表（Agent 专用，用户不手改） | `.workspace/skills/docs-retrieval-maintenance/SKILL.md` | workspace-skills |
 | delivery-closure | 声明完成前的交付闭环（产物清点/note 判定/索引回写/验证/声明格式） | `.workspace/skills/delivery-closure/SKILL.md` | workspace-skills |
+| workspace-repo-sync | 跨设备同步**工作区自身** git 仓库（notes/TOOLS 在别端变化）：先 preflight 核验登记与工具真实性，再让用户裁决分叉与冲突 | `.workspace/skills/workspace-repo-sync/SKILL.md` | workspace-skills |
 
 ## 职责边界（workspace-skills）
 
