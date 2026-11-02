@@ -2,6 +2,17 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.4.0（2026-11-02，MINOR）政策双轨：受控词表 + 条款属性
+
+三席（GLM/SOL/DS）同判「不换语言」后的落地。新增 §14（R109–R112）：正文只用四个情态词、条款属性存 `.workspace/clauses.meta.json`、`check` 必须是命令或 `manual:<理由>`、`clause_lint` 独立成门。正文顺带消掉 3 处模糊量词（「通常」×2、「确有必要时」），并把 R8/R24/R94 的义务句补成显式「必须」。
+
+- 新增 `scripts/clause_lint.py`（E1–E9 错误 / W1–W5 警告；`--strict`、`--report`、`--json`），E8 专门拦「机器可查却标 manual」。
+- 新增 `.workspace/clauses.meta.json`：112 条全量覆盖，MUST 27 / MUST_NOT 13 / SHOULD 4 / MAY 16 / INFO 52；20 条绑可执行命令、20 条 manual（全为意图/裁决类：版本语义、首启询问、安全域范围判断、委派过程等）。
+- 新增 `docs/policy-language.md`（为什么双轨、判定表、基线、翻盘条件）与 `tests/test_clause_lint.py`（9 例）。
+- `clause_lint` 默认 findings>0 即失败（`--lenient` 才只看 errors），并新增 E10（条款 ID 重复）/ E11（文末未标记正文）两项漏检修复。
+- 基线 0 errors / 0 warnings；同时把 §0.1/§0.2/§1/§7/§8/§9 里 19 处「不<动词>」「只…」式隐式义务改写成显式「不得/必须」（同一义务，措辞可判定）。
+- `TEMPLATE_FILES` 56 → 60。
+
 ## 工具新增：docs 检索（2026-11-02，不改政策版本）
 
 - 新增 `scripts/docs_index.py`（build / check / query）与 `docs/docs-retrieval.md`：`docs/*.md` 的**确定性**定位索引，按标题切节，不存正文，文件指纹变化即拒答（fail-closed）。

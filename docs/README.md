@@ -14,6 +14,7 @@
 | 工作区来自很旧的模板、连当前 skill 都没有 | [`../UPGRADE.md`](../UPGRADE.md)（自举） | `skills.md` → `legacy-workspace-upgrade` |
 | 跨设备（两台机器）用同一个工作区 | [`skills.md`](skills.md) → `workspace-repo-sync` | [`tools.md`](tools.md) → `workspace_preflight.py` |
 | 想理解整体分层 | [`architecture.md`](architecture.md) | 本页「三条必跑命令」 |
+| 想知道政策为什么是「中文正文 + 机器属性」双轨 | [`policy-language.md`](policy-language.md) | `AGENT_RULES.md` §14 |
 
 ## 三条共用验收命令
 
@@ -24,6 +25,7 @@ python3 scripts/mark_rules.py check AGENT_RULES.md        # 条款标记完整�
 python3 scripts/verify_rules.py --workspace .             # 模板层完整性 → clean: true
 python3 scripts/skill_audit.py --strict                   # skills 契约与双登记 → exit 0
 python3 scripts/workspace_preflight.py                    # 登记事实 vs 本机实际 → mismatch=0
+python3 scripts/clause_lint.py                            # 条款属性与用词一致 → 0 errors
 ```
 
 分场景再叠加：

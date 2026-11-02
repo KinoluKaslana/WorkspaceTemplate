@@ -253,6 +253,7 @@ Inventory is not installation. External skills remain read-only technical refere
 ├── docs/
 │   ├── README.md           # Doc entry by reader (Chinese)
 │   ├── architecture.md     # Four layers, read-evidence model, failure posture
+│   ├── policy-language.md  # Dual track: controlled vocabulary + clause attributes + clause_lint
 │   ├── skills.md           # Per-skill trigger / boundary / composition / contract
 │   ├── tools.md            # Script usage, --json semantics, exit codes
 │   ├── docs-retrieval.md   # Docs index & alias rules

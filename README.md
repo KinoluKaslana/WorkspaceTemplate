@@ -188,6 +188,17 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 
 条款 ID（`<!-- id:Rn -->`，由 [`scripts/mark_rules.py`](scripts/mark_rules.py) 维护，注册表在 `.workspace/rule-clauses.json`；ID 跨文件**全局唯一、永不复用**）让"用户在模板文件里加了条款/调了顺序"被精确识别为漂移，而不是等到同步时变成一锅冲突。本地注册表可被重生成，所以**权威判定只认 `--vs-template`**。`--vs-template` 依赖本机 `git`（对模板克隆做 `git status` / `rev-parse` 信任锚定）；没有 git 时用快速自查路径即可。
 
+### 条款属性：政策为什么是「中文正文 + 机器属性」
+
+政策正文保持中文——它要由你裁决；机器层不去猜语义，只校验**可判定事实**。每条 R 号在 `.workspace/clauses.meta.json` 里有四个属性：`severity`（MUST / MUST_NOT / SHOULD / MAY / INFO）、`trigger`（受控条件码）、`check`（可执行命令或 `manual:<理由>`）、`reviewed`（是否经人工定级）。
+
+```bash
+python3 scripts/clause_lint.py            # 用词与声明一致 → 0 errors
+python3 scripts/clause_lint.py --report   # 覆盖率：多少条有命令可查、多少条只能人判
+```
+
+它**防的是自欺**：凡是机器能查的条款（hook、模板同步、skills 登记、docs 索引、条款本身）写 `manual:` 直接判错；强条款未复核、正文没有对应情态词也判错。正文只用四个情态词，禁用「尽量/必要时/建议/通常」。原理与边界见 [docs/policy-language.md](docs/policy-language.md)。
+
 ## Hook 治理（工作区级机械守门）
 
 模板随仓库分发一个 **Hermes 项目级 plugin**（`.hermes/plugins/workspace-gate/`），把「先读治理文件、再写工作区文件」从软提醒变成**机械拦截**——对应 `AGENT_RULES.md` §12：
@@ -298,6 +309,7 @@ Agent 将自动完成：
 ├── docs/
 │   ├── README.md           # 文档索引（按读者选入口 + 必跑命令）
 │   ├── architecture.md     # 四层模型 / 写路径 / 读证据 / 失败姿态 / 跨设备
+│   ├── policy-language.md  # 政策双轨：受控词表 + 条款属性 + clause_lint
 │   ├── skills.md           # 7 个 skill 的触发、边界、组合流程、8 维契约
 │   ├── tools.md            # 10 个脚本的用法与退出码
 │   ├── hooks-guide.md      # 三 harness hook 技术详解（原理 + 作用 + 排查）

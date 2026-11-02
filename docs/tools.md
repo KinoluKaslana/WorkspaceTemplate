@@ -9,6 +9,7 @@
 | `verify_rules.py` | 模板层完整性：文件哈希 + 条款 ID + custom 引用；`--vs-template` 做字节级比对 + git 信任锚 | `--workspace . [--vs-template <克隆>] [--json]` | 0 clean / 1 有 findings |
 | `mark_rules.py` | 给条款打稳定 ID（`<!-- id:Rn -->`）并重建注册表 | `registry AGENT_RULES.md` | 0 / 1 |
 | `inspect_skills.py` | 只读盘点 skills 目录（入口、name/description、嵌套） | `<skills-dir> [--include-nested]` | 0 / 1 |
+| `clause_lint.py` | 条款属性门：正文用词 ↔ `clauses.meta.json` 声明一致 | `[--strict] [--report] [--json]` | 0 / 1 |
 | `skill_audit.py` | skills 契约节 / 双登记 / 计数与名称集合 / 引用路径 | `[--strict] [--sync-registry] [--tools-snippet] [--json]` | 0 / 1 |
 | `docs_index.py` | docs 确定性索引：`build` / `check` / `query` | `build`；`query <词> --json --top 2` | 0 / 1(stale) / 2(缺索引) / 3(stale 查询) |
 | `docs_hit_report.py` | 判据集命中报告（`tests/docs_probe.json`） | `--min 9 --top 2 --json` | 0 达标 / 1 未达标 / 2 stale |
@@ -70,6 +71,18 @@ python3 scripts/template_sync.py --workspace . --ref 5edf554 --apply       # 提
 - 备份到 `.workspace/backup-<ts>-sync/`（含 `MANIFEST.txt`）；
 - 回报 `changed / skipped / identical / removed_upstream / pruned / python_mode_preserved`；
 - `--prune` 删除上游已移除的模板层文件（先备份，并清理空父目录）。
+
+## 4.5 条款属性：`clause_lint.py`
+
+```bash
+python3 scripts/clause_lint.py            # 逐条；0 errors 才 exit 0
+python3 scripts/clause_lint.py --strict   # 警告也算失败
+python3 scripts/clause_lint.py --report   # severity / check 类型 / manual 清单
+```
+
+校验 `AGENT_RULES.md` 正文用词与 `.workspace/clauses.meta.json` 声明是否一致：
+键集合、枚举、强条款的 `check`、`manual:` 理由、`reviewed`、以及「可机械判定的触发条件不许标 manual」。
+规则本身见 [`policy-language.md`](policy-language.md)。
 
 ## 5. 跨设备：`workspace_preflight.py`
 
