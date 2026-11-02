@@ -25,6 +25,17 @@
 - 新增 `docs/.aliases.json`：只存「口语短语 → 已有节」指针（当前 1 条），目标标题或文件指纹不符即忽略。
 - 结果：10 题命中 **6/10 → 10/10**；`R98` 仍排第一；噪声查询仍为空；测试 **7 → 11 例**。token/成本结论不变（打分只改排序，不改查询轮次）。
 
+## 旧版本工作区自举（2026-11-02，policy 3.3.1 内含，不改政策文本）
+
+问题：由 2.x 模板创建的工作区，`.workspace/skills/` 里没有现行 skill，也没有 `scripts/template_sync.py`，因此**无法用工作区自身能力升级**。
+
+- 新增 [`UPGRADE.md`](UPGRADE.md)：只依赖 Python 的自举入口（克隆模板快照 → `template_sync --apply` → 补登记 → 四条验收 → 回滚）。
+- 新增 skill `legacy-workspace-upgrade` v1.0.0（8 维契约；与 `workspace-init` 分界：有血缘但版本旧 vs 无血缘接管）。
+- `template-update` 增加「旧工作区没有本 skill 新版时」的转交说明。
+- `skill_audit.py`：`--sync-registry` 在 `skills/REGISTRY.md` **不存在时新建**（旧工作区本来就没有该文件）；新增 `--tools-snippet` 打印需补进 `TOOLS.md` 的行。
+- 实测：`/tmp/oldws`（伪造 2.4.0、无 scripts、无 REGISTRY）→ 自举后 `verify_rules --vs-template clean=true`、`skill_audit --strict 7/7 0 findings`。
+- `TEMPLATE_FILES` 55（+`UPGRADE.md`、+`legacy-workspace-upgrade/SKILL.md`）。
+
 ## 合并前修剪：过程类语句（2026-11-02）
 
 原则：只删「我们怎么走到这里」的叙述与逐版本历史；运行所需元数据（当前版本号、条款 ID、frontmatter version、验收命令、行为事实）一律保留。历史唯一归宿是本文件。

@@ -42,7 +42,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 单一政策源 | [`AGENT_RULES.md`](AGENT_RULES.md) 统一约束主 Agent 与子 Agent；客户端入口只负责定位它 |
 | 规则分层 | 模板层文件**锁定只读**（同步=整文件替换）；本地规则全部外置到 `<file>.custom.md`，**custom 优先**（§10） |
 | 完整性校验 | 条款带稳定 ID（`<!-- id:Rn -->`）+ 注册表双级校验；`--vs-template` 对模板克隆做**字节级比对 + git 信任锚**，堵死"改文件再重生成注册表"的自我作证漏洞 |
-| 生命周期 skills | 6 个随模板分发到 `.workspace/skills/`：`template-update`（任意 ref 同步）、`workspace-repo-sync`（跨设备同步工作区仓库）、`workspace-init`（接管/首次落地）、`git-init`（建仓）、`delivery-closure`（交付闭环）、`docs-retrieval-maintenance`（文档检索维护）。每个 skill 必须满足 8 维契约，`skill_audit.py` 机械检查 |
+| 生命周期 skills | 7 个随模板分发到 `.workspace/skills/`：`template-update`（任意 ref 同步）、`workspace-repo-sync`（跨设备同步工作区仓库）、`workspace-init`（接管/首次落地）、`git-init`（建仓）、`delivery-closure`（交付闭环）、`docs-retrieval-maintenance`（文档检索维护）、`legacy-workspace-upgrade`（旧版本工作区自举）。每个 skill 必须满足 8 维契约，`skill_audit.py` 机械检查 |
 | 首次初始化协议 | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) 持久化 `python.mode`（**必须**：`uv` / `local-venv` / `mcp`，默认 uv）与 `git.status`（**可选**：initialized / declined）；**既有工作区一旦配置就不被模板演进改写** |
 | 业务无关 | [`WORKSPACE.md`](WORKSPACE.md) 初始为空，由用户的稳定需求定义目标、范围与验收 |
 | Skills 单路径接入 | 用户只提供根目录，Agent 自动发现入口、记录指纹并处理同名冲突 |
@@ -86,6 +86,8 @@ cd my-workspace
 > 克隆自带的 `.git` 指向模板仓库。首次初始化时 Agent 会按 §0.3 **抹除模板 git 标记**（先确认 remote、导出本地独有 commit 为 patch 备份），然后询问你是否把工作区建成独立 git 仓库。你不需要手动处理 remote；若跳过初始化协议直接开发，请自行 `rm -rf .git` 或改指自己的 remote，避免误推送回模板库。
 
 然后用 Agent 打开 `my-workspace`。Codex 读取 [`AGENTS.md`](AGENTS.md)，Claude Code 读取 [`CLAUDE.md`](CLAUDE.md)，Hermes 读取 [`HERMES.md`](HERMES.md)；其他客户端应先被明确要求完整读取 [`AGENT_RULES.md`](AGENT_RULES.md) 与 [`.workspace/bootstrap.json`](.workspace/bootstrap.json)。
+
+**工作区来自旧版本模板、连当前 skill 都没有？** 见 [`UPGRADE.md`](UPGRADE.md)：只需要 Python，从模板快照自举安装，再补 `REGISTRY.md`/`TOOLS.md` 登记。
 
 **已有老版本模板工作区？** 直接对它说"初始化/接管这个工作区"，或让 Agent 执行 [workspace-init skill](#工作区生命周期-skills)——它会完成盘点、把本地改动迁入 custom 层、同步最新模板，并处理 venv 与 git 决策。
 
@@ -209,6 +211,7 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gat
 | [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.2.0 | "初始化/接管这个工作区"，或无可信血缘、无条款标记 | 盘点 → 差异判定 → pre-v2.0 迁移（本地语义进 custom）→ Python（已配置则不动）→ git 决策 → 登记 → 验证 |
 | [git-init](.workspace/skills/git-init/SKILL.md) | 1.1.0 | "建 git 仓库"，或 `git.status=declined` 后改主意 | init → .gitignore → 登记 → 审查暂存清单 → 提交 → 核提交树；含撤销建仓 |
 | [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 任务模式产物落盘、准备声明完成 | 产物清点（无仓用时间戳列举）→ 查 INDEX → note 三选一 → 索引回写 → 外部动作验证 → 三档口径声明 |
+| [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 工作区模板版本旧、缺现行 skill / 无 `template_sync.py` | 从模板快照自举 → `--apply` → `--sync-registry` + TOOLS 补登 → 四条验收 |
 | [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.2.0 | docs 改动、索引 stale、命中率下降 | build/check → 命中报告 → 只在真实缺口下加别名（上限 8、留一验证）→ 五条验收 |
 
 **边界**：工作区**自身** git 仓库的分支切换、迁移、历史改写不在任何 skill 内——由用户自行维护。
@@ -261,7 +264,8 @@ Agent 将自动完成：
 │       ├── workspace-init/  # 接管/首次落地
 │       ├── git-init/        # 建仓与登记
 │       ├── delivery-closure/ # 交付闭环
-│       └── docs-retrieval-maintenance/ # docs 索引与别名维护
+│       ├── docs-retrieval-maintenance/ # docs 索引与别名维护
+│       └── legacy-workspace-upgrade/   # 旧版本工作区自举
 ├── docs/
 │   ├── README.md           # 文档索引（按读者选入口 + 必跑命令）
 │   ├── architecture.md     # 四层模型 / 写路径 / 读证据 / 失败姿态 / 跨设备

@@ -11,6 +11,7 @@
 | 要给 Codex / Claude Code 接守门 | [`hooks-guide.md`](hooks-guide.md) | [`hooks-catalog.md`](hooks-catalog.md) |
 | 要接入新的 harness | [`hooks-catalog.md`](hooks-catalog.md) §3（7 步） | [`tools.md`](tools.md) → `workspace_preflight.py` |
 | 要维护 skills 或新增 skill | [`skills.md`](skills.md) §契约 | `.workspace/skills/_TEMPLATE.md` |
+| 工作区来自很旧的模板、连当前 skill 都没有 | [`../UPGRADE.md`](../UPGRADE.md)（自举） | `skills.md` → `legacy-workspace-upgrade` |
 | 跨设备（两台机器）用同一个工作区 | [`skills.md`](skills.md) → `workspace-repo-sync` | [`tools.md`](tools.md) → `workspace_preflight.py` |
 | 想理解整体分层 | [`architecture.md`](architecture.md) | 本页「三条必跑命令」 |
 

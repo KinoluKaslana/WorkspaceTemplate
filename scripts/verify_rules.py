@@ -76,6 +76,8 @@ TEMPLATE_FILES = [
     "docs/hooks-guide.md",
     "docs/hooks-catalog.md",
     "docs/docs-retrieval.md",
+    "UPGRADE.md",
+    ".workspace/skills/legacy-workspace-upgrade/SKILL.md",
     "tests/test_docs_consistency.py",
     ".workspace/skills/workspace-repo-sync/SKILL.md",
     "tests/test_alias_audit.py",

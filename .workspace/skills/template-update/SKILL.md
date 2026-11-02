@@ -20,6 +20,12 @@ version: 3.2.1
 
 **v2.0 架构不变（锁定 + custom 覆写）**：模板层文件**整文件替换**，哈希即完整性；本地规则一律外置到 `<file>.custom.md`（custom 优先，见 `AGENT_RULES.md` §10）。同步 = **替换 + 迁移 custom 引用**，没有行级三方合并。
 
+## 旧工作区没有本 skill 的新版时（自举）
+
+若工作区来自旧版本模板、`.workspace/skills/` 里没有本 skill 的 3.x 版本（或根本没有 `scripts/template_sync.py`），
+**不要**按本文硬套：先按仓库根目录 [`UPGRADE.md`](../../../UPGRADE.md)（或 `.workspace/skills/legacy-workspace-upgrade/SKILL.md`）自举——
+从模板快照取 `template_sync.py` 完成一次安装，再回到本 skill 做日常同步。
+
 ## 触发条件
 
 - 用户要求"同步模板 / 更新工作区到某个版本 / 切到某个分支的模板 / update workspace template"；

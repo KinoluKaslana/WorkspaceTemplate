@@ -12,6 +12,7 @@
 | [`git-init`](../.workspace/skills/git-init/SKILL.md) | 1.1.0 | 为工作区建 git 仓库并登记 | `git.status=declined` 后用户改主意；"建 git 仓库" |
 | [`delivery-closure`](../.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 声明完成前的交付闭环 | 任务模式产物落盘、准备说"完成" |
 | [`docs-retrieval-maintenance`](../.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.2.0 | 维护 docs 索引与别名表 | docs 改动、`check` 报 stale、命中率下降 |
+| [`legacy-workspace-upgrade`](../.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 旧版本工作区**自举**升级（缺现行 skill 时） | 工作区模板版本落后且没有 `template-update` 3.x / `template_sync.py` |
 
 **职责边界口诀**：`template-update` 管模板文件；`workspace-repo-sync` 管工作区仓库；`workspace-init`/`git-init` 管从零落地；`delivery-closure` 管收尾；`docs-retrieval-maintenance` 管检索。工作区自身仓库的**分支切换、迁移、历史改写**不在任何 skill 里——**用户自管**。
 
@@ -89,6 +90,24 @@ python3 scripts/docs_alias_audit.py --strict      # 死指针/指纹/来源/留�
 - 「停用 / 删除 / 重指」三档分开，不得混用。
 - 实测结论：省**账单**不省 **token**（见 [`docs-retrieval.md`](docs-retrieval.md)）。
 
+### 2.7 `legacy-workspace-upgrade`（1.0.0）
+
+工作区来自旧模板、`.workspace/skills/` 里没有现行 skill 时的**唯一入口**（没有它就只能靠人读文档）：
+
+```bash
+TPL=$(mktemp -d)/tpl
+git clone --depth 1 --branch main https://github.com/KinoluKaslana/WorkspaceTemplate.git "$TPL"
+python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref main          # dry-run
+python3 "$TPL/scripts/template_sync.py" --workspace . --template "$TPL" --ref main --apply  # 写盘 + 备份
+python3 notes/rebuild_index.py
+python3 scripts/skill_audit.py --sync-registry
+python3 scripts/skill_audit.py --tools-snippet      # 按输出补 TOOLS.md
+```
+
+随后四条验收（`verify_rules --vs-template` / `mark_rules check` / `skill_audit --strict` / `workspace_preflight`）。
+与 `workspace-init` 的分界：**有模板血缘但版本旧** → 本 skill；**无血缘/pre-v2.0 接管** → `workspace-init`。
+完整说明见仓库根 [`UPGRADE.md`](../UPGRADE.md)。
+
 ## 3. 组合流程（常见路径）
 
 | 用户目标 | 顺序 |
@@ -98,6 +117,7 @@ python3 scripts/docs_alias_audit.py --strict      # 死指针/指纹/来源/留�
 | 模板换分支 | `template-update --ref <ref>` → `verify_rules --vs-template` |
 | 换台机器继续 | `workspace-repo-sync`（预检 → 拉 → 重建索引 → 复验） |
 | 改完 docs | `docs-retrieval-maintenance`（build → hit → audit）→ `delivery-closure` |
+| 老工作区升上来 | `legacy-workspace-upgrade`（自举）→ 之后改用 `template-update` |
 
 ## 4. 维护
 

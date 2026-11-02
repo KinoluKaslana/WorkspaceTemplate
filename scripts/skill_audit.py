@@ -58,7 +58,15 @@ def clause_ids() -> set[str]:
 
 
 def sync_registry(rows: list[dict]) -> int:
-    """按磁盘目录重写 REGISTRY 的入口表与计数（幂等）。"""
+    """按磁盘目录重写 REGISTRY 的入口表与计数（幂等）；文件不存在时新建。"""
+    if not REGISTRY.is_file():
+        REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+        REGISTRY.write_text(
+            "# Skills 路由登记表\n\n> 本文件只保存路由视图；规范路径、版本/哈希、信任边界与核验日期以 `TOOLS.md` 为准。\n\n"
+            "## 已登记 skill roots\n\n"
+            "| 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |\n|---|---|---|---|---|\n"
+            "| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记 | 待登记 | `TOOLS.md` |\n\n"
+            "## Skill 入口\n\n", encoding="utf-8")
     reg = REGISTRY.read_text(encoding="utf-8")
     names = sorted(r["skill"] for r in rows if r["skill"] != "(registry)")
     desc = {}
@@ -70,11 +78,10 @@ def sync_registry(rows: list[dict]) -> int:
     for name in names:
         table.append(f"| {name} | {desc[name]} | `.workspace/skills/{name}/SKILL.md` | workspace-skills |")
     new_table = "\n".join(table)
-    # 替换「## Skill 入口」下的第一张表
-    m = re.search(r"(## Skill 入口\n\n)((?:\|.*\n)+)", reg)
-    if not m:
-        return 1
-    reg = reg[:m.start(2)] + new_table + "\n" + reg[m.end(2):]
+    # 替换/追加「## Skill 入口」整节
+    m = re.search(r"## Skill 入口\n(?:.*\n)*?(?=\n## |\Z)", reg)
+    section = "## Skill 入口\n\n" + new_table + "\n"
+    reg = (reg[:m.start()] + section + reg[m.end():]) if m else (reg.rstrip() + "\n\n" + section)
     # 同步根行计数
     reg = re.sub(r"已登记（\d+\s*入口[^）]*）",
                  f"已登记（{len(names)} 入口：{' / '.join(names)}）", reg, count=1)
@@ -85,6 +92,8 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--strict", action="store_true")
+    ap.add_argument("--tools-snippet", action="store_true",
+                    help="打印缺失的 TOOLS.md 登记行（不写文件）")
     ap.add_argument("--sync-registry", action="store_true",
                     help="按磁盘 skill 目录重写 REGISTRY 的「Skill 入口」表与入口计数（不加则不写）")
     a = ap.parse_args(argv)
@@ -142,6 +151,16 @@ def main(argv: list[str]) -> int:
 
         bad += bool(f)
         rows.append({"skill": name, "version": fm.get("version"), "ok": not f, "findings": f})
+
+    if a.tools_snippet:
+        missing = [r["skill"] for r in rows if r["skill"] != "(registry)"
+                   and "未登记于 TOOLS.md" in r["findings"]]
+        for name in missing:
+            desc = next((x for x in rows if x["skill"] == name), {})
+            print(f"| **{name}** | 入口 `.workspace/skills/{name}/SKILL.md`（v{desc.get('version')}）。触发见其 frontmatter description |")
+        if not missing:
+            print("(none: TOOLS.md 已覆盖全部 skill)")
+        return 0
 
     if a.sync_registry:
         rc = sync_registry([x for x in rows if x["skill"] != "(registry)"])

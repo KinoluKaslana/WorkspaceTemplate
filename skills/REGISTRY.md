@@ -8,7 +8,7 @@
 
 | 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |
 |---|---|---|---|---|
-| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（6 入口：delivery-closure / docs-retrieval-maintenance / git-init / template-update / workspace-init / workspace-repo-sync） | `TOOLS.md`「workspace-skills」小节 |
+| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（7 入口：delivery-closure / docs-retrieval-maintenance / git-init / legacy-workspace-upgrade / template-update / workspace-init / workspace-repo-sync） | `TOOLS.md`「workspace-skills」小节 |
 
 ## Skill 入口
 
@@ -17,6 +17,7 @@
 | delivery-closure | Use before declaring any task-mode deliverable complete (persistent artifacts produced). 声明任务完成前的交付闭环检查——产物清点/note 判定/索引回写/部署验证六步机械流程时使用。 | `.workspace/skills/delivery-closure/SKILL.md` | workspace-skills |
 | docs-retrieval-maintenance | Use when docs/ changed, the retrieval index is stale, an alias target was renamed, or the hit report drops. 维护 docs 检索索引与别名表：索引可全自动，别名仅在有真实查询缺口日志时可自主新增（用户不手改）。 | `.workspace/skills/docs-retrieval-maintenance/SKILL.md` | workspace-skills |
 | git-init | Use when the user asks to create/initialize a git repository for a workspace that previously declined one (bootstrap git.status=declined), or to re-record git info in bootstrap. 为此前未建仓的工作区创建 git 仓库并登记 bootstrap 时使用。 | `.workspace/skills/git-init/SKILL.md` | workspace-skills |
+| legacy-workspace-upgrade | Use when a workspace was created from an OLD template version and lacks the current skills (no template-update 3.x / workspace-repo-sync / docs-retrieval-maintenance). 老版本模板工作区缺少现行 skill 时用它自举升级（只依赖 Python，其余取自模板快照）。 | `.workspace/skills/legacy-workspace-upgrade/SKILL.md` | workspace-skills |
 | template-update | Use when syncing a workspace's template layer from any template source revision (branch, tag, or commit) — not tied to one branch. 从任意模板来源（分支/标签/提交）更新工作区模板层时使用。 | `.workspace/skills/template-update/SKILL.md` | workspace-skills |
 | workspace-init | Use when initializing or adopting a workspace created from an OLD WorkspaceTemplate version (pre-v2.0), or any workspace whose governance files predate the locked-template + custom-override architecture. 初始化/接管老版本模板工作区时使用。 | `.workspace/skills/workspace-init/SKILL.md` | workspace-skills |
 | workspace-repo-sync | Use when syncing the workspace's own git repo across devices (notes/TOOLS/artifacts changed elsewhere), or when recorded tool paths may belong to another machine. 跨设备同步工作区自身仓库时使用：先核验登记事实与工具真实性，再让用户裁决差异。 | `.workspace/skills/workspace-repo-sync/SKILL.md` | workspace-skills |
