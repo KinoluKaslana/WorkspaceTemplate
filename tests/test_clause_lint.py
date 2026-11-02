@@ -132,6 +132,16 @@ class ClauseLint(unittest.TestCase):
         self.assertEqual(p.returncode, 1)
         self.assertIn("E11", p.stdout)
 
+    def test_t12_vague_word_quoted_is_example(self):
+        body = N_BODY.replace("4. 这是描述，不含义务。", "4. 可以用「必要时」当例子。")
+        self.write(body, N_META)
+        self.assertEqual(self.run_lint().returncode, 0)          # 引号内：不当义务
+        body2 = body.replace("4. 可以用「必要时」当例子。", "4. 可以用「必要时」当例子，必要时照做。")
+        self.write(body2, N_META)
+        p = self.run_lint()
+        self.assertEqual(p.returncode, 1)                        # 引号外：仍报 W2
+        self.assertIn("W2", p.stdout)
+
     def test_t9_report_counts(self):
         p = self.run_lint("--report")
         data = json.loads(p.stdout)

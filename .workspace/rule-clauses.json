@@ -309,12 +309,12 @@
   },
   "tests/test_clause_lint.py": {
     "clauses": {},
-    "file_sha256": "78c611a690c94707af6a0342f64786fddd609497f87620ac339028f38d2c0b22",
+    "file_sha256": "cca6ae5062396c9f7c7358e0fa3876f24bd73480ddd259d656b2a27637ea0c78",
     "marked": 0
   },
   "scripts/clause_lint.py": {
     "clauses": {},
-    "file_sha256": "a015f57b8ef09c1e871d73557ce4ab3ffc819d4e14abf46df4742d793f8e214b",
+    "file_sha256": "1565b1dfa8cabc5ab61feefdf9270e47cc5ef6a4534f29bea847d3c29170a411",
     "marked": 0
   },
   ".workspace/clauses.meta.json": {

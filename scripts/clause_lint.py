@@ -116,7 +116,9 @@ def lint() -> list[dict]:
             if re.search(r"必须", sentence) and re.search(r"不得", sentence):
                 add("warn", rid, "W1", "同一句里混用「必须」与「不得」，建议拆条")
                 break
-        vague = [] if rid in VAGUE_EXEMPT else [w for w in VAGUE if w in body]
+        # 引号内的词视为举例（如 R110 列举被禁词），引号外仍查
+        scan = re.sub(r"[「『“\"'][^」』”\"']*[」』”\"']", "", body)
+        vague = [w for w in VAGUE if w in scan]
         if vague:
             add("warn", rid, "W2", f"模糊量词：{','.join(vague)}")
         if strong and rid not in VAGUE_EXEMPT:
