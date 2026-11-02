@@ -94,9 +94,14 @@ check：命令 24 / manual 16 / 空 72（SHOULD·MAY·INFO 不强制）
 | R2 版本必须更新并记 CHANGELOG | `version_check.py` | C2 静态配置 | 政策版本、CHANGELOG 顶层、bootstrap 记录三者一致 | 该升 PATCH 还是 MINOR/MAJOR |
 | R61 凭据不得进普通文件 | `secret_scan.py` | C3 痕迹 | 仓库内没有匹配高置信度模式的明文凭据 | 凭据是否被发到外部（网络行为不可见） |
 | R80 索引不得手改 | `notes_index_check.py` | C1 产物 | 两个索引文件与「重新生成」逐字节一致（时间戳除外） | 生成脚本本身是否有 bug |
-| R11 MCP 模式不得建本地 venv | `workspace_preflight.py` | C1 产物 | `python.mode=mcp` 时工作区没有 `.venv-*` 目录 | venv 是否被建在别处 |
+| R11 MCP 模式不得建本地 venv | `workspace_preflight.py` | C1 产物 | `python.mode=mcp` 时工作区没有 `.venv-*` 目录 | venv 是否建在别处；「shell python ≠ MCP 运行时」这半句仍靠人判 |
 
 仍然保持 `manual` 的 16 条（R3/R6/R20/R57/R58/R59/R60/R62/R63/R66/R67/R68/R71/R75/R84/R104）都是**意图或过程**判断（用户是否同意、是否属当次范围、合并前是否检查），不满足 C1–C3。**把"用户确认"做成自我声明的日志或环境变量，等于把 manual 换成假绿**——这类转换一律拒绝。
+
+**下一步候选（两席同提，未做）**：R2 / R11 / R61 各自都含「可判事实 + 人的判断」两半——
+例如 R2 的「版本号与 CHANGELOG 条目存在」可判，但「该升 PATCH 还是 MINOR」不可判；
+R61 的「不得出现明文凭据」可判，但「受控位置是否必要」不可判。
+把一个条款拆成两条（各配各的证据）比用 `manual:` 遮住半截可判义务更诚实，属下一次 MINOR，需要改正文与条款号。
 
 ## 9. 什么时候该翻盘
 
