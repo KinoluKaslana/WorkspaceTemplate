@@ -53,22 +53,30 @@ class DshGate(unittest.TestCase):
 
     def test_d1_write_before_read_is_denied(self):
         out = self.hook("pre_write", session_id="s1", tool_name="write",
-                        tool_input={"path": "AGENT_RULES.md"})
+                        tool_input={"file_path": str(self.ws / "AGENT_RULES.md"), "content": "x"})
         hso = out.get("hookSpecificOutput", {})
         self.assertEqual(hso.get("permissionDecision"), "deny")
         self.assertIn("[workspace-gate:no-read]", hso.get("permissionDecisionReason", ""))
 
     def test_d2_read_then_write_allows_and_revision_revokes(self):
-        body = (self.ws / "AGENT_RULES.md").read_text(encoding="utf-8")
+        """真实 dsh 形态：file_path + 行号前缀 + (End of file - total N lines) 尾注。"""
+        raw = (self.ws / "AGENT_RULES.md").read_text(encoding="utf-8")
+        lines = raw.split("\n")
+        physical = len(lines) - 1 if raw.endswith("\n") else len(lines)
+        numbered = "\n".join(f"{i + 1}: {l}" for i, l in enumerate(lines[:physical]))
+        target = str(self.ws / "AGENT_RULES.md")
+        text = (f"<path>{target}</path>\n<type>file</type>\n<content>\n{numbered}\n\n"
+                f"(End of file - total {physical} lines)\n</content>")
         self.hook("post_read", session_id="s2", tool_name="read",
-                  tool_input={"path": "AGENT_RULES.md"}, tool_response={"content": body})
+                  tool_input={"file_path": target, "offset": 1, "limit": physical},
+                  tool_response={"isError": False, "content": [{"type": "text", "text": text}]})
         out = self.hook("pre_write", session_id="s2", tool_name="write",
-                        tool_input={"path": "AGENT_RULES.md"})
+                        tool_input={"file_path": str(self.ws / "AGENT_RULES.md"), "content": "x"})
         self.assertNotEqual(out.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
         with (self.ws / "AGENT_RULES.md").open("a", encoding="utf-8") as fh:
             fh.write("\n<!-- bump -->\n")
         out = self.hook("pre_write", session_id="s2", tool_name="write",
-                        tool_input={"path": "AGENT_RULES.md"})
+                        tool_input={"file_path": str(self.ws / "AGENT_RULES.md"), "content": "x"})
         self.assertEqual(out.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
 
     @unittest.skipUnless(shutil.which("node"), "未安装 node")

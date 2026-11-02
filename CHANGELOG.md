@@ -2,6 +2,19 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## dsh 真实回合验证与修正（2026-11-02，dev，不改政策版本）
+
+账号登录 dsh 后跑真实模型回合（`deepseek-flash`），暴露出四个只有实跑才会发现的问题，全部修复：
+
+1. **插件永不激活**：`inject: ['tools','session']` —— dsh 没有 `session` 服务，条目一直 pending，守门等于没装。改为 `['tools']`，会话键取实测的 `exec.agent.id`（形如 `session-<uuid>`）。
+2. **会话键双拼**：`agent.id` 既是会话 id 又被当 `agent_id` 传入 → 状态文件变成 `a.a`。同值时不再传 `agent_id`。
+3. **read 正文解析不了**：dsh 的 read 结果带 `<path>/<type>/<content>` 包装、`N: ` 行号前缀，以及 `(Showing lines A-B of N…)` / `(End of file - total N lines)` 尾注。新增 `_dsh_read_body`：剥包装、校验行号连续、剥尾注；`end<total` 时补尾 LF 以匹配 `gate_core` 期望片段。
+4. **EOF 哨兵**：按物理行数（去掉末尾空行）计算读取区间，避免「读完整个文件仍被判不完整」。
+
+实测结果：未读先写 → 拒绝、文件未创建；先读后写 → 放行；`bash` 重定向写 → 拒绝；非写工具放行。
+`tests/test_dsh_wiring.py` 改用真实形态载荷（`file_path` + 行号 + 尾注），合成用例 8 条；`tests/dsh_harness.mjs` 同步。
+文档补 `headless + 账号登录` 的 profile 补丁写法（`docs/dsh.md` §5.1）。
+
 ## 工具新增：DeepSeek Harness（dsh）接入（2026-11-02，dev，不改政策版本）
 
 dsh 是 Cordis 插件内核（`@deepseek-ai/dsh` 0.2.1-rc.4 实测），拦截点是 `tools/pre-execute` / `tools/post-execute` 事件而非 JSON 配置，因此新增**原生插件**而不是复用 Codex/CC 的桥。

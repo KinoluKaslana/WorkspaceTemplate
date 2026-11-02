@@ -246,7 +246,7 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gat
 dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 ```
 
-dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走静态可判写，`read` 记读证据；插件异常/hook 超时放行并记 `.workspace/.dsh-gate.log`，拿不到会话身份则 fail-closed。**真实模型回合里的拦截尚未跑过**（本机无 DeepSeek key），已验证的是：配置挂载、真实启动时的 `apply`、以及 7 条走真实 `plugin.js`+`hook.py` 的合成用例。细节与未验证项见 **[docs/dsh.md](docs/dsh.md)**。
+dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走静态可判写，`read` 记读证据；插件异常/hook 超时放行并记 `.workspace/.dsh-gate.log`，拿不到会话身份则 fail-closed。已在**真实模型回合**里验证（dsh headless + DeepSeek 账号）：未读先写被拒且文件未创建、先读后写放行、`bash` 重定向写被拒；另有 8 条走真实 `plugin.js`+`hook.py` 的合成用例。细节与已知限制见 **[docs/dsh.md](docs/dsh.md)**。
 
 ## 工作区生命周期 skills
 

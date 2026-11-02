@@ -11,6 +11,7 @@ import { appendFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 export const name = 'workspace-gate-dsh'
+// 只注入 tools：dsh 没有 `session` 服务（声明它会 pending 而永不激活）
 export const inject = ['tools']
 
 const WRITE_TOOLS = new Set(['write', 'edit', 'str_replace_editor'])
@@ -36,11 +37,12 @@ function probe(entry) {
   } catch { /* 取证失败不影响决策 */ }
 }
 
-function sessionId(exec, ctx) {
+function sessionId(exec) {
+  // 实测（dsh 0.2.1-rc.4，headless）：exec.agent.id = "session-<uuid>"；
+  // agent 上有 session 对象但无 id；ctx 上不存在 session 服务。
   const cands = [
-    exec?.agent?.session?.id, exec?.agent?.sessionId, exec?.agent?.id,
-    exec?.sessionId, exec?.session?.id,
-    ctx?.session?.id, ctx?.session?.sessionId,
+    exec?.agent?.id,
+    exec?.agent?.sessionId,
     process.env.DSH_SESSION_ID,
   ]
   return cands.find((v) => typeof v === 'string' && v.trim()) || ''
@@ -55,8 +57,9 @@ function payload(event, exec, ctx, extra = {}) {
   return {
     client: 'dsh',
     hook_event_name: event === 'pre_write' || event === 'pre_bash' ? 'PreToolUse' : 'PostToolUse',
-    session_id: sessionId(exec, ctx),
-    agent_id: agentId(exec),
+    session_id: sessionId(exec),
+    // 实测：agent.id 就是会话 id；再当 agent_id 传会得到 "a.a" 双拼键
+    agent_id: agentId(exec) === sessionId(exec) ? '' : agentId(exec),
     cwd: cwdOf(),
     tool_name: exec?.name,
     tool_input: exec?.arguments ?? {},
@@ -66,6 +69,13 @@ function payload(event, exec, ctx, extra = {}) {
 }
 
 function runHook(event, data) {
+  let body
+  try {
+    body = JSON.stringify(data)
+  } catch (e) {
+    logLine({ event, decision: 'allow', reason: 'payload-unserializable', error: String(e) })
+    return Promise.resolve({ decision: 'allow', reason: 'payload-unserializable' })
+  }
   return new Promise((resolvePromise) => {
     const hook = join(cwdOf(), '.workspace', 'hooks', 'hook.py')
     if (!existsSync(hook)) {
@@ -76,7 +86,7 @@ function runHook(event, data) {
       cwd: cwdOf(),
       env: { ...process.env, GATE_CLIENT: 'dsh' },
     })
-    child.stdin.write(JSON.stringify(data))      // 必须喂 stdin 并关闭，否则 hook 阻塞
+    child.stdin.write(body)                      // 必须喂 stdin 并关闭，否则 hook 阻塞
     child.stdin.end()
     let out = ''
     let err = ''
@@ -132,9 +142,13 @@ export function apply(ctx) {
     const tool = String(exec?.name ?? '')
     if (tool === 'read' || WRITE_TOOLS.has(tool)) {
       const event = tool === 'read' ? 'post_read' : 'post_write'
-      const data = payload(event, exec, ctx, { tool_response: result })
-      probe({ phase: 'post', ...data })
-      if (data.session_id) await runHook(event, data)
+      try {
+        const data = payload(event, exec, ctx, { tool_response: result })
+        if (data.session_id) await runHook(event, data)
+        probe({ phase: 'post', tool, ok: true })
+      } catch (e) {
+        logLine({ event, decision: 'allow', reason: 'post-error', error: String(e) })
+      }
     }
     return next()
   })

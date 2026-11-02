@@ -63,23 +63,67 @@ dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 | 拿不到会话身份 | **拒绝** | 没有身份就没有读证据可核对（fail-closed） |
 | hook 返回非 JSON | 放行 + 记日志 | 不把解析失败当拒绝 |
 
-## 5. 验证到什么程度（分清证据等级）
+## 5. 验证到什么程度（实测记录）
 
-| 级别 | 证据 | 命令 |
+| 级别 | 证据 | 结果 |
 |---|---|---|
-| 配置层 | `--dump-config` 里出现 `workspace-gate-dsh` 且解析为 `file://…/plugin.js` | `dsh --profile web --patch .dsh/workspace-gate/cordis.yml --dump-config` |
-| 加载层 | 真实 `dsh web` 启动后 `.workspace/.dsh-gate.log` 出现 `{"event":"apply"}` | 启动一次 web profile |
-| 逻辑层 | 真实 `plugin.js` + 真实 `hook.py` 的 7 条合成用例 | `python3 tests/test_dsh_wiring.py` |
-| **未做** | **真实模型回合里的拦截** | 需要 DeepSeek API key；本机未跑 |
+| 配置层 | `--dump-config` 出现 `workspace-gate-dsh` → `file://…/plugin.js` | ✓ |
+| 加载层 | 真实启动后 `.workspace/.dsh-gate.log` 记 `{"event":"apply"}` | ✓ |
+| 逻辑层 | `tests/test_dsh_wiring.py`（真实 plugin + hook，8 条用例） | ✓ |
+| **真实回合** | dsh headless + DeepSeek 账号登录，真实模型调用 | ✓ |
 
-**已知未验证项**（不要当成已验证）：
+真实回合的实测结论（2026-11-02，`@deepseek-ai/dsh` 0.2.1-rc.4，`deepseek-flash`）：
 
-1. dsh `read` 的 `tool_response` 形状 —— 插件用启发式提取（字符串 / `{content|text|output|stdout}` / `[{type:'text'}]`），
-   取不到正文就不记账；首次真实会话请开 `WORKSPACE_GATE_DSH_PROBE=1`，原始载荷会写进
-   `.workspace/.dsh-probe.jsonl`，据此校正 `_dsh_text()`。
-2. dsh `write` / `edit` 的参数名（`path` 还是 `file_path`）—— 两者都接受，仍缺则拒绝。
-3. 子 agent 的会话身份 —— 插件依次尝试 `exec.agent.session.id`、`exec.agent.id`、`ctx.session.id`、`DSH_SESSION_ID`；
-   全拿不到即 fail-closed（子 agent 若因此被拦，是**已知限制**，不是 bug）。
+1. 未读先写 → **被拒**，文件未创建，模型收到拒绝文案并要求用户授权；
+2. 先 `read` 完整政策再写 → **放行**，文件创建，账本 `complete: true`；
+3. `bash` 重定向写（`echo hello > f`）→ **被拒**（走 `pre_bash` 静态可判写）；
+4. 非写工具（`glob` / `read`）→ 不拦。
+
+真实 payload 形状（据此实现，不再是猜测）：
+
+```jsonc
+// pre-execute: exec.name / exec.arguments / exec.agent.id
+{"tool":"write","args":{"file_path":"/abs/AGENT_RULES.md","content":"x"},
+ "agentId":"session-<uuid>","callId":"call_00_..."}
+{"tool":"bash","args":{"command":"echo hello > f","description":"..."}}
+// post-execute (read): result = {isError:false, content:[{type:'text', text:
+//   "<path>…</path>\n<type>file</type>\n<content>\n1: …\n\n(End of file - total 203 lines)\n</content>"}]}
+```
+
+**已知限制**：
+
+- 子 agent 的会话身份：插件用 `exec.agent.id`；若 dsh 给子 agent 复用了父 id，子会话的账本会与父合并（未实测子 agent）。
+- windowed read（`offset/limit`）逐段累计；只要求覆盖 `1..total`，不要求一次读完。
+- `read` 正文解析只接受「行号连续 + 标准尾注」；形态变化即不记账（安全方向：拒绝写入）。
+
+## 5.1 在 headless 里跑（账号登录，无 API key）
+
+`headless` 默认只用 `DEEPSEEK_API_KEY` 路线；账号登录（Web 端登录写入 `~/.dsh/.credentials.yaml`）需要把账号 provider 挂进 profile：
+
+```yaml
+# /tmp/dsh-headless-account.yml
+- id: agent-default-model
+  config:
+    provider: deepseek-account
+    model: deepseek-flash
+- insert:
+    - id: credentials
+      name: '@deepseek-ai/dsh-credentials-local'
+    - id: authorization
+      name: '@deepseek-ai/dsh-authorization'
+    - id: deepseek-account
+      name: '@deepseek-ai/dsh-deepseek-account-platform'
+    - id: llm-deepseek-account
+      name: '@deepseek-ai/dsh-llm-deepseek-account'
+```
+
+```bash
+dsh --profile headless \
+    --patch /tmp/dsh-headless-account.yml \
+    --patch .dsh/workspace-gate/cordis.yml \
+    --permission-mode workspace-write --approval-policy never \
+    "先 read AGENT_RULES.md（offset=1, limit=203），再创建 e2e.txt"
+```
 
 ## 6. 与其他 harness 的关系
 

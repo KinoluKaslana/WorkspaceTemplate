@@ -27,7 +27,7 @@ const post = handlers['tools/post-execute']
 const nextAllow = async () => ({ kind: 'allow' })
 const mk = (name, args) => ({
   name, arguments: args, callId: 'call-' + Math.random().toString(36).slice(2),
-  agent: { session: { id: 'harness-session' } },
+  agent: { id: 'session-harness' },
 })
 
 const results = []
@@ -36,26 +36,31 @@ const check = (label, ok, extra = '') => {
   if (!asJson) console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${extra ? '  ' + extra : ''}`)
 }
 
-let r = await pre(mk('write', { path: 'AGENT_RULES.md' }), nextAllow)
+let r = await pre(mk('write', { file_path: join(ws, 'AGENT_RULES.md'), content: 'x' }), nextAllow)
 check('write-before-read denied', r.kind === 'deny')
-check('deny carries [workspace-gate:no-read]', String(r.reason || '').includes('[workspace-gate:no-read]'))
+check('deny carries [workspace-gate:no-read]', String(r.reason || '').includes('[workspace-gate:no-read]'), String(r.reason||'').slice(0,120))
 
 r = await pre(mk('glob', { pattern: '*.md' }), nextAllow)
 check('non-write tool passes', r.kind === 'allow')
 
-const body = readFileSync(join(ws, 'AGENT_RULES.md'), 'utf8')
-await post(mk('read', { path: 'AGENT_RULES.md' }), { content: body }, nextAllow)
-r = await pre(mk('write', { path: 'AGENT_RULES.md' }), nextAllow)
-check('write-after-full-read allowed', r.kind === 'allow')
+const raw = readFileSync(join(ws, 'AGENT_RULES.md'), 'utf8')
+const lines = raw.split('\n')
+const physical = raw.endsWith('\n') ? lines.length - 1 : lines.length
+const numbered = lines.slice(0, physical).map((l, i) => `${i + 1}: ${l}`).join('\n')
+const dshReadResult = { isError: false, content: [{ type: 'text',
+  text: `<path>${join(ws, 'AGENT_RULES.md')}</path>\n<type>file</type>\n<content>\n${numbered}\n\n(End of file - total ${physical} lines)\n</content>` }] }
+await post(mk('read', { file_path: join(ws, 'AGENT_RULES.md'), offset: 1, limit: physical }), dshReadResult, nextAllow)
+r = await pre(mk('write', { file_path: join(ws, 'AGENT_RULES.md'), content: 'x' }), nextAllow)
+check('write-after-full-read allowed', r.kind === 'allow', r.kind==='deny'?String(r.reason).slice(0,160):'')
 
 appendFileSync(join(ws, 'AGENT_RULES.md'), '\n<!-- revision bump for test -->\n')
-r = await pre(mk('write', { path: 'AGENT_RULES.md' }), nextAllow)
+r = await pre(mk('write', { file_path: join(ws, 'AGENT_RULES.md'), content: 'x' }), nextAllow)
 check('write-after-revision-change denied', r.kind === 'deny')
 
 r = await pre(mk('write', { path: '/tmp/dsh-harness-outside.md' }), nextAllow)
-check('write outside workspace passes', r.kind === 'allow')
+check('write outside workspace passes', r.kind === 'allow', r.kind==='deny'?String(r.reason).slice(0,160):'')
 
-r = await pre(mk('edit', { file_path: 'AGENT_RULES.md' }), nextAllow)
+r = await pre(mk('edit', { file_path: join(ws, 'AGENT_RULES.md') }), nextAllow)
 check('edit tool also gated (file_path alias)', r.kind === 'deny')
 
 // 缺会话身份 → 插件必须 fail-closed

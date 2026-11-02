@@ -240,7 +240,7 @@ Inventory is not installation. External skills remain read-only technical refere
 dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 ```
 
-Verified: config mount (`--dump-config`), plugin `apply` on a real `dsh web` boot, and 7 synthetic cases through the real plugin + hook. **Not verified**: denial during a real model turn (no API key here). See [docs/dsh.md](docs/dsh.md).
+Verified end to end: config mount, `apply` on a real boot, **denial during a real model turn** (write without read blocked, file absent; read-then-write allowed; `bash` redirect blocked), plus 8 synthetic cases through the real plugin + hook. See [docs/dsh.md](docs/dsh.md).
 
 ## Repository Layout
 

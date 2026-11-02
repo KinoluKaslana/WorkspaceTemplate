@@ -355,6 +355,39 @@ def _failed_response(obj: dict) -> bool:
     return False
 
 
+DSH_WRAP = re.compile(r"^\s*<path>.*?</path>\s*\n\s*<type>file</type>\s*\n\s*<content>\n(.*)\n</content>\s*$",
+                      re.S)
+DSH_NUM = re.compile(r"^(\d+): ?(.*)$")
+DSH_TRAILER = re.compile(r"^\((?:Showing lines \d+-\d+ of \d+\. Use offset=\d+ to continue|End of file - total \d+ lines)\.?\)$")
+
+
+def _dsh_read_body(value: object, offset: int) -> str | None:
+    """dsh read 正文带 `<path>/<type>/<content>` 包装与 `N: ` 行号前缀。
+
+    只接受**行号连续、从 offset 开始**的形态；任何不符 → None（不授证，方向安全）。
+    """
+    raw = _dsh_text(value)
+    if not raw:
+        return None
+    m = DSH_WRAP.match(raw)
+    body = m.group(1) if m else raw
+    lines = body.split("\n")
+    # dsh 在 windowed read 末尾附一行 "(Showing lines A-B of N. Use offset=K to continue.)"
+    if lines and DSH_TRAILER.match(lines[-1].strip()):
+        lines.pop()
+        while lines and lines[-1] == "":
+            lines.pop()
+    want = offset
+    out = []
+    for line in lines:
+        mm = DSH_NUM.match(line)
+        if not mm or int(mm.group(1)) != want:
+            return None
+        out.append(mm.group(2))
+        want += 1
+    return "\n".join(out)
+
+
 def _dsh_text(value: object, depth: int = 0) -> str | None:
     """从 dsh 的 tool_response 里尽力取出正文（形状未在真实回合验证，按候选容错）。
 
@@ -392,9 +425,12 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         path = inp.get("path") or inp.get("file_path")
         if not isinstance(path, str) or not path.strip():
             return
-        body = _dsh_text(data.get("tool_response"))
-        if not body:
-            return                       # 拿不到正文 → 不记账（方向安全）
+        off0 = inp.get("offset", 1)
+        if type(off0) is not int or off0 < 1:
+            return
+        body = _dsh_read_body(data.get("tool_response"), off0)
+        if body is None:
+            return                       # 形态不符 → 不记账（方向安全）
         target = _absolute(path, cwd)
         try:
             total = len(Path(target).read_text(encoding="utf-8", errors="replace").split("\n"))
@@ -406,7 +442,12 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
             return
         if lim is not None and (type(lim) is not int or lim < 1):
             return
-        end = total if lim is None else min(total, off + lim - 1)
+        # EOF 哨兵：split("\n") 末尾多一行空行；物理行数要减去它，
+        # 否则「读到最后一行」会被判成不完整（gate_core 会在 end==total-1 时自动升格）。
+        physical = total - 1 if (total > 1 and Path(target).read_bytes().endswith(b"\n")) else total
+        end = physical if lim is None else min(physical, off + lim - 1)
+        if end < total and not body.endswith("\n"):
+            body += "\n"          # gate_core 对 end<total 的期望片段以 LF 结尾
         read_info = {"read_ok": True, "path": target, "offset": off,
                      "limit": end - off + 1, "total_lines": total,
                      "tool_response": body}
