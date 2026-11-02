@@ -210,7 +210,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "d1ed09b82bbc06874836fb3418a231539f1b9d177eb5546a29ab8c10865a359d",
+    "file_sha256": "ffd566776539cbe7e305b5cfad81c59f54dc1fbdff324f6d59a4e3aab39cbe69",
     "marked": 0
   },
   "scripts/skill_audit.py": {
