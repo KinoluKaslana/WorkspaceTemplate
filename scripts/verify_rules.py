@@ -57,7 +57,6 @@ TEMPLATE_FILES = [
     ".workspace/skills/workspace-init/SKILL.md",
     ".workspace/skills/git-init/SKILL.md",
     ".workspace/skills/delivery-closure/SKILL.md",
-    ".workspace/skills/workspace-git-branch-upgrade/SKILL.md",
     ".workspace/skills/docs-retrieval-maintenance/SKILL.md",
     "scripts/docs_index.py",
     "scripts/docs_hit_report.py",

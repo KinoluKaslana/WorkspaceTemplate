@@ -1,7 +1,7 @@
 ---
 name: template-update
 description: "Use when syncing a workspace's template layer from any template source revision (branch, tag, or commit) — not tied to one branch. 从任意模板来源（分支/标签/提交）更新工作区模板层时使用。"
-version: 3.0.0
+version: 3.1.0
 ---
 
 # Template Update — 工作区模板同步 skill（任意来源 ref）
@@ -76,6 +76,9 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
 脚本输出（`--json` 可机器读）：`requested_ref / resolved_ref / ref_kind / commit`、版本前后、
 `changed / skipped / identical` 文件、条款增删、`custom_dangling`、备份路径、`verify.clean`。
 
+**上游删除的文件**：脚本会对比"上次同步点的 `TEMPLATE_FILES`"与本次清单，列出 `removed_upstream`。
+默认**只报告不删除**；确认这些文件确属模板层后，加 `--prune` 才会删除本地副本（先备份到同一备份目录）。
+
 - **README 处置**：默认"工作区 README 与上次同步点不同"即视为用户首页，自动保留并记入 `skipped`；`--keep-readme` 强制保留。
 - **dry-run 与 apply 之间不得改动工作区**。
 - 替换后如手工执行：逐文件 `diff` 模板原件，必须全空，否则回滚。
@@ -123,6 +126,7 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
 
 ## 变更记录
 
+- 3.1.0（2026-11-02）：新增 `--prune`（删除上游已移除的模板层文件，先备份）；前置事实补"上游删除只报告不删"。
 - 3.0.0（2026-11-02）：**泛用化**——`ref` 支持分支/标签/提交，来源可换 remote/仓库，新增 `--list-refs`、自动克隆、README 自动保留；删除写死的分支枚举与 `TEMPLATE_FILES` 条数。
 - 2.1.0（2026-11-02）：新增"指定分支"与 `scripts/template_sync.py` 机械入口。
 - 2.0.0：锁定替换 + custom 覆写架构。

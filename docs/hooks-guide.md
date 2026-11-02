@@ -1,7 +1,7 @@
 # 工作区级 Hook 技术指南
 
 > 面向两类读者：**完全没接触过 hook 的人**（先看第 0–2 章，用比喻理解机制），以及**要改代码/排查问题的人**（第 3–6 章是逐 harness 的实现拆解）。
-> 对应政策：`AGENT_RULES.md` §12（Hermes 侧）与 §13（Codex / Claude Code 侧），当前政策版本 **3.1.0**。
+> 对应政策：`AGENT_RULES.md` §12（Hermes 侧）与 §13（Codex / Claude Code 侧），当前政策版本 **3.2.0**。
 
 ---
 

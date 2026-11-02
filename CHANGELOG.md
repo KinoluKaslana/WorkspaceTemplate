@@ -25,6 +25,16 @@
 - 新增 `docs/.aliases.json`：只存「口语短语 → 已有节」指针（当前 1 条），目标标题或文件指纹不符即忽略。
 - 结果：10 题命中 **6/10 → 10/10**；`R98` 仍排第一；噪声查询仍为空；测试 **7 → 11 例**。token/成本结论不变（打分只改排序，不改查询轮次）。
 
+## 3.2.0（2026-11-02）
+
+**MINOR：skills 收敛**
+
+- **删除 `workspace-git-branch-upgrade` skill**：与 `template-update` 职责重叠（模板同步已支持按 ref 取用分支/标签/提交），模板只保留 `template-update`。
+- **R18 改写**：§0.3 由「三个 skill」改为「两个 skill」（`workspace-init`、`git-init`），并指向 `template-update` 处理模板层同步。
+- `TEMPLATE_FILES` 相应移除该 skill；`skills/REGISTRY.md`、`TOOLS.md` 同步去条目。
+- `template-update` **3.1.0**：新增 `--prune`，用于删除上游已移除的模板层文件（先备份；默认只报告）。
+- 迁移提示：已同步过旧版本的工作区需 `template_sync.py --prune` 才会真正删除本地副本。
+
 ## 3.1.0（2026-11-02）
 
 **MINOR：tokens 消耗优化（义务不变）**。基线用 `cl100k_base` 实测（DeepSeek 分词器为代理口径）。

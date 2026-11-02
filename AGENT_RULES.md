@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`3.1.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`3.2.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -42,7 +42,7 @@
 1. **抹除模板 git 标记**：确认 `.git` 的 remote 指向模板库（`KinoluKaslana/WorkspaceTemplate`）后，先导出本地独有 commit 为 patch 备份（若有），再删除 `.git`。remote 指向他处或存在无法确认的提交历史时，**暂停并请用户裁决**，不得擅自删除。 <!-- id:R15 -->
 2. **询问建仓决策**：用户选择（a）立即建仓——Agent 引导 `git init` + 首次提交 + 用户自己的 remote（多设备同步）；或（b）暂不建仓——保持纯文件工作区，后续用户可随时要求执行 git-init skill。 <!-- id:R16 -->
 3. **记录到 bootstrap**：`git` 节记录 `status`（`initialized` / `declined`）、remote、初始化日期；`declined` 不是终态，后续执行 git-init skill 时翻转为 `initialized`。 <!-- id:R17 -->
-4. 本节流程由 `.workspace/skills/` 下三个 skill 承载：`workspace-init`（首次初始化）、`git-init`（后补建仓）、`workspace-git-branch-upgrade`（既有仓库分支迁移）；步骤以 skill 正文为准。 <!-- id:R18 -->
+4. 本节流程由 `.workspace/skills/` 下两个 skill 承载：`workspace-init`（首次初始化）、`git-init`（后补建仓）；步骤以 skill 正文为准。模板层文件同步（含按分支/标签/提交取用）走 `template-update`。 <!-- id:R18 -->
 
 ## 1. 角色、业务与工作模式 <!-- id:R19 -->
 

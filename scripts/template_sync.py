@@ -50,6 +50,18 @@ def template_files(worktree: Path) -> list[str]:
         sys.path.pop(0)
 
 
+def previous_template_files(tpl: Path, prev_commit: str | None) -> list[str]:
+    """读取上次同步点记录的 TEMPLATE_FILES，用于识别上游已删除的文件。"""
+    if not prev_commit:
+        return []
+    blob = subprocess.run(["git", "-C", str(tpl), "show", f"{prev_commit}:scripts/verify_rules.py"],
+                          capture_output=True, text=True)
+    if blob.returncode != 0:
+        return []
+    m = re.search(r"TEMPLATE_FILES\s*=\s*\[(.*?)\n\]", blob.stdout, re.S)
+    return re.findall(r'"([^"]+)"', m.group(1)) if m else []
+
+
 def policy_version(path: Path) -> str:
     try:
         m = re.search(r"模板政策版本：`([0-9]+\.[0-9]+\.[0-9]+)`", path.read_text(encoding="utf-8"))
@@ -92,6 +104,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--fetch", action="store_true")
     ap.add_argument("--keep-readme", action="store_true")
+    ap.add_argument("--prune", action="store_true",
+                    help="删除「上次同步有、本次模板已移除」的模板层文件（先备份）")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
@@ -175,6 +189,8 @@ def main(argv: list[str]) -> int:
                 if blob.returncode == 0 and blob.stdout and blob.stdout != cur.read_bytes():
                     readme_is_local = True
 
+        prev_files = previous_template_files(tpl, (boot.get("template") or {}).get("last_synced_commit"))
+        removed_upstream = sorted(set(prev_files) - set(files))
         changed, missing, skipped = [], [], []
         for rel in files:
             src, dst = wt / rel, ws / rel
@@ -188,6 +204,7 @@ def main(argv: list[str]) -> int:
                 changed.append(rel)
 
         report = {"requested_ref": wanted, "resolved_ref": ref, "ref_kind": kind, "commit": commit,
+                  "removed_upstream": removed_upstream, "pruned": [],
                   "readme_kept": readme_is_local or a.keep_readme,
                   "version_before": before, "version_after": after,
                   "template_files": len(files),
@@ -207,6 +224,8 @@ def main(argv: list[str]) -> int:
                 print(f"将替换 {len(changed)} 个文件（共 {len(files)}）")
                 for c in changed:
                     print("  ~", c)
+                if removed_upstream:
+                    print("上游已移除（加 --prune 才会删除本地副本）:", ", ".join(removed_upstream))
                 if report["clauses_removed"]:
                     print("条款删除:", ", ".join(report["clauses_removed"]))
                 if report["custom_dangling"]:
@@ -236,6 +255,23 @@ def main(argv: list[str]) -> int:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
             copied.append(rel)
+
+        pruned = []
+        if a.prune and removed_upstream:
+            for rel in removed_upstream:
+                tgt = ws / rel
+                if not tgt.exists():
+                    continue
+                bak = backup / rel
+                bak.parent.mkdir(parents=True, exist_ok=True)
+                if tgt.is_dir():
+                    shutil.copytree(tgt, bak, dirs_exist_ok=True)
+                    shutil.rmtree(tgt)
+                else:
+                    shutil.copy2(tgt, bak)
+                    tgt.unlink()
+                pruned.append(rel)
+            report["pruned"] = pruned
 
         boot_path = ws / ".workspace" / "bootstrap.json"
         boot = json.loads(boot_path.read_text(encoding="utf-8"))
@@ -269,6 +305,8 @@ def main(argv: list[str]) -> int:
         else:
             print(f"{ref}({kind})@{commit[:8]}  {before} → {after}；替换 {len(copied)} 个文件")
             print("备份:", backup)
+            if report["pruned"]:
+                print("已删除上游移除的文件:", ", ".join(report["pruned"]))
             if a.verify:
                 print("verify clean:", (verify or {}).get("clean"))
         return 0 if (not a.verify or (verify or {}).get("clean")) else 2

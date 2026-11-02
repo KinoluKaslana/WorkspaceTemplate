@@ -18,7 +18,7 @@
       "R15": "1. **抹除模板 git 标记**：确认 `.git` 的 remote 指向模板库（`KinoluKaslana/WorkspaceTemplate`）后，先导出本地独有 commit 为 patch 备份（若有），再删除 `.git`。remote 指向他处或存在无法确认的提交历史时，**暂停并请用户裁决**，不得擅自删除。",
       "R16": "2. **询问建仓决策**：用户选择（a）立即建仓——Agent 引导 `git init` + 首次提交 + 用户自己的 remote（多设备同步）；或（b）暂不建仓——保持纯文件工作区，后续用户可随时要求执行 git-init skill。",
       "R17": "3. **记录到 bootstrap**：`git` 节记录 `status`（`initialized` / `declined`）、remote、初始化日期；`declined` 不是终态，后续执行 git-init skill 时翻转为 `initialized`。",
-      "R18": "4. 本节流程由 `.workspace/skills/` 下三个 skill 承载：`workspace-init`（首次初始化）、`git-init`（后补建仓）、`workspace-git-branch-upgrade`（既有仓库分支迁移）；步骤以 skill 正文为准。",
+      "R18": "4. 本节流程由 `.workspace/skills/` 下两个 skill 承载：`workspace-init`（首次初始化）、`git-init`（后补建仓）；步骤以 skill 正文为准。模板层文件同步（含按分支/标签/提交取用）走 `template-update`。",
       "R19": "## 1. 角色、业务与工作模式",
       "R20": "- **问答/只读模式**：仅在对话中解答、评审或给出片段；可做范围内的只读检查，但不写文件、不安装依赖、不改变外部状态、不向第三方发送用户数据。",
       "R21": "- **任务模式**：需要创建/修改/删除文件、安装依赖、调用会改变外部状态的服务、运行未知工件或交付持久化结果。",
@@ -110,7 +110,7 @@
       "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（10 个 definition，含 SubagentStart/Stop），变更需重审；CC `-p` 免信任但会执行仓内 hook，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，守门只防「无意识跳过」。",
       "R108": "7. **子 Agent 任务书（3.0.0，extends R66）**：派发前必须交付，至少含 ①用户目标与验收 ②精确工作区与**可写目标集合**（逐项绝对路径，禁通配）③只读范围 ④禁止动作（显式含 R67 中央文件）⑤授权来源（父会话标识 + 父已读政策的声明）；并据以为该子会话签发委托记录。**可写集合不得超出父自身已授权范围，不得包含治理文件与 R67 中央文件**；未列出的目标子 Agent 一律不得写。"
     },
-    "file_sha256": "b3784438d9978d6e35e0af612224fc5bee94daeaf3f65fb7e9dde71e12dfc79f",
+    "file_sha256": "66398242f6eafcd45fff1b0cb7ceec89d01b72dfb52de8e93dfb8bd954342757",
     "marked": 108
   },
   "AGENTS.md": {
@@ -130,12 +130,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "fc78cdf328d6b28bf2c72821f946c40749e15a91964b2816b85ffe311e023afa",
+    "file_sha256": "62d883bd5c6c555ebac102b6a2ec04b0c071b1fefaef841b8c377e7233814c8d",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "dea927be8647972a32239de5f074eccb80c54ed77262002675dab021c319f7fd",
+    "file_sha256": "6cfec2fd965cd817861a4d9627d72b9f2f6c6a44b1c65016f02f234e0c8f7707",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -160,12 +160,12 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "1f87cd9e0e6db5fc9be2ff9598244eda88ad090031aa55c6e4c6390e061adcbe",
+    "file_sha256": "eb3cd90e3fdb336ecf0a948b99d7d34bb168e4700158cc4ffc53b38a6021d34a",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "8dde7a746f99096d3093a231e0275f79bd5669cbcb6f48c5817a19e609d50c1f",
+    "file_sha256": "0d6cd65d666f643e205466f3b8604791a483d2da85d4dfe55bf0159178ea16d1",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -186,11 +186,6 @@
   ".workspace/skills/delivery-closure/SKILL.md": {
     "clauses": {},
     "file_sha256": "cdbb49aa6058105ab2109b5a5d031f9bafff0af2645ce4490a3234b522d59f26",
-    "marked": 0
-  },
-  ".workspace/skills/workspace-git-branch-upgrade/SKILL.md": {
-    "clauses": {},
-    "file_sha256": "383a9d4393e3f683263cb4ac468e09e3537da1c286585a74646ca2c1e0f2ea69",
     "marked": 0
   },
   ".workspace/skills/docs-retrieval-maintenance/SKILL.md": {
@@ -215,7 +210,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "d5a9c931f3a2c2dc3f4f636dc165bc188bcb186e7b263a1791dda03c8214290b",
+    "file_sha256": "d1ed09b82bbc06874836fb3418a231539f1b9d177eb5546a29ab8c10865a359d",
     "marked": 0
   },
   "scripts/skill_audit.py": {
