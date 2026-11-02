@@ -299,13 +299,17 @@ def main(argv: list[str]) -> int:
 
         verify = None
         if a.verify:
+            out_json = ws / ".workspace" / ".verify-tmp.json"
             p = subprocess.run([sys.executable, str(ws / "scripts" / "verify_rules.py"),
-                                "--workspace", str(ws), "--vs-template", str(wt), "--json"],
+                                "--workspace", str(ws), "--vs-template", str(wt),
+                                "--json", str(out_json)],
                                cwd=ws, capture_output=True, text=True)
             try:
-                verify = json.loads(p.stdout or "{}")
+                verify = json.loads(out_json.read_text(encoding="utf-8"))
             except Exception:
                 verify = {"raw": (p.stdout or p.stderr)[:400]}
+            finally:
+                out_json.unlink(missing_ok=True)
             report["verify"] = {"clean": verify.get("clean"), "findings": verify.get("findings", [])[:10]}
 
         if a.json:

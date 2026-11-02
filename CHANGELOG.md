@@ -25,6 +25,19 @@
 - 新增 `docs/.aliases.json`：只存「口语短语 → 已有节」指针（当前 1 条），目标标题或文件指纹不符即忽略。
 - 结果：10 题命中 **6/10 → 10/10**；`R98` 仍排第一；噪声查询仍为空；测试 **7 → 11 例**。token/成本结论不变（打分只改排序，不改查询轮次）。
 
+## 文档体系（2026-11-02，不改政策版本）
+
+- **README 更新**（中英）：alpha 3.x 变化表、三种 Python 模式、6 个 skill 表、目录结构、文档索引入口；修正「venv 是必须项」「守门只需 read_file 过」等过宽表述。
+- **新增 docs**：
+  - `docs/README.md`：按读者选入口 + 三条共用验收命令 + 分层一句话；
+  - `docs/architecture.md`：四层模型、写路径、读证据模型、失败姿态（含 fail-open）、跨设备三类事实、模板演进；
+  - `docs/skills.md`：6 个 skill 的触发/边界/组合流程 + 8 维契约 + 维护；
+  - `docs/tools.md`：10 个脚本的用法、`--json` 语义差异、退出码约定。
+- **新增回归** `tests/test_docs_consistency.py`：链接可解析、skills/scripts 全覆盖、版本号与 `TEMPLATE_FILES` 条数与实际一致、README 提到全部 skill。
+- **修脚本缺陷**：`template_sync.py --verify` 原把 `--json` 当开关传（`verify_rules.py` 要求输出路径）→ 校验恒为 `None`；改为写临时文件后读取，现回报 `clean=true`。
+- `TEMPLATE_FILES` 44 → 53（docs 7 篇 + 一致性测试）。
+- **修政策结构缺陷**：3.3.0 给 R5 加了子列表，被 `mark_rules.py` 判为 3 条未标记条款；已并回单段。验收链补 `mark_rules.py check`（改过政策必跑）。
+
 ## 3.3.1（2026-11-02）
 
 **PATCH：既有工作区的 Python 模式不可被模板演进改写**

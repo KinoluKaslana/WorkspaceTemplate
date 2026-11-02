@@ -42,8 +42,8 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 单一政策源 | [`AGENT_RULES.md`](AGENT_RULES.md) 统一约束主 Agent 与子 Agent；客户端入口只负责定位它 |
 | 规则分层 | 模板层文件**锁定只读**（同步=整文件替换）；本地规则全部外置到 `<file>.custom.md`，**custom 优先**（§10） |
 | 完整性校验 | 条款带稳定 ID（`<!-- id:Rn -->`）+ 注册表双级校验；`--vs-template` 对模板克隆做**字节级比对 + git 信任锚**，堵死"改文件再重生成注册表"的自我作证漏洞 |
-| 生命周期 skills | `template-update`（同步新模板）、`workspace-init`（接管老版本工作区）、`git-init`（后补建仓）、`delivery-closure`（交付闭环六步检查）随模板分发到 `.workspace/skills/` |
-| 首次初始化协议 | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) 持久化 `python.mode`（**必须**：local-venv / mcp）与 `git.status`（**可选**：initialized / declined） |
+| 生命周期 skills | 6 个随模板分发到 `.workspace/skills/`：`template-update`（任意 ref 同步）、`workspace-repo-sync`（跨设备同步工作区仓库）、`workspace-init`（接管/首次落地）、`git-init`（建仓）、`delivery-closure`（交付闭环）、`docs-retrieval-maintenance`（文档检索维护）。每个 skill 必须满足 8 维契约，`skill_audit.py` 机械检查 |
+| 首次初始化协议 | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) 持久化 `python.mode`（**必须**：`uv` / `local-venv` / `mcp`，默认 uv）与 `git.status`（**可选**：initialized / declined）；**既有工作区一旦配置就不被模板演进改写** |
 | 业务无关 | [`WORKSPACE.md`](WORKSPACE.md) 初始为空，由用户的稳定需求定义目标、范围与验收 |
 | Skills 单路径接入 | 用户只提供根目录，Agent 自动发现入口、记录指纹并处理同名冲突 |
 | 环境事实可追溯 | [`TOOLS.md`](TOOLS.md) 记录实测运行时、MCP、工具、来源和副作用，不承担授权职责 |
@@ -51,13 +51,28 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 客户端记忆边界 | 工作区经验只写 `notes/`；各客户端全局记忆（Hermes memory / Claude Auto Memory / Codex 内置记忆）至多保留一条指向 `notes/INDEX.md` 的指针（§9.1） |
 | 安全默认值 | 外部 skills 默认只读；不自动执行 Hook、安装依赖、联网或发送用户数据 |
 
+## alpha 分支（policy 3.x）新增了什么
+
+alpha 是**实验线**，把"规则常驻、机械可验"推进到子 Agent 与工具层。相对 2.x 的主要变化：
+
+| 变化 | 一句话 | 证据 |
+|---|---|---|
+| 子 Agent 授权模型 | 主 Agent 读完政策并常驻；**子 Agent 不重读全量政策**，写工作区须「目标精确命中委托 + 父证据仍有效」，自读不解锁 | R24 / R98 / R108 + `delegations.py` |
+| 机械守门补强 | 拒绝码前缀、委托审计、`gate-deny` 独立核验、审计十三型 | 插件 1.9.0 + `docs/hooks-catalog.md` §2.6 |
+| skills 契约化 | 6 个 skill 必须齐 8 维；`skill_audit.py` 缺节即失败；REGISTRY 由目录派生 | `docs/skills.md` §1 |
+| Python 三选一 | **uv 默认** / 手动 venv / MCP；已配置不被改写 | R2–R8 + `pyenv_init.py` |
+| 跨设备可核验 | 9 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
+| docs 检索（可选） | 确定性索引，**省账单不省 token**，命中 9/10 | `docs/docs-retrieval.md` |
+
+> 完整文档入口：[`docs/README.md`](docs/README.md)（按读者选路径）。
+
 ## 快速开始
 
 ### 方式一：从 GitHub 模板创建新仓库（推荐）
 
 1. 在仓库页面点击 **Use this template**，选择 **Create a new repository**。
 2. 克隆新仓库，让支持 Workspace 规则的 Agent 打开仓库根目录。
-3. Agent 会先问 Python 运行时（必须项），再问 git 建仓决策（可选项）。
+3. Agent 会先问 Python 运行时（三选一，默认 **uv**），再问 git 建仓决策（可选项）。
 4. 描述你的业务目标，开始工作。
 
 ### 方式二：直接克隆
@@ -78,15 +93,20 @@ cd my-workspace
 
 模板不会替用户预选环境。当 `python.mode` 仍为 `unconfigured` 时，第一个 Agent 必须先询问：
 
-> 是否由我自动初始化本 Workspace 的本地版本化 venv（推荐），还是使用当前会话中 MCP 提供的 Python 环境？
+> 本工作区的 Python 运行时用哪种？（**推荐默认：uv**）
+> 1. **uv 管理**（`uv venv`，默认）——机器上没有 uv 时我先提示安装方式，由你执行安装；
+> 2. **手动 venv**（`python -m venv`，用你指定的解释器）；
+> 3. **MCP Python**（用当前会话提供的 Python 工具，不在本地建 venv）。
 
 ```mermaid
 flowchart LR
     A[Agent 打开 Workspace] --> B{python.mode}
-    B -->|unconfigured| C[询问用户：venv 或 MCP]
-    C -->|本地 Python| D[创建 .venv-major-minor]
+    B -->|unconfigured| C[询问用户：uv / 手动 venv / MCP]
+    C -->|uv| D1[uv venv .venv-major-minor]
+    C -->|手动 venv| D2[python -m venv .venv-major-minor]
     C -->|MCP Python| E[核验 MCP 能力边界]
-    D --> F[登记 bootstrap 与 TOOLS]
+    D1 --> F[登记 bootstrap 与 TOOLS]
+    D2 --> F
     E --> F
     F --> G{git 决策 §0.3}
     G -->|先抹除模板 .git| H[询问用户是否建仓]
@@ -97,18 +117,20 @@ flowchart LR
     B -->|已配置| L[只核验现有选择]
 ```
 
-两种 Python 模式互斥，后续可由用户明确要求切换。**venv 是必须项，git 是可选项**：暂不建仓的工作区保持纯文件状态，随时可以说"建 git 仓库"触发 git-init skill。
+三种 Python 模式互斥，后续可由用户明确要求切换；**已配置的工作区不因模板升级而改变模式**。**选定 Python 运行时是必须项；本地 venv 只在选 uv 或手动 venv 时存在；git 是可选项**：暂不建仓的工作区保持纯文件状态，随时可以说"建 git 仓库"触发 git-init skill。
 
-### 两种 Python 模式
+### 三种 Python 模式
 
-| | 本地版本化 venv | MCP Python |
-|---|---|---|
-| 适合 | 需要稳定文件访问、可复现依赖与本地脚本的项目 | 不希望初始化本地 Python，或当前客户端已有受管计算环境 |
-| 初始化 | 创建 `.venv-<major><minor>` | 不创建本地 venv |
-| 默认联网 | 否；不自动升级 pip 或安装依赖 | 取决于 MCP 实测能力，必须登记 |
-| 文件访问 | 使用 Workspace 内本地路径 | 必须核验；不可见时 MCP 只做纯计算 |
-| 依赖持久性 | venv 内持久保存 | 取决于 MCP provider，不能假定 |
-| 不可用时 | 报告解释器或 `venv` 模块的精确阻塞 | 不伪装成功，请用户接入 MCP 或回退到本地 venv |
+| | uv（默认） | 手动 venv | MCP Python |
+|---|---|---|---|
+| 适合 | 想要快、可复现、依赖解析稳定的项目 | 机器已有合意解释器、不想引入 uv | 不希望初始化本地 Python，或客户端已有受管计算环境 |
+| 初始化 | `uv venv .venv-<mm> --python <ver>` | `<python> -m venv .venv-<mm>` | 不创建本地 venv |
+| 装包 | `uv pip install --python .venv-<mm>/bin/python <pkg>` | `.venv-<mm>/bin/python -m pip install <pkg>` | 取决于 MCP 能力，必须登记 |
+| 默认联网 | 否；**uv 缺失只提示安装方式，不自动装** | 否 | 取决于 MCP 实测能力 |
+| 依赖持久性 | venv 内持久保存 | venv 内持久保存 | 取决于 provider，不能假定 |
+| 不可用时 | exit 3 + 安装方式；用户可拒绝 | 报告解释器或 `venv` 模块的精确阻塞 | 不伪装成功，请用户接入 MCP 或回退 |
+
+机械入口：`python3 scripts/pyenv_init.py --mode uv|venv|mcp [--apply]`（默认 dry-run；**已配置的工作区会 exit 5 拒绝改写**，需 `--force`）。
 
 模板自带的 Python 脚本都只依赖标准库，并要求 Python 3.10 或更高版本。选择运行时之前，不会执行它们。
 
@@ -145,7 +167,7 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 | 项 | 事实 |
 |---|---|
 | 位置 | `.hermes/plugins/workspace-gate/`（`plugin.yaml` + `__init__.py` + `selfcheck.py`，属模板层锁定文件，参与哈希校验） |
-| 守门判据 | 本次写入的目标路径落在工作区内，且**本会话**尚未 `read_file` 过 `AGENT_RULES.md` → 拦截并说明原因；工作区外写入不受影响 |
+| 守门判据 | 目标路径落在工作区内，且**本会话**缺少「当前修订的完整连续行覆盖（`1..total`，无洞）」→ 拦截并说明原因；子 Agent 另须精确命中有效委托且父证据仍有效；工作区外写入不受影响 |
 | 事件 | `pre_tool_call` 守门（内部异常也 block，fail-closed）、`post_tool_call` 记账（仅 `status=ok`）、`pre_llm_call` 提醒（每个会话至多一次）、`on_session_end` 审计（按回合有界追加） |
 | 启用 | `HERMES_ENABLE_PROJECT_PLUGINS=true`（允许发现项目插件）**且** `~/.hermes/config.yaml` 有 `plugins.enabled: [workspace-gate]`（加载）——缺一不生效 |
 | 调参 | 写工作区所有的工作区级覆写 `.hermes/plugins/workspace-gate/plugin.custom.json`（`enabled` / `gate_files` / `write_tools`）；**不要直接改脚本**（锁定层，同步时会被整文件覆盖） |
@@ -178,14 +200,18 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gat
 
 ## 工作区生命周期 skills
 
-三个 skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间），登记于 `skills/REGISTRY.md` 与 `TOOLS.md`：
+6 个 skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间），登记于 `skills/REGISTRY.md` 与 `TOOLS.md`，全部满足 8 维契约（触发/前置/契约/边界/执行/失败回滚/验收/维护）：
 
 | Skill | 版本 | 触发 | 做什么 |
 |---|---|---|---|
-| [template-update](.workspace/skills/template-update/SKILL.md) | v2.0 | "同步模板/更新到最新模板"，或检测到版本落后 | 七步锁定替换式同步：模板源 → 校验 → 备份 → 整文件替换 → custom 引用迁移 → bootstrap 回写 → `--vs-template` 权威验证 |
-| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | v1.0 | "初始化/接管这个工作区"，或检测到无 template 血缘/无条款标记/.git 指向模板库 | 九步接管老工作区：盘点 → 差异判定 → pre-v2.0 迁移（本地语义外置进 custom）→ venv → git 抹除与决策 → 登记 → 验证 → 报告 |
-| [git-init](.workspace/skills/git-init/SKILL.md) | v1.0 | "建 git 仓库"，或 bootstrap `git.status=declined` 后用户改主意 | 五步建仓：决策 → `git init` + 首提交 → .gitignore 核验 → bootstrap git 节登记 → 验证 |
-| [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | v1.0 | 任务模式产生持久化产物、准备声明完成之前 | 六步交付闭环：产物清点 → 查 INDEX → note 三选一（合并/新建/豁免）→ `rebuild_index` 回写 → 部署与机械验证 → 固定格式完成声明 |
+| [template-update](.workspace/skills/template-update/SKILL.md) | 3.2.1 | "同步模板/换成某个分支或标签"，或版本落后、`verify_rules` 报漂移 | 按 **任意 ref**（分支/标签/提交）同步模板层：dry-run → 备份（MANIFEST）→ 整文件替换 → custom 引用迁移 → `--vs-template` 验证；`--prune` 清理上游已删文件 |
+| [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.1 | 换设备、别端改了 notes/TOOLS、怀疑工具失效 | 先 `workspace_preflight.py` 核验登记与实机 → 用户裁决方向/分叉/冲突 → 拉后重建索引与四验 |
+| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.2.0 | "初始化/接管这个工作区"，或无可信血缘、无条款标记 | 盘点 → 差异判定 → pre-v2.0 迁移（本地语义进 custom）→ Python（已配置则不动）→ git 决策 → 登记 → 验证 |
+| [git-init](.workspace/skills/git-init/SKILL.md) | 1.1.0 | "建 git 仓库"，或 `git.status=declined` 后改主意 | init → .gitignore → 登记 → 审查暂存清单 → 提交 → 核提交树；含撤销建仓 |
+| [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 任务模式产物落盘、准备声明完成 | 产物清点（无仓用时间戳列举）→ 查 INDEX → note 三选一 → 索引回写 → 外部动作验证 → 三档口径声明 |
+| [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.2.0 | docs 改动、索引 stale、命中率下降 | build/check → 命中报告 → 只在真实缺口下加别名（上限 8、留一验证）→ 五条验收 |
+
+**边界**：工作区**自身** git 仓库的分支切换、迁移、历史改写不在任何 skill 内——由用户自行维护。
 
 ## 工作原理
 
@@ -229,13 +255,21 @@ Agent 将自动完成：
 │   ├── bootstrap.json       # 初始化状态机（python 必须 / git 可选 / 模板血缘 / 策展）
 │   ├── rule-clauses.json    # 条款注册表（mark_rules.py 生成）
 │   └── skills/              # 工作区生命周期 skills（workspace-skills 命名空间）
-│       ├── template-update/ # 同步最新模板（SKILL.md + check_template.py）
-│       ├── workspace-init/  # 接管老版本工作区（九步迁移）
-│       ├── git-init/        # 后补创建 git 仓库（五步 + bootstrap 登记）
-│       └── delivery-closure/ # 交付闭环六步检查（声明完成前必走）
+│       ├── _TEMPLATE.md     # skill 契约模板（8 维骨架）
+│       ├── template-update/ # 任意 ref 同步模板层
+│       ├── workspace-repo-sync/ # 跨设备同步工作区仓库
+│       ├── workspace-init/  # 接管/首次落地
+│       ├── git-init/        # 建仓与登记
+│       ├── delivery-closure/ # 交付闭环
+│       └── docs-retrieval-maintenance/ # docs 索引与别名维护
 ├── docs/
+│   ├── README.md           # 文档索引（按读者选入口 + 必跑命令）
+│   ├── architecture.md     # 四层模型 / 写路径 / 读证据 / 失败姿态 / 跨设备
+│   ├── skills.md           # 6 个 skill 的触发、边界、组合流程、8 维契约
+│   ├── tools.md            # 10 个脚本的用法与退出码
 │   ├── hooks-guide.md      # 三 harness hook 技术详解（原理 + 作用 + 排查）
-│   └── hooks-catalog.md    # 事件清单 + 新 harness 接入 7 步 + 验收断言
+│   ├── hooks-catalog.md    # 事件清单 + 新 harness 接入 7 步 + 验收断言
+│   └── docs-retrieval.md   # docs 检索工具与实测结论（省账单不省 token）
 ├── notes/
 │   ├── INDEX.md             # 自动经验索引（紧凑路由）
 │   ├── _INVERTED.md         # 倒排索引/关联图（按需加载）
@@ -250,7 +284,14 @@ Agent 将自动完成：
 ├── scripts/
 │   ├── inspect_skills.py    # Skills 只读盘点器
 │   ├── mark_rules.py        # 条款 ID 标记 + 注册表生成
-│   └── verify_rules.py      # 双级校验 + --vs-template 权威比对
+│   ├── verify_rules.py      # 双级校验 + --vs-template 权威比对
+│   ├── skill_audit.py       # skills 契约 / 双登记 / --sync-registry
+│   ├── workspace_preflight.py # 跨设备 9 项预检
+│   ├── template_sync.py     # 任意 ref 同步 + --prune
+│   ├── pyenv_init.py        # uv / venv / mcp 三模式初始化
+│   ├── docs_index.py        # docs 确定性索引
+│   ├── docs_hit_report.py   # 判据集命中报告
+│   └── docs_alias_audit.py  # 别名审计与回滚
 ├── skills/
 │   └── REGISTRY.md          # Skills 路由表
 ├── AGENT_RULES.md           # 唯一权威通用政策（锁定只读，条款带 ID）
@@ -361,7 +402,7 @@ Agent 将自动完成：
 <details>
 <summary><strong>工作区需要自己的 git 仓库吗？</strong></summary>
 
-由你决定（§0.3）：venv 是必须项，git 是可选项。初始化时选"暂不建"会记录为 `git.status: declined`——这不是终态，之后说一声"建 git 仓库"，git-init skill 会完成建仓、remote 配置与 bootstrap 登记，方便多设备同步。
+由你决定（§0.3）：Python 运行时选择是必须项（本地 venv 只在选 uv/手动 venv 时创建），git 是可选项。初始化时选"暂不建"会记录为 `git.status: declined`——这不是终态，之后说一声"建 git 仓库"，git-init skill 会完成建仓、remote 配置与 bootstrap 登记，方便多设备同步。
 
 </details>
 

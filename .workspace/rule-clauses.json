@@ -5,7 +5,7 @@
       "R2": "## 0. 首次启动：必须询问 Python 运行时选择",
       "R3": "### 0.1 创建本地版本化 venv（uv 默认 / 手动）",
       "R4": "1. 只读盘点 `python3`/`python` 的路径与版本，并检测 `uv` 是否存在（`command -v uv && uv --version`）；模板脚本需 Python ≥3.10，更旧时报告限制并请用户选择（装新运行时/MCP/明确授权适配），不静默降级。",
-      "R5": "   **uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。",
+      "R5": "2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python .venv-312/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `.venv-312/bin/python -m pip install <pkg>`。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。",
       "R6": "3. 初始化只创建运行时，不联网升级包管理器、不预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。",
       "R7": "4. 验证 `<venv>/bin/python` 的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。",
       "R8": "5. 将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。",
@@ -110,7 +110,7 @@
       "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（10 个 definition，含 SubagentStart/Stop），变更需重审；CC `-p` 免信任但会执行仓内 hook，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，守门只防「无意识跳过」。",
       "R108": "7. **子 Agent 任务书（3.0.0，extends R66）**：派发前必须交付，至少含 ①用户目标与验收 ②精确工作区与**可写目标集合**（逐项绝对路径，禁通配）③只读范围 ④禁止动作（显式含 R67 中央文件）⑤授权来源（父会话标识 + 父已读政策的声明）；并据以为该子会话签发委托记录。**可写集合不得超出父自身已授权范围，不得包含治理文件与 R67 中央文件**；未列出的目标子 Agent 一律不得写。"
     },
-    "file_sha256": "701e0c7acd0ddba0fa65570e94bd679484adf6d6564830862a3131d91901b4ac",
+    "file_sha256": "0284bed0d478c2986deee7ea61d4601f802a0747bb931ad86083876d18e2b7e5",
     "marked": 108
   },
   "AGENTS.md": {
@@ -130,12 +130,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "98014c1fe0c6019ace55e289b14323090b16b3601660f0b39c293b20e4731743",
+    "file_sha256": "17427c27392aa870877c11746ccea3558f96ff5e0b73092026d38d4829002471",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "c002ffeb6dcd259f0a012f224513ddd16f39ff98c1c2a0757b91cde557af5c1e",
+    "file_sha256": "79d4b63ae8d87ccf5ecf65da9c1c7a07ecbc01352cd73d51e8538bbac9164bc8",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -160,7 +160,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "42440eb2ee1f18f48093867b8cc5fdc64a7d878ec902ac1a18cf15922e482a0c",
+    "file_sha256": "12cfb352f4ec0346e885f6b7fe5046303b1d400d457e4c96fda187f02c3c56eb",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -210,7 +210,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "8ec8d008645a674dd3cad87810f2e29fb6bdb6153ae90d954904b44894bc5265",
+    "file_sha256": "e1d4272bfaeaa2be398302a3b228c6ca61d6363ee3901b9f26184a825e67aed6",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -246,6 +246,46 @@
   ".workspace/skills/_TEMPLATE.md": {
     "clauses": {},
     "file_sha256": "d1980f0f41a073ebc62dc6fa01353c859c3fec960d67d66e02d75fb217ca6a92",
+    "marked": 0
+  },
+  "docs/README.md": {
+    "clauses": {},
+    "file_sha256": "436333617b96d06979243f192ee9044d3dc8f532da1aa2b0df031d6dfea51519",
+    "marked": 0
+  },
+  "docs/architecture.md": {
+    "clauses": {},
+    "file_sha256": "173d3ab746baf3e2017f8239d7e25987e70458ff9c65b9286d6b61beff0628ec",
+    "marked": 0
+  },
+  "docs/skills.md": {
+    "clauses": {},
+    "file_sha256": "4699fe7b059ba4c3a3011318cade4ff53a34dca07bd306d900e25dd2c2ed34a3",
+    "marked": 0
+  },
+  "docs/tools.md": {
+    "clauses": {},
+    "file_sha256": "a1d4a8afcc7494cbee128a44d0abd75e2cb9be86dd6dc06884058eff184977c7",
+    "marked": 0
+  },
+  "docs/hooks-guide.md": {
+    "clauses": {},
+    "file_sha256": "00c047e7f2fe11966efeb9ee119b67c35edd244be3f4e3bce1605825ba11c745",
+    "marked": 0
+  },
+  "docs/hooks-catalog.md": {
+    "clauses": {},
+    "file_sha256": "ec5ef687d0637a9aa007ed3b8f8a2b32aecf1e4d5a081604b2479b0b2d87dde2",
+    "marked": 0
+  },
+  "docs/docs-retrieval.md": {
+    "clauses": {},
+    "file_sha256": "72c7a35c175c56c67393d5fb4b6ad8ba44dd3b8288e2eccb35792710466c7dbf",
+    "marked": 0
+  },
+  "tests/test_docs_consistency.py": {
+    "clauses": {},
+    "file_sha256": "1db545f668492fcdf19fa68f47635d9dd59a2f4cca7ff5811f50ecf68a977912",
     "marked": 0
   },
   ".workspace/skills/workspace-repo-sync/SKILL.md": {

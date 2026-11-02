@@ -42,8 +42,8 @@ WorkspaceTemplate turns those principles into a small, explicit set of files. It
 | One policy source | [`AGENT_RULES.md`](AGENT_RULES.md) governs primary and delegated Agents; client entry files only point to it |
 | Rule layering | Template-layer files are **locked read-only** (sync = whole-file replacement); local rules live in `<file>.custom.md` and **custom takes precedence** (§10) |
 | Integrity verification | Stable clause IDs (`<!-- id:Rn -->`) + registry-based two-level verification; `--vs-template` byte-compares against the template clone with a **git trust anchor**, closing the "edit the file then regenerate the registry" self-attestation hole |
-| Lifecycle skills | `template-update` (sync new templates), `workspace-init` (adopt legacy workspaces), `git-init` (create a repo later), and `delivery-closure` (six-step delivery closure check) ship in `.workspace/skills/` |
-| First-init protocol | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) persists `python.mode` (**mandatory**: local-venv / mcp) and `git.status` (**optional**: initialized / declined) |
+| Lifecycle skills | Six skills ship in `.workspace/skills/`: `template-update` (sync from any ref), `workspace-repo-sync` (cross-device repo sync), `workspace-init` (adopt / first landing), `git-init` (create repo), `delivery-closure` (finish check), `docs-retrieval-maintenance` (docs index & aliases). Each must satisfy the 8-dimension contract, enforced by `skill_audit.py` |
+| First-init protocol | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) persists `python.mode` (**mandatory**: `uv` / `local-venv` / `mcp`, uv by default) and `git.status` (**optional**: initialized / declined); a configured mode is never rewritten by template upgrades |
 | Business-agnostic foundation | [`WORKSPACE.md`](WORKSPACE.md) starts undefined and is shaped by the user's stable goals, scope, and acceptance criteria |
 | One-path skills onboarding | The user provides a root directory; the Agent discovers entries, records fingerprints, and resolves duplicate names |
 | Traceable environment facts | [`TOOLS.md`](TOOLS.md) records verified runtimes, MCP services, tools, sources, and side effects without granting authority |
@@ -78,15 +78,20 @@ Then open `my-workspace` with your Agent. Codex reads [`AGENTS.md`](AGENTS.md), 
 
 The template does not choose a Python environment for the user. While `python.mode` is `unconfigured`, the first Agent must ask:
 
-> Would you like me to automatically initialize a local, versioned venv for this Workspace (recommended), or use the Python environment provided by MCP in the current session?
+> Which Python runtime should this Workspace use? (**default: uv**)
+> 1. **uv** (`uv venv`, default) — if uv is missing I show you how to install it and you run the install;
+> 2. **Manual venv** (`python -m venv`, with the interpreter you choose);
+> 3. **MCP Python** (use the Python tooling provided by this session; no local venv).
 
 ```mermaid
 flowchart LR
     A[Agent opens Workspace] --> B{python.mode}
-    B -->|unconfigured| C[Ask: venv or MCP]
-    C -->|Local Python| D[Create .venv-major-minor]
+    B -->|unconfigured| C[Ask: uv / manual venv / MCP]
+    C -->|uv| D1[uv venv .venv-major-minor]
+    C -->|manual venv| D2[python -m venv .venv-major-minor]
     C -->|MCP Python| E[Verify MCP capability boundaries]
-    D --> F[Record bootstrap and TOOLS facts]
+    D1 --> F[Record bootstrap and TOOLS facts]
+    D2 --> F
     E --> F
     F --> G{git decision §0.3}
     G -->|wipe template .git first| H[Ask whether to create a repo]
@@ -97,18 +102,18 @@ flowchart LR
     B -->|configured| L[Verify the existing choice only]
 ```
 
-The two Python modes are mutually exclusive; switching later requires an explicit user request. **venv is mandatory, git is optional**: a workspace that declines a repo stays a plain file workspace, and you can say "create a git repo" at any time to trigger the git-init skill.
+The three Python modes are mutually exclusive; switching later requires an explicit user request, and a configured mode is never rewritten by template upgrades. **Choosing a Python runtime is mandatory; a local venv only exists if you pick uv or manual venv; git is optional** — a workspace that declines a repo stays a plain file workspace, and you can say "create a git repo" at any time to trigger the git-init skill.
 
 ### Python Runtime Options
 
-| | Local versioned venv | MCP Python |
-|---|---|---|
-| Best for | Projects that need stable file access, reproducible dependencies, and local scripts | Sessions where the user does not want local Python initialization or already has a managed compute environment |
-| Initialization | Creates `.venv-<major><minor>` | Creates no local venv |
-| Network by default | No; it does not upgrade pip or install dependencies automatically | Depends on verified MCP capabilities and must be recorded |
-| File access | Uses paths inside the Workspace | Must be verified; if files are invisible, MCP is limited to pure computation |
-| Dependency persistence | Persists inside the venv | Depends on the MCP provider and must not be assumed |
-| If unavailable | Reports the exact interpreter or `venv`-module blocker | Never pretends configuration succeeded; asks the user to connect MCP or fall back to a local venv |
+| | uv (default) | Manual venv | MCP Python |
+|---|---|---|---|
+| Best for | Fast, reproducible dependency resolution | A box with a known-good interpreter and no uv | No local Python initialization, or a managed compute environment |
+| Initialization | `uv venv .venv-<mm> --python <ver>` | `<python> -m venv .venv-<mm>` | Creates no local venv |
+| Installing packages | `uv pip install --python .venv-<mm>/bin/python <pkg>` | `.venv-<mm>/bin/python -m pip install <pkg>` | Depends on verified MCP capabilities |
+| Network by default | No; **when uv is missing we only show install methods, never install it for you** | No | Depends on the provider |
+| Dependency persistence | Persists inside the venv | Persists inside the venv | Must not be assumed |
+| If unavailable | `pyenv_init.py` exits 3 with install methods; the user may decline | Reports the exact interpreter or `venv`-module blocker | Never pretends configuration succeeded |
 
 The bundled Python scripts use only the standard library and require Python 3.10 or later. None of them run before a runtime has been selected.
 
@@ -142,11 +147,12 @@ The template ships a **Hermes project-level plugin** (`.hermes/plugins/workspace
 
 > **Want the mechanics?** The full write-up — beginner analogy, the read-evidence / fingerprint / coverage semantics, a per-harness breakdown, and a troubleshooting FAQ — is in **[docs/hooks-guide.md](docs/hooks-guide.md)** (Chinese).
 > **Adding a new harness?** Event catalogue (when it fires / why it is required / what breaks without it), the 7-step adoption path and acceptance assertions: **[docs/hooks-catalog.md](docs/hooks-catalog.md)** (Chinese).
+> **Docs index**: **[docs/README.md](docs/README.md)** — architecture, skills, tools, hooks, and the three must-run verification commands (Chinese).
 
 | Item | Fact |
 |---|---|
 | Location | `.hermes/plugins/workspace-gate/` (`plugin.yaml` + `__init__.py` + `selfcheck.py`; template-layer locked files, hash-verified) |
-| Gate rule | The write target path resolves inside the workspace **and** this session has not `read_file`-ed `AGENT_RULES.md` yet → the call is blocked with a reason; writes outside the workspace are unaffected |
+| Gate rule | The target path resolves inside the workspace **and** this session lacks a complete, gap-free coverage (`1..total`) of the **current** revision → the call is blocked with a reason; subagents additionally need an exact-match delegation with a still-valid parent evidence; writes outside the workspace are unaffected |
 | Events | `pre_tool_call` gate (internal errors block too — fail-closed), `post_tool_call` bookkeeping (`status=ok` only), `pre_llm_call` reminder (at most once per session), `on_session_end` audit (bounded, per turn) |
 | Enabling it | `HERMES_ENABLE_PROJECT_PLUGINS=true` (allows project-plugin discovery) **and** `plugins.enabled: [workspace-gate]` in `~/.hermes/config.yaml` (loads it) — both are required |
 | Tuning | Write the workspace-owned override `.hermes/plugins/workspace-gate/plugin.custom.json` (`enabled` / `gate_files` / `write_tools`); **do not edit the script itself** (locked layer — a template sync replaces it wholesale) |
@@ -180,14 +186,16 @@ Boundary that must be stated alongside: **Claude Code Bash writes are neither su
 
 ## Workspace Lifecycle Skills
 
-Three skills ship with the template in `.workspace/skills/` (workspace-skills namespace) and are registered in `skills/REGISTRY.md` and `TOOLS.md`:
+Six skills ship with the template in `.workspace/skills/` (workspace-skills namespace) and are registered in `skills/REGISTRY.md` and `TOOLS.md`; each must satisfy the 8-dimension contract checked by `skill_audit.py`:
 
 | Skill | Version | Trigger | What it does |
 |---|---|---|---|
-| [template-update](.workspace/skills/template-update/SKILL.md) | v2.0 | "sync the template / update to the latest template", or detecting a version lag | Seven-step locked-replacement sync: template source → verify → backup → whole-file replacement → custom-reference migration → bootstrap write-back → `--vs-template` authoritative verification |
-| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | v1.0 | "initialize / adopt this workspace", or detecting no template lineage / no clause markers / `.git` pointing at the template | Nine-step adoption of a legacy workspace: inventory → diff verdict → pre-v2.0 migration (externalize local semantics into custom) → venv → git wipe and decision → registry → verify → report |
-| [git-init](.workspace/skills/git-init/SKILL.md) | v1.0 | "create a git repo", or the user changes their mind after bootstrap `git.status=declined` | Five-step repo creation: decision → `git init` + first commit → .gitignore check → bootstrap git-node record → verify |
-| [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | v1.0 | Before declaring any task-mode deliverable with persistent artifacts complete | Six-step delivery closure: artifact inventory → INDEX lookup → note decision (merge/create/waive) → `rebuild_index` write-back → deploy + mechanical verification → fixed-format completion report |
+| [template-update](.workspace/skills/template-update/SKILL.md) | 3.2.1 | "sync the template / switch to a branch or tag", or version lag / verify drift | Sync template layer from **any ref** (branch/tag/commit): dry-run → backup (MANIFEST) → whole-file replacement → custom migration → `--vs-template`; `--prune` removes files deleted upstream |
+| [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.1 | New device, notes/TOOLS changed elsewhere, or tooling looks broken | `workspace_preflight.py` (9 checks) → user decides direction/merge/conflicts → pull → rebuild indexes → four-way re-verification |
+| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.2.0 | "initialize / adopt this workspace", or no trustworthy lineage / no clause markers | Inventory → diff verdict → pre-v2.0 migration → Python (keep if configured) → git decision → registry → verify |
+| [git-init](.workspace/skills/git-init/SKILL.md) | 1.1.0 | "create a git repo", or `git.status=declined` then mind changed | init → .gitignore → register → review staging → commit → verify tree; includes rollback |
+| [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | Before declaring a task-mode deliverable complete | Artifact inventory (timestamp listing when no repo) → INDEX → note decision → index write-back → external verification → three-tier completion wording |
+| [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.2.0 | docs changed, index stale, hit rate dropped | build/check → hit report → aliases only from real miss logs (cap 8, leave-one-out) → five acceptances |
 
 ## How It Works
 
@@ -363,7 +371,7 @@ Say "initialize / adopt this workspace" to it, or run the workspace-init skill d
 <details>
 <summary><strong>Does my workspace need its own git repository?</strong></summary>
 
-That's your call (§0.3): venv is mandatory, git is optional. Choosing "decline for now" during init is recorded as `git.status: declined` — not a terminal state. Say "create a git repo" later and the git-init skill completes repo creation, remote configuration, and bootstrap recording for multi-device sync.
+That's your call (§0.3): choosing a Python runtime is mandatory (a local venv exists only for uv/manual venv), git is optional. Choosing "decline for now" during init is recorded as `git.status: declined` — not a terminal state. Say "create a git repo" later and the git-init skill completes repo creation, remote configuration, and bootstrap recording for multi-device sync.
 
 </details>
 

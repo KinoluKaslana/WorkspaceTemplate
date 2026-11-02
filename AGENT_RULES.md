@@ -24,10 +24,7 @@
 ### 0.1 创建本地版本化 venv（uv 默认 / 手动） <!-- id:R3 -->
 
 1. 只读盘点 `python3`/`python` 的路径与版本，并检测 `uv` 是否存在（`command -v uv && uv --version`）；模板脚本需 Python ≥3.10，更旧时报告限制并请用户选择（装新运行时/MCP/明确授权适配），不静默降级。 <!-- id:R4 -->
-2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**；创建方式按模式：
-   - **uv（默认）**：`uv venv .venv-312 --python 3.12`；装包用 `uv pip install --python .venv-312/bin/python <pkg>`；
-   - **手动 venv**：`<解释器> -m venv .venv-312`，装包用 `.venv-312/bin/python -m pip install <pkg>`。
-   **uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。 <!-- id:R5 -->
+2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python .venv-312/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `.venv-312/bin/python -m pip install <pkg>`。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。 <!-- id:R5 -->
 3. 初始化只创建运行时，不联网升级包管理器、不预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。 <!-- id:R6 -->
 4. 验证 `<venv>/bin/python` 的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。 <!-- id:R7 -->
 5. 将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。 <!-- id:R8 -->
