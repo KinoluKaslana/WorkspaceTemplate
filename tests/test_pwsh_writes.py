@@ -32,7 +32,28 @@ WRITE_CMDS = [
     "Copy-Item 'src.txt' 'f9.txt'",
     'cmd /c "echo hi > f10.txt"',
 ]
-ALLOW_CMDS = ["Get-Content 'f1.txt'", "ls", "Get-ChildItem -File", "Measure-Object"]
+ALLOW_CMDS = ["Get-Content 'f1.txt'", "ls", "Get-ChildItem -File", "Measure-Object",
+              "2>&1 | Out-Null",
+              "Get-Content AGENT_RULES.md # > AGENT_RULES.md",
+              "Write-Output 'x > AGENT_RULES.md'",
+              "Get-Content AGENT_RULES.md | Select-String 'Set-Content'"]
+
+# 别名 / cmd 内建 / .NET 写对象：不识别即绕过（与上面 10 种等价）
+BYPASS_CMDS = [
+    "sc f11.txt hi",
+    "ac f12.txt hi",
+    "cp src.txt f13.txt",
+    "mv f11.txt f14.txt",
+    "Set-Item -Path f15.txt -Value hi",
+    "New-Object System.IO.StreamWriter('f16.txt')",
+    "[IO.File]::OpenWrite('f17.txt')",
+    'cmd /c "copy src.txt f18.txt"',
+    'cmd /c "type nul > f19.txt"',
+    "& 'Set-Content' -Path f20.txt -Value x",
+    "1 | % { Set-Content -Path f21.txt -Value x }",
+    "foreach ($i in 1..2) { Add-Content f22.txt $i }",
+    'cmd /c "copy src.txt f23.txt"',
+]
 
 
 class PwshWrites(unittest.TestCase):
@@ -69,6 +90,11 @@ class PwshWrites(unittest.TestCase):
                 decision, reason = self.decision(cmd)
                 self.assertEqual(decision, "deny", f"{cmd} -> {decision}")
                 self.assertIn("守门", reason)
+
+    def test_bypass_forms_are_denied(self):
+        for cmd in BYPASS_CMDS:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.decision(cmd)[0], "deny", cmd)
 
     def test_reads_are_allowed(self):
         for cmd in ALLOW_CMDS:

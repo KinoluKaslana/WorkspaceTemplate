@@ -334,7 +334,7 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "88c0f4174919e5278fad975b57400c76166afb2502d28aa7875ab65ebc7e99a6",
+    "file_sha256": "b9237dd479851f913426bc8d83a288aba2d94e9446162420b3d035f8f4daae15",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
@@ -364,7 +364,7 @@
   },
   "tests/test_pwsh_writes.py": {
     "clauses": {},
-    "file_sha256": "4b608279eb96f67843650764879a7ede498bd8b881da492a4a19c461485b224f",
+    "file_sha256": "f1d546cdfa4a88c725f2a6f3cb8c4753a4a3fde617393ddbae32ad018279c59a",
     "marked": 0
   },
   "scripts/clause_lint.py": {
@@ -429,7 +429,7 @@
   },
   ".workspace/hooks/wtarget.py": {
     "clauses": {},
-    "file_sha256": "bacfd8d694cf76fb1175500e2e7cefdb9854d2edee7e7a339786bb1d026225ce",
+    "file_sha256": "fbdbc9a15053572635b674fa6cffa3054751f7a8679edda09b2bf2be39cf8224",
     "marked": 0
   },
   ".workspace/hooks/authz.py": {

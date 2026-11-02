@@ -70,6 +70,19 @@ Get-Content / ls / Get-ChildItem / Measure-Object → allow
 iex (Get-Content x.ps1) → deny（写目标不可静态确定，fail-closed）
 ```
 
+另有 9 种**等价但更隐蔽**的写法也一律 deny（别名与 .NET 写对象，不识别就是绕过）：
+
+```
+sc / ac / cp / mv / Set-Item / New-Object System.IO.StreamWriter /
+[IO.File]::OpenWrite / cmd /c copy / cmd /c "type nul > f"
+```
+
+`2>&1 | Out-Null` 这类流重定向不算写文件，allow。
+
+**误报已被压掉**（复核席提出、逐个构造验证）：引号内或 `#` 注释里的 `>` 不再当成重定向
+（`Write-Output 'x > y'`、`Get-Content f # > f` 都 allow），`Select-String` 的参数里出现
+`Set-Content` 也不会误判。
+
 > **为什么以前是洞**：`pwsh` 的写形态与 POSIX 完全不同（`Set-Content`/`Out-File` 根本没有 `>`），
 > 旧分类器把它们全判成「无写目标」→ 放行。现在 `wtarget.classify_pwsh()` 覆盖上述 10 类，
 > 并用 `tests/test_pwsh_writes.py` 锁住。

@@ -717,7 +717,7 @@ def classify(command: str, cwd: str, gate_files: list[str]) -> dict:
 # ---------------------------------------------------------------- PowerShell（pwsh）
 # 依据：dsh 在 Windows 上提供 `pwsh` 工具；其写形态与 POSIX 不同（Set-Content / Out-File /
 # Tee-Object / New-Item -Value / [IO.File]::WriteAllText / `>` 均可写文件）。
-# 实测（Windows PowerShell 5.1，2026-11-02）：下列 10 种形态全部成功创建文件。
+# 实测（Windows PowerShell 5.1）：写形态见 tests/test_pwsh_writes.py，全部真的创建文件。
 
 _PS_WRITE_CMDLETS = {
     "set-content": ("path", "filepath", "literalpath"),
@@ -732,24 +732,98 @@ _PS_WRITE_CMDLETS = {
     "move-item": ("destination",),
     "rename-item": ("newname",),
     "remove-item": ("path", "literalpath"),
+    "set-item": ("path",),
     "set-itemproperty": ("path",),
 }
+_PS_ALIASES = {
+    "sc": "set-content", "ac": "add-content", "ni": "new-item", "cp": "copy-item",
+    "copy": "copy-item", "mv": "move-item", "move": "move-item", "ren": "rename-item",
+    "rename": "rename-item", "ri": "remove-item", "rm": "remove-item", "del": "remove-item",
+    "erase": "remove-item", "clc": "clear-content", "tee": "tee-object", "si": "set-item",
+}
 _PS_INTERP = {"invoke-expression", "iex", "start-process", "start-job", "invoke-command"}
-_PS_REDIRECT = re.compile(r"(?<![->=])(>>?)\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s;|&)]+))")
-_PS_NULL = {"$null", "nul", "/dev/null"}
+_PS_DEST_LAST = {"copy-item", "move-item", "rename-item"}
+_PS_NULL = {"$null", "nul", "/dev/null", "null"}
+_PS_SEPARATORS = {";", "|", "||", "&", "&&", "(", ")", "{", "}"}
+_PS_REDIR_OPS = {">", ">>", "1>", "1>>", "*>", "*>>", "2>"}
 _PS_NET_WRITE = re.compile(
-    r"\[(?:System\.)?IO\.File\]::(?:WriteAllText|AppendAllText|WriteAllLines|WriteAllBytes|Create)\s*\(\s*"
-    r"(?:\"([^\"]+)\"|'([^']+)')")
+    r"\[(?:System\.)?IO\.File\]::(?:WriteAllText|AppendAllText|WriteAllLines|WriteAllBytes|"
+    r"Create|CreateText|AppendText|OpenWrite)\s*\(\s*(?:\"([^\"]+)\"|'([^']+)')")
+_PS_NEWOBJ = re.compile(
+    r"New-Object\s+(?:System\.IO\.)?(?:StreamWriter|FileStream|BinaryWriter)\s*\(\s*"
+    r"(?:\"([^\"]+)\"|'([^']+)')", re.I)
 
 
-def _ps_words(segment: str) -> list[str]:
-    """粗糙分词：够用于 cmdlet 名与参数，不追求完整 PowerShell 语法。"""
-    return [w.strip("'\"") for w in re.findall(r"[^\s;|()]+", segment) if w.strip("'\"")]
+def _ps_tokens(command: str) -> list[tuple[str, bool, bool]]:
+    """PowerShell 粗分词 → (文本, 是否被引号包裹, 是否操作符)。
+
+    - 注释（引号外的 `#` 到行尾）整段丢弃；
+    - `'...'` / `"..."` 作为**单个** token，内容去掉引号；
+    - 操作符 `| ; & && || ( ) { } > >> 1> 2> *>` 单独成 token。
+    """
+    out: list[tuple[str, bool, bool]] = []
+    i, n = 0, len(command)
+    while i < n:
+        ch = command[i]
+        if ch in " \t\r\n":
+            i += 1
+            continue
+        if ch == "#":
+            while i < n and command[i] != "\n":
+                i += 1
+            continue
+        if ch == "`" and i + 1 < n:          # 反引号转义
+            out.append((command[i + 1], False, False))
+            i += 2
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            i += 1
+            buf = []
+            while i < n:
+                if command[i] == quote:
+                    if quote == "'" and i + 1 < n and command[i + 1] == "'":
+                        buf.append("'"); i += 2; continue
+                    i += 1
+                    break
+                if quote == '"' and command[i] == "`" and i + 1 < n:
+                    buf.append(command[i + 1]); i += 2; continue
+                buf.append(command[i]); i += 1
+            out.append(("".join(buf), True, False))
+            continue
+        if ch in "|;&(){}":
+            two = command[i:i + 2]
+            if two in ("||", "&&", ">>"):
+                out.append((two, False, True)); i += 2; continue
+            out.append((ch, False, True)); i += 1; continue
+        if ch == ">":
+            out.append((">>" if command[i:i + 2] == ">>" else ">", False, True))
+            i += 2 if command[i:i + 2] == ">>" else 1
+            continue
+        j = i
+        while j < n and command[j] not in " \t\r\n|;&(){}'\"#>":
+            j += 1
+        word = command[i:j]
+        if word and word[0].isdigit() and word.endswith(">"):
+            out.append((word, False, True))     # 1> 2> *>
+        elif word:
+            out.append((word, False, False))
+        i = j
+    return out
 
 
-def _ps_segments(command: str) -> list[str]:
-    # 不切 `>`，交给重定向正则；只按 `;` 与管道切
-    return [s for s in re.split(r"[;|]", command) if s.strip()]
+def _ps_segments(tokens):
+    """按分隔符切段；括号/花括号内容各自成段（脚本块里的命令也会被检查）。"""
+    seg, segs = [], []
+    for tok, quoted, is_op in tokens:
+        if is_op and tok in _PS_SEPARATORS:
+            if seg:
+                segs.append(seg); seg = []
+            continue
+        seg.append((tok, quoted))
+    if seg:
+        segs.append(seg)
+    return segs
 
 
 def classify_pwsh(command: str, cwd: str, gate_files: list[str],
@@ -759,58 +833,106 @@ def classify_pwsh(command: str, cwd: str, gate_files: list[str],
         return {"kind": "other", "targets": [], "gate_targets": [], "forms": [],
                 "confidence": "static", "reason": "empty"}
 
+    tokens = _ps_tokens(command)
     targets: list[str] = []
     forms: list[str] = []
+    unresolved_hits: list[str] = []
 
-    for m in _PS_REDIRECT.finditer(command):
-        raw = next((g for g in m.groups() if g), "")
-        if not raw or raw.lower() in _PS_NULL or raw.startswith("&"):
+    # 重定向：> / >> / 1> / 2> / *>，目标取其后一个 token（允许带引号）
+    for idx, (tok, _q, is_op) in enumerate(tokens):
+        if not is_op or tok not in _PS_REDIR_OPS:
             continue
-        targets.append(raw)
-        forms.append("ps-redirect:" + m.group(1))
+        nxt = tokens[idx + 1] if idx + 1 < len(tokens) else None
+        if nxt is not None and nxt[2] and nxt[0] == "&":
+            continue                     # 2>&1 这类流合并，不是写文件
+        if nxt is None or nxt[2]:
+            unresolved_hits.append("redirect-no-target")
+            continue
+        val = nxt[0]
+        if val.lower() in _PS_NULL or tok.startswith("2"):
+            continue
+        targets.append(val)
+        forms.append("ps-redirect:" + tok)
 
     for m in _PS_NET_WRITE.finditer(command):
         raw = m.group(1) or m.group(2)
         if raw:
-            targets.append(raw)
-            forms.append("ps-dotnet-write")
+            targets.append(raw); forms.append("ps-dotnet-write")
+    for m in _PS_NEWOBJ.finditer(command):
+        raw = m.group(1) or m.group(2)
+        if raw:
+            targets.append(raw); forms.append("ps-newobject-writer")
 
     write_intent = False
-    for seg in _ps_segments(command):
-        words = _ps_words(seg)
-        if not words:
-            continue
-        base = os.path.basename(words[0]).lower()
+    for seg in _ps_segments(tokens):
+        words = [w for w, _q in seg]
+        first = seg[0][0]
+        base = os.path.basename(first).lower()
         if base.endswith(".exe"):
             base = base[:-4]
+        base = _PS_ALIASES.get(base, base)
+
         if base in _PS_INTERP:
-            return {"kind": "unresolved", "targets": [], "gate_targets": [], "forms": ["ps-interp"],
-                    "confidence": "opaque", "reason": f"interpreter:{base}"}
+            unresolved_hits.append("interpreter:" + base)
+            continue
+
+        if base in ("cmd", "cmd.exe"):
+            if len(seg) >= 3 and seg[2][1]:          # cmd /c "<整条命令>"
+                sub = classify_pwsh(seg[2][0], cwd, gate_files)
+                if sub["kind"] != "other":
+                    targets.extend(sub["targets"]); forms.extend(sub["forms"])
+                    write_intent = True
+                    unresolved_hits.extend([] if sub["kind"] == "write" else ["cmd-inner-unresolved"])
+                    continue
+            inner = [w for w, _q in seg[1:] if w.lower() not in ("/c", "/k", "/s")]
+            if inner:
+                ib = inner[0].lower()
+                rest = inner[1:]
+                if ib in ("copy", "move", "xcopy", "robocopy") and len(rest) >= 2:
+                    targets.append(rest[-1]); forms.append("cmd:" + ib); write_intent = True
+                elif ib in ("ren", "rename") and len(rest) >= 2:
+                    targets.append(rest[1]); forms.append("cmd:ren"); write_intent = True
+                elif ib in ("del", "erase") and rest:
+                    targets.append(rest[0]); forms.append("cmd:del"); write_intent = True
+                elif ib in ("type", "echo") and not any(
+                        t in _PS_REDIR_OPS for t, _q, op in tokens if op):
+                    write_intent = write_intent or False
+            continue
+
         if base in _PS_WRITE_CMDLETS:
             write_intent = True
             params = _PS_WRITE_CMDLETS[base]
             found = None
             for i, w in enumerate(words[1:], 1):
-                name = w.lstrip("-").lower()
-                if name in params and i + 1 < len(words):
+                token = w.lstrip("-")
+                if "=" in token:
+                    name, _, val = token.partition("=")
+                    if name.lower() in params and val:
+                        found = val
+                        break
+                    continue
+                if token.lower() in params and i + 1 < len(words):
                     found = words[i + 1]
                     break
+            if found is None and base in _PS_DEST_LAST:
+                positionals = [w for w in words[1:] if not w.startswith("-")]
+                if len(positionals) >= 2:
+                    found = positionals[-1]
             if found is None:
-                # 位置参数：跳过选项与其值，取第一个像路径的词
-                rest = [w for w in words[1:] if not w.startswith("-")]
-                for w in rest:
+                for w in words[1:]:
+                    if w.startswith("-"):
+                        continue
                     if any(ch in w for ch in ("\\", "/", ".")) or w.lower().endswith(
                             ("txt", "md", "json", "ps1", "log")):
                         found = w
                         break
             if found:
-                targets.append(found)
-                forms.append(f"ps-cmdlet:{base}")
+                targets.append(found); forms.append("ps-cmdlet:" + base)
             else:
-                forms.append(f"ps-cmdlet-nopath:{base}")
+                forms.append("ps-cmdlet-nopath:" + base)
 
     def absolute(token: str) -> str:
-        v = os.path.expanduser(token.strip().strip("'\""))
+        v = os.path.expanduser(str(token).strip().strip("'\""))
         if re.match(r"^[A-Za-z]:[\\/]", v) or v.startswith("\\\\"):
             return os.path.normpath(v)
         return os.path.normpath(os.path.join(cwd, v))
@@ -827,9 +949,9 @@ def classify_pwsh(command: str, cwd: str, gate_files: list[str],
         return {"kind": "write", "targets": sorted(set(resolved)),
                 "gate_targets": sorted({t for t in resolved if t in gate_abs}),
                 "forms": forms, "confidence": "static", "reason": "pwsh-write"}
-    if unresolved or (write_intent and not targets):
+    if unresolved or unresolved_hits or (write_intent and not targets):
         return {"kind": "unresolved", "targets": [], "gate_targets": [],
-                "forms": forms or ["ps-write-nopath"], "confidence": "opaque",
-                "reason": "pwsh-target-unresolved"}
+                "forms": forms + unresolved_hits or ["ps-write-nopath"],
+                "confidence": "opaque", "reason": "pwsh-target-unresolved"}
     return {"kind": "other", "targets": [], "gate_targets": [], "forms": forms,
             "confidence": "static", "reason": "pwsh-no-write"}
