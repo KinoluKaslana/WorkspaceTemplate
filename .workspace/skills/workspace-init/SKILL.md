@@ -98,6 +98,17 @@ registry 用**模板最新版**：报告 `[file] MISSING`（工作区缺 v2.0 �
 
 ### 第 5 步：Python 运行时（必须项，AGENT_RULES §0）
 
+三种模式由用户选：**uv（默认推荐）** / 手动 venv / MCP。机械入口：
+
+```bash
+python3 scripts/pyenv_init.py --mode uv   --python <ver>            # dry-run
+python3 scripts/pyenv_init.py --mode uv   --python <ver> --apply    # uv（默认）
+python3 scripts/pyenv_init.py --mode venv --python <ver> --apply    # 手动 venv
+python3 scripts/pyenv_init.py --mode mcp  --mcp-server <s> --mcp-tool <t> --apply
+```
+uv 未安装时脚本 exit 3 并给安装方式；**不得**替用户联网安装（除非用户明确要求并加 `--allow-install`）。
+
+
 读 `bootstrap.json` 的 `python.mode`：
 
 - `unconfigured` → 按 §0 询问用户：本地版本化 venv（推荐，`§0.1` 流程）或 MCP Python（`§0.2` 流程）。完成后 `workspace_status: active`。

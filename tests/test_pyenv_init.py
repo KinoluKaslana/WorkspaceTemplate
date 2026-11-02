@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""pyenv_init.py 回归（uv / 手动 venv / MCP 三模式）。
+
+T1 uv dry-run：不建目录，报告 would_create
+T2 uv apply：建出 .venv-<ver>，bootstrap.python.mode=uv、记录 uv 路径
+T3 uv 缺失：exit 3 + 安装提示（不自动安装）
+T4 mcp 缺参数：exit 2
+T5 手动 venv apply：mode=local-venv
+运行：python3 -B tests/test_pyenv_init.py
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+SRC = Path(__file__).resolve().parent.parent
+SCRIPT = "scripts/pyenv_init.py"
+HAS_UV = shutil.which("uv") is not None
+
+
+def mkws(tmp: Path) -> Path:
+    ws = tmp / "ws"
+    (ws / ".workspace").mkdir(parents=True)
+    (ws / "scripts").mkdir()
+    shutil.copyfile(SRC / SCRIPT, ws / SCRIPT)
+    (ws / ".workspace" / "bootstrap.json").write_text(
+        json.dumps({"schema_version": 1, "workspace_status": "template",
+                    "python": {"mode": "unconfigured"}}, ensure_ascii=False), encoding="utf-8")
+    return ws
+
+
+def run(ws: Path, *args, env=None):
+    p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(ws), "--json", *args],
+                       cwd=ws, capture_output=True, text=True,
+                       env={**os.environ, **(env or {})})
+    try:
+        data = json.loads(p.stdout)
+    except Exception:
+        data = {"raw": p.stdout[-400:], "err": p.stderr[-400:]}
+    return p.returncode, data
+
+
+class PyenvInit(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="pyenv-")
+        self.addCleanup(self.tmp.cleanup)
+        self.ws = mkws(Path(self.tmp.name))
+        self.boot = self.ws / ".workspace" / "bootstrap.json"
+
+    def test_t1_uv_dry_run(self):
+        if not HAS_UV:
+            self.skipTest("uv 未安装")
+        rc, d = run(self.ws, "--mode", "uv", "--python", "3.12")
+        self.assertEqual(rc, 0, d)
+        self.assertTrue(d["venv"].get("would_create"))
+        self.assertFalse(Path(d["venv"]["path"]).exists())
+        self.assertEqual(json.loads(self.boot.read_text())["python"]["mode"], "unconfigured")
+
+    def test_t2_uv_apply(self):
+        if not HAS_UV:
+            self.skipTest("uv 未安装")
+        rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply")
+        self.assertEqual(rc, 0, d)
+        py = json.loads(self.boot.read_text())["python"]
+        self.assertEqual(py["mode"], "uv")
+        self.assertTrue(Path(d["venv"]["path"]).exists())
+        self.assertIn("uv", py["runtime"])
+
+    def test_t3_uv_missing(self):
+        empty = Path(self.tmp.name) / "emptybin"
+        empty.mkdir()
+        rc, d = run(self.ws, "--mode", "uv", env={"PATH": str(empty)})
+        self.assertEqual(rc, 3, d)
+        self.assertEqual(d.get("error"), "uv-missing")
+        self.assertIn("uv", json.dumps(d, ensure_ascii=False))
+
+    def test_t4_mcp_requires_args(self):
+        rc, d = run(self.ws, "--mode", "mcp")
+        self.assertEqual(rc, 2, d)
+        self.assertEqual(d.get("error"), "mcp-args-required")
+
+    def test_t5_venv_apply(self):
+        rc, d = run(self.ws, "--mode", "venv", "--apply")
+        self.assertEqual(rc, 0, d)
+        self.assertEqual(json.loads(self.boot.read_text())["python"]["mode"], "local-venv")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

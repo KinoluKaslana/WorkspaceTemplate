@@ -25,6 +25,18 @@
 - 新增 `docs/.aliases.json`：只存「口语短语 → 已有节」指针（当前 1 条），目标标题或文件指纹不符即忽略。
 - 结果：10 题命中 **6/10 → 10/10**；`R98` 仍排第一；噪声查询仍为空；测试 **7 → 11 例**。token/成本结论不变（打分只改排序，不改查询轮次）。
 
+## 3.3.0（2026-11-02）
+
+**MINOR：Python 运行时增加 uv 通道（默认推荐）**
+
+- §0 首次启动询问改为三选一：**uv（默认）/ 手动 venv / MCP**；未表态按 uv，uv 不可用时再回退并由用户选，禁止静默降级。
+- §0.1 更名为「创建本地版本化 venv（uv 默认 / 手动）」，R3–R8 覆盖两种创建方式：`uv venv .venv-312 --python 3.12` 与 `<python> -m venv .venv-312`；**uv 不存在时只给安装方式、由用户执行**，不自动联网安装。
+- `bootstrap.python.mode` 新增取值 `uv`；记录 `runtime.uv` 路径与版本。
+- 新增机械入口 `scripts/pyenv_init.py`（`--mode uv|venv|mcp`，默认 dry-run；`--apply` 才建 venv/写 bootstrap；uv 缺失 exit 3）。
+- `workspace_preflight.py` 支持 `uv` 模式（校验 venv 存在 + uv 可用 + 版本一致）。
+- `workspace-init` skill 第 5 步改为三模式并给出 `pyenv_init.py` 命令。
+- 新增回归 `tests/test_pyenv_init.py`（5 例，含 uv 缺失与 dry-run 不落盘）；`TEMPLATE_FILES` 42 → 44。
+
 ## skills 完备性收敛（2026-11-02，不改政策版本）
 
 **来源**：GLM/SOL 双主写辩论 + DS/主理人裁判；判据为「触发/前置/契约/边界/可执行/失败回滚/验收/维护」8 维。

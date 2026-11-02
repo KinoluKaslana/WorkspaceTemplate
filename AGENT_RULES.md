@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`3.2.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`3.3.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -10,19 +10,26 @@
 
 每个 Agent 开始前先读 `.workspace/bootstrap.json`。`python.mode` 为 `unconfigured` 时，当前 Agent 是模板的“第一个 Agent”，必须在任何 Python 任务/依赖安装/持久化初始化之前询问：
 
-> 是否由我自动初始化本 Workspace 的本地版本化 venv（推荐），还是使用当前会话中 MCP 提供的 Python 环境？
+> 本工作区的 Python 运行时用哪种？（**推荐默认：uv**）
+> 1. **uv 管理**（`uv venv`，默认）——机器上没有 uv 时我先提示安装方式，由你执行安装；
+> 2. **手动 venv**（`python -m venv`，用你指定的解释器）；
+> 3. **MCP Python**（用当前会话提供的 Python 工具，不在本地建 venv）。
 
-用户若已在同一条消息中明确选择，直接执行该选择，不重复提问。两种模式互斥，不默认同时初始化。
+用户若已在同一条消息中明确选择，直接执行该选择，不重复提问。三种模式互斥，不默认同时初始化。
+**未表态时的默认**：按 uv 走；uv 不可用且用户不愿安装，再回到手动 venv / MCP，二者由用户选，不得静默降级。
 
 **子 Agent 无用户通道时不得反复追问**：沿用父会话已记录的模式（`.workspace/bootstrap.json` 的 `python.mode`）；父也未配置时，报告该阻塞并停止依赖 Python 的操作，把决定交回父 Agent/用户——实测子 agent 会因 §0 的首次启动询问反复空转（v2.8.3 补充）。
 
-### 0.1 选择本地版本化 venv <!-- id:R3 -->
+### 0.1 创建本地版本化 venv（uv 默认 / 手动） <!-- id:R3 -->
 
-1. 只读盘点 `python3`/`python` 的路径与版本，选可用且适合业务的版本；模板脚本需 Python ≥3.10，更旧时报告限制并请用户选择（装新运行时/MCP/明确授权适配），不静默降级。 <!-- id:R4 -->
-2. 使用该解释器的 `-m venv` 在 Workspace 根目录创建 `.venv-<major><minor>`，例如 `.venv-312`；不创建无版本后缀的 `.venv`。 <!-- id:R5 -->
-3. 初始化默认只创建 venv，不联网升级 pip，不预装大型“万能依赖集”。后续只为实际任务安装必要包。 <!-- id:R6 -->
+1. 只读盘点 `python3`/`python` 的路径与版本，并检测 `uv` 是否存在（`command -v uv && uv --version`）；模板脚本需 Python ≥3.10，更旧时报告限制并请用户选择（装新运行时/MCP/明确授权适配），不静默降级。 <!-- id:R4 -->
+2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**；创建方式按模式：
+   - **uv（默认）**：`uv venv .venv-312 --python 3.12`；装包用 `uv pip install --python .venv-312/bin/python <pkg>`；
+   - **手动 venv**：`<解释器> -m venv .venv-312`，装包用 `.venv-312/bin/python -m pip install <pkg>`。
+   **uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。 <!-- id:R5 -->
+3. 初始化只创建运行时，不联网升级包管理器、不预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。 <!-- id:R6 -->
 4. 验证 `<venv>/bin/python` 的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。 <!-- id:R7 -->
-5. 将 `python.mode` 更新为 `local-venv`，把解释器、venv 路径、版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。 <!-- id:R8 -->
+5. 将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run）。 <!-- id:R8 -->
 
 若候选解释器不存在、`venv` 模块缺失或创建需要系统包/提权，不绕过审批；向用户报告精确阻塞，征求安装授权或改用 MCP Python。
 

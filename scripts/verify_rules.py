@@ -64,6 +64,8 @@ TEMPLATE_FILES = [
     "scripts/template_sync.py",
     "scripts/skill_audit.py",
     "scripts/workspace_preflight.py",
+    "scripts/pyenv_init.py",
+    "tests/test_pyenv_init.py",
     "tests/test_workspace_preflight.py",
     "tests/test_skill_audit.py",
     ".workspace/skills/_TEMPLATE.md",

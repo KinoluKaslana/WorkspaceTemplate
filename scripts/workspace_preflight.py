@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import shutil
 import re
 import socket
 import subprocess
@@ -83,7 +84,7 @@ def main(argv: list[str]) -> int:
     # 2) Python 运行时
     py = boot.get("python") or {}
     mode = py.get("mode")
-    if mode == "local-venv":
+    if mode in ("local-venv", "uv"):
         ident = ((py.get("runtime") or {}).get("identifier") or "").strip()
         venv_py = ws / ident / "bin" / "python"
         want = py.get("version")
@@ -95,9 +96,17 @@ def main(argv: list[str]) -> int:
         else:
             _, out = sh(str(venv_py), "-c", "import sys;print(sys.version.split()[0])")
             ok = (not want) or out.startswith(str(want))
-            rows.append(item("python", {"path": str(venv_py), "version": want}, {"version": out},
-                             OK if ok else WARN,
-                             "" if ok else "版本不同：确认后更新 bootstrap/TOOLS"))
+            extra = {}
+            if mode == "uv":
+                uv = ((py.get("runtime") or {}).get("uv")) or shutil.which("uv") or ""
+                _, uvv = sh(uv, "--version") if uv else (1, "")
+                extra = {"uv": uv, "uv_version": uvv.split()[1] if uvv else "missing"}
+                if not uv or not uvv:
+                    ok = False
+            rows.append(item("python", {"path": str(venv_py), "version": want, "mode": mode},
+                             {"version": out, **extra}, OK if ok else WARN,
+                             "" if ok else ("uv 不可用：安装 uv 或改用 venv/mcp 模式" if mode == "uv"
+                                            else "版本不同：确认后更新 bootstrap/TOOLS")))
     elif mode == "mcp":
         rows.append(item("python", "mcp", "mcp", NA, "MCP 模式：核验 provider/tool 仍可用"))
     else:
