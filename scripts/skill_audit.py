@@ -149,7 +149,7 @@ def main(argv: list[str]) -> int:
 
         if f".workspace/skills/{name}/SKILL.md" not in registry:
             f.append("未登记于 skills/REGISTRY.md")
-        if not re.search(rf"^\|[^\n]*\*\*{re.escape(name)}\*\*", tools, re.M):
+        if not re.search(rf"^\|[^\n]*\*\*{re.escape(name)}(?=[\s*])", tools, re.M):
             f.append("未登记于 TOOLS.md")
 
         bad += bool(f)

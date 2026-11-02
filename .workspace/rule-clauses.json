@@ -215,7 +215,7 @@
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "55539bf58a3da1e39919079401da5171b0c5dc42e3e0069f0798a3407a9327c5",
+    "file_sha256": "5fbbf109eae14ccd1ab44e446dff917e0665d50a0109d4d35191bd843c1845cf",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
