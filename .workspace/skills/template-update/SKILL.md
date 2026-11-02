@@ -1,7 +1,7 @@
 ---
 name: template-update
 description: "Use when updating a workspace instantiated from WorkspaceTemplate to the latest template version. 更新基于 WorkspaceTemplate 创建的工作区到最新模板版本时使用。"
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Template Update — 工作区模板同步 skill
@@ -30,11 +30,30 @@ version: 2.0.0
 
 ## 标准流程（七步，顺序固定）
 
-### 第 1 步：定位模板源
+### 第 1 步：定位模板源与目标分支（v2.1 新增）
 
 ```bash
-TEMPLATE_DIR=~/Github/WorkspaceTemplate   # 本地克隆；否则临时浅克隆
+TEMPLATE_DIR=${TEMPLATE_DIR:-~/Github/WorkspaceTemplate}   # 本地克隆；否则临时浅克隆
+BRANCH=${BRANCH:-main}      # main / dev / alpha …… 由用户指定，不默认追最新开发线
 ```
+
+- **分支必须显式**：`main` 是发布线、`dev` 是集成分支、`alpha` 是实验线。未指定时用 `main`，并在报告里写明「未指定分支，按 main」。
+- 分支存在性先验：`git -C "$TEMPLATE_DIR" rev-parse --verify origin/$BRANCH`；不存在则停下问用户，不猜分支名。
+- 允许本地克隆脏（有未提交改动）：同步脚本用 `git worktree add --detach` 取目标提交的快照，**不切分支、不动工作树**。
+
+### 第 1.5 步：机械执行（推荐入口）
+
+语义步骤（custom 迁移、MAJOR 逐项确认、README 处置）仍按本文执行，但**取数、比对、备份、替换、回写**交给脚本，避免手写清单漂移：
+
+```bash
+python3 "$TEMPLATE_DIR/scripts/template_sync.py" \
+  --workspace . --branch "$BRANCH"            # dry-run：只报告
+python3 "$TEMPLATE_DIR/scripts/template_sync.py" \
+  --workspace . --branch "$BRANCH" --apply --verify --json
+```
+
+脚本产出：目标 commit、版本前后、将替换/跳过的文件、条款增删、custom 悬空引用、备份路径、`--verify` 的 `clean` 判定。
+**dry-run 与 apply 之间不得改动工作区**；apply 后按第 4.5 / 5 / 6 步继续做语义部分。
 
 ### 第 2 步：同步前校验（必跑，禁止凭印象）
 
