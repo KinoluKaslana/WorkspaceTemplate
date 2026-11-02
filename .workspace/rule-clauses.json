@@ -160,7 +160,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "28cb8568239c9ef1e600554360d844d07168ff9e91a9b77fa6b46e31c8585ed7",
+    "file_sha256": "1f87cd9e0e6db5fc9be2ff9598244eda88ad090031aa55c6e4c6390e061adcbe",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -215,7 +215,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "c9bafb63615ea4b4918b0a13d77d2db5b50548cbf7371701e6127744ae8261a4",
+    "file_sha256": "d5a9c931f3a2c2dc3f4f636dc165bc188bcb186e7b263a1791dda03c8214290b",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -226,6 +226,11 @@
   "tests/test_alias_audit.py": {
     "clauses": {},
     "file_sha256": "369606f0a6ff9149bee288a3a47642a0a8c87c75c61ab58fab651b046d26388b",
+    "marked": 0
+  },
+  "tests/test_docs_index.py": {
+    "clauses": {},
+    "file_sha256": "a1a5f6c30931c2d069882a7777b60cfa3c60cbe589ea22648f4c83a05e586a45",
     "marked": 0
   },
   "tests/docs_probe.json": {
