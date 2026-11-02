@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", "backups"}
+SKIP_DIRS = {".git", "__pycache__", "node_modules", "venv", "backups"}
+SKIP_PREFIX = (".workspace/backup-",)      # 同步备份是模板层副本，不是工作区内容
 SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".tar", ".gz", ".pyc", ".woff", ".woff2"}
 
 PATTERNS = [
@@ -36,12 +37,35 @@ def masked(s: str) -> str:
     return s[:4] + "…" + s[-2:] if len(s) > 8 else "…"
 
 
+def _ignores(root: Path) -> list[str]:
+    """`.secretscanignore`：每行一个路径前缀/目录名，`#` 开头忽略。"""
+    f = root / ".secretscanignore"
+    if not f.is_file():
+        return []
+    out = []
+    for line in f.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            out.append(line.rstrip("/"))
+    return out
+
+
+def _skipped(rel: str, extra: list[str]) -> bool:
+    if any(part in SKIP_DIRS or part.startswith(".venv") for part in rel.split("/")):
+        return True
+    if any(rel.startswith(pre) for pre in SKIP_PREFIX):
+        return True
+    return any(rel == e or rel.startswith(e + "/") for e in extra)
+
+
 def scan(root: Path):
     hits = []
+    extra = _ignores(root)
     for p in sorted(root.rglob("*")):
         if not p.is_file() or p.suffix.lower() in SKIP_SUFFIX:
             continue
-        if any(part in SKIP_DIRS for part in p.parts):
+        rel = str(p.relative_to(root))
+        if _skipped(rel, extra):
             continue
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")

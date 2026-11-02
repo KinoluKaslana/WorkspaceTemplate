@@ -314,12 +314,12 @@
   },
   "tests/test_check_scripts.py": {
     "clauses": {},
-    "file_sha256": "496685f95383b6905b03eca75ea4d68201ec926af430b65e548e2cb0d7031936",
+    "file_sha256": "2b3c19fafcdd18775f086521e77f421c3091b415fa5f67aa44fa6b650cd9a4cf",
     "marked": 0
   },
   "scripts/version_check.py": {
     "clauses": {},
-    "file_sha256": "40c2b31be0565f8b8341a500e1e705a4494c5927e83ad2e775bd7f2fdd8750f8",
+    "file_sha256": "ee3f82c3168cd5981236b74d8bea6165f5051553b8747653044137212714027b",
     "marked": 0
   },
   "scripts/notes_index_check.py": {
@@ -329,7 +329,7 @@
   },
   "scripts/secret_scan.py": {
     "clauses": {},
-    "file_sha256": "7ed73ea56fc51b4027039c2f7f3de33e5e3ca9eb7ae22743eb6e8f4fdc46a691",
+    "file_sha256": "a28026815439f30417ff313128d1da0f8f32bf30d2a69aea1713f582dba0f3c3",
     "marked": 0
   },
   "scripts/clause_lint.py": {

@@ -23,6 +23,8 @@ BANNED = re.compile(r"模板政策版本：`([^`]+)`")
 def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--require-changelog", action="store_true",
+                    help="本仓库必须带 CHANGELOG.md（模板仓用；派生工作区通常没有）")
     a = ap.parse_args(argv)
 
     if not POLICY.is_file():
@@ -45,8 +47,8 @@ def main(argv):
                 break
         if changelog is None:
             findings.append({"code": "E2", "message": "CHANGELOG.md 没有 `## X.Y.Z` 版本条目"})
-    else:
-        findings.append({"code": "E2", "message": "缺少 CHANGELOG.md"})
+    elif a.require_changelog:
+        findings.append({"code": "E2", "message": "缺少 CHANGELOG.md（--require-changelog）"})
 
     recorded = None
     if BOOT.is_file():
@@ -67,7 +69,8 @@ def main(argv):
     else:
         for f in findings:
             print(f"{f['code']} {f['message']}")
-        print(f"policy={policy} changelog={changelog} bootstrap={recorded} "
+        note = "" if CHANGELOG.is_file() else "（本工作区无 CHANGELOG，跳过该项）"
+        print(f"policy={policy} changelog={changelog} bootstrap={recorded}{note} "
               f"→ {'OK' if not findings else 'MISMATCH'}")
     return 0 if not findings else 1
 

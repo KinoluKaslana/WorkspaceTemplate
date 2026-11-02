@@ -57,6 +57,14 @@ class VersionCheck(Base):
         self.assertEqual(p.returncode, 1)
         self.assertIn("E5", p.stdout)
 
+    def test_changelog_absent_skips_unless_required(self):
+        self.write()
+        (self.root / "CHANGELOG.md").unlink()
+        self.assertEqual(self.run_script("version_check.py").returncode, 0)         # 派生工作区
+        p = self.run_script("version_check.py", "--require-changelog")
+        self.assertEqual(p.returncode, 1)                                           # 模板仓
+        self.assertIn("E2", p.stdout)
+
     def test_missing_changelog_entry_is_red(self):
         self.write()
         (self.root / "CHANGELOG.md").write_text("# Changelog\n\n没有版本标题\n", encoding="utf-8")
@@ -113,6 +121,14 @@ class SecretScan(Base):
         p = self.run_script("secret_scan.py")
         self.assertEqual(p.returncode, 1)
         self.assertIn("private-key", p.stdout)
+
+    def test_secretscanignore_is_honoured(self):
+        fake = "AKIA" + "IOSFODNN7EXAMPLE"
+        (self.root / "vendor").mkdir()
+        (self.root / "vendor" / "example.md").write_text(f'AWS = "{fake}"\n', encoding="utf-8")
+        self.assertEqual(self.run_script("secret_scan.py").returncode, 1)
+        (self.root / ".secretscanignore").write_text("# 第三方示例\nvendor\n", encoding="utf-8")
+        self.assertEqual(self.run_script("secret_scan.py").returncode, 0)
 
     def test_aws_key_is_red_and_masked(self):
         fake = "AKIA" + "IOSFODNN7EXAMPLE"
