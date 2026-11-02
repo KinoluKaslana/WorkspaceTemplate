@@ -102,6 +102,15 @@ class NotesIndexCheck(Base):
         self.assertEqual(p.returncode, 1)
         self.assertIn("E3", p.stdout)
 
+    def test_curation_state_from_bootstrap_is_compared(self):
+        """索引头部会写策展状态；检查必须带上 bootstrap，否则永远误报。"""
+        (self.root / ".workspace").mkdir(exist_ok=True)
+        (self.root / ".workspace" / "bootstrap.json").write_text(
+            '{"notes": {"curation": {"count_threshold": 25, "interval_days": 90,'
+            ' "last_curated_at": "2026-11-02"}}}', encoding="utf-8")
+        self.build()
+        self.assertEqual(self.run_script("notes_index_check.py").returncode, 0)
+
     def test_missing_index_is_red(self):
         p = self.run_script("notes_index_check.py")
         self.assertEqual(p.returncode, 1)

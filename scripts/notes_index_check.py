@@ -42,6 +42,10 @@ def main(argv):
         dst = Path(tmp) / "notes"
         shutil.copytree(NOTES, dst,
                         ignore=shutil.ignore_patterns(*GENERATED, "__pycache__"))
+        boot = ROOT / ".workspace" / "bootstrap.json"      # 策展状态会影响索引头部文案
+        if boot.is_file():
+            (Path(tmp) / ".workspace").mkdir(exist_ok=True)
+            shutil.copy2(boot, Path(tmp) / ".workspace" / "bootstrap.json")
         p = subprocess.run([sys.executable, "-B", str(dst / "rebuild_index.py")],
                            capture_output=True, text=True, cwd=dst)
         # rebuild_index 在「有警告 / 策展到期」时返回 1，但仍会产出文件；只有产出缺失才算失败

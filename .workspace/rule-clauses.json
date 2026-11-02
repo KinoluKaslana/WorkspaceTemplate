@@ -314,7 +314,7 @@
   },
   "tests/test_check_scripts.py": {
     "clauses": {},
-    "file_sha256": "2b3c19fafcdd18775f086521e77f421c3091b415fa5f67aa44fa6b650cd9a4cf",
+    "file_sha256": "51816408c9c84af89f04d72b50279f6b77f6e8820739c451e810e4bf7cb50efd",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -324,7 +324,7 @@
   },
   "scripts/notes_index_check.py": {
     "clauses": {},
-    "file_sha256": "d8d047637451dc00cc0d9b154b20cd4f8e9ceb5d5cc90a256a5eff4b8fde56f1",
+    "file_sha256": "c4457bfb713706aff501b4d01f37be79c12e64f283ce080b998586a06d7fa12f",
     "marked": 0
   },
   "scripts/secret_scan.py": {
