@@ -55,7 +55,7 @@ dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 
 **pwsh 实测矩阵**（Windows PowerShell 5.1，经 win-host 在真实 Windows 上执行；下表为**真实创建文件**通过的部分）：
 
-第一步证明「这些写法真的会写文件」——10 种全部创建成功（`f1..f9` + `src.txt`，`cmd /c` 那行写到了 cmd 自己的 cwd）：
+第一步证明「这些写法真的会写文件」——`f1..f9` + `src.txt` 全部落地（`cmd /c` 未实测成功，见下）：
 
 ```
 Set-Content / Out-File / Add-Content / New-Item -Value / '>' / '>>' /
@@ -108,7 +108,7 @@ awk 'BEGIN{print "x" > "c.txt"}'  → ALLOW  ← 盲区（真实回合已确认�
 ls -la                            → ALLOW
 ```
 
-拒绝理由带 `[workspace-gate:no-read]` 前缀（R98 码表）。
+拒绝理由带 `[workspace-gate:no-read]` 前缀（R98 码表；`pre_bash` 与 `pre_write` 一致，dsh 客户端才加）。
 
 ## 4. 失败姿态
 
@@ -163,7 +163,6 @@ ls -la                            → ALLOW
 
 - **bash 盲区**：变量间接与 `awk`/重定向类外部程序写不被识别——这是已声明的盲区，不是待修 bug（要修需要 shell 解析器）。
 - 子 agent **没有委托机制**：dsh 子会话必须自己读政策才能写；父不能代授（与 CC/Codex 的 `delegations.py` 不对齐，属已知差异）。
-- `pwsh` 只在 Linux 上得到 shell 解析路径，未在 Windows 实测。
 - `str_replace_editor`：**该构建（0.2.1-rc.4）未提供此工具**（真实回合模型明确回报「there is no str_replace_editor」）；映射代码是防御性分支，标为**无法验证**。
 - `pwsh`：**已在真实 Windows 上验证命令语义与分类结果**（见上方矩阵）；但 dsh 本体未在 Windows 运行，端到端未验。
 

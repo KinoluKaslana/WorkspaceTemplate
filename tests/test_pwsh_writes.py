@@ -1,10 +1,13 @@
 """pwsh 写形态识别（dsh 在 Windows 上的 `pwsh` 工具）。
 
 Windows 实测（2026-11-02，Windows PowerShell 5.1，经 win-host 远程执行）：
-下列 10 种写法**都真的创建了文件**，因此都必须在未读状态被拦。
+下列写法在真机上**都真的创建了文件**（f1–f9 + src.txt），因此都必须在未读状态被拦：
+Set-Content / Out-File / Add-Content / New-Item -Value / `>` / `>>` / Tee-Object /
+[IO.File]::WriteAllText / Copy-Item。
 
-P1–P10 写形态 deny：Set-Content / Out-File / Add-Content / New-Item -Value /
-`>` / `>>` / Tee-Object / [IO.File]::WriteAllText / Copy-Item / cmd /c 重定向
+`cmd /c …` 因本机 PATH 命中 msys64 的 cmd，**未能实测成文件**：分类器仍按写意图拦，
+但这里只断言「拦」，不断言「已验证会写」。`Set-Item` 实测 `NotSupported`（不写文件），
+所以不断言 deny，而是断言 allow。
 P11–P14 只读或无关命令 allow
 P15 解释器（iex）在写意图不明时 fail-closed（deny）
 """
@@ -38,7 +41,7 @@ ALLOW_CMDS = ["Get-Content 'f1.txt'", "ls", "Get-ChildItem -File", "Measure-Obje
               "Write-Output 'x > AGENT_RULES.md'",
               "Get-Content AGENT_RULES.md | Select-String 'Set-Content'"]
 
-# 别名 / cmd 内建 / .NET 写对象：不识别即绕过（与上面 10 种等价）
+# 别名 / 脚本块 / .NET 写对象：不识别即绕过（与上面等价）；cmd 内层未在 Windows 实测
 BYPASS_CMDS = [
     "sc f11.txt hi",
     "ac f12.txt hi",
