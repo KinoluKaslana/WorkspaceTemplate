@@ -126,7 +126,8 @@ function runHook(event, data) {
     }
     const child = spawn(py, [hook, event], {
       cwd: cwdOf(),
-      env: { ...process.env, GATE_CLIENT: 'dsh' },
+      // Windows 默认码页是 GBK：必须让 Python 以 UTF-8 模式运行，否则中文 literal 与 deny 文案会变成 U+FFFD
+      env: { ...process.env, GATE_CLIENT: 'dsh', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
     })
     if (event === 'post_read' && process.env.WORKSPACE_GATE_DSH_PROBE === '1') {
       probe({ phase: 'post-body', head: body.slice(0, 500), bytes: body.length })

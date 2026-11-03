@@ -166,6 +166,23 @@ ls -la                            → ALLOW
 - `str_replace_editor`：**该构建（0.2.1-rc.4）未提供此工具**（真实回合模型明确回报「there is no str_replace_editor」）；映射代码是防御性分支，标为**无法验证**。
 - `pwsh`：**已在真实 Windows 上验证命令语义与分类结果**（见上方矩阵）；但 dsh 本体未在 Windows 运行，端到端未验。
 
+### Windows 其余面（2026-11-03 真机）
+
+| 面 | 期望 | 实测 |
+|---|---|---|
+| `edit` 未读 | 拒 | deny，`e1.txt` 仍为 `hello` ✅ |
+| `edit` 读后 | 放 | allow，`e1.txt` 变 `world` ✅ |
+| 只读前 50 行 → 写 | 拒 | deny，理由精确到「已覆盖 1..50，缺失 51..204」✅ |
+| 子 agent 写（父读、子未读） | 拒 | 子会话两次写均 deny，`sub.txt` 未创建 ✅ |
+| 读后治理文件被外部修订 → 再写 | 拒 | hook 级实测：deny（覆盖清空，缺失 1..206）✅ |
+| hook 缺失 | 放行（advisory） | `C.txt` 被创建 ✅ |
+| hook 超时 30s > 20s | 放行（advisory） | `D.txt` 被创建，日志 `hook-timeout` ✅ |
+
+**模型层的一次真实拒绝**：让模型「读 → 用 `Add-Content` 改 `AGENT_RULES.md` → 再写」，模型自己按 R90（模板治理文件不得直接修改）**拒绝执行第 2 步**，因此撤销只能改用 hook 级构造验证。
+
+**已知显示问题（不影响判定）**：在 Windows PowerShell 里重定向 dsh 输出时，中文 deny 文案会显示成乱码——PowerShell 默认按本地码页（GBK）解码 node 的 UTF-8 输出。判定本身正确（`decision=deny`、文件未落地）。要看正确文案，需
+`[Console]::OutputEncoding=[Text.Encoding]::UTF8; chcp 65001`。
+
 ### Windows 侧（真机，2026-11-03 实测）
 
 真实模型回合（`deepseek-flash`，`dsh --profile headless`，工作区 `D:\wt\ws`）：
