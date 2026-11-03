@@ -17,6 +17,18 @@ export const inject = ['tools']
 const WRITE_TOOLS = new Set(['write', 'edit', 'str_replace_editor'])
 const SHELL_TOOLS = new Set(['bash', 'pwsh'])
 const HOOK_TIMEOUT_MS = 20000
+// 失败姿态可配：默认 advisory（放行 + 审计），置 1 则 fail-closed（拒绝）。
+// 依据 R107：客户端层超时/加载失败默认 fail-open；需要更强保证时由用户显式开启。
+const FAIL_CLOSED = process.env.WORKSPACE_GATE_DSH_FAIL_CLOSED === '1'
+function degrade(reason, extra = {}) {
+  const decision = FAIL_CLOSED ? 'deny' : 'allow'
+  logLine({ decision, reason, ...extra })
+  if (decision === 'deny') {
+    return { decision: 'deny',
+             reason: `[workspace-gate:internal-error] 守门不可用（${reason}），按 fail-closed 配置拒绝本次写入。` }
+  }
+  return { decision: 'allow', reason }
+}
 
 function cwdOf() {
   return process.env.WORKSPACE_GATE_DSH_CWD || process.cwd()
@@ -116,13 +128,11 @@ function runHook(event, data) {
   return new Promise((resolvePromise) => {
     const hook = join(cwdOf(), '.workspace', 'hooks', 'hook.py')
     if (!existsSync(hook)) {
-      logLine({ event, decision: 'allow', reason: 'hook-missing', tool: data.tool_name })
-      return resolvePromise({ decision: 'allow', reason: 'hook-missing' })
+      return resolvePromise(degrade('hook-missing', { event, tool: data.tool_name }))
     }
     const py = resolvePython()
     if (!py) {
-      logLine({ event, decision: 'allow', reason: 'python-missing', tool: data.tool_name })
-      return resolvePromise({ decision: 'allow', reason: 'python-missing' })
+      return resolvePromise(degrade('python-missing', { event, tool: data.tool_name }))
     }
     const child = spawn(py, [hook, event], {
       cwd: cwdOf(),
@@ -139,15 +149,13 @@ function runHook(event, data) {
     let err = ''
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
-      logLine({ event, decision: 'allow', reason: 'hook-timeout', tool: data.tool_name })
-      resolvePromise({ decision: 'allow', reason: 'hook-timeout' })
+      resolvePromise(degrade('hook-timeout', { event, tool: data.tool_name }))
     }, HOOK_TIMEOUT_MS)
     child.stdout.on('data', (b) => { out += b })
     child.stderr.on('data', (b) => { err += b })
     child.on('error', () => {
       clearTimeout(timer)
-      logLine({ event, decision: 'allow', reason: 'hook-spawn-error', tool: data.tool_name })
-      resolvePromise({ decision: 'allow', reason: 'hook-spawn-error' })
+      resolvePromise(degrade('hook-spawn-error', { event, tool: data.tool_name }))
     })
     child.on('close', (code) => {
       clearTimeout(timer)
@@ -204,13 +212,19 @@ export function apply(ctx) {
   ctx.on('tools/pre-execute', async (exec, next) => {
     const tool = String(exec?.name ?? '')
     if (!_toolsLogged && process.env.WORKSPACE_GATE_DSH_PROBE === '1') {
-      _toolsLogged = true
       try {
         const svc = safeGet(ctx, 'tools')
         const defs = typeof svc?.definitions === 'function' ? svc.definitions() : null
-        const arr = Array.isArray(defs) ? defs : []
-        probe({ phase: 'tools-live', count: arr.length,
-                names: arr.map((d) => String(d?.name ?? d?.id ?? '')).filter(Boolean) })
+        let arr = Array.isArray(defs) ? defs : []
+        if (!arr.length) {
+          // 某些平台/时机下 definitions() 为空；schemas() 是另一条只读入口
+          const sch = typeof svc?.schemas === 'function' ? svc.schemas() : null
+          const a2 = Array.isArray(sch) ? sch : (sch && typeof sch === 'object' ? Object.values(sch) : [])
+          arr = a2
+        }
+        const names = arr.map((d) => String(d?.name ?? d?.id ?? '')).filter(Boolean)
+        probe({ phase: 'tools-live', count: names.length, names })
+        if (names.length) _toolsLogged = true   // 空列表说明注册尚未完成，下次工具调用再试
       } catch (e) {
         probe({ phase: 'tools-live', error: String(e).slice(0, 80) })
       }

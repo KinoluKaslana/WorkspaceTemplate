@@ -334,12 +334,12 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "a5fc9b715b2cd84ab04139bf4bdf9e5241a2b38358bba7a44a6f28945f5d0207",
+    "file_sha256": "fa68a967aa9d2adb6444f82165f3d61574915ed53a3272f5e38af345d67056af",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
     "clauses": {},
-    "file_sha256": "6bf3ea6a9391733193a61ca621dfc98c82d7b928f1b15cbd93e84a227bc69e1b",
+    "file_sha256": "69f48895876c725e0f506c5c2631e066f850ec11d693e40d3664a714ab101cb9",
     "marked": 0
   },
   ".dsh/workspace-gate/cordis.yml": {

@@ -69,6 +69,49 @@ console.log(JSON.stringify({ ms: Date.now() - started, kind: r.kind, reason: Str
         self.assertIn("python-missing", log)
 
 
+class FailClosedKnob(unittest.TestCase):
+    """C：WORKSPACE_GATE_DSH_FAIL_CLOSED=1 时，解释器缺失必须 deny（把 advisory 默认变成显式强保证）。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ws = Path(self.tmp.name) / "ws"
+        (self.ws / ".workspace" / "hooks").parent.mkdir(parents=True)
+        shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
+        shutil.copytree(ROOT / ".dsh" / "workspace-gate", self.ws / ".dsh" / "workspace-gate")
+        shutil.copy2(ROOT / "AGENT_RULES.md", self.ws / "AGENT_RULES.md")
+        (self.ws / ".workspace" / "bootstrap.json").write_text(
+            json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
+                        "template": {"source_repo": "https://example.invalid/t"}}), encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_fail_closed_denies_when_python_missing(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 不可用")
+        script = r"""
+import { pathToFileURL } from 'node:url'
+const ws = process.argv[1]
+const plugin = await import(pathToFileURL(ws + '/.dsh/workspace-gate/plugin.js').href)
+const handlers = {}
+plugin.apply({ on: (e, fn) => { handlers[e] = fn } })
+const pre = handlers['tools/pre-execute']
+const r = await pre({ name: 'write', arguments: { file_path: ws + '/AGENT_RULES.md', content: 'x' },
+                      callId: 'call-fc', agent: { id: 'session-fc' } }, async () => ({ kind: 'allow' }))
+console.log(JSON.stringify({ kind: r.kind, reason: String(r.reason || '') }))
+"""
+        env = {**os.environ, "WORKSPACE_GATE_DSH_CWD": str(self.ws), "PATH": "/nonexistent",
+               "WORKSPACE_GATE_DSH_FAIL_CLOSED": "1"}
+        env.pop("WORKSPACE_GATE_DSH_PYTHON", None)
+        p = subprocess.run([node, "--input-type=module", "-e", script, str(self.ws)],
+                           capture_output=True, text=True, env=env, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr[-400:])
+        out = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual(out["kind"], "deny", out)
+        self.assertIn("internal-error", out["reason"])
+
+
 class StdinStrictDecode(unittest.TestCase):
     """B：非 UTF-8 字节 → strict 解码失败 → pre_write 必须 deny。"""
 

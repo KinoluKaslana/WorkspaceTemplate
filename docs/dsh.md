@@ -112,6 +112,46 @@ ls -la                            → ALLOW
 
 拒绝理由带 `[workspace-gate:no-read]` 前缀（R98 码表；`pre_bash` 与 `pre_write` 一致，dsh 客户端才加）。
 
+## 4.0 最后一次超严格测试（2026-11-03，预注册判据）
+
+两位主理（gpt-6-sol / deepseek-v4-pro）在跑前审过用例表；判据先写死，跑完只逐条核对。
+
+**Linux（dsh 0.2.2-alpha.2，headless，deepseek-flash）**
+
+| 用例 | 结果 | 证据 |
+|---|---|---|
+| 未读 `write` / `bash` / `edit` | 拒（3/3） | `decision=deny`，目标文件/内容未变 |
+| 整读后 `write` / `edit` / `bash` | 放（3/3） | 文件落地、内容正确 |
+| 只读 1..50 后写 | 拒 | deny（缺失 51..204） |
+| 读本身 | 放 | `post_read allow` |
+| 子 agent 未读 | 拒 | 子会话 deny，文件未创建 |
+| hook 缺失 / 超时 30s | 放 + 日志 | `hook-missing` / `hook-timeout` |
+| hook 缺失 + `WORKSPACE_GATE_DSH_FAIL_CLOSED=1` | 拒 | `deny`，文件未创建 |
+
+**Windows（同一版本，Node 24.22.2，headless）**
+
+| 用例 | 结果 | 证据 |
+|---|---|---|
+| 未读 `write` / `edit` / `pwsh` | 拒（3/3） | deny，文件不存在 / 内容未变 |
+| 整读后 `write` | 放 | 内容 `hi` 落地 |
+| 整读后 `pwsh` | 放 | 文件落地 |
+| 只读 1..50 后 `pwsh` | 拒 | deny |
+| 子 agent 未读 | 拒 | 文件未创建 |
+| hook 缺失 / 超时 30s | 放 + 日志 | `hook-missing` / `hook-timeout` |
+| hook 缺失 + `FAIL_CLOSED=1` | 拒 | deny，文件未创建 |
+| 非 UTF-8 输入（hook 级） | 拒 | `deny` + `UnicodeDecodeError` |
+| deny 文案（正常输入） | 可读 | 含 `AGENT_RULES.md` 与缺失区间，无 U+FFFD |
+
+**未测（如实）：** ① 会话隔离单独一例——每回合本就是新会话（未读即拒已由「未读 write」覆盖），但
+「模型自行先读」会让该例退化成非未读场景，故不单列；② Windows 运行时工具枚举——`tools.definitions()`
+在该平台返回空数组（Linux 可枚举 25 个），改用「Linux 枚举 + 全仓 grep 只命中 Anthropic SDK」作为
+`str_replace_editor` 不存在的证据。
+
+## 4.1 失败姿态开关
+
+默认 **advisory**（放行 + 审计）；设 `WORKSPACE_GATE_DSH_FAIL_CLOSED=1` 则 hook 缺失 / 解释器缺失 /
+超时一律 **deny**（`[workspace-gate:internal-error]`），把「故障时也拦」变成显式配置而不是默认假设。
+
 ## 4. 失败姿态
 
 | 情形 | 行为 | 原因 |
