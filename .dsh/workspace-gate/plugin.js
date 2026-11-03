@@ -7,7 +7,7 @@
 // 失败姿态：插件自身异常 / hook 超时 → **放行并记日志**（advisory，与 R99 一致）；
 // 会话身份缺失 → 拒绝（fail-closed，因为无身份就没有读证据可言）。
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync } from 'node:fs'
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 export const name = 'workspace-gate-dsh'
@@ -57,6 +57,11 @@ function probe(entry) {
   } catch { /* 取证失败不影响决策 */ }
 }
 
+function safeGet(obj, key) {
+  // Cordis 在未声明 inject 时对服务属性抛错：探测用安全读，避免整条工具调用被带崩
+  try { return obj == null ? undefined : obj[key] } catch { return undefined }
+}
+
 function sessionId(exec, ctx) {
   // 实测：pre-execute 的 exec.agent.id = "session-<uuid>"；
   // post-execute 的载荷可能不带 agent，回落到 ctx.session（inject 里已声明）。
@@ -64,9 +69,9 @@ function sessionId(exec, ctx) {
     exec?.agent?.id,
     exec?.agent?.sessionId,
     exec?.sessionId,
-    ctx?.session?.id,
-    ctx?.session?.sessionId,
-    ctx?.session?.agent?.id,
+    safeGet(safeGet(ctx, 'session'), 'id'),
+    safeGet(safeGet(ctx, 'session'), 'sessionId'),
+    safeGet(safeGet(ctx, 'session'), 'agent')?.id,
     process.env.DSH_SESSION_ID,
   ]
   return cands.find((v) => typeof v === 'string' && v.trim()) || ''
@@ -117,6 +122,10 @@ function runHook(event, data) {
       cwd: cwdOf(),
       env: { ...process.env, GATE_CLIENT: 'dsh' },
     })
+    if (event === 'post_read' && process.env.WORKSPACE_GATE_DSH_PROBE === '1') {
+      probe({ phase: 'post-body', head: body.slice(0, 500), bytes: body.length })
+      try { writeFileSync(join(cwdOf(), '.workspace', '_post_body.json'), body) } catch { /* ignore */ }
+    }
     child.stdin.write(body)                      // 必须喂 stdin 并关闭，否则 hook 阻塞
     child.stdin.end()
     let out = ''
@@ -149,13 +158,23 @@ function runHook(event, data) {
 
 export function apply(ctx) {
   logLine({ event: 'apply', pid: process.pid, cwd: cwdOf() })
+  // pre 里能拿到 exec.agent.id；post 的载荷不带 agent，所以按 callId 记住会话
+  const sidByCall = new Map()
+  let lastSid = ''
+
   ctx.on('tools/pre-execute', async (exec, next) => {
     const tool = String(exec?.name ?? '')
+    const sid = sessionId(exec, ctx)
+    if (sid) {
+      lastSid = sid
+      if (exec?.callId) sidByCall.set(String(exec.callId), sid)
+    }
     const event = WRITE_TOOLS.has(tool) ? 'pre_write' : (SHELL_TOOLS.has(tool) ? 'pre_bash' : null)
     if (!event) return next()
 
     const data = payload(event, exec, ctx)
-    probe({ phase: 'pre', ...data })
+    if (!data.session_id) data.session_id = sid || lastSid
+    probe({ phase: 'pre', event, tool, sid: data.session_id })
     if (!data.session_id) {
       logLine({ event, decision: 'deny', reason: 'no-session', tool })
       return { kind: 'deny', reason: `[workspace-gate:no-session] 无法确定 dsh 会话身份，无法核对读证据；写入被拒绝（fail-closed）。` }
@@ -170,22 +189,28 @@ export function apply(ctx) {
   })
 
   ctx.on('tools/post-execute', async (exec, result, next) => {
-    // 0.2.2-alpha.2 的 post 载荷与 pre 不同（exec.name 可能为空），先按多种形状取
-    const tool = String(exec?.name ?? exec?.tool?.name ?? exec?.call?.name ?? '')
-    if (!tool) probe({ phase: 'post-shape', type: typeof exec,
-                       keys: exec && typeof exec === 'object' ? Object.keys(exec).slice(0, 12) : [],
-                       resultKeys: result && typeof result === 'object' ? Object.keys(result).slice(0, 8) : [] })
-    probe({ phase: 'post-data', tool,
-            sid: sessionId(exec, ctx),
-            execKeys: exec && typeof exec === 'object' ? Object.keys(exec).slice(0, 14) : [],
+    const tool = String(exec?.name ?? exec?.tool?.name ?? '')
+    probe({ phase: 'post-shape', tool, execKeys: exec && typeof exec === 'object' ? Object.keys(exec).slice(0, 14) : [],
             argKeys: exec?.arguments && typeof exec.arguments === 'object' ? Object.keys(exec.arguments).slice(0, 8) : [],
             resultKeys: result && typeof result === 'object' ? Object.keys(result).slice(0, 8) : [] })
+    if (tool === 'read' && process.env.WORKSPACE_GATE_DSH_PROBE === '1') {
+      try {
+        const dump = JSON.stringify(result)
+        probe({ phase: 'read-result', head: dump.slice(0, 1500) })
+      } catch (e) { probe({ phase: 'read-result', error: String(e) }) }
+    }
     if (tool === 'read' || WRITE_TOOLS.has(tool)) {
       const event = tool === 'read' ? 'post_read' : 'post_write'
       try {
+        const sid = sidByCall.get(String(exec?.callId ?? '')) || sessionId(exec, ctx) || lastSid
         const data = payload(event, exec, ctx, { tool_response: result })
-        if (data.session_id) await runHook(event, data)
-        probe({ phase: 'post', tool, ok: true })
+        if (!data.session_id) data.session_id = sid
+        if (data.session_id) {
+          const r = await runHook(event, data)
+          probe({ phase: 'post', event, tool, sid: data.session_id, decision: r.decision, reason: String(r.reason || '').slice(0, 120) })
+        } else {
+          probe({ phase: 'post-skip', event, tool, reason: 'no-session' })
+        }
       } catch (e) {
         logLine({ event, decision: 'allow', reason: 'post-error', error: String(e) })
       }

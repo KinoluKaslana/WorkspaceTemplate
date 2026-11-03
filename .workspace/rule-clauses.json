@@ -339,7 +339,7 @@
   },
   ".dsh/workspace-gate/plugin.js": {
     "clauses": {},
-    "file_sha256": "122da75162a19f96511f8133ae065e25d2bd61a4b00f83f3d58598db3867c78f",
+    "file_sha256": "b90bb6e77099a107a117d43f111ae050a33f22f11cf85685038a72ad892abcf7",
     "marked": 0
   },
   ".dsh/workspace-gate/cordis.yml": {
@@ -419,7 +419,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "7c4df64bf05b20efbe1d6f9e6b85ae12f6d83e2ef2a67519f011aff5c21037ea",
+    "file_sha256": "0025bb87511e0062ddbe26c8798dac313a0c7521410969fd29beea46068fc0b7",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {

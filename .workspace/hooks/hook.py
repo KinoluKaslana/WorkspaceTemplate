@@ -377,6 +377,11 @@ def _dsh_read_body(value: object, offset: int) -> str | None:
         lines.pop()
         while lines and lines[-1] == "":
             lines.pop()
+    # dsh 整文件读在末尾附一行 "(End of file - total N lines)"；它不是正文
+    if lines and re.fullmatch(r"\(End of file - total \d+ lines?\)", lines[-1].strip()):
+        lines.pop()
+        while lines and lines[-1] == "":
+            lines.pop()
     want = offset
     out = []
     for line in lines:
@@ -448,6 +453,8 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         end = physical if lim is None else min(physical, off + lim - 1)
         if end < total and not body.endswith("\n"):
             body += "\n"          # gate_core 对 end<total 的期望片段以 LF 结尾
+        if end < total and not body.endswith("\n"):
+            body += "\n"          # 与 cc/codex 分支一致：非 EOF 的期望片段以 LF 结尾
         read_info = {"read_ok": True, "path": target, "offset": off,
                      "limit": end - off + 1, "total_lines": total,
                      "tool_response": body}
