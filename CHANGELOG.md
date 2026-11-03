@@ -2,6 +2,14 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## Windows 侧 dsh 落地（2026-11-03，dev，不改政策版本）
+
+- Windows 装 `@deepseek-ai/dsh` 0.2.2-alpha.2（npm 全局 → `C:\wt-dsh`，615 包）；Node 24.22.2 便携版（`D:\wt`）。
+- 发现即修：插件硬编码 `python3`，Windows 只有 `python` → spawn 失败后**静默放行**；改为按平台探测 + 环境变量覆盖，
+  找不到 Python 时写 `python-missing` 审计并放行（advisory 口径，不声称已拦）。
+- `--dump-config` 在 Windows 上确认插件接线：`workspace-gate-dsh → file:///D:/wt/ws/.dsh/workspace-gate/plugin.js`。
+- 注：Node < 24.9 时 `dsh` 静默退出（rc=0、无输出），曾被误判为"安装失败"。
+
 ## pwsh 写路径补齐（2026-11-02，dev，不改政策版本）
 
 在真实 Windows（PowerShell 5.1，经 win-host 远程执行）验证：`Set-Content` / `Out-File` / `Add-Content` /

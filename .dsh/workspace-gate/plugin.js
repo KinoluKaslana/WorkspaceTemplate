@@ -6,7 +6,7 @@
 //
 // 失败姿态：插件自身异常 / hook 超时 → **放行并记日志**（advisory，与 R99 一致）；
 // 会话身份缺失 → 拒绝（fail-closed，因为无身份就没有读证据可言）。
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -20,6 +20,26 @@ const HOOK_TIMEOUT_MS = 20000
 
 function cwdOf() {
   return process.env.WORKSPACE_GATE_DSH_CWD || process.cwd()
+}
+
+let _pyCache
+/**
+ * 选 Python 可执行文件：环境变量优先，否则按平台探测。
+ * Windows 上没有 `python3`（只有 `python` / `py`），写死 python3 会让 spawn 失败 → fail-open 静默失效。
+ */
+function resolvePython() {
+  if (_pyCache !== undefined) return _pyCache
+  const env = process.env.WORKSPACE_GATE_DSH_PYTHON
+  if (env) { _pyCache = env; return _pyCache }
+  const candidates = process.platform === 'win32'
+    ? ['python', 'py', 'python3']
+    : ['python3', 'python']
+  for (const c of candidates) {
+    const r = spawnSync(c, ['--version'], { timeout: 2000 })
+    if (r && r.status === 0) { _pyCache = c; return _pyCache }
+  }
+  _pyCache = ''
+  return _pyCache
 }
 
 function logLine(entry) {
@@ -84,7 +104,12 @@ function runHook(event, data) {
       logLine({ event, decision: 'allow', reason: 'hook-missing', tool: data.tool_name })
       return resolvePromise({ decision: 'allow', reason: 'hook-missing' })
     }
-    const child = spawn(process.env.WORKSPACE_GATE_DSH_PYTHON || 'python3', [hook, event], {
+    const py = resolvePython()
+    if (!py) {
+      logLine({ event, decision: 'allow', reason: 'python-missing', tool: data.tool_name })
+      return Promise.resolve({ decision: 'allow', reason: 'python-missing' })
+    }
+    const child = spawn(py, [hook, event], {
       cwd: cwdOf(),
       env: { ...process.env, GATE_CLIENT: 'dsh' },
     })

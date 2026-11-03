@@ -166,6 +166,15 @@ ls -la                            → ALLOW
 - `str_replace_editor`：**该构建（0.2.1-rc.4）未提供此工具**（真实回合模型明确回报「there is no str_replace_editor」）；映射代码是防御性分支，标为**无法验证**。
 - `pwsh`：**已在真实 Windows 上验证命令语义与分类结果**（见上方矩阵）；但 dsh 本体未在 Windows 运行，端到端未验。
 
+### Windows 侧（真机）
+
+- 装了 `@deepseek-ai/dsh` 0.2.2-alpha.2（npm，615 包）到 `C:\wt-dsh`；Node **必须 ≥ 24.9**（`engines`），
+  Node 20 上 `dsh` **静默退出、rc=0、零输出**——这个坑记在这里，别再用旧 Node 判断"装坏了"。
+- `--dump-config` 已确认插件挂上：`- id: workspace-gate-dsh` / `name: file:///D:/wt/ws/.dsh/workspace-gate/plugin.js`。
+- **修掉一个跨平台真 bug**：插件原先硬编码 `python3`，Windows 只有 `python` → spawn 失败 → **静默 fail-open**。
+  现在按平台探测（win32: `python`,`py`,`python3`；其他: `python3`,`python`），仍可用
+  `WORKSPACE_GATE_DSH_PYTHON` 覆盖；都找不到 → 记 `python-missing` 并放行（advisory，不假装拦）。
+
 ### 版本漂移（必须知道）
 
 - 上表与 V1–V11 的**真实回合**证据跑在 `0.2.1-rc.4` 上；本机现为 **`0.2.2-alpha.2`**（`dsh --version`）。
