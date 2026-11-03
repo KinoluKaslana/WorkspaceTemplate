@@ -180,8 +180,16 @@ ls -la                            → ALLOW
 
 **模型层的一次真实拒绝**：让模型「读 → 用 `Add-Content` 改 `AGENT_RULES.md` → 再写」，模型自己按 R90（模板治理文件不得直接修改）**拒绝执行第 2 步**，因此撤销只能改用 hook 级构造验证。
 
-**已知显示问题（不影响判定）**：在 Windows PowerShell 里重定向 dsh 输出时，中文 deny 文案会显示成乱码——PowerShell 默认按本地码页（GBK）解码 node 的 UTF-8 输出。判定本身正确（`decision=deny`、文件未落地）。要看正确文案，需
-`[Console]::OutputEncoding=[Text.Encoding]::UTF8; chcp 65001`。
+**中文 deny 文案（已复验）**：Windows PowerShell 默认按本地码页（GBK）解码 node 的输出，重定向时中文会变乱码。
+在脚本/会话里先执行
+
+```powershell
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$OutputEncoding = [Text.Encoding]::UTF8
+chcp 65001 > $null
+```
+
+复跑结果（`X4` 回合）：`decision=deny` 且文案完整可读——「文件 AGENT_RULES.md：已覆盖 无；缺失 1..204；共 204 行（wc -l = 203，差 1 行为文末空行）。下一步：read_file 补齐缺失区间后重试。」判定不受影响，只是显示编码。
 
 ### Windows 侧（真机，2026-11-03 实测）
 

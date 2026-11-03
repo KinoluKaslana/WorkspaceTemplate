@@ -2,6 +2,16 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## Windows 其余面（2026-11-03，dev，不改政策版本）
+
+在真实 Windows 上补齐：`edit` 未读拒 / 读后放行；只读前 50 行 → 写被拒（理由精确到区间）；子 agent 未读被拒；
+读后治理文件被外部修订 → 再写被拒（hook 级）；hook 缺失与 hook 超时 30s 均按 advisory 放行并落日志。
+
+- 插件 spawn hook 时注入 `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8`（Windows 不加这组，中文 deny 文案会退化）。
+- 中文文案乱码的根因确认在 **PowerShell 的解码**，不是守门：设置 `[Console]::OutputEncoding=UTF8` + `chcp 65001`
+  后复跑，deny 文案完整可读（`decision=deny`、文件未落地不变）。
+- 模型会自己按 R90 拒绝「用 Add-Content 改 AGENT_RULES.md」，因此修订撤销改用 hook 级构造验证。
+
 ## Windows 真机端到端（2026-11-03，dev，不改政策版本）
 
 真实模型回合（`deepseek-flash` + `dsh 0.2.2-alpha.2` + `D:\wt\ws`）跑通两侧：
