@@ -1,97 +1,97 @@
 {
-  "schema": 1,
-  "note": "检索收益题的确定性判据集：top-N 命中节正文须同时包含 expect 全部关键词。不判模型答案。",
-  "cases": [
-    {
-      "id": "hit01",
-      "title": "拒绝码有哪些",
-      "question": "守门拒绝消息里的机器可读码有哪几个？",
-      "expect": [
-        "no-read",
-        "no-session"
-      ]
-    },
-    {
-      "id": "hit02",
-      "title": "审计十三型",
-      "question": "客户端审计事件有哪十三型？",
-      "expect": [
-        "gate-deny",
-        "unobserved"
-      ]
-    },
-    {
-      "id": "hit03",
-      "title": "活体拒绝腿怎么造",
-      "question": "怎么给 CC 子 agent 造一个结构性不能读的活体夹具？",
-      "expect": [
-        "tools",
-        "Write"
-      ]
-    },
-    {
-      "id": "hit04",
-      "title": "Hermes 无 cwd",
-      "question": "Hermes 插件没有 cwd 时怎么解析相对写目标？",
-      "expect": [
-        "task_id",
-        "拦"
-      ]
-    },
-    {
-      "id": "hit05",
-      "title": "Codex 同轮并发",
-      "question": "Codex 同一轮里并发 cat 与 apply_patch 为什么会失败？",
-      "expect": [
-        "post_bash",
-        "顺序"
-      ]
-    },
-    {
-      "id": "hit06",
-      "title": "子 agent shell 写",
-      "question": "CC 子 agent 用 Bash 写文件，事后怎么归因？",
-      "expect": [
-        "SubagentStop",
-        "agent_transcript_path"
-      ]
-    },
-    {
-      "id": "hit07",
-      "title": "委托怎么签发",
-      "question": "委托记录用什么命令签发，前置条件是什么？",
-      "expect": [
-        "delegations",
-        "mint"
-      ]
-    },
-    {
-      "id": "hit08",
-      "title": "新 harness 事件类型",
-      "question": "接入一个新 harness 要接哪几类事件？",
-      "expect": [
-        "SessionStart",
-        "PreToolUse",
-        "Stop"
-      ]
-    },
-    {
-      "id": "hit09",
-      "title": "fail-open 边界",
-      "question": "hook 未送达时守门还算数吗？",
-      "expect": [
-        "advisory",
-        "不"
-      ]
-    },
-    {
-      "id": "hit10",
-      "title": "CC 只认原生 Read",
-      "question": "CC 里用 cat 读治理文件能拿到读证据吗？",
-      "expect": [
-        "Read",
-        "cat"
-      ]
-    }
-  ]
+ "schema": 1,
+ "note": "检索收益题的确定性判据集：top-N 命中节正文须同时包含 expect 全部关键词。不判模型答案。",
+ "cases": [
+  {
+   "id": "hit01",
+   "title": "拒绝码有哪些",
+   "question": "守门拒绝消息里的机器可读码有哪几个？",
+   "expect": [
+    "no-read",
+    "no-session"
+   ]
+  },
+  {
+   "id": "hit02",
+   "title": "审计十三型",
+   "question": "客户端审计事件有哪十三型？",
+   "expect": [
+    "gate-deny",
+    "unobserved"
+   ]
+  },
+  {
+   "id": "hit03",
+   "title": "活体拒绝腿怎么造",
+   "question": "怎么给 CC 子 agent 造一个结构性不能读的活体夹具？",
+   "expect": [
+    "tools",
+    "Write"
+   ]
+  },
+  {
+   "id": "hit04",
+   "title": "Hermes 无 cwd",
+   "question": "Hermes 插件没有 cwd 时怎么解析相对写目标？",
+   "expect": [
+    "task_id",
+    "拦"
+   ]
+  },
+  {
+   "id": "hit05",
+   "title": "Codex 同轮并发",
+   "question": "Codex 同一轮里并发 cat 与 apply_patch 为什么会失败？",
+   "expect": [
+    "post_bash",
+    "顺序"
+   ]
+  },
+  {
+   "id": "hit06",
+   "title": "子 agent shell 写",
+   "question": "CC 子 agent 用 Bash 写文件，事后怎么归因？",
+   "expect": [
+    "SubagentStop",
+    "agent_transcript_path"
+   ]
+  },
+  {
+   "id": "hit07",
+   "title": "委托怎么签发",
+   "question": "委托记录用什么命令签发，前置条件是什么？",
+   "expect": [
+    "delegations",
+    "mint"
+   ]
+  },
+  {
+   "id": "hit08",
+   "title": "新 harness 事件类型",
+   "question": "接入一个新 harness 要接哪几类事件？",
+   "expect": [
+    "SessionStart",
+    "PreToolUse",
+    "Stop"
+   ]
+  },
+  {
+   "id": "hit09",
+   "title": "fail-open 边界",
+   "question": "hook 未送达时守门还算数吗？",
+   "expect": [
+    "advisory",
+    "不"
+   ]
+  },
+  {
+   "id": "hit10",
+   "title": "CC 只认原生 Read",
+   "question": "CC 里用 cat 读治理文件能拿到读证据吗？",
+   "expect": [
+    "Read",
+    "cat"
+   ]
+  }
+ ]
 }
