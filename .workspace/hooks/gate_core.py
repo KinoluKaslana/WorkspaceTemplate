@@ -24,7 +24,11 @@ flock 并发；mkstemp+os.replace 原子写。interval 仅为 content 的覆盖�
 """
 from __future__ import annotations
 
-import fcntl
+try:
+    import fcntl                      # POSIX
+except ImportError:                   # Windows：没有 fcntl，用 msvcrt 做同语义的独占锁
+    fcntl = None
+    import msvcrt
 import hashlib
 import json
 import os
@@ -414,7 +418,11 @@ def _state_path(ws_root: str, client: str, session_id: str) -> Path:
 
 
 class _StateLock:
-    """fcntl.flock 独占锁；持锁窗口仅覆盖读-改-写（Hermes 同款，防并发丢更新）。"""
+    """独占锁，持锁窗口仅覆盖读-改-写（防并发丢更新）。
+
+    POSIX 用 `fcntl.flock`；Windows 没有 fcntl，用 `msvcrt.locking` 锁同一字节区间。
+    两种实现都只保护「读-改-写」窗口，不改变状态语义。
+    """
 
     def __init__(self, ws_root: str, client: str, session_id: str):
         sp = _state_path(ws_root, client, session_id)
@@ -423,13 +431,21 @@ class _StateLock:
         self._fh = None  # IO[bytes] | None
 
     def __enter__(self):
-        self._fh = open(self._lock_path, "a+")
-        fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX)
+        self._fh = open(self._lock_path, "a+b")
+        if fcntl is not None:
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX)
+        else:
+            self._fh.seek(0)
+            msvcrt.locking(self._fh.fileno(), msvcrt.LK_LOCK, 1)
         return self
 
     def __exit__(self, *exc):
         try:
-            fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+            else:
+                self._fh.seek(0)
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_UNLCK, 1)
         finally:
             self._fh.close()
             self._fh = None

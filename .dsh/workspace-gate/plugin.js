@@ -57,12 +57,16 @@ function probe(entry) {
   } catch { /* 取证失败不影响决策 */ }
 }
 
-function sessionId(exec) {
-  // 实测（dsh 0.2.1-rc.4，headless）：exec.agent.id = "session-<uuid>"；
-  // agent 上有 session 对象但无 id；ctx 上不存在 session 服务。
+function sessionId(exec, ctx) {
+  // 实测：pre-execute 的 exec.agent.id = "session-<uuid>"；
+  // post-execute 的载荷可能不带 agent，回落到 ctx.session（inject 里已声明）。
   const cands = [
     exec?.agent?.id,
     exec?.agent?.sessionId,
+    exec?.sessionId,
+    ctx?.session?.id,
+    ctx?.session?.sessionId,
+    ctx?.session?.agent?.id,
     process.env.DSH_SESSION_ID,
   ]
   return cands.find((v) => typeof v === 'string' && v.trim()) || ''
@@ -77,9 +81,9 @@ function payload(event, exec, ctx, extra = {}) {
   return {
     client: 'dsh',
     hook_event_name: event === 'pre_write' || event === 'pre_bash' ? 'PreToolUse' : 'PostToolUse',
-    session_id: sessionId(exec),
+    session_id: sessionId(exec, ctx),
     // 实测：agent.id 就是会话 id；再当 agent_id 传会得到 "a.a" 双拼键
-    agent_id: agentId(exec) === sessionId(exec) ? '' : agentId(exec),
+    agent_id: agentId(exec) === sessionId(exec, ctx) ? '' : agentId(exec),
     cwd: cwdOf(),
     // dsh 的 bash/pwsh 走同一套 shell 静态分析，hook 侧认 "Bash"
     tool_name: SHELL_TOOLS.has(String(exec?.name ?? '')) ? 'Bash' : exec?.name,
@@ -166,7 +170,16 @@ export function apply(ctx) {
   })
 
   ctx.on('tools/post-execute', async (exec, result, next) => {
-    const tool = String(exec?.name ?? '')
+    // 0.2.2-alpha.2 的 post 载荷与 pre 不同（exec.name 可能为空），先按多种形状取
+    const tool = String(exec?.name ?? exec?.tool?.name ?? exec?.call?.name ?? '')
+    if (!tool) probe({ phase: 'post-shape', type: typeof exec,
+                       keys: exec && typeof exec === 'object' ? Object.keys(exec).slice(0, 12) : [],
+                       resultKeys: result && typeof result === 'object' ? Object.keys(result).slice(0, 8) : [] })
+    probe({ phase: 'post-data', tool,
+            sid: sessionId(exec, ctx),
+            execKeys: exec && typeof exec === 'object' ? Object.keys(exec).slice(0, 14) : [],
+            argKeys: exec?.arguments && typeof exec.arguments === 'object' ? Object.keys(exec.arguments).slice(0, 8) : [],
+            resultKeys: result && typeof result === 'object' ? Object.keys(result).slice(0, 8) : [] })
     if (tool === 'read' || WRITE_TOOLS.has(tool)) {
       const event = tool === 'read' ? 'post_read' : 'post_write'
       try {
