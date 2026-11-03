@@ -46,7 +46,7 @@ dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 
 ## 3. 映射表
 
-| dsh 工具 | hook 事件 | 实测行为（dsh 0.2.1-rc.4） |
+| dsh 工具 | hook 事件 | 实测行为（真实回合：0.2.1-rc.4；0.2.2-alpha.2 已复验插件加载与 8 条合成用例） |
 |---|---|---|
 | `read` | `post_read` | 记读证据；正文解析要求「行号连续 + 标准尾注」 |
 | `write` / `edit` / `str_replace_editor` | `pre_write` / `post_write` | 目标取 `file_path` 或 `path`；两者都缺 → 拒绝（不猜） |
@@ -165,6 +165,13 @@ ls -la                            → ALLOW
 - 子 agent **没有委托机制**：dsh 子会话必须自己读政策才能写；父不能代授（与 CC/Codex 的 `delegations.py` 不对齐，属已知差异）。
 - `str_replace_editor`：**该构建（0.2.1-rc.4）未提供此工具**（真实回合模型明确回报「there is no str_replace_editor」）；映射代码是防御性分支，标为**无法验证**。
 - `pwsh`：**已在真实 Windows 上验证命令语义与分类结果**（见上方矩阵）；但 dsh 本体未在 Windows 运行，端到端未验。
+
+### 版本漂移（必须知道）
+
+- 上表与 V1–V11 的**真实回合**证据跑在 `0.2.1-rc.4` 上；本机现为 **`0.2.2-alpha.2`**（`dsh --version`）。
+- 在新版本上已复验：`--dump-config` 仍出现 `workspace-gate-dsh` → `file://…/plugin.js`；
+  `tests/dsh_harness.mjs` **8/8 PASS**（未读拒 / 读后放 / 改版再拒 / 非写放 / 工作区外放 / edit / 缺身份 fail-closed）。
+- **未做**：0.2.2-alpha.2 上的真实模型回合。插件契约（`tools/pre-execute`）未变，但这条不能拿旧证据顶替。
 
 ## 5.1 在 headless 里跑（账号登录，无 API key）
 

@@ -56,7 +56,7 @@
 
 ## 工具新增：DeepSeek Harness（dsh）接入（2026-11-02，dev，不改政策版本）
 
-dsh 是 Cordis 插件内核（`@deepseek-ai/dsh` 0.2.1-rc.4 实测），拦截点是 `tools/pre-execute` / `tools/post-execute` 事件而非 JSON 配置，因此新增**原生插件**而不是复用 Codex/CC 的桥。
+dsh 是 Cordis 插件内核（`@deepseek-ai/dsh` 0.2.1-rc.4 实测；0.2.2-alpha.2 复验插件加载与 8 条合成用例），拦截点是 `tools/pre-execute` / `tools/post-execute` 事件而非 JSON 配置，因此新增**原生插件**而不是复用 Codex/CC 的桥。
 
 - `.dsh/workspace-gate/`：`plugin.js`（把 `ToolExecution` 翻译成工作区 hook 载荷、把决策映射回 `{kind:'deny', reason}`）+ `cordis.yml`（`insert` 补丁）+ `package.json`。
 - `hook.py` / `gate_core.py` 增加 `dsh` 客户端分支：`write|edit|str_replace_editor` → `pre_write`（`file_path` / `path` 容错，二者皆缺即拒）；`bash|pwsh` → `pre_bash`；`read` → `post_read`（正文用启发式提取，取不到不记账）；拒绝理由补 `[workspace-gate:no-read]` 前缀。

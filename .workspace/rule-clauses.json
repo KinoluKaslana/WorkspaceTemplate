@@ -334,7 +334,7 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "3cfa79299e190e5d9316e19e3f0e4532cbdbf1113c6b07e85ff901293f91aa97",
+    "file_sha256": "f14faa0c67359d0e1b730b990ff37d7be349a7e90370113ef234e636e344a3f8",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
