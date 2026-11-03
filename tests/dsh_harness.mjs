@@ -40,6 +40,11 @@ let r = await pre(mk('write', { file_path: join(ws, 'AGENT_RULES.md'), content: 
 check('write-before-read denied', r.kind === 'deny')
 check('deny carries [workspace-gate:no-read]', String(r.reason || '').includes('[workspace-gate:no-read]'), String(r.reason||'').slice(0,120))
 
+// str_replace_editor 在该构建不存在（tools.definitions() 枚举无此名）；
+// 这里只验证「若客户端真的发出该工具名，插件按写工具拦」这条映射。
+r = await pre(mk('str_replace_editor', { path: join(ws, 'AGENT_RULES.md'), old_str: 'x', new_str: 'y' }), nextAllow)
+check('str_replace_editor (path alias) gated before read', r.kind === 'deny', r.kind === 'deny' ? '' : String(r.kind))
+
 r = await pre(mk('glob', { pattern: '*.md' }), nextAllow)
 check('non-write tool passes', r.kind === 'allow')
 

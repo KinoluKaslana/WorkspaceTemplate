@@ -743,14 +743,39 @@ _PS_ALIASES = {
 _PS_INTERP = {"invoke-expression", "iex", "start-process", "start-job", "invoke-command"}
 _PS_DEST_LAST = {"copy-item", "move-item", "rename-item"}
 _PS_NULL = {"$null", "nul", "/dev/null", "null"}
-_PS_SEPARATORS = {";", "|", "||", "&", "&&", "(", ")", "{", "}"}
+_PS_SEPARATORS = {";", "|", "||", "&", "&&", "(", ")", "{", "}", "\n", "\r"}
 _PS_REDIR_OPS = {">", ">>", "1>", "1>>", "*>", "*>>", "2>"}
 _PS_NET_WRITE = re.compile(
     r"\[(?:System\.)?IO\.File\]::(?:WriteAllText|AppendAllText|WriteAllLines|WriteAllBytes|"
-    r"Create|CreateText|AppendText|OpenWrite)\s*\(\s*(?:\"([^\"]+)\"|'([^']+)')")
+    r"Create|CreateText|AppendText|OpenWrite)\s*\(\s*(?:\"([^\"]+)\"|'([^']+)')", re.I)
 _PS_NEWOBJ = re.compile(
     r"New-Object\s+(?:System\.IO\.)?(?:StreamWriter|FileStream|BinaryWriter)\s*\(\s*"
     r"(?:\"([^\"]+)\"|'([^']+)')", re.I)
+
+
+def _ps_strip_comments(command: str) -> str:
+    """去掉引号外的 `#` 注释，供正则扫描使用（tokenizer 自己会丢注释，正则不会）。"""
+    out: list[str] = []
+    i, n = 0, len(command)
+    quote = ""
+    while i < n:
+        ch = command[i]
+        if quote:
+            out.append(ch)
+            if ch == quote:
+                if quote == "'" and i + 1 < n and command[i + 1] == "'":
+                    out.append(command[i + 1]); i += 2; continue
+                quote = ""
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch; out.append(ch); i += 1; continue
+        if ch == "#":
+            while i < n and command[i] != "\n":
+                i += 1
+            continue
+        out.append(ch); i += 1
+    return "".join(out)
 
 
 def _ps_tokens(command: str) -> list[tuple[str, bool, bool]]:
@@ -764,7 +789,11 @@ def _ps_tokens(command: str) -> list[tuple[str, bool, bool]]:
     i, n = 0, len(command)
     while i < n:
         ch = command[i]
-        if ch in " \t\r\n":
+        if ch in "\r\n":
+            out.append(("\n", False, True))   # 换行 = 语句分隔符（PowerShell 允许逐行写命令）
+            i += 1
+            continue
+        if ch in " \t":
             i += 1
             continue
         if ch == "#":
@@ -853,11 +882,12 @@ def classify_pwsh(command: str, cwd: str, gate_files: list[str],
         targets.append(val)
         forms.append("ps-redirect:" + tok)
 
-    for m in _PS_NET_WRITE.finditer(command):
+    code = _ps_strip_comments(command)
+    for m in _PS_NET_WRITE.finditer(code):
         raw = m.group(1) or m.group(2)
         if raw:
             targets.append(raw); forms.append("ps-dotnet-write")
-    for m in _PS_NEWOBJ.finditer(command):
+    for m in _PS_NEWOBJ.finditer(code):
         raw = m.group(1) or m.group(2)
         if raw:
             targets.append(raw); forms.append("ps-newobject-writer")

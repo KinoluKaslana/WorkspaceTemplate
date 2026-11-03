@@ -122,7 +122,7 @@ function runHook(event, data) {
     const py = resolvePython()
     if (!py) {
       logLine({ event, decision: 'allow', reason: 'python-missing', tool: data.tool_name })
-      return Promise.resolve({ decision: 'allow', reason: 'python-missing' })
+      return resolvePromise({ decision: 'allow', reason: 'python-missing' })
     }
     const child = spawn(py, [hook, event], {
       cwd: cwdOf(),
@@ -164,12 +164,57 @@ function runHook(event, data) {
 
 export function apply(ctx) {
   logLine({ event: 'apply', pid: process.pid, cwd: cwdOf() })
+  if (process.env.WORKSPACE_GATE_DSH_PROBE === '1') {
+    const svc = safeGet(ctx, 'tools')
+    const info = {
+      type: typeof svc,
+      keys: svc && typeof svc === 'object' ? Object.keys(svc).slice(0, 30) : [],
+      proto: svc && typeof svc === 'object'
+        ? Object.getOwnPropertyNames(Object.getPrototypeOf(svc) || {}).slice(0, 30) : [],
+    }
+    let names = []
+    try {
+      const defs = typeof svc?.definitions === 'function' ? svc.definitions() : null
+      const arr = Array.isArray(defs) ? defs : (defs && typeof defs === 'object' ? Object.values(defs) : [])
+      names = arr.map((d) => (d && (d.name || d.id || (d.definition && d.definition.name))) || '').filter(Boolean)
+    } catch (e) {
+      names = ['<error:' + String(e).slice(0, 60) + '>']
+    }
+    let shape = {}
+    try {
+      const defs = typeof svc?.definitions === 'function' ? svc.definitions() : null
+      shape = {
+        type: typeof defs,
+        isArray: Array.isArray(defs),
+        len: defs && typeof defs === 'object' ? (Array.isArray(defs) ? defs.length : Object.keys(defs).length) : null,
+        sampleKeys: (() => {
+          const arr = Array.isArray(defs) ? defs : (defs && typeof defs === 'object' ? Object.values(defs) : [])
+          const first = arr && arr[0]
+          return first && typeof first === 'object' ? Object.keys(first).slice(0, 12) : []
+        })(),
+      }
+    } catch (e) { shape = { error: String(e).slice(0, 80) } }
+    probe({ phase: 'tools-service', info, names, shape })
+  }
   // pre 里能拿到 exec.agent.id；post 的载荷不带 agent，所以按 callId 记住会话
   const sidByCall = new Map()
   let lastSid = ''
 
+  let _toolsLogged = false
   ctx.on('tools/pre-execute', async (exec, next) => {
     const tool = String(exec?.name ?? '')
+    if (!_toolsLogged && process.env.WORKSPACE_GATE_DSH_PROBE === '1') {
+      _toolsLogged = true
+      try {
+        const svc = safeGet(ctx, 'tools')
+        const defs = typeof svc?.definitions === 'function' ? svc.definitions() : null
+        const arr = Array.isArray(defs) ? defs : []
+        probe({ phase: 'tools-live', count: arr.length,
+                names: arr.map((d) => String(d?.name ?? d?.id ?? '')).filter(Boolean) })
+      } catch (e) {
+        probe({ phase: 'tools-live', error: String(e).slice(0, 80) })
+      }
+    }
     const sid = sessionId(exec, ctx)
     if (sid) {
       lastSid = sid

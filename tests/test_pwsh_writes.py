@@ -55,6 +55,10 @@ BYPASS_CMDS = [
     "& 'Set-Content' -Path f20.txt -Value x",
     "1 | % { Set-Content -Path f21.txt -Value x }",
     "foreach ($i in 1..2) { Add-Content f22.txt $i }",
+    # 换行分隔的第二条命令（多行脚本）
+    "Get-Content AGENT_RULES.md\nSet-Content -Path f25.txt -Value x",
+    # .NET 写 API 小写（PowerShell 不区分大小写）
+    "[io.file]::writealltext('f26.txt','x')",
 ]
 
 

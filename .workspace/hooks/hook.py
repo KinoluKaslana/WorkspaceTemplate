@@ -820,7 +820,7 @@ def main(argv: list[str] | None = None) -> int:
     # Windows 的默认 stdin/stdout 编码是本地码页（GBK），而客户端送来的是 UTF-8。
     # 不显式指定会导致：① 中文 payload 解析失败（JSONDecodeError）② deny 文案乱码。
     try:
-        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdin.reconfigure(encoding="utf-8", errors="strict")
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:

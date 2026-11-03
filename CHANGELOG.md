@@ -50,8 +50,8 @@
 ## pwsh 写路径补齐（2026-11-02，dev，不改政策版本）
 
 在真实 Windows（PowerShell 5.1，经 win-host 远程执行）验证：`Set-Content` / `Out-File` / `Add-Content` /
-`New-Item -Value` / `>` / `>>` / `Tee-Object` / `[IO.File]::WriteAllText` / `Copy-Item` / `cmd /c` 重定向
-**10 种写法都会真的创建文件**。而旧分类器只认 POSIX，这 10 种全部被判「无写目标」→ **dsh 的 pwsh 工具等于完全不设防**。
+`New-Item -Value` / `>` / `>>` / `Tee-Object` / `[IO.File]::WriteAllText` / `Copy-Item`
+**9 种写法真的创建了文件**（`cmd /c` 那条未实测成功，见本条目末的反例说明）。而旧分类器只认 POSIX，这 10 种全部被判「无写目标」→ **dsh 的 pwsh 工具等于完全不设防**。
 
 - 新增 `wtarget.classify_pwsh()`：识别上述 10 类写形态、`Remove-Item`/`Clear-Content` 等破坏性 cmdlet、
   `[IO.File]::*` 写 API；写意图存在但目标不可静态确定（`iex`/变量目标）→ **fail-closed**。

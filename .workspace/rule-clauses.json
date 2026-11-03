@@ -334,12 +334,12 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "c8fde831c7fd66f904435ac24f3b937918f6f820ae58fb5ad8c2b4e4c68c360e",
+    "file_sha256": "26dec086bba67e22919a3ed7d39701f774d4ad04813d14de67a25ed62d5018a5",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
     "clauses": {},
-    "file_sha256": "e2016f3cc26dc317b98f157a7372a6cc45f93ac9ef97d41aa99d30e9137920ab",
+    "file_sha256": "6bf3ea6a9391733193a61ca621dfc98c82d7b928f1b15cbd93e84a227bc69e1b",
     "marked": 0
   },
   ".dsh/workspace-gate/cordis.yml": {
@@ -354,7 +354,7 @@
   },
   "tests/dsh_harness.mjs": {
     "clauses": {},
-    "file_sha256": "6c60911317d9e44f2931812294d4422320fa8e800d9c58eb70014e164992c515",
+    "file_sha256": "bae85fb72eb14bda78433cf53363c25589cb961dc2aa436cc87411e60935852e",
     "marked": 0
   },
   "tests/test_dsh_wiring.py": {
@@ -364,7 +364,7 @@
   },
   "tests/test_pwsh_writes.py": {
     "clauses": {},
-    "file_sha256": "5133b5adb885c65903bcb878fec03c08c3f66dded270970f4de20ffe8b7d5beb",
+    "file_sha256": "21b19d5bf75a5708bf87ad532fddd749e3629a1d498d9dc1f6cc622db4a3f989",
     "marked": 0
   },
   "scripts/clause_lint.py": {
@@ -404,7 +404,7 @@
   },
   "tests/docs_probe.json": {
     "clauses": {},
-    "file_sha256": "5ce023bb73fd23dc7e0245a1dd198d3c160b61734b08c3b1ea48bd7524662449",
+    "file_sha256": "951ffc6a9d6a672435e38138df9c3d97f2769dc285da5c5084cb6ebe6209a321",
     "marked": 0
   },
   ".hermes/plugins/workspace-gate/plugin.yaml": {
@@ -424,7 +424,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "1978b0bef2ceb93ce51cde98cf578efea86b863f1b591a24f9d23e7b7e348fc8",
+    "file_sha256": "8b764f7817e2b3517bc773e3f828dc42e81bc7e8d7566962dc076d90de576f2c",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
@@ -434,7 +434,7 @@
   },
   ".workspace/hooks/wtarget.py": {
     "clauses": {},
-    "file_sha256": "1a4b503eb0f33778f2f25a51b40c098908afd8d7e9a28a5812b81a86f8c70d29",
+    "file_sha256": "83241a8aa2837b9c689fdd0d29117bf2bfe37928d5bce72b83f873079f6e7a48",
     "marked": 0
   },
   ".workspace/hooks/authz.py": {

@@ -59,8 +59,10 @@ dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 
 ```
 Set-Content / Out-File / Add-Content / New-Item -Value / '>' / '>>' /
-Tee-Object / [IO.File]::WriteAllText / Copy-Item / cmd /c "echo > f"
+Tee-Object / [IO.File]::WriteAllText / Copy-Item
 ```
+
+（`cmd /c "echo > f"` 在同一批取证里**没有**落地成文件——见下条反例，不要把它算进「已确认会写」。）
 
 第二步证明「守门认得它们」——同一命令串喂给 `hook.py pre_bash`（client=dsh, dsh_tool=pwsh）：
 
@@ -163,7 +165,12 @@ ls -la                            → ALLOW
 
 - **bash 盲区**：变量间接与 `awk`/重定向类外部程序写不被识别——这是已声明的盲区，不是待修 bug（要修需要 shell 解析器）。
 - 子 agent **没有委托机制**：dsh 子会话必须自己读政策才能写；父不能代授（与 CC/Codex 的 `delegations.py` 不对齐，属已知差异）。
-- `str_replace_editor`：**该构建（0.2.1-rc.4）未提供此工具**（真实回合模型明确回报「there is no str_replace_editor」）；映射代码是防御性分支，标为**无法验证**。
+- `str_replace_editor`：**该构建没有这个工具**。两项独立证据：① 运行时 `tools.definitions()` 枚举出 25 个工具
+  （`job_output` / `job_list` / `job_kill` / `web_search` / `web_fetch` / `todo_write` / `exit_plan_mode` /
+  `get_goal` / `create_goal` / `update_goal` / `read` / `write` / `edit` / `glob` / `grep` / `skill` /
+  `working_directory` / `bash` / `read_image` / `list_agents` / `send_message` / `interrupt_agent` /
+  `workflow` / `subagent` / `subagent_fork`），其中没有 `str_replace_editor`；② 真实回合里模型也回报不存在。
+  映射代码保留为防御分支；「若真发出这个工具名会被拦」由 `tests/dsh_harness.mjs` 的合成用例覆盖。
 - `pwsh`：**已在真实 Windows 上验证命令语义与分类结果**（见上方矩阵）；但 dsh 本体未在 Windows 运行，端到端未验。
 
 ### Windows 其余面（2026-11-03 真机）
