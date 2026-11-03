@@ -166,6 +166,25 @@ ls -la                            → ALLOW
 - `str_replace_editor`：**该构建（0.2.1-rc.4）未提供此工具**（真实回合模型明确回报「there is no str_replace_editor」）；映射代码是防御性分支，标为**无法验证**。
 - `pwsh`：**已在真实 Windows 上验证命令语义与分类结果**（见上方矩阵）；但 dsh 本体未在 Windows 运行，端到端未验。
 
+### Windows 侧（真机，2026-11-03 实测）
+
+真实模型回合（`deepseek-flash`，`dsh --profile headless`，工作区 `D:\wt\ws`）：
+
+| 回合 | 期望 | 实测 |
+|---|---|---|
+| 未读 → `pwsh Set-Content -Path winA.txt` | 拒 | `{"event":"pre_bash","decision":"deny"}`，`winA.txt` 不存在 ✅ |
+| 未读 → `write` 工具 | 拒 | `pre_write deny`，文件不存在 ✅ |
+| 先整读 `AGENT_RULES.md`（limit 400）→ 再 `pwsh Set-Content -Path winC.txt` | 放 | `post_read allow`（coverage 1..204 complete）→ `pre_bash` 未拒 → `winC.txt` 存在（4 字节）✅ |
+
+**Windows 上踩到并修掉的四个坑（Linux 全都不复现）**：
+
+1. `gate_core` 顶部 `import fcntl`：Windows 没有 → hook 一启动就崩 → 插件按 advisory 放行（**实测首跑真的把文件写出来了**）。改为 `fcntl`/`msvcrt.locking` 双实现。
+2. 插件按 `python3` 找解释器：Windows 只有 `python`，spawn 失败 → 静默放行。改为按平台探测 + 环境变量覆盖。
+3. 探测到 `python` 也可能是 **WindowsApps 的 Store 存根**（退出码 0、零输出、什么都不做）→ 现在用 `-c "import sys;print(sys.version_info[0])"` 实测，必须打印 `3` 才算可用。
+4. **stdin/stdout 编码**：Windows 默认 GBK，而客户端传 UTF-8 → `json.load(sys.stdin)` 直接 `JSONDecodeError`（表现为读永远记不上、deny 文案乱码）。现在 `sys.stdin/stdout/stderr.reconfigure(encoding="utf-8")`。
+
+> 第 4 条是最隐蔽的一条：hook 退出码 0、stderr 空，看起来「跑过了」，实际什么都没做。
+
 ### Windows 侧（真机）
 
 - 装了 `@deepseek-ai/dsh` 0.2.2-alpha.2（npm，615 包）到 `C:\wt-dsh`；Node **必须 ≥ 24.9**（`engines`），

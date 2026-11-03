@@ -416,6 +416,8 @@ def _dsh_text(value: object, depth: int = 0) -> str | None:
     return None
 
 
+
+
 def _record_read(data: dict, client: str, cwd: str) -> None:
 
     if data.get("hook_event_name") != "PostToolUse" or _failed_response(data):
@@ -815,6 +817,14 @@ def handle(event: str, data: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     event = argv[0] if argv else ""
+    # Windows 的默认 stdin/stdout 编码是本地码页（GBK），而客户端送来的是 UTF-8。
+    # 不显式指定会导致：① 中文 payload 解析失败（JSONDecodeError）② deny 文案乱码。
+    try:
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     try:
         data = json.load(sys.stdin)
         if not isinstance(data, dict):

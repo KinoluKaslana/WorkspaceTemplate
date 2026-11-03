@@ -35,8 +35,14 @@ function resolvePython() {
     ? ['python', 'py', 'python3']
     : ['python3', 'python']
   for (const c of candidates) {
-    const r = spawnSync(c, ['--version'], { timeout: 2000 })
-    if (r && r.status === 0) { _pyCache = c; return _pyCache }
+    // 必须真的执行 Python 代码：Windows 的 WindowsApps\python.exe 是个 Store 存根，
+    // 退出码 0、无输出、什么都不做（用它守门 = 静默失效）。
+    const r = spawnSync(c, ['-c', 'import sys;print(sys.version_info[0])'],
+                        { timeout: 4000, encoding: 'utf8' })
+    if (r && r.status === 0 && String(r.stdout || '').trim() === '3') {
+      _pyCache = c
+      return _pyCache
+    }
   }
   _pyCache = ''
   return _pyCache
@@ -150,8 +156,7 @@ function runHook(event, data) {
       if (hso?.permissionDecision === 'deny') {
         return resolvePromise({ decision: 'deny', reason: String(hso.permissionDecisionReason || 'denied') })
       }
-      if (err.trim()) logLine({ event, decision: 'allow', stderr: err.slice(0, 300), code })
-      resolvePromise({ decision: 'allow' })
+      resolvePromise({ decision: 'allow', stderr: err, code })
     })
   })
 }
@@ -207,6 +212,8 @@ export function apply(ctx) {
         if (!data.session_id) data.session_id = sid
         if (data.session_id) {
           const r = await runHook(event, data)
+          logLine({ event, decision: r.decision, tool, sid: data.session_id,
+                    stderr: String(r.stderr || '').slice(0, 300), code: r.code ?? null })
           probe({ phase: 'post', event, tool, sid: data.session_id, decision: r.decision, reason: String(r.reason || '').slice(0, 120) })
         } else {
           probe({ phase: 'post-skip', event, tool, reason: 'no-session' })

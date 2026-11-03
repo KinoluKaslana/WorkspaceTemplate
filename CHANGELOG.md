@@ -2,6 +2,22 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## Windows 真机端到端（2026-11-03，dev，不改政策版本）
+
+真实模型回合（`deepseek-flash` + `dsh 0.2.2-alpha.2` + `D:\wt\ws`）跑通两侧：
+
+- 未读写（`pwsh` / `write`）→ **deny**，文件不存在；
+- 整读 204 行后写 → **allow**，文件落地（coverage 1..204 complete）。
+
+修掉四个只有 Windows 才出现的缺陷：
+
+1. `gate_core` 的 `import fcntl` 在 Windows 直接崩（hook 退出 → 插件 advisory 放行）→ POSIX `fcntl` / Windows `msvcrt.locking` 双实现；
+2. 插件硬编码 `python3`（Windows 只有 `python`）→ 按平台探测；
+3. `python` 可能命中 WindowsApps 的 Store 存根（rc=0、无输出）→ 用 `-c print(sys.version_info[0])` 实测必须输出 `3`；
+4. **hook 的 stdin/stdout 用本地码页（GBK）**，客户端送 UTF-8 → `JSONDecodeError`，读证据永远记不上、deny 文案乱码 → `reconfigure(encoding="utf-8")`。
+
+外部依赖 `win-host` 也修了两处：`subprocess.run(text=True)` 的 GBK 解码异常（读取线程崩 → 连接重置），以及 `/exec` 的 socket 超时没跟随 `--timeout`。
+
 ## Windows 侧 dsh 落地（2026-11-03，dev，不改政策版本）
 
 - Windows 装 `@deepseek-ai/dsh` 0.2.2-alpha.2（npm 全局 → `C:\wt-dsh`，615 包）；Node 24.22.2 便携版（`D:\wt`）。

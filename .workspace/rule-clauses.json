@@ -334,12 +334,12 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "5fff0c357ef97c6f09b44ff0a809e78d7730212ff2e70b36bd833314a644b9c2",
+    "file_sha256": "ba5119fe1973b101be29fb4a94511a33f3e4a9e23aefbe8288a321691ccd2b84",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
     "clauses": {},
-    "file_sha256": "b90bb6e77099a107a117d43f111ae050a33f22f11cf85685038a72ad892abcf7",
+    "file_sha256": "a880b030d38768d58004ac4f399d72551fb9d412c2dd2e05eef805a117f72016",
     "marked": 0
   },
   ".dsh/workspace-gate/cordis.yml": {
@@ -419,7 +419,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "0025bb87511e0062ddbe26c8798dac313a0c7521410969fd29beea46068fc0b7",
+    "file_sha256": "1978b0bef2ceb93ce51cde98cf578efea86b863f1b591a24f9d23e7b7e348fc8",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
