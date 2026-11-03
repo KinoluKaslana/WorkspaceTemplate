@@ -134,7 +134,7 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "d25c009832dd34b54fd0dddcf94f39d6c14c498508c9a2024f380960f46c6637",
+    "file_sha256": "f5f3aca1101d07a4d665ef473894a5b0969bdfa1d61aa418ccf8ba7003a68d9c",
     "marked": 0
   },
   "README_EN.md": {
@@ -284,7 +284,7 @@
   },
   "docs/docs-retrieval.md": {
     "clauses": {},
-    "file_sha256": "72c7a35c175c56c67393d5fb4b6ad8ba44dd3b8288e2eccb35792710466c7dbf",
+    "file_sha256": "d7bb8a10e59712a56f48dbf4ee4984fc0f0a47d3e2c5029a09d6797149b18472",
     "marked": 0
   },
   "UPGRADE.md": {
@@ -404,7 +404,7 @@
   },
   "tests/docs_probe.json": {
     "clauses": {},
-    "file_sha256": "25517b978f5d313fad82f8beed555fde2e37590b988edfd5ea98a7175fe9851a",
+    "file_sha256": "5ce023bb73fd23dc7e0245a1dd198d3c160b61734b08c3b1ea48bd7524662449",
     "marked": 0
   },
   ".hermes/plugins/workspace-gate/plugin.yaml": {

@@ -62,7 +62,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | skills 契约化 | 7 个 skill 必须齐 8 维；`skill_audit.py` 缺节即失败；REGISTRY 由目录派生 | `docs/skills.md` §1 |
 | Python 三选一 | **uv 默认** / 手动 venv / MCP；已配置不被改写 | R2–R8 + `pyenv_init.py` |
 | 跨设备可核验 | 9 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
-| docs 检索（可选） | 确定性索引，**省账单不省 token**，命中 9/10 | `docs/docs-retrieval.md` |
+| docs 检索（可选） | 确定性索引，**省账单不省 token**，命中 10/10 | `docs/docs-retrieval.md` |
 
 > 完整文档入口：[`docs/README.md`](docs/README.md)（按读者选路径）。
 

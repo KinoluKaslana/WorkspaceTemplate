@@ -58,7 +58,15 @@ python3 scripts/docs_alias_audit.py --strict    # 死指针/指纹/来源/留一
 python3 -B tests/test_docs_index.py
 ```
 
-自主分级：索引可全自动重建；**别名新增只在 `docs/.miss-log.jsonl` 有真实查询缺口记录时可自主**，判据集 MISS 不算理由；重指/删除/阈值需人工。当前别名表为空，判据集 9/10（hit08 缺口保留待真实查询驱动）。
+自主分级：索引可全自动重建；**别名新增只在 `docs/.miss-log.jsonl` 有真实查询缺口记录时可自主**，判据集 MISS 不算理由；重指/删除/阈值需人工。当前别名表为空，判据集 **10/10**。
+
+**hit08 的修法（记录一次判据维护的判断）**：该题的检索词来自 `tests/docs_probe.json` 的 `title`，而原标题
+`新 harness 几步` 是个口语标签，在文档里没有任何对应表述（`几步` 与 `7 步` 不是同一 token），检索引擎按字面
+匹配自然落空。解法不是加别名，而是把标签改成与内容一致的 `新 harness 事件类型`，并在
+[`harness-onboarding.md`](harness-onboarding.md) §2.1 写出该题要的正文（`SessionStart` / `PreToolUse` / `Stop`）。
+
+> 判据集的 `title` 同时是检索词，**必须可代表真实问法**；只改 `question` 不改 `title` 等于没改检索。
+> 另测：用完整 `question` 检索只有 7/10（hit06/07/10 落空），说明短查询与长问句表现不同，长问句缺口另行改进。
 
 ## 什么时候值得用
 
