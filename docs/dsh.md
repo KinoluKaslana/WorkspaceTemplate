@@ -219,6 +219,8 @@ chcp 65001 > $null
   现在按平台探测（win32: `python`,`py`,`python3`；其他: `python3`,`python`），仍可用
   `WORKSPACE_GATE_DSH_PYTHON` 覆盖；都找不到 → 记 `python-missing` 并放行（advisory，不假装拦）。
 
+> 本页只记 dsh 的接线与实测结论；**接入新 harness 的通用测试清单与平台坑**见 [`harness-onboarding.md`](harness-onboarding.md)。
+
 ### 版本漂移（必须知道）
 
 - 上表与 V1–V11 的**真实回合**证据跑在 `0.2.1-rc.4` 上；本机现为 **`0.2.2-alpha.2`**（`dsh --version`）。

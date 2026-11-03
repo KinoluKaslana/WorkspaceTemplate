@@ -164,7 +164,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "45640de262972fc78d969673d567456cd5cb383d76e94c490208ccad00c36d43",
+    "file_sha256": "f2b1c0c0ecf1a2e97dd19e08e647afd73c21c70b976b71779888fd6d5ca8bc52",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -254,12 +254,12 @@
   },
   "docs/README.md": {
     "clauses": {},
-    "file_sha256": "d9a5e1d346ca4e3d4622c07582a50ee007b1e278c357d5adc5d3a66d5f1fbdc6",
+    "file_sha256": "2e4386ff02b616a81567c345a7b3008f7d212237eae09b2fd4e4570b1e4ed4df",
     "marked": 0
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "15145d6e37f0b616bdfbc84f2578b0689576299ad2678f9fe7294d9334fedf67",
+    "file_sha256": "253ab9c74ce5ddb1c478e99e67bee4b05ba0162e30b99382694846cb7ebbefc1",
     "marked": 0
   },
   "docs/skills.md": {
@@ -274,12 +274,12 @@
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "6c4e94761f2a9d3c692bd21e6c5c280f081747c7d718f060bfbe01af8b259cbe",
+    "file_sha256": "d651d20822bfd85170f4fdac79c54f137a9e219e6835bf759ee961db8f31a278",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
     "clauses": {},
-    "file_sha256": "347a1918ba4cb1ce7eac5711ed4757fe6ea2889c3267c9657aaaee2c830c7bf1",
+    "file_sha256": "5c4dc0807e55dddd35851ed1a2b63c76258cfc0543e9f138afdef27837b92545",
     "marked": 0
   },
   "docs/docs-retrieval.md": {
@@ -334,7 +334,7 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "32cd76438c1182479c6e37579b2498618d5c362db1329502f2d26fb169da2c5f",
+    "file_sha256": "c8fde831c7fd66f904435ac24f3b937918f6f820ae58fb5ad8c2b4e4c68c360e",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
@@ -375,6 +375,11 @@
   ".workspace/clauses.meta.json": {
     "clauses": {},
     "file_sha256": "33a69fbb711bdee3cd88cd02317166633fd8279ccecfaac4569db9d7e8347276",
+    "marked": 0
+  },
+  "docs/harness-onboarding.md": {
+    "clauses": {},
+    "file_sha256": "151cf9067ab9ddafddd2872cbce437ffb673f480ca9d0189fb247a3a9c7f9226",
     "marked": 0
   },
   "docs/policy-language.md": {

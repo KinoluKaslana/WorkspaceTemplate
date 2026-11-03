@@ -94,6 +94,7 @@ TEMPLATE_FILES = [
     "tests/test_pwsh_writes.py",
     "scripts/clause_lint.py",
     ".workspace/clauses.meta.json",
+    "docs/harness-onboarding.md",
     "docs/policy-language.md",
     ".workspace/skills/workspace-repo-sync/SKILL.md",
     "tests/test_alias_audit.py",

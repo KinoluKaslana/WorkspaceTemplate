@@ -10,7 +10,7 @@
 | 想把模板同步到某个分支/标签 | [`skills.md`](skills.md) → `template-update` | [`tools.md`](tools.md) → `template_sync.py` |
 | 要给 DeepSeek Harness（dsh）接守门 | [`dsh.md`](dsh.md) | [`../.dsh/workspace-gate/plugin.js`](../.dsh/workspace-gate/plugin.js) |
 | 要给 Codex / Claude Code 接守门 | [`hooks-guide.md`](hooks-guide.md) | [`hooks-catalog.md`](hooks-catalog.md) |
-| 要接入新的 harness | [`hooks-catalog.md`](hooks-catalog.md) §3（7 步） | [`tools.md`](tools.md) → `workspace_preflight.py` |
+| 要接入新的 harness | [`harness-onboarding.md`](harness-onboarding.md)（测试清单 + 经验库） | [`hooks-catalog.md`](hooks-catalog.md) §3（7 步接线） |
 | 要维护 skills 或新增 skill | [`skills.md`](skills.md) §契约 | `.workspace/skills/_TEMPLATE.md` |
 | 工作区来自很旧的模板、连当前 skill 都没有 | [`../UPGRADE.md`](../UPGRADE.md)（自举） | `skills.md` → `legacy-workspace-upgrade` |
 | 跨设备（两台机器）用同一个工作区 | [`skills.md`](skills.md) → `workspace-repo-sync` | [`tools.md`](tools.md) → `workspace_preflight.py` |
@@ -47,6 +47,7 @@ python3 scripts/clause_lint.py                            # 条款属性与用�
 | [`hooks-guide.md`](hooks-guide.md) | 三个 harness 的接线方法（用户视角） | 不列事件清单 |
 | [`hooks-catalog.md`](hooks-catalog.md) | 事件/拒绝码/审计/新 harness 照搬清单 | 不写义务句 |
 | [`docs-retrieval.md`](docs-retrieval.md) | docs 检索工具与实测结论 | 不作为读证据 |
+| [`harness-onboarding.md`](harness-onboarding.md) | 接入新 harness 的分层判据、测试矩阵、平台坑与实测记录 | 不写接线步骤细节（见 hooks-catalog §3） |
 
 ## 一句话分层
 

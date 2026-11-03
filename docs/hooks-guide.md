@@ -360,6 +360,8 @@ Codex 侧：未读时按 B′ 拒（解释器/包装类）；**已读后直接�
 
 ## 8. 接入一个新 harness 的最小清单
 
+> 完整测试矩阵、分层准入判据、平台差异清单与已踩过的坑见 [`harness-onboarding.md`](harness-onboarding.md)。下面只是接线的最小步骤。
+
 1. **找到它的「写前」事件**：是否有 PreToolUse 形态的拦截点？能否拿到目标路径？
 2. **写一个适配器**：把它的 payload 翻译成 `hook.py` 认识的字段（`session_id`、`cwd`、`tool_name`、`tool_input`、`tool_response`），并用 `GATE_CLIENT=<name>` 声明身份。
 3. **判据复用**：直接调用 `gate_core.evaluate_pre_write()`，不要重写读证据逻辑。

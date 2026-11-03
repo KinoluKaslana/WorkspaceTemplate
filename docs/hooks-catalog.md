@@ -70,6 +70,8 @@ python3 .workspace/hooks/delegations.py --workspace . mint \
 
 ## 3. 接入新 harness 的 7 步
 
+> 改完代码之后的验证要求（分层判据、12 项测试矩阵、平台差异清单）见 [`harness-onboarding.md`](harness-onboarding.md)。
+
 1. **接创建期**：拿 `session_id`；有子 agent 的一并接 `SubagentStart`（`parent_session_id` + 子 id）。
 2. **接写前**：解析目标路径；解析不出所属工作区就**保守拒绝**，不放行。
 3. **接读后**：记「读了哪些行 + 当次磁盘指纹」；正文对不上就不记账。
