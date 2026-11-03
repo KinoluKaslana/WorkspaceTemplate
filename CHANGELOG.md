@@ -2,6 +2,21 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 对外发布补齐（2026-11-03，dev，政策 3.4.0 + 本条目）
+
+依据一份 0 上下文的外部评审（8.5/10 自用、6/10 公开模板），按主理席研讨结论落地：
+
+- **LICENSE**：改用 MIT（用户拍板），`LICENSE` 进 `TEMPLATE_FILES`（75 项），README/README_EN 加徽章与许可段。
+- **Windows 路径 bug**：`docs_index.py` / `secret_scan.py` 的 `str(relative_to(...))` 改 `as_posix()`，
+  否则 Windows 下索引键与 `.secretscanignore` 匹配都会带反斜杠。
+- **可跳过用例显式化**：`test_workspace_preflight` 的 git/symlink 依赖改为 `SkipTest` 并给出原因，
+  不再在无开发者模式/无 git 的机器上变红。
+- **CI**：新增 `.github/workflows/ci.yml`——治理 job（mark_rules / verify_rules / clause_lint / skill_audit /
+  docs 检索）+ 测试 job 矩阵（ubuntu / windows / macos），跑 `unittest discover` 两个目录与 dsh harness。
+- **社区文件**：`SECURITY.md`（含 advisory 边界说明）、`CONTRIBUTING.md`、issue/PR 模板。
+- **未采纳**：政策 30KB 拆分（主理席一致认为会引入「附件漏挂 → 政策静默失效」风险，列为发布后单独评估）。
+- 遗留：GitHub 仓库 description/topics、tag 需在合并 main 后设置（本机无 gh CLI）。
+
 ## docs 检索判据补齐（2026-11-03，dev，不改政策版本）
 
 `hit08` 是长期唯一的判据缺口（9/10）。根因不是索引坏了，而是**判据标题被当检索词用**：原标题「新 harness 几步」

@@ -8,10 +8,12 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v3.3.1-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.4.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
+[![CI](https://github.com/KinoluKaslana/WorkspaceTemplate/actions/workflows/ci.yml/badge.svg)](https://github.com/KinoluKaslana/WorkspaceTemplate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [快速开始](#快速开始) · [第一次打开](#第一次打开会发生什么) · [规则分层与完整性](#规则分层与完整性校验) · [工作区生命周期](#工作区生命周期-skills) · [目录结构](#目录结构) · [常见问题](#常见问题)
 
@@ -483,3 +485,11 @@ Agent 将自动完成：
 从一个清晰的 Workspace 开始，让业务决定能力，让规则约束能力。
 
 </div>
+
+---
+
+## 许可
+
+本项目以 [MIT](LICENSE) 发布。你若把它改造成自己的 Workspace 模板，保留许可证声明即可，无需公开你的修改。
+
+发现安全问题请走[私密报告](SECURITY.md)，不要开公开 issue。

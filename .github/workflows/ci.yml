@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, alpha]
+  pull_request:
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 scripts/mark_rules.py check AGENT_RULES.md
+      - run: python3 scripts/verify_rules.py --workspace .
+      - run: python3 scripts/clause_lint.py
+      - run: python3 scripts/skill_audit.py --strict
+      - run: python3 scripts/docs_index.py build
+      - run: python3 scripts/docs_hit_report.py --mode both --min 10
+
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: unittest (tests + hooks-tests)
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          python -m unittest discover -s hooks-tests -p 'test_*.py' -v
+      - name: dsh harness (node)
+        if: always()
+        shell: bash
+        run: node tests/dsh_harness.mjs "$RUNNER_TEMP/ws"

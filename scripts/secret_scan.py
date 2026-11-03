@@ -64,7 +64,7 @@ def scan(root: Path):
     for p in sorted(root.rglob("*")):
         if not p.is_file() or p.suffix.lower() in SKIP_SUFFIX:
             continue
-        rel = str(p.relative_to(root))
+        rel = p.relative_to(root).as_posix()
         if _skipped(rel, extra):
             continue
         try:
@@ -79,7 +79,7 @@ def scan(root: Path):
             for name, pat in PATTERNS:
                 m = pat.search(line)
                 if m:
-                    hits.append({"file": str(p.relative_to(root)), "line": i,
+                    hits.append({"file": p.relative_to(root).as_posix(), "line": i,
                                  "pattern": name, "sample": masked(m.group(0))})
                     break
     return hits

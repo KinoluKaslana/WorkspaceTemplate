@@ -42,6 +42,9 @@ EXTENDS_RE = re.compile(r"extends:\s*(R\d+)")
 # user homepage (reported as REPLACED, not TAMPERED).
 TEMPLATE_FILES = [
     "AGENT_RULES.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
     "AGENTS.md",
     "CLAUDE.md",
     "HERMES.md",
