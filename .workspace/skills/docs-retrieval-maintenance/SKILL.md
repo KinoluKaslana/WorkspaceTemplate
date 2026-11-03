@@ -1,7 +1,7 @@
 ---
 name: docs-retrieval-maintenance
 description: "Use when docs/ changed, the retrieval index is stale, an alias target was renamed, or the hit report drops. 维护 docs 检索索引与别名表：索引可全自动，别名仅在有真实查询缺口日志时可自主新增（用户不手改）。"
-version: 1.2.0
+version: 1.3.0
 ---
 
 # docs 检索维护 — 索引与别名表的 Agent 维护规程
@@ -143,7 +143,7 @@ python3 scripts/docs_index.py build && python3 scripts/docs_hit_report.py
 
 ```bash
 python3 scripts/docs_index.py check                    # ok:true
-python3 scripts/docs_hit_report.py --min 9             # PASS，且不低于改动前
+python3 scripts/docs_hit_report.py --mode both --min 10   # 短查询与长问句都必须 PASS
 python3 scripts/docs_alias_audit.py --strict           # exit 0，probe_only_debt 空
 python3 -B tests/test_docs_index.py                    # 11 例
 python3 -B scripts/verify_rules.py --workspace .       # clean=true

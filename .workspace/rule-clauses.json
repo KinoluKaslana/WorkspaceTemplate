@@ -194,17 +194,17 @@
   },
   ".workspace/skills/docs-retrieval-maintenance/SKILL.md": {
     "clauses": {},
-    "file_sha256": "00b4a0342815943e927804665813ff817ad4b8ebb6ab17e047fb05aeea0504f3",
+    "file_sha256": "8f25e7ca468c72f1149473fb02881ca380e021f1f0c3a210241d49acb7111d80",
     "marked": 0
   },
   "scripts/docs_index.py": {
     "clauses": {},
-    "file_sha256": "315db2a3e8c8e38b1074f06110ca46643a5bbc7a96451f26acfbef2b334596a8",
+    "file_sha256": "e3767ec53d1564e2080cebc343e4a00f2a1772f0ec37684f5fc610c7dc06cf1e",
     "marked": 0
   },
   "scripts/docs_hit_report.py": {
     "clauses": {},
-    "file_sha256": "b0085f1d916efc3f5474a63f77cef81347d1b51c4e604f0fb3bd4b384766ed84",
+    "file_sha256": "732db63b284a33a4abc58fb7d1b319e2f096e7cac14a3c3995d9dfd77ffb8d23",
     "marked": 0
   },
   "scripts/docs_alias_audit.py": {
@@ -264,7 +264,7 @@
   },
   "docs/skills.md": {
     "clauses": {},
-    "file_sha256": "44953c1c3484ba956eb875e52d20a0f6d2fdb843c79b476ec04b567221a7dd36",
+    "file_sha256": "b3de6cb16d2a3bd4eeb08bf57d4ecb1ddd2c06d4b6a350477936e193fa692365",
     "marked": 0
   },
   "docs/tools.md": {
@@ -279,12 +279,12 @@
   },
   "docs/hooks-catalog.md": {
     "clauses": {},
-    "file_sha256": "5c4dc0807e55dddd35851ed1a2b63c76258cfc0543e9f138afdef27837b92545",
+    "file_sha256": "3cb44db9b366f9ee489cb41ebc368ebcb47ffafcb613291817edfda995caf600",
     "marked": 0
   },
   "docs/docs-retrieval.md": {
     "clauses": {},
-    "file_sha256": "d7bb8a10e59712a56f48dbf4ee4984fc0f0a47d3e2c5029a09d6797149b18472",
+    "file_sha256": "1f99cede22db27fc210d1a22b62561ca0a9e551f19128acc27b7ac3fdd85f4b6",
     "marked": 0
   },
   "UPGRADE.md": {
@@ -334,7 +334,7 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "26dec086bba67e22919a3ed7d39701f774d4ad04813d14de67a25ed62d5018a5",
+    "file_sha256": "a5fc9b715b2cd84ab04139bf4bdf9e5241a2b38358bba7a44a6f28945f5d0207",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {

@@ -204,7 +204,9 @@ def query(index: Path, docs: Path, terms: list[str], top: int) -> dict:
         cover = 0.25 + 0.75 * ((sum(W[t] for t in hit) / total_w) ** 2 if total_w else 0.0)
         body_score = _bm25(hit, s, df, n, avgdl) if hit else 0.0
         hl = s["heading"].lower()
-        head_score = 3.0 * sum(W[t] * math.log(1 + (n - df.get(t, 0) + 0.5) / (df.get(t, 0) + 0.5))
+        # 标题权重 0.5：早先取 3.0，会让「标题恰好含泛词」的大节压过真正含答案的小节
+        # （长问句口径实测 7/10 → 掉到 9/10 的差距主要来自这里）。
+        head_score = 0.5 * sum(W[t] * math.log(1 + (n - df.get(t, 0) + 0.5) / (df.get(t, 0) + 0.5))
                                for t in hit if t in hl)
         score = cover * (body_score + head_score)
         bonus = 0.0
