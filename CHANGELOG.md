@@ -18,6 +18,9 @@
   两类负例（空账本、有 events 无 ts）都由 `test_gate_status.py` 钉住。
 - **`.github/` 明确不下发**：CI 与 `release_anchor.py` 属模板仓基础设施，不进 `TEMPLATE_FILES`、不随同步下发；
   `tests/test_docs_consistency.py::test_d9_github_layer_is_not_template_layer` 钉边界（此前审计席把它当缺口，实为设计）。
+- **测试文件读写编码**：hooks-tests 里 `read_text()/write_text()` 未指定编码，Windows 上按 cp1252 处理含中文的
+  状态/审计账本会抛 `UnicodeDecodeError`（`test_w2_anchor` / `test_w3_worktree_change_audit` 因此红）；统一显式 UTF-8。
+- **`.gitattributes` 强制 LF**：Windows 默认检出 CRLF，会让「完整读取」的行证据与字节指纹判据失效。
 - **测试子进程编码**：Windows 上 Python 子进程 stdout 用 locale（cp1252/GBK），父进程用 `text=True` 解码会抛
   `UnicodeDecodeError`——所有 spawn 统一 `encoding="utf-8", errors="replace"`，并在测试进程里 `PYTHONUTF8=1` 让子进程按 UTF-8 输出。
 - **Windows CI 修复（同一发布线）**：CC project slug 在 Windows 上产出 `-C:\Users\…` 非法目录名（hooks-tests 39 error 的根因）→ 分隔符归一化 + 冒号替换；
