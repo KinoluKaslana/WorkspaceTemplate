@@ -46,7 +46,7 @@ class TemplateAnchor(unittest.TestCase):
     def _init_git(self, repo: Path):
         for args in (["init", "-q"], ["config", "user.email", "t@t"],
                      ["config", "user.name", "t"]):
-            r = subprocess.run(["git", "-C", str(repo), *args],
+            r = subprocess.run(["git", "-C", str(repo), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args],
                                capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(r.returncode, 0, r.stderr)
 

@@ -63,6 +63,9 @@ jobs:
             done
             echo "---- tail of failures ----"
             grep -hE -A6 '^(FAIL|ERROR): ' /tmp/t1.log /tmp/t2.log | tail -80
+            # 把失败上下文压成一条 annotation：步骤日志要 admin 才能下载，annotation 公开可读
+            BODY=$(grep -hE -A8 '^(FAIL|ERROR): ' /tmp/t1.log /tmp/t2.log | tail -40 | tr '\n' '|' | cut -c1-3000)
+            echo "::error title=ci-failure-detail::$BODY"
             exit 1
           fi
       - name: dsh harness (node)

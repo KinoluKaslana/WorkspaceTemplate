@@ -50,7 +50,7 @@ class PostShellAudit(unittest.TestCase):
         self.sid = "dsh-postshell-" + self._testMethodName
 
     def git(self, *args):
-        r = subprocess.run(["git", "-C", str(self.ws), *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        r = subprocess.run(["git", "-C", str(self.ws), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
 

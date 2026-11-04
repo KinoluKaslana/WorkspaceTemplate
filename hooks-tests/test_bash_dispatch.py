@@ -89,12 +89,12 @@ class BashDispatch(unittest.TestCase):
         (root / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
         for args in (["init", "-q"], ["config", "user.email", "t@t"],
                      ["config", "user.name", "t"]):
-            r = subprocess.run(["git", "-C", str(root), *args],
+            r = subprocess.run(["git", "-C", str(root), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args],
                                capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(r.returncode, 0, f"git {args} failed: {r.stderr}")
         (root / "probe.txt").write_text("v1\n")
         subprocess.run(["git", "-C", str(root), "add", "-A"], capture_output=True)
-        r = subprocess.run(["git", "-C", str(root), "commit", "-qm", "init"],
+        r = subprocess.run(["git", "-C", str(root), "-c", "user.name=ci", "-c", "user.email=ci@example.com", "commit", "-qm", "init"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stderr)
         return root
