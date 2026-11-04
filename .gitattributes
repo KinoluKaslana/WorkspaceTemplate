@@ -1,0 +1,12 @@
+# 统一按 LF 检出：仓库内容（含 AGENT_RULES.md 的行数/行尾）本身是判据的一部分。
+# Windows 默认 core.autocrlf=true 会检出 CRLF，导致「完整读取」的连续行证据与
+# 字节级指纹在 Windows CI 上对不上（read-then-write 一类用例全红）。
+* text=auto eol=lf
+
+# 二进制保持原样
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
+*.docx binary
+*.xlsx binary
