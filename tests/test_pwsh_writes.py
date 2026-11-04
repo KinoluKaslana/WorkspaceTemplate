@@ -81,7 +81,7 @@ class PwshWrites(unittest.TestCase):
                    "session_id": "pwsh-case", "cwd": str(self.ws), "tool_name": "Bash",
                    "tool_input": {"command": command}}
         p = subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "pre_bash"],
-                           input=json.dumps(payload), capture_output=True, text=True,
+                           input=json.dumps(payload), capture_output=True, text=True, encoding="utf-8",
                            env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
         out = p.stdout.strip()
         if not out:
@@ -125,7 +125,7 @@ class PwshWrites(unittest.TestCase):
                 "tool_input": {"file_path": target, "offset": 1, "limit": physical},
                 "tool_response": {"isError": False, "content": [{"type": "text", "text": text}]}}
         subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "post_read"],
-                       input=json.dumps(post), capture_output=True, text=True,
+                       input=json.dumps(post), capture_output=True, text=True, encoding="utf-8",
                        env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
         self.assertEqual(self.decision("Set-Content -Path 'after.txt' -Value 'hi'")[0], "allow")
 

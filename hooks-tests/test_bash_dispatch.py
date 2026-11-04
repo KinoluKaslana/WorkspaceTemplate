@@ -49,7 +49,7 @@ class BashDispatch(unittest.TestCase):
         payload = {"session_id": sid, "cwd": str(ws), **fields}
         env = {**os.environ, "GATE_CLIENT": client, "PYTHONDONTWRITEBYTECODE": "1"}
         p = subprocess.run([PY, "-B", str(HOOK), event], input=json.dumps(payload),
-                           text=True, capture_output=True, env=env, cwd=str(ws),
+                           text=True, encoding="utf-8", capture_output=True, env=env, cwd=str(ws),
                            timeout=20)
         self.assertEqual(p.returncode, 0, f"exit!=0 stderr={p.stderr}")
         self.assertEqual(p.stderr, "", f"stderr not empty: {p.stderr}")
@@ -88,12 +88,12 @@ class BashDispatch(unittest.TestCase):
         for args in (["init", "-q"], ["config", "user.email", "t@t"],
                      ["config", "user.name", "t"]):
             r = subprocess.run(["git", "-C", str(root), *args],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8")
             self.assertEqual(r.returncode, 0, f"git {args} failed: {r.stderr}")
         (root / "probe.txt").write_text("v1\n")
         subprocess.run(["git", "-C", str(root), "add", "-A"], capture_output=True)
         r = subprocess.run(["git", "-C", str(root), "commit", "-qm", "init"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stderr)
         return root
 

@@ -42,7 +42,7 @@ class DshGate(unittest.TestCase):
                    "hook_event_name": "PreToolUse" if event.startswith("pre") else "PostToolUse",
                    **data}
         p = subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), event],
-                           input=json.dumps(payload), capture_output=True, text=True,
+                           input=json.dumps(payload), capture_output=True, text=True, encoding="utf-8",
                            env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
         self.assertEqual(p.returncode, 0, p.stderr)
         out = p.stdout.strip()
@@ -99,7 +99,7 @@ class DshGate(unittest.TestCase):
     def test_d4_plugin_end_to_end(self):
         harness = ROOT / "tests" / "dsh_harness.mjs"
         p = subprocess.run(["node", str(harness), str(self.ws), "--json"],
-                           capture_output=True, text=True, timeout=180)
+                           capture_output=True, text=True, encoding="utf-8", timeout=180)
         if p.returncode == 2:
             self.skipTest(f"环境不满足：{p.stderr.strip()[:120]}")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)

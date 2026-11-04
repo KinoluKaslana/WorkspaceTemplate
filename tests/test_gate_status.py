@@ -20,7 +20,7 @@ SCRIPT = ROOT / "scripts" / "gate_status.py"
 def run(ws: Path, *args: str) -> subprocess.CompletedProcess:
     # HERMES_HOME 指向工作区内的空目录：否则本机真实插件日志会把 hermes 判成「有证据」
     return subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(ws), *args],
-                          capture_output=True, text=True, timeout=60,
+                          capture_output=True, text=True, encoding="utf-8", timeout=60,
                           env={**os.environ, "HERMES_HOME": str(ws / "no-hermes-home")})
 
 
@@ -70,7 +70,7 @@ class GateStatus(unittest.TestCase):
             encoding="utf-8")
         r = subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(self.ws),
                             "--require", "hermes", "--json"],
-                           capture_output=True, text=True, timeout=60,
+                           capture_output=True, text=True, encoding="utf-8", timeout=60,
                            env={**os.environ, "HERMES_HOME": str(home)})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(json.loads(r.stdout)["clients"]["hermes"]["active"])
@@ -99,7 +99,7 @@ class GateStatus(unittest.TestCase):
         os.utime(log, None)                               # mtime = 现在
         r = subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(self.ws),
                             "--require", "hermes", "--ttl-minutes", "30", "--json"],
-                           capture_output=True, text=True, timeout=60,
+                           capture_output=True, text=True, encoding="utf-8", timeout=60,
                            env={**os.environ, "HERMES_HOME": str(home)})
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertFalse(json.loads(r.stdout)["clients"]["hermes"]["active"])
@@ -271,7 +271,7 @@ class GateStatus(unittest.TestCase):
             encoding="utf-8")
         r = subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(self.ws),
                             "--require", "hermes", "--json"],
-                           capture_output=True, text=True, timeout=60,
+                           capture_output=True, text=True, encoding="utf-8", timeout=60,
                            env={**os.environ, "HERMES_HOME": str(home)})
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertFalse(json.loads(r.stdout)["clients"]["hermes"]["active"])

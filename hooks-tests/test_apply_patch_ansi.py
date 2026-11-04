@@ -92,7 +92,7 @@ class ApplyPatchAnsiProcess(unittest.TestCase):
         payload = {"session_id": self.sid, "cwd": str(self.ws), **fields}
         env = {**os.environ, "GATE_CLIENT": client, "PYTHONDONTWRITEBYTECODE": "1"}
         p = subprocess.run([sys.executable, "-B", str(HOOK), event],
-                           input=json.dumps(payload), text=True, capture_output=True,
+                           input=json.dumps(payload), text=True, encoding="utf-8", capture_output=True,
                            env=env, cwd=str(self.ws), timeout=20)
         self.assertEqual(p.returncode, 0, f"exit!=0 stderr={p.stderr}")
         return json.loads(p.stdout) if p.stdout.strip() else {}

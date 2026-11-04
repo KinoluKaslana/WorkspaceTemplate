@@ -48,7 +48,7 @@ class PostShellAudit(unittest.TestCase):
         self.sid = "dsh-postshell-" + self._testMethodName
 
     def git(self, *args):
-        r = subprocess.run(["git", "-C", str(self.ws), *args], capture_output=True, text=True)
+        r = subprocess.run(["git", "-C", str(self.ws), *args], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
 
@@ -56,7 +56,7 @@ class PostShellAudit(unittest.TestCase):
         payload = {"session_id": self.sid, "cwd": str(self.ws), "client": "dsh", **fields}
         env = {**os.environ, "GATE_CLIENT": "dsh", "PYTHONDONTWRITEBYTECODE": "1"}
         p = subprocess.run([PY, "-B", str(HOOK), event], input=json.dumps(payload),
-                           text=True, capture_output=True, env=env, cwd=str(self.ws), timeout=60)
+                           text=True, encoding="utf-8", capture_output=True, env=env, cwd=str(self.ws), timeout=60)
         self.assertEqual(p.returncode, 0, f"exit!=0 stderr={p.stderr}")
         return json.loads(p.stdout) if p.stdout.strip() else {}
 

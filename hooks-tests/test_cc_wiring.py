@@ -44,7 +44,7 @@ class CcWiring(unittest.TestCase):
                "CC_TRANSCRIPT_ROOT": str(self.projects),
                "PYTHONDONTWRITEBYTECODE": "1"}
         proc = subprocess.run([sys.executable, "-B", str(HOOKS / "hook.py"), event],
-                              input=json.dumps(payload), text=True, capture_output=True,
+                              input=json.dumps(payload), text=True, encoding="utf-8", capture_output=True,
                               env=env, cwd=str(self.ws), timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stderr, "", f"stderr: {proc.stderr}")

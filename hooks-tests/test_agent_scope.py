@@ -145,7 +145,7 @@ class AgentScope(unittest.TestCase):
         }
         env = {**os.environ, "GATE_CLIENT": "codex", "PYTHONDONTWRITEBYTECODE": "1"}
         p = subprocess.run([PY, str(HOOK), "post_bash"], input=json.dumps(payload),
-                           text=True, capture_output=True, env=env)
+                           text=True, encoding="utf-8", capture_output=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
         files = sorted(x.name for x in (self.ws / ".workspace" / ".hook-state").glob("*.json"))
         self.assertTrue(any("s7.agent-e2e" in f for f in files), f"作用域状态未生成：{files}")

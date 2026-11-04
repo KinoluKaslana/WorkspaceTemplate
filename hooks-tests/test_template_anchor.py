@@ -45,13 +45,13 @@ class TemplateAnchor(unittest.TestCase):
         for args in (["init", "-q"], ["config", "user.email", "t@t"],
                      ["config", "user.name", "t"]):
             r = subprocess.run(["git", "-C", str(repo), *args],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stderr)
 
     def _git_commit_all(self, repo: Path):
         subprocess.run(["git", "-C", str(repo), "add", "-A"], capture_output=True)
         r = subprocess.run(["git", "-C", str(repo), "commit", "-qm", "init"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def run_anchor(self, template=None, env_extra=None):
@@ -62,7 +62,7 @@ class TemplateAnchor(unittest.TestCase):
         env.pop("WORKSPACE_TEMPLATE_CLONE", None)
         if env_extra:
             env.update(env_extra)
-        p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=90)
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env, timeout=90)
         out = {}
         try:
             out = json.loads(p.stdout) if p.stdout.strip() else {}

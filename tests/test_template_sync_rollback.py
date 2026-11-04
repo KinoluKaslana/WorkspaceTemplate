@@ -20,7 +20,7 @@ def _source_ref() -> str:
     """
     try:
         r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         sha = r.stdout.strip()
         if r.returncode == 0 and sha:
             return sha
@@ -49,7 +49,7 @@ class Rollback(unittest.TestCase):
     def run_sync(self, *args):
         return subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
                                "--template", str(ROOT), "--ref", _source_ref(), *args],
-                              capture_output=True, text=True, cwd=ROOT)
+                              capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
 
     def test_apply_writes_manifest_sections(self):
         p = self.run_sync("--apply")
@@ -69,7 +69,7 @@ class Rollback(unittest.TestCase):
         self.assertTrue((self.ws / "UPGRADE.md").is_file())
         bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
         p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                            "--rollback", str(bk)], capture_output=True, text=True, cwd=ROOT)
+                            "--rollback", str(bk)], capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
         self.assertEqual((self.ws / "README.md").read_text(encoding="utf-8"), "local home\n")
@@ -89,7 +89,7 @@ class Rollback(unittest.TestCase):
         bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
         p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
                             "--rollback", str(bk), "--purge-generated"],
-                           capture_output=True, text=True, cwd=ROOT)
+                           capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertFalse(reg.exists())
         self.assertFalse((self.ws / "notes" / "INDEX.md").exists())
@@ -99,7 +99,7 @@ class Rollback(unittest.TestCase):
         bk = self.ws / ".workspace" / "backup-empty"
         bk.mkdir()
         p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                            "--rollback", str(bk)], capture_output=True, text=True, cwd=ROOT)
+                            "--rollback", str(bk)], capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
         self.assertEqual(p.returncode, 2)
         self.assertIn("MANIFEST", p.stderr + p.stdout)
 

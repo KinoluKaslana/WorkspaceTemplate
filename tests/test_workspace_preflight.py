@@ -25,7 +25,7 @@ HOST = socket.gethostname()
 
 def run(ws: Path, *args):
     p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(ws), "--json", *args],
-                       cwd=ws, capture_output=True, text=True)
+                       cwd=ws, capture_output=True, text=True, encoding="utf-8")
     try:
         data = json.loads(p.stdout)
     except Exception:

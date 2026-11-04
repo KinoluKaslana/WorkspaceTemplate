@@ -59,7 +59,7 @@ console.log(JSON.stringify({ ms: Date.now() - started, kind: r.kind, reason: Str
                "PATH": "/nonexistent"}
         env.pop("WORKSPACE_GATE_DSH_PYTHON", None)
         p = subprocess.run([node, "--input-type=module", "-e", script, str(self.ws)],
-                           capture_output=True, text=True, env=env, timeout=60)
+                           capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr[-400:])
         out = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertNotEqual(out["kind"], "TIMEOUT", "插件在解释器缺失时挂起了")
@@ -105,7 +105,7 @@ console.log(JSON.stringify({ kind: r.kind, reason: String(r.reason || '') }))
                "WORKSPACE_GATE_DSH_FAIL_CLOSED": "1"}
         env.pop("WORKSPACE_GATE_DSH_PYTHON", None)
         p = subprocess.run([node, "--input-type=module", "-e", script, str(self.ws)],
-                           capture_output=True, text=True, env=env, timeout=60)
+                           capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr[-400:])
         out = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertEqual(out["kind"], "deny", out)

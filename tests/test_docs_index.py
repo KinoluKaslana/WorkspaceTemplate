@@ -28,7 +28,7 @@ PY = sys.executable
 
 
 def run(*args, cwd):
-    p = subprocess.run([PY, "-B", str(SCRIPT), *args], cwd=cwd, text=True, capture_output=True)
+    p = subprocess.run([PY, "-B", str(SCRIPT), *args], cwd=cwd, text=True, encoding="utf-8", capture_output=True)
     return p.returncode, p.stdout.strip()
 
 

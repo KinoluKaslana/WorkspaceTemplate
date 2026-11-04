@@ -37,7 +37,7 @@ def mkws(tmp: Path) -> Path:
 
 def run(ws: Path, *args, env=None):
     p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(ws), "--json", *args],
-                       cwd=ws, capture_output=True, text=True,
+                       cwd=ws, capture_output=True, text=True, encoding="utf-8",
                        env={**os.environ, **(env or {})})
     try:
         data = json.loads(p.stdout)
