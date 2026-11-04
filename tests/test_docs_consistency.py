@@ -123,9 +123,12 @@ class DocsConsistency(unittest.TestCase):
                                                  (ROOT / "AGENT_RULES.md").read_text(encoding="utf-8"))]
         max_clause = max(clause_ids) if clause_ids else 0
         bad = []
+        user_home = not _is_template_repo()
         for md in DOCS:
             text = md.read_text(encoding="utf-8")
             rel = md.relative_to(ROOT)
+            if user_home and md.name.startswith("README"):
+                continue          # 实例的 README 是用户首页，计数不归模板管
             for m in re.finditer(r"(\d+)\s*个\s*(?:workspace\s*)?skill", text):
                 if int(m.group(1)) != disk_skills:
                     bad.append(f"{rel}: 写 {m.group(1)} 个 skill（磁盘 {disk_skills}）")

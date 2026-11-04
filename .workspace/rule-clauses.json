@@ -120,7 +120,7 @@
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
       "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。"
     },
-    "file_sha256": "02a6d3ec86ed3266cc928077859a1a9ee3f34c19b1e6b9e852a656c69d98e47a",
+    "file_sha256": "a0031d451e0339775e6799c42374ce7f812fc43bd17fd5cdd262145788d9863f",
     "marked": 118
   },
   "LICENSE": {
@@ -280,7 +280,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "9267d32632e75981caa0cf09cf93eeb67f925c0267da64489be842f3b9d90f97",
+    "file_sha256": "9e6f0fb378ad06276ab1a50400214dbade645f244e011ca892b4805d04b4928d",
     "marked": 0
   },
   "docs/skills.md": {
@@ -320,7 +320,7 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "f4287305bc7a561c25b120942edd60593dd211882b77bad676c5fd364cac74e2",
+    "file_sha256": "4633b456b1e21f4625826b30c585f36473617ffb1d3651cacff13e0e3078a85a",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
