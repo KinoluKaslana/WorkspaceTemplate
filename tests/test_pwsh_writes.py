@@ -13,6 +13,8 @@ P15 解释器（iex）在写意图不明时 fail-closed（deny）
 """
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import shutil
 import subprocess
 import sys

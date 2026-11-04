@@ -6,6 +6,8 @@ B. hook 收到非 UTF-8 字节时，stdin 用 strict 解码 → 抛错 → `pre_
 """
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import shutil
 import subprocess
 import sys

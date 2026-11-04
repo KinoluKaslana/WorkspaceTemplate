@@ -7,6 +7,8 @@ D4 插件链路（node dsh_harness.mjs）全过；无 node 时跳过并注明
 """
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import shutil
 import subprocess
 import sys

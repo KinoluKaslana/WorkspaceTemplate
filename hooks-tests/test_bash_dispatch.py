@@ -5,6 +5,8 @@ run_fix_suite.py 之外独立运行：`.venv-314/bin/python -B hook-adapter-e2e-
 """
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import re
 import subprocess
 import sys
@@ -88,12 +90,12 @@ class BashDispatch(unittest.TestCase):
         for args in (["init", "-q"], ["config", "user.email", "t@t"],
                      ["config", "user.name", "t"]):
             r = subprocess.run(["git", "-C", str(root), *args],
-                               capture_output=True, text=True, encoding="utf-8")
+                               capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(r.returncode, 0, f"git {args} failed: {r.stderr}")
         (root / "probe.txt").write_text("v1\n")
         subprocess.run(["git", "-C", str(root), "add", "-A"], capture_output=True)
         r = subprocess.run(["git", "-C", str(root), "commit", "-qm", "init"],
-                           capture_output=True, text=True, encoding="utf-8")
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stderr)
         return root
 

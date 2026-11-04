@@ -48,7 +48,7 @@ def wp(ws: Path, aliases):
 
 def audit(ws: Path, *args):
     p = subprocess.run([sys.executable, "-B", "scripts/docs_alias_audit.py", *args],
-                       cwd=ws, capture_output=True, text=True, encoding="utf-8")
+                       cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return p.returncode, p.stdout
 
 

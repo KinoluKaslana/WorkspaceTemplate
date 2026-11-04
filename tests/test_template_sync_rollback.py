@@ -20,7 +20,7 @@ def _source_ref() -> str:
     """
     try:
         r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
-                           capture_output=True, text=True, encoding="utf-8")
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
         sha = r.stdout.strip()
         if r.returncode == 0 and sha:
             return sha

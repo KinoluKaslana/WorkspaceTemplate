@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import subprocess
 import sys
 import tempfile
@@ -45,13 +47,13 @@ class TemplateAnchor(unittest.TestCase):
         for args in (["init", "-q"], ["config", "user.email", "t@t"],
                      ["config", "user.name", "t"]):
             r = subprocess.run(["git", "-C", str(repo), *args],
-                               capture_output=True, text=True, encoding="utf-8")
+                               capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(r.returncode, 0, r.stderr)
 
     def _git_commit_all(self, repo: Path):
         subprocess.run(["git", "-C", str(repo), "add", "-A"], capture_output=True)
         r = subprocess.run(["git", "-C", str(repo), "commit", "-qm", "init"],
-                           capture_output=True, text=True, encoding="utf-8")
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def run_anchor(self, template=None, env_extra=None):

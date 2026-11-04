@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import subprocess
 import sys
 import tempfile
@@ -48,7 +50,7 @@ class PostShellAudit(unittest.TestCase):
         self.sid = "dsh-postshell-" + self._testMethodName
 
     def git(self, *args):
-        r = subprocess.run(["git", "-C", str(self.ws), *args], capture_output=True, text=True, encoding="utf-8")
+        r = subprocess.run(["git", "-C", str(self.ws), *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
 

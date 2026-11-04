@@ -87,7 +87,7 @@ class NotesIndexCheck(Base):
 
     def build(self):
         p = subprocess.run([sys.executable, "-B", "rebuild_index.py"],
-                           cwd=self.root / "notes", capture_output=True, text=True, encoding="utf-8")
+                           cwd=self.root / "notes", capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertIn(p.returncode, (0, 1), p.stderr)   # 1 = 有警告/策展到期，仍产出文件
 
     def test_green_after_build(self):

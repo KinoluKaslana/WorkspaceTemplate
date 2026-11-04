@@ -10,6 +10,8 @@ P5 模板克隆 remote 与 source_repo 不一致 → mismatch
 """
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import shutil
 import socket
 import subprocess
@@ -25,7 +27,7 @@ HOST = socket.gethostname()
 
 def run(ws: Path, *args):
     p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(ws), "--json", *args],
-                       cwd=ws, capture_output=True, text=True, encoding="utf-8")
+                       cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
         data = json.loads(p.stdout)
     except Exception:

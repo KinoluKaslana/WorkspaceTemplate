@@ -255,17 +255,17 @@
   },
   "tests/test_pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "c2de4cb968ca4add447d352d910a6d360b5dbdc0070b4fd17d7c090d70e43650",
+    "file_sha256": "0ed25c383d5103cb3749c5f8484247ef8e9bcef34f188a6f3b9283c65352fd81",
     "marked": 0
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "71b33a845371ca96652a0d33624336c0c6a660813cdefa90201591d42de7002c",
+    "file_sha256": "bb6774e9daf66eb95f04e613a4fe648ef1317299561b091e3f1fb4f839683321",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
     "clauses": {},
-    "file_sha256": "3b95d9d2fed188d1b55ac25fe9d8e345f1e9af9afee1af0a4b6d84fb444a60cf",
+    "file_sha256": "d84c8f0ca176e8b74ba5e848663e4f618769f488a10621f7c1802aaeb8a935ff",
     "marked": 0
   },
   ".workspace/skills/_TEMPLATE.md": {
@@ -325,17 +325,17 @@
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "c77a04b7b9553028cc05094272962ae07e23dab016e2e892c84c4a6c5a523f6a",
+    "file_sha256": "d6a4636b7f73d48c58f1d99dd85e6df37f252d0ce9dadd459b5332b827d2a036",
     "marked": 0
   },
   "tests/test_clause_lint.py": {
     "clauses": {},
-    "file_sha256": "b5db0a7369b90226fada6d62d07370aa9962b0a8eff4ecb0c94319ad4ee8b876",
+    "file_sha256": "2c553f196fa908ee642b497aebc05a06ce13cb2856bfd49f77b504825ca45f2d",
     "marked": 0
   },
   "tests/test_check_scripts.py": {
     "clauses": {},
-    "file_sha256": "54ac8eb52ab4be563c292880648fe00e4ceec13f195b186eb0a8f3e2496b5d86",
+    "file_sha256": "496b834dce090f5144ccef37da4cb40c5a275fa21959e8d29a66f83e52f80701",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -380,12 +380,12 @@
   },
   "tests/test_dsh_wiring.py": {
     "clauses": {},
-    "file_sha256": "cc48aefee2d536d8e447473a9d1940931014af07083ddcbe67af133b9f245417",
+    "file_sha256": "528366f18e8a4e3c5b46d3ccfc6841831ef67d80e12618f6d53d0b00b0f07a83",
     "marked": 0
   },
   "tests/test_pwsh_writes.py": {
     "clauses": {},
-    "file_sha256": "f2361c7c8a07db0f1b08c9507bd03779eb8090e5d8081775abce0239501633d3",
+    "file_sha256": "06acba5d506ca668cf40cfa1d3613f5d7d9032ac0fc96a0e5f82ec806d1c8e3a",
     "marked": 0
   },
   "scripts/clause_lint.py": {
@@ -415,7 +415,7 @@
   },
   "tests/test_alias_audit.py": {
     "clauses": {},
-    "file_sha256": "cf7744b66929fff85cbdf7390b2ef3135f9a77d1e36c3832706296000e3a23cc",
+    "file_sha256": "9577577bcbdc5024c8c4cddb72ceb0e2307abad22e491d6dee8ea0b5457aeee7",
     "marked": 0
   },
   "tests/test_docs_index.py": {
@@ -495,7 +495,7 @@
   },
   "tests/test_gate_status.py": {
     "clauses": {},
-    "file_sha256": "b85e37ddaacf7db263731b6ca707ec5c94045b0e19608f8a53dffc704ace4252",
+    "file_sha256": "1f52b14d86891b7f630af4ac99fdc59803bfda3ae9d057a49cd17192c3449a2a",
     "marked": 0
   }
 }

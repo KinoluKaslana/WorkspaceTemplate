@@ -18,6 +18,8 @@
   两类负例（空账本、有 events 无 ts）都由 `test_gate_status.py` 钉住。
 - **`.github/` 明确不下发**：CI 与 `release_anchor.py` 属模板仓基础设施，不进 `TEMPLATE_FILES`、不随同步下发；
   `tests/test_docs_consistency.py::test_d9_github_layer_is_not_template_layer` 钉边界（此前审计席把它当缺口，实为设计）。
+- **测试子进程编码**：Windows 上 Python 子进程 stdout 用 locale（cp1252/GBK），父进程用 `text=True` 解码会抛
+  `UnicodeDecodeError`——所有 spawn 统一 `encoding="utf-8", errors="replace"`，并在测试进程里 `PYTHONUTF8=1` 让子进程按 UTF-8 输出。
 - **Windows CI 修复（同一发布线）**：CC project slug 在 Windows 上产出 `-C:\Users\…` 非法目录名（hooks-tests 39 error 的根因）→ 分隔符归一化 + 冒号替换；
   `test_wtarget` 命令串里的盘符路径改用 `/`（bash 里反斜杠是转义，属 shell 语义）；`test_cc_transcript` 的产物路径断言先归一化；
   dsh harness 用 `pathToFileURL()` 加载插件（裸盘符路径在 Windows 触发 `ERR_UNSUPPORTED_ESM_URL_SCHEME`）；
