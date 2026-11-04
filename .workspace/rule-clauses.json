@@ -255,7 +255,7 @@
   },
   "tests/test_pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "0ed25c383d5103cb3749c5f8484247ef8e9bcef34f188a6f3b9283c65352fd81",
+    "file_sha256": "196bbeeaf777183f44322706f0fa97ac16ab9bf9491a505995be3ed2378c84c0",
     "marked": 0
   },
   "tests/test_workspace_preflight.py": {
@@ -415,7 +415,7 @@
   },
   "tests/test_alias_audit.py": {
     "clauses": {},
-    "file_sha256": "9577577bcbdc5024c8c4cddb72ceb0e2307abad22e491d6dee8ea0b5457aeee7",
+    "file_sha256": "7617bbed375de819193090aa24806575fcd8508d849b3d08ac24ebede3faf969",
     "marked": 0
   },
   "tests/test_docs_index.py": {

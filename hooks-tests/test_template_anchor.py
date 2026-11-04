@@ -97,7 +97,7 @@ class TemplateAnchor(unittest.TestCase):
         self._init_git(self.clone)
         self._git_commit_all(self.clone)
         # 只新增非受比文件（未提交 → 脏），受比文件干净 → template_clean:false
-        (self.clone / "scratch.txt").write_text("x\n")
+        (self.clone / "scratch.txt").write_text("x\n", encoding="utf-8")
         rc, out = self.run_anchor(template=self.clone)
         self.assertEqual(rc, 1)
         self.assertTrue(out.get("clean"), "受比文件干净时 clean 应仍为 true（验证门禁键）")

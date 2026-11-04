@@ -38,7 +38,7 @@ class BashDispatch(unittest.TestCase):
     def _workspace(self):
         root = self.base / "ws"
         (root / ".workspace").mkdir(parents=True)
-        (root / core.BOOTSTRAP_REL).write_text("{}")
+        (root / core.BOOTSTRAP_REL).write_text("{}", encoding="utf-8")
         # 真实 AGENT_RULES.md 字节副本：内容锚定要求 payload content 与磁盘完全一致。
         (root / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
         return root
@@ -66,7 +66,7 @@ class BashDispatch(unittest.TestCase):
     def state(self, client="cc", ws=None):
         ws = Path(ws) if ws else self.ws
         p = core._state_path(str(ws), client, self.sid)
-        return json.loads(p.read_text()) if p.exists() else {"reads": {}}
+        return json.loads(p.read_text(encoding="utf-8", errors="replace")) if p.exists() else {"reads": {}}
 
     def state_events(self, client="codex", ws=None):
         return self.state(client, ws).get("events", [])
@@ -76,7 +76,7 @@ class BashDispatch(unittest.TestCase):
         p = Path(ws) / core.STATE_DIRNAME / f"audit-{client}.jsonl"
         if not p.exists():
             return {"lines": [], "events": []}
-        lines = [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+        lines = [json.loads(l) for l in p.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]
         events = []
         for ln in lines:
             events.extend(ln.get("events", []))
@@ -85,14 +85,14 @@ class BashDispatch(unittest.TestCase):
     def _real_git_workspace(self):
         root = self.base / "gitws"
         (root / ".workspace").mkdir(parents=True)
-        (root / core.BOOTSTRAP_REL).write_text("{}")
+        (root / core.BOOTSTRAP_REL).write_text("{}", encoding="utf-8")
         (root / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
         for args in (["init", "-q"], ["config", "user.email", "t@t"],
                      ["config", "user.name", "t"]):
             r = subprocess.run(["git", "-C", str(root), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args],
                                capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(r.returncode, 0, f"git {args} failed: {r.stderr}")
-        (root / "probe.txt").write_text("v1\n")
+        (root / "probe.txt").write_text("v1\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(root), "add", "-A"], capture_output=True)
         r = subprocess.run(["git", "-C", str(root), "-c", "user.name=ci", "-c", "user.email=ci@example.com", "commit", "-qm", "init"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -277,7 +277,7 @@ class BashDispatch(unittest.TestCase):
     def test_w3_worktree_change_audit(self):
         # 真实 git 仓 + 未提交改动 → stop/session_end 后 audit 出现非空 worktree-change。
         ws = self._real_git_workspace()
-        (ws / "probe.txt").write_text("v2\n")  # 未提交改动
+        (ws / "probe.txt").write_text("v2\n", encoding="utf-8")  # 未提交改动
         sid = "w3-" + self._testMethodName
         self.invoke("stop", "codex", ws=ws, sid=sid)
         self.invoke("session_end", "codex", ws=ws, sid=sid)

@@ -62,14 +62,14 @@ class PyenvInit(unittest.TestCase):
         self.assertEqual(rc, 0, d)
         self.assertTrue(d["venv"].get("would_create"))
         self.assertFalse(Path(d["venv"]["path"]).exists())
-        self.assertEqual(json.loads(self.boot.read_text())["python"]["mode"], "unconfigured")
+        self.assertEqual(json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]["mode"], "unconfigured")
 
     def test_t2_uv_apply(self):
         if not HAS_UV:
             self.skipTest("uv 未安装")
         rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply")
         self.assertEqual(rc, 0, d)
-        py = json.loads(self.boot.read_text())["python"]
+        py = json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]
         self.assertEqual(py["mode"], "uv")
         self.assertTrue(Path(d["venv"]["path"]).exists())
         self.assertIn("uv", py["runtime"])
@@ -90,27 +90,27 @@ class PyenvInit(unittest.TestCase):
     def test_t5_venv_apply(self):
         rc, d = run(self.ws, "--mode", "venv", "--apply")
         self.assertEqual(rc, 0, d)
-        self.assertEqual(json.loads(self.boot.read_text())["python"]["mode"], "local-venv")
+        self.assertEqual(json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]["mode"], "local-venv")
 
 
     def test_t6_refuse_overwrite_configured(self):
-        boot = json.loads(self.boot.read_text())
+        boot = json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))
         boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-312"}, "version": "3.12.1"}
         self.boot.write_text(json.dumps(boot), encoding="utf-8")
         rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply")
         self.assertEqual(rc, 5, d)
         self.assertEqual(d.get("error"), "already-configured")
-        self.assertEqual(json.loads(self.boot.read_text())["python"]["mode"], "local-venv")
+        self.assertEqual(json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]["mode"], "local-venv")
 
     def test_t7_force_switches(self):
-        boot = json.loads(self.boot.read_text())
+        boot = json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))
         boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-312"}, "version": "3.12.1"}
         self.boot.write_text(json.dumps(boot), encoding="utf-8")
         if not HAS_UV:
             self.skipTest("uv 未安装")
         rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply", "--force")
         self.assertEqual(rc, 0, d)
-        self.assertEqual(json.loads(self.boot.read_text())["python"]["mode"], "uv")
+        self.assertEqual(json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]["mode"], "uv")
 
 
 if __name__ == "__main__":

@@ -84,7 +84,7 @@ class ApplyPatchAnsiProcess(unittest.TestCase):
         (self.base / ".git").mkdir()
         self.ws = self.base / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
-        (self.ws / core.BOOTSTRAP_REL).write_text("{}")
+        (self.ws / core.BOOTSTRAP_REL).write_text("{}", encoding="utf-8")
         (self.ws / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
         self.sid = "w6-ansi"
 

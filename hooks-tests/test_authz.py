@@ -31,7 +31,7 @@ class AuthzToken(unittest.TestCase):
         (self.base / ".git").mkdir()
         self.ws = self.base / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
-        (self.ws / core.BOOTSTRAP_REL).write_text("{}")
+        (self.ws / core.BOOTSTRAP_REL).write_text("{}", encoding="utf-8")
         (self.ws / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
         self.sid = "w2a-" + self._testMethodName
 
@@ -57,7 +57,7 @@ class AuthzToken(unittest.TestCase):
 
     def state_events(self):
         p = core._state_path(str(self.ws), "codex", self.sid)
-        st = json.loads(p.read_text()) if p.exists() else {}
+        st = json.loads(p.read_text(encoding="utf-8", errors="replace")) if p.exists() else {}
         return st.get("events", [])
 
     def write_gate(self):

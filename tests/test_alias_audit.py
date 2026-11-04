@@ -93,7 +93,7 @@ class AliasAudit(unittest.TestCase):
                       "source": "probe-only"}])
         rc, out = audit(self.ws, "--restore")
         self.assertEqual(rc, 0, out)
-        self.assertEqual(json.loads((self.ws / "docs" / ".aliases.json").read_text())["aliases"], [])
+        self.assertEqual(json.loads((self.ws / "docs" / ".aliases.json").read_text(encoding="utf-8", errors="replace"))["aliases"], [])
 
 
 if __name__ == "__main__":

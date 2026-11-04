@@ -427,10 +427,10 @@ class CcTranscript(unittest.TestCase):
         # 真实 git 仓 + 未提交改动，且转录里没有对应写入命令 → gap
         for args in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):
             subprocess.run(["git", "-C", str(self.ws), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args], capture_output=True)
-        (self.ws / "probe.txt").write_text("v1\n")
+        (self.ws / "probe.txt").write_text("v1\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(self.ws), "add", "-A"], capture_output=True)
         subprocess.run(["git", "-C", str(self.ws), "-c", "user.name=ci", "-c", "user.email=ci@example.com", "commit", "-qm", "init"], capture_output=True)
-        (self.ws / "probe.txt").write_text("v2\n")
+        (self.ws / "probe.txt").write_text("v2\n", encoding="utf-8")
         path = self.write([("Bash", {"command": "echo hi > artifacts/w.txt"}, "", False)])
         res = self.analyze(path)
         gaps = [e for e in res["events"] if e.get("reason") == "changed-but-untargeted"]
