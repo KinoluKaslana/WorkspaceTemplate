@@ -77,12 +77,16 @@ class DocsConsistency(unittest.TestCase):
         """文档不得写死易漂移的版本快照；版本只以 AGENT_RULES.md 为准。"""
         policy = re.search(r"模板政策版本：`([\d.]+)`", (ROOT / "AGENT_RULES.md").read_text(encoding="utf-8")).group(1)
         offenders = []
+        strict = _is_template_repo()
         for md in DOCS:
-            if md.name == "README.md" and md.parent == ROOT:
+            # 实例的 README 是用户首页（同步豁免）；模板正主的 README 必须被查——徽章里的
+            # `policy-vX.Y.Z` 曾经一路漂到 v3.5.0 而没人管，正是这条检查漏了 README 与徽章格式。
+            if md.name.startswith("README") and not strict:
                 continue
             text = md.read_text(encoding="utf-8")
-            for m in re.finditer(r"政策 \*\*([\d.]+)\*\*|policy \*\*([\d.]+)\*\*", text):
-                v = m.group(1) or m.group(2)
+            for m in re.finditer(r"政策 \*\*([\d.]+)\*\*|policy \*\*([\d.]+)\*\*"
+                                 r"|policy-v([\d.]+)-|badge/policy-v([\d.]+)", text):
+                v = next(g for g in m.groups() if g)
                 if v != policy:
                     offenders.append(f"{md.relative_to(ROOT)}: 写了旧版本 {v}（当前 {policy}）")
         self.assertEqual(offenders, [], "; ".join(offenders))

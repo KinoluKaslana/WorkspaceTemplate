@@ -15,6 +15,7 @@ import json
 import os
 
 os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -125,6 +126,8 @@ class AgentScope(unittest.TestCase):
     # -------------------------------------------------- 4) worktree 差集
     def test_worktree_diff_flags_changed_without_commit(self):
         key = core.scoped_id("s6", "agent-wt")
+        if not shutil.which("git"):
+            raise unittest.SkipTest("未安装 git：该用例需要真实 git 仓库")
         subprocess.run(["git", "init", "-q"], cwd=self.ws, check=True)
         subprocess.run(["git", "add", "-A"], cwd=self.ws, check=True)
         subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=a",

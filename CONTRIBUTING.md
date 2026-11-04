@@ -11,7 +11,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 python3 -m unittest discover -s hooks-tests -p 'test_*.py'
 ```
 
-全绿才算环境就绪；Windows 上符号链接相关用例会自动跳过（需开发者模式），git 缺失时会跳过 git 用例。
+全绿才算环境就绪；Windows 上符号链接相关用例会自动跳过（需开发者模式）。git 相关用例在 `shutil.which("git")` 为空时**显式 skip 而不是报错**（`test_template_anchor`、`test_template_sync_rollback` 整类跳过；`test_agent_scope`/`test_bash_dispatch`/`test_cc_transcript`/`test_dsh_post_shell` 的 git 夹具抛 `SkipTest`）。想验证这条声明：`python3 tests/no_git_runner.py`（把 `git` 从 `which` 里摘掉跑全量，期望 `failures=0 errors=0`）。
 
 ## 改规则（AGENT_RULES.md）
 

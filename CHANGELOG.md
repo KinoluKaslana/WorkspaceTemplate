@@ -2,6 +2,19 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.3（2026-11-04）：把「机械一致性」的承诺补齐
+
+- **git 缺失时的行为与文档一致**：`test_template_anchor` / `test_template_sync_rollback` 整类 skip，
+  `test_agent_scope` / `test_bash_dispatch` / `test_cc_transcript` / `test_dsh_post_shell` 的 git 夹具抛 `SkipTest`；
+  新增 `tests/no_git_runner.py` 把 `git` 从 `which` 里摘掉跑全量（实测 220 例、0 failure、0 error、17 skip），
+  CONTRIBUTING 的声明从此可自证。
+- **版本漂移堵住**：`tests/test_docs_consistency.py` 的 D4 现在**检查模板仓 README 的徽章格式**（`policy-vX.Y.Z`），
+  实例侧仍跳过用户 README；README/README_EN 徽章同步到 3.5.3。
+- **CI 徽章换掉会 404 的形态**：`.../actions/workflows/ci.yml/badge.svg`（无 `?branch=`，缓存过 404 后长期显示
+  “badge not found”）改为 shields 动态徽章 `github/actions/workflow/status/.../ci.yml?branch=main&label=CI`。
+- **补「什么时候不该用」**：README / README_EN 新增该节（一次性任务、只问答、要强隔离、不接受仓内 hook、不想跟版本）。
+- 计数：`TEMPLATE_FILES` 77 → 78（新增 no_git_runner）。
+
 ## 3.5.2（2026-11-04）：补上 D7 的实例豁免（3.5.1 漏改一处循环）
 
 - `test_d7_prose_counts_match_disk` 的 README 豁免在 3.5.1 只落到了 D8，D7 仍按模板标准扫实例 README，

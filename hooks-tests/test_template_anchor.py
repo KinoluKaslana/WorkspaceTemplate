@@ -9,6 +9,7 @@ import json
 import os
 
 os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import verify_rules  # noqa: E402
 
 
+@unittest.skipUnless(shutil.which("git"), "未安装 git：本套用例需要真实 git 仓库")
 class TemplateAnchor(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="w4-anchor-")

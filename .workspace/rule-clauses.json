@@ -120,7 +120,7 @@
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
       "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。"
     },
-    "file_sha256": "a0031d451e0339775e6799c42374ce7f812fc43bd17fd5cdd262145788d9863f",
+    "file_sha256": "0f71ae304d39e47a04dc9bd5c61e93acea8e1bbcf2be81d5b29cd079e19308ab",
     "marked": 118
   },
   "LICENSE": {
@@ -135,7 +135,7 @@
   },
   "CONTRIBUTING.md": {
     "clauses": {},
-    "file_sha256": "ca4ea98d4544ec91b931fdd047d4965da3a21a09e7ab6f6c4f3098838a946dfe",
+    "file_sha256": "78b09339343d546d91fb63b8389f820e55225cc111667520c4605046e15fcbb2",
     "marked": 0
   },
   "AGENTS.md": {
@@ -155,12 +155,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "a03f51a08ea19c666c31900775fff7fd60e45362b944923eadeba26bc9c1edca",
+    "file_sha256": "3068d27aaf29cd152b28a69386bed364e1ec40e67ec27d25496c4672e7a28540",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "74c9ae7ef37711ec6bb3509096325ba0b5e38f1111e47cd671509a501465b130",
+    "file_sha256": "cb6faf1fa01d503298a573cc906549454cf342395808e31d7b4a0b4b7cb9aeba",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -185,7 +185,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "f6293cd554574db42e26698782f0016f2d19206cb7bf7d7e311f690528561991",
+    "file_sha256": "6fd51221375f57d3aa9aef8f36cb5491a16001d8e838b4939a149c60b3fb5028",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -280,7 +280,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "9e6f0fb378ad06276ab1a50400214dbade645f244e011ca892b4805d04b4928d",
+    "file_sha256": "c7ae8ce3756eb5f1b732e45650b747299d09a8eb01b82366583073f5ce980f49",
     "marked": 0
   },
   "docs/skills.md": {
@@ -320,12 +320,12 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "4633b456b1e21f4625826b30c585f36473617ffb1d3651cacff13e0e3078a85a",
+    "file_sha256": "f562ceceb7df1ecb756aaa60131d90719633c158477def6d8d5481679eea444c",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "d6a4636b7f73d48c58f1d99dd85e6df37f252d0ce9dadd459b5332b827d2a036",
+    "file_sha256": "72c3c0dd3154b7f551446feb340ed417c60fffdbefe0f6f5e0738d1f5fdcf05a",
     "marked": 0
   },
   "tests/test_clause_lint.py": {
@@ -496,6 +496,11 @@
   "tests/test_gate_status.py": {
     "clauses": {},
     "file_sha256": "1f52b14d86891b7f630af4ac99fdc59803bfda3ae9d057a49cd17192c3449a2a",
+    "marked": 0
+  },
+  "tests/no_git_runner.py": {
+    "clauses": {},
+    "file_sha256": "1191e05e2229f7dd1b8bb0971de6c2fc544698b5e814bd5ae1d2279483a92039",
     "marked": 0
   }
 }

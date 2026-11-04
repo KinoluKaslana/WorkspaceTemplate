@@ -8,6 +8,7 @@ import os
 
 os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -89,6 +90,8 @@ class BashDispatch(unittest.TestCase):
         (root / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
         for args in (["init", "-q"], ["config", "user.email", "t@t"],
                      ["config", "user.name", "t"]):
+            if not shutil.which("git"):
+                raise unittest.SkipTest("未安装 git：该用例需要真实 git 仓库")
             r = subprocess.run(["git", "-C", str(root), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args],
                                capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(r.returncode, 0, f"git {args} failed: {r.stderr}")

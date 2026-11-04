@@ -118,6 +118,7 @@ TEMPLATE_FILES = [
     ".workspace/rule-clauses.json",
     "scripts/gate_status.py",
     "tests/test_gate_status.py",
+    "tests/no_git_runner.py",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.
