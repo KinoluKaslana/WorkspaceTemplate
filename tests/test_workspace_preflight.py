@@ -10,6 +10,8 @@ P5 模板克隆 remote 与 source_repo 不一致 → mismatch
 """
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import shutil
 import socket
 import subprocess
@@ -25,7 +27,7 @@ HOST = socket.gethostname()
 
 def run(ws: Path, *args):
     p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(ws), "--json", *args],
-                       cwd=ws, capture_output=True, text=True)
+                       cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
         data = json.loads(p.stdout)
     except Exception:
@@ -60,6 +62,18 @@ def base_ws(tmp: Path) -> Path:
     return ws
 
 
+
+def _require_git():
+    if shutil.which("git") is None:
+        raise unittest.SkipTest("本机无 git，跳过依赖 git 的用例")
+
+
+def _safe_symlink(link, target):
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        raise unittest.SkipTest(f"本机不支持符号链接（{exc}）")
+
 class Preflight(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="preflight-")
@@ -68,9 +82,10 @@ class Preflight(unittest.TestCase):
         self.ws = base_ws(self.root)
 
     def test_p1_clean(self):
+        _require_git()
         venv = self.ws / ".venv-999" / "bin"
         venv.mkdir(parents=True)
-        (venv / "python").symlink_to(sys.executable)
+        _safe_symlink(venv / "python", sys.executable)
         tpl = self.root / "tpl"
         subprocess.run(["git", "init", "-q", str(tpl)], check=True)
         subprocess.run(["git", "-C", str(tpl), "remote", "add", "origin", "https://example.com/t.git"], check=True)
@@ -99,9 +114,10 @@ class Preflight(unittest.TestCase):
         self.assertEqual(rc, 1)      # venv 仍缺失 → 整体 mismatch
 
     def test_p5_template_remote_mismatch(self):
+        _require_git()
         venv = self.ws / ".venv-999" / "bin"
         venv.mkdir(parents=True)
-        (venv / "python").symlink_to(sys.executable)
+        _safe_symlink(venv / "python", sys.executable)
         tpl = self.root / "tpl"
         subprocess.run(["git", "init", "-q", str(tpl)], check=True)
         subprocess.run(["git", "-C", str(tpl), "remote", "add", "origin", "https://evil.example/x.git"], check=True)

@@ -44,7 +44,9 @@
 
 ## 2.6 审计事件与拒绝码（实现清单）
 
-**审计事件（13 型，落 `audit-<client>.jsonl`）**：`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate` / `cc-bash-write` / `cc-bash-gap` / `gate-intent` / `gate-commit` / `unobserved-write` / `agent-start` / `agent-stop` / `gate-deny`。
+**审计事件（13 型，落 `audit-<client>.jsonl`）**：：`unresolved-command` / `authorized-gatefile-write` / `unsanctioned-gatefile-change` / `worktree-change` / `completion-gate` / `cc-bash-write` / `cc-bash-gap` / `gate-intent` / `gate-commit` / `unobserved-write` / `agent-start` / `agent-stop` / `gate-deny`。
+
+**触发源补充（dsh）**：dsh 没有收尾事件，所以 `post_shell`（shell 调用后）与 `post_tool`（不在只读集合里的未知工具调用后）各触发一次差集审计，产物仍是上表的 `worktree-change` / `unobserved-write`，另有 `snapshot-incomplete` 表示哈希预算被打满。
 
 **插件拒绝码（`[workspace-gate:<code>]`）**：`no-session`（无会话身份）/ `container-unmapped`（容器路径映射不回）/ `no-read`（缺当前修订的完整读证据）/ `unresolved-target`（相对路径无锚点）/ `internal-error`（插件异常，fail-closed）。
 

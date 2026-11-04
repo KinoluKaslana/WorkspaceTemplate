@@ -55,7 +55,7 @@ class ClauseLint(unittest.TestCase):
 
     def run_lint(self, *args):
         return subprocess.run([sys.executable, str(self.root / "scripts" / "clause_lint.py"), *args],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     def test_t1_clean_baseline(self):
         p = self.run_lint()

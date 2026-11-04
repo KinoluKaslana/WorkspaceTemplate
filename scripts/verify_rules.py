@@ -42,6 +42,9 @@ EXTENDS_RE = re.compile(r"extends:\s*(R\d+)")
 # user homepage (reported as REPLACED, not TAMPERED).
 TEMPLATE_FILES = [
     "AGENT_RULES.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
     "AGENTS.md",
     "CLAUDE.md",
     "HERMES.md",
@@ -113,6 +116,8 @@ TEMPLATE_FILES = [
     ".codex/hooks.json",
     ".claude/settings.json",
     ".workspace/rule-clauses.json",
+    "scripts/gate_status.py",
+    "tests/test_gate_status.py",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.

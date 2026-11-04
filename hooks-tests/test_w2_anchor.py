@@ -31,7 +31,7 @@ class W2Anchor(unittest.TestCase):
         (self.base / ".git").mkdir()  # 阻止向上冒领真实工作区
         self.ws = self.base / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
-        (self.ws / core.BOOTSTRAP_REL).write_text("{}")
+        (self.ws / core.BOOTSTRAP_REL).write_text("{}", encoding="utf-8")
         (self.ws / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
         self.sid = "w2-" + self._testMethodName
 
@@ -40,7 +40,7 @@ class W2Anchor(unittest.TestCase):
         env = {**os.environ, "GATE_CLIENT": client, "PYTHONDONTWRITEBYTECODE": "1"}
         env.pop("WORKSPACE_TEMPLATE_CLONE", None)
         p = subprocess.run([PY, "-B", str(HOOK), event], input=json.dumps(payload),
-                           text=True, capture_output=True, env=env, cwd=str(self.ws),
+                           text=True, encoding="utf-8", capture_output=True, env=env, cwd=str(self.ws),
                            timeout=30)
         self.assertEqual(p.returncode, 0, f"exit!=0 stderr={p.stderr}")
         return json.loads(p.stdout) if p.stdout.strip() else {}
@@ -50,7 +50,7 @@ class W2Anchor(unittest.TestCase):
 
     def state(self):
         p = core._state_path(str(self.ws), "codex", self.sid)
-        return json.loads(p.read_text()) if p.exists() else {"reads": {}}
+        return json.loads(p.read_text(encoding="utf-8", errors="replace")) if p.exists() else {"reads": {}}
 
     def state_events(self):
         return self.state().get("events", [])

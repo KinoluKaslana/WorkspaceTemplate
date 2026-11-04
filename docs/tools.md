@@ -1,4 +1,4 @@
-# 工具（scripts/，10 个）
+# 工具（scripts/，15 个）
 
 > 实现说明，不构成政策。所有脚本只依赖标准库，要求 Python ≥ 3.10。**`--json` 语义各脚本不同**：`verify_rules.py` 的 `--json` 是**输出文件路径**，`skill_audit.py`/`workspace_preflight.py`/`docs_*.py`/`template_sync.py`/`pyenv_init.py` 的 `--json` 是「打印 JSON 到 stdout」，`mark_rules.py` 无此参数——以各条示例与 `--help` 为准。
 
@@ -18,8 +18,9 @@
 | `docs_hit_report.py` | 判据集命中报告（`tests/docs_probe.json`） | `--min 9 --top 2 --json` | 0 达标 / 1 未达标 / 2 stale |
 | `docs_alias_audit.py` | 别名审计：死指针/指纹漂移/来源合规/留一验证 | `[--strict] [--restore] [--json]` | 0 / 1 |
 | `template_sync.py` | 按 ref 同步模板层：dry-run / apply / prune / rollback | `--workspace . --ref alpha [--apply --prune --verify --json]`；`--rollback <备份目录>` | 0 / 1 前置失败 / 2 校验失败 |
-| `workspace_preflight.py` | 跨设备预检：9 项「登记 vs 本机实际」 | `[--workspace .] [--json] [--strict]` | 0 无 mismatch / 1 有 mismatch |
+| `workspace_preflight.py` | 跨设备预检：10 项「登记 vs 本机实际」 | `[--workspace .] [--json] [--strict]` | 0 无 mismatch / 1 有 mismatch |
 | `pyenv_init.py` | Python 运行时初始化：uv / 手动 venv / MCP | `--mode uv\|venv\|mcp [--apply] [--json]` | 0 / 1 / 2 参数 / 3 需装 uv / 4 校验失败 / 5 已配置拒绝 |
+| `gate_status.py` | harness 接线自检：各客户端有没有**运行期** gate 证据 | `[--require cc,codex,hermes,dsh] [--ttl-minutes N] [--json]` | 0 有证据 / 1 `--require` 缺证据 |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 
@@ -101,9 +102,30 @@ python3 scripts/workspace_preflight.py  # R11：MCP 模式不得同时存在本�
 
 ## 5. 跨设备：`workspace_preflight.py`
 
-9 项：`host / workspace_root / python / template_clone / skills / template_files / notes_index / docs_index / git`。
+10 项：`host / workspace_root / python / gate / template_clone / skills / template_files / notes_index / docs_index / git`。
 每项 `recorded / actual / status / action`；`mismatch` 阻塞，`warn` 记录后继续，`n/a` 跳过。
 **只报告、不改写记录**——记录是共享资产，改写由用户裁决后执行。
+
+## 5.5 Gate 接线：`gate_status.py`
+
+```bash
+python3 scripts/gate_status.py --ttl-minutes 30                  # 四端「有没有运行期证据」
+python3 scripts/gate_status.py --require dsh,cc --json           # 缺证据 → 退出码 1
+```
+
+政策 §15 把这条核验定为启动前必须项（与 Python 选择同性质），结论落 `bootstrap.gate`。判据只看运行期证据：`cc`/`codex` 来自 `.workspace/.hook-state/gate.log` 的 `client=` 行；`hermes` 来自
+`$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，插件日志不绑工作区——这是已知边界）；
+`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/dsh-session-*.json` 账本。
+TTL 必须为正（0 直接拒绝）；时间戳在当前时刻之后超过 2 分钟不算证据（时钟回拨/伪造）。
+**文件在不在不算证据**——
+dsh 没有项目级自动发现，不带 `--patch` 启动就完全没有 gate；`hermes` 需要 `HERMES_ENABLE_PROJECT_PLUGINS=true`
+且 config 里 `plugins.enabled` 含 `workspace-gate`。克隆后先跑这一条，别用「目录长这样」推断「已经受管」。
+
+`--record` 会把结论写进 `bootstrap.gate`（原子替换）：有证据才写 `configured`；`unconfigured` 需要
+`--force --user-decision '<用户原话>'`；从 `configured` 翻转或缩小 harness 集合同样需要 `--user-decision`（R117）。
+
+**与预检的失败姿态**：`workspace_preflight` 的 `gate` 项判 `mismatch` 表示「不能进入受管写入/同步」，
+不表示只读也被禁止（R118）。预检复核 TTL 固定按 ≤30 分钟算，不会因为 bootstrap 里填了更大的值而放宽。
 
 ## 6. Python 运行时：`pyenv_init.py`
 

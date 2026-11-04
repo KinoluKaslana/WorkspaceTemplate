@@ -41,8 +41,8 @@ python3 scripts/clause_lint.py                            # 条款属性与用�
 
 | 文件 | 讲什么 | 不讲什么 |
 |---|---|---|
-| [`skills.md`](skills.md) | 6 个 workspace skill 的触发、边界、验收与契约要求 | 不定义义务 |
-| [`tools.md`](tools.md) | 10 个脚本的用途、命令、退出码 | 不代替脚本 `--help` |
+| [`skills.md`](skills.md) | 7 个 workspace skill 的触发、边界、验收与契约要求 | 不定义义务 |
+| [`tools.md`](tools.md) | 15 个脚本的用途、命令、退出码 | 不代替脚本 `--help` |
 | [`architecture.md`](architecture.md) | 分层模型、数据流、失败姿态、跨设备模型 | 不重复政策条文 |
 | [`hooks-guide.md`](hooks-guide.md) | 三个 harness 的接线方法（用户视角） | 不列事件清单 |
 | [`hooks-catalog.md`](hooks-catalog.md) | 事件/拒绝码/审计/新 harness 照搬清单 | 不写义务句 |

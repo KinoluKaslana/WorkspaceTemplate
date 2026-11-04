@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, alpha]
+  pull_request:
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # release_anchor 要对比 base..head，浅克隆拿不到 base
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: release anchor self-test（负向自检：模板层改动不写 CHANGELOG 必须红）
+        run: python3 .github/scripts/release_anchor.py --self-test
+      - name: release anchor（TEMPLATE_FILES 变更必须进 CHANGELOG）
+        run: |
+          BASE="${{ github.event.before }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
+          if [ -z "$BASE" ]; then
+            echo "首个提交（无 base 可比），跳过发布锚"; exit 0
+          fi
+          python3 .github/scripts/release_anchor.py --base "$BASE" --head "$(git rev-parse HEAD)"
+      - run: python3 scripts/mark_rules.py check AGENT_RULES.md
+      - run: python3 scripts/verify_rules.py --workspace .
+      - run: python3 scripts/clause_lint.py
+      - run: python3 scripts/skill_audit.py --strict
+      - run: python3 scripts/docs_index.py build
+      - run: python3 scripts/docs_hit_report.py --mode both --min 10
+
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: unittest (tests + hooks-tests)
+        shell: bash
+        run: |
+          # 失败时把「哪个测试红了」写成 GitHub annotation：step 日志要 admin 权限才能下载，
+          # 而 annotations 是公开可读的——出问题时才能从 API 直接定位，不用靠人贴日志。
+          rc=0
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/t1.log || rc=1
+          python -m unittest discover -s hooks-tests -p 'test_*.py' -v 2>&1 | tee /tmp/t2.log || rc=1
+          if [ "$rc" -ne 0 ]; then
+            grep -hE '^(FAIL|ERROR): ' /tmp/t1.log /tmp/t2.log | head -25 | while IFS= read -r line; do
+              echo "::error title=ci-failed-test::$line"
+            done
+            echo "---- tail of failures ----"
+            grep -hE -A6 '^(FAIL|ERROR): ' /tmp/t1.log /tmp/t2.log | tail -80
+            # 把失败上下文压成一条 annotation：步骤日志要 admin 才能下载，annotation 公开可读
+            BODY=$(grep -hE -A8 '^(FAIL|ERROR): ' /tmp/t1.log /tmp/t2.log | tail -40 | tr '\n' '|' | cut -c1-3000)
+            echo "::error title=ci-failure-detail::$BODY"
+            exit 1
+          fi
+      - name: dsh harness (node)
+        if: always()
+        shell: bash
+        # harness 要求跑在一个「看起来像工作区」的目录上（要 .dsh/workspace-gate/plugin.js
+        # 与 .workspace/hooks/hook.py），而且它会改写夹具里的 AGENT_RULES.md（修订撤销用例）。
+        # 所以先复制一份到 $RUNNER_TEMP/ws 再跑——直接把空目录传进去会以
+        # "missing plugin/hook" 退出 2（本工作流首跑就是这么红的）。
+        run: |
+          mkdir -p "$RUNNER_TEMP/ws"
+          tar -cf - --exclude=.git --exclude=__pycache__ --exclude=.workspace/.hook-state . \
+            | (cd "$RUNNER_TEMP/ws" && tar -xf -)
+          node tests/dsh_harness.mjs "$RUNNER_TEMP/ws"

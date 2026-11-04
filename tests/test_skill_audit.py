@@ -86,7 +86,7 @@ def build(tmp: Path, skills: dict[str, str], declared: int | None = None) -> Pat
 
 def audit(ws: Path, *args):
     p = subprocess.run([sys.executable, "-B", "scripts/skill_audit.py", *args],
-                       cwd=ws, capture_output=True, text=True)
+                       cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return p.returncode, p.stdout
 
 

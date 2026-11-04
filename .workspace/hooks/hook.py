@@ -799,6 +799,14 @@ def handle(event: str, data: dict) -> None:
         for ws, paths in sorted(grouped.items()):
             core.evaluate_post_write(ws, client, sid, paths)
             core.log(ws, f"post_write client={client} session={sid} targets={paths}")
+    elif event in ("post_shell", "post_tool"):
+        # 盲区事后可见：shell 写没法静态判全（变量间接 / awk 重定向 = 已声明盲区），
+        # 未知工具也可能写。这两类之后做一次差集审计，磁盘上有「没有对应 gate-commit 的变化」
+        # 就记 unobserved-write。report-only，不 deny。
+        ws = core.find_workspace(cwd)
+        if ws:
+            core.worktree_audit(ws, client, sid, event)
+        print("{}")
     elif event == "session_end":
         ws = core.find_workspace(cwd)
         if ws:

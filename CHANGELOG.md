@@ -2,6 +2,88 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.0（2026-11-04）：守门接线核验上升为 §15 必须项（与 Python 同性质）
+
+- **新 §15（R113–R118，§0 的补充）**：gate 是否在跑取决于 **harness 的启动方式**，不是工作区的属性——
+  dsh 无项目级自动发现（不带 `--patch` 启动 = 完全没有 gate），hermes 需 `HERMES_ENABLE_PROJECT_PLUGINS=true`
+  + config `plugins.enabled`，cc/codex 依赖项目受信。开工前必须对当前 harness 跑
+  `gate_status.py --require <harness> --ttl-minutes 30`，**只认运行期证据**；无证据必须在第一条受管写入前
+  向用户报告并给出启用命令，由用户裁决，**结论必须落盘** `bootstrap.gate`（`configured`/`unconfigured`）。
+  已 `configured` 的工作区只复核 TTL，不重复询问。只读/问答不受阻。
+- **`scripts/gate_status.py` 增 `--record` / `--user-decision` / `--force`**：无证据拒绝记录 `configured`；
+  `unconfigured` 只能由 `--force --user-decision '<原话>'` 写入（把「用户接受无 gate」变成可核验的事实）。
+- **`workspace_preflight.py` 增第 10 项 `gate`**：登记 vs 运行期证据——`configured` 但 TTL 内无证据判
+  `mismatch`（声明的状态与事实矛盾）；未记录/记录 unconfigured 判 `warn`。
+- **dsh 账本不再回退 mtime**：只有 `events[].ts` / `anchors.*.ts` 算证据（`touch` 不再能伪造活跃）；
+  两类负例（空账本、有 events 无 ts）都由 `test_gate_status.py` 钉住。
+- **`.github/` 明确不下发**：CI 与 `release_anchor.py` 属模板仓基础设施，不进 `TEMPLATE_FILES`、不随同步下发；
+  `tests/test_docs_consistency.py::test_d9_github_layer_is_not_template_layer` 钉边界（此前审计席把它当缺口，实为设计）。
+- **测试文件读写编码**：hooks-tests 里 `read_text()/write_text()` 未指定编码，Windows 上按 cp1252 处理含中文的
+  状态/审计账本会抛 `UnicodeDecodeError`（`test_w2_anchor` / `test_w3_worktree_change_audit` 因此红）；统一显式 UTF-8。
+- **`.gitattributes` 强制 LF**：Windows 默认检出 CRLF，会让「完整读取」的行证据与字节指纹判据失效。
+- **测试子进程编码**：Windows 上 Python 子进程 stdout 用 locale（cp1252/GBK），父进程用 `text=True` 解码会抛
+  `UnicodeDecodeError`——所有 spawn 统一 `encoding="utf-8", errors="replace"`，并在测试进程里 `PYTHONUTF8=1` 让子进程按 UTF-8 输出。
+- **Windows CI 修复（同一发布线）**：CC project slug 在 Windows 上产出 `-C:\Users\…` 非法目录名（hooks-tests 39 error 的根因）→ 分隔符归一化 + 冒号替换；
+  `test_wtarget` 命令串里的盘符路径改用 `/`（bash 里反斜杠是转义，属 shell 语义）；`test_cc_transcript` 的产物路径断言先归一化；
+  dsh harness 用 `pathToFileURL()` 加载插件（裸盘符路径在 Windows 触发 `ERR_UNSUPPORTED_ESM_URL_SCHEME`）；
+  `template_sync` 用本地目录当 clone URL 时先转 `file://`（Git for Windows 的 MSYS 路径转换会把 destination 变成 `/d/…`）。
+  CI 的 unittest 步骤失败时会把红掉的测试写成 GitHub annotation，便于无 admin 权限时直接定位。
+- **`bootstrap.json` 增 `gate` 节**（status / harness / evidence / ttl_minutes / decision_source / checked_at），
+  与 `python` 节同级。
+
+## 剩余风险处置：发布锚 + 并发加压（2026-11-04，dev，不改政策版本）
+
+- **发布锚 `.github/scripts/release_anchor.py` + CI 步骤**：本次提交动了 `TEMPLATE_FILES` 里的文件、却没动
+  `CHANGELOG.md` 时，governance job 直接红。根因是 `verify_rules` 的信任源为仓库内**可被
+  `mark_rules.py registry` 重新生成**的注册表——「改文件 + 重建注册表」在机械门禁里不可见。
+  `--self-test` 用真 git 仓库做负向自检（仅改模板层 → rc=1；同提交带 CHANGELOG → rc=0），CI 每次先跑自检。
+  **挡不住**「文件与 CHANGELOG 一起改」——那是评审责任，不是机器能判的。
+- **Windows 5 会话并发加压**：1 读 + 4 未读（`write` / `pwsh` 混合）同一工作区同时起——只有读者落地，
+  5 份账本互不串号，恰好 1 份含完整读证据并带 `gate-intent`/`gate-commit`。首轮 3 会话的结论在 5 会话下仍成立。
+- **dsh 生命周期探针（新事实）**：dsh 不向插件暴露会话结束钩子；`session/flush` 会触发（一次会话约 12 次）
+  且载荷含会话 id，但它是**耐久检查点**，不是会话结束。
+- **`scripts/gate_status.py`（新增）**：判「clone 下来到底有没有 gate 在跑」。dsh **没有项目级自动发现**——
+  不带 `--patch .dsh/workspace-gate/cordis.yml` 启动，就等于完全没有 gate（读证据、写前拦截、事后审计都不发生），
+  而工作区文件一个不少；`hermes` 需要 `HERMES_ENABLE_PROJECT_PLUGINS=true` + config `plugins.enabled`；
+  `cc`/`codex` 依赖项目受信。判定只看**运行期证据**（`gate.log` 的 `client=` / `.dsh-gate.log` 的 `apply` /
+  `dsh-session-*.json`），`--require dsh,cc` 缺证据 → 退出码 1。`tests/test_gate_status.py` 22 例。
+- **盲区事后可见（插件侧，含边界拓宽）**：既然没有收尾事件，就由插件在**工具调用后**触发差集审计——
+  触发面是 shell（`post_shell`）与「不在只读集合里的未知工具」（`post_tool`）。判定口径：
+  git 仓库用 `git status`；**非 git 工作区用 mtime 水位线 + 哈希兜底**（水位线 O(1) 状态、不存全量清单；
+  哈希兜底覆盖 `cp -p` / `tar -x` 这类保留 mtime 的写，按 1 MiB/文件、32 MiB/轮的预算，超预算记
+  `snapshot-incomplete`）。审计记录追加到 `.workspace/.hook-state/audit-dsh.jsonl`（256 KiB 轮转），
+  不再只留在 50 条的事件窗口里。节流 `WORKSPACE_GATE_DSH_AUDIT_MS`（默认 5000 ms）。
+  真机实测：`& ('Set'+'-Content') -Path blind3.txt -Value ok` 被静态分类器放行、文件真的落地，
+  账本随后记到 `worktree-change(source=post_shell)` 与 `unobserved-write → blind3.txt`。
+  测试：`hooks-tests/test_dsh_post_shell.py`（11 例，含「700 文件干净树无假阳性」「保 mtime 改写被哈希抓到」两条负控）。
+- **审计齐平**：文档里的脚本数 / skill 数 / 条款范围 / skill 表版本列 / 断链全部对齐磁盘；新增
+  `test_d7`（散文计数）、`test_d8`（skill 表版本），`test_d1` 的扫描面扩到 CONTRIBUTING / SECURITY / UPGRADE。
+
+## dsh Windows 多会话并发取证（2026-11-04，dev，不改政策版本）
+
+上一轮发布研判里，deepseek-v4-pro 的唯一硬阻塞是「Windows 真实多会话并发无真机证据」。本轮补上：
+
+- **三个 headless 会话同秒起**（同一工作区）：整读后 `write` 放行并留 `gate-intent`/`gate-commit`；未读的 `write` 与 `pwsh` 各被拒（`[workspace-gate:no-read]`，文件均未落地）；三份 `dsh-session-*.json` 互不串号、无撕裂。
+- **确定性并发探针**（3 进程直调 `hook.py`，不经模型）6/6 PASS：只有读者账本含 `coverage [[1,204]]`。
+- **两条通道各跑一轮**：win-host 加密通道（`/exec`）与 WSL interop 直调，结论同形。
+- 边界照实记：同父会话的并发子会话、>3 会话压力未测；B 会话账本另有一条 `unobserved-write`（dsh 在 deny 后仍发 post 事件），不代表写入发生。
+- 证据目录（工作区侧，不随模板分发）：`dsh-win-concurrency-261104/run1-interop/`、`run2-winhost/`。
+
+## 对外发布补齐（2026-11-03，dev，政策 3.4.0 + 本条目）
+
+依据一份 0 上下文的外部评审（8.5/10 自用、6/10 公开模板），按主理席研讨结论落地：
+
+- **LICENSE**：改用 MIT（用户拍板），`LICENSE` 进 `TEMPLATE_FILES`（75 项），README/README_EN 加徽章与许可段。
+- **Windows 路径 bug**：`docs_index.py` / `secret_scan.py` 的 `str(relative_to(...))` 改 `as_posix()`，
+  否则 Windows 下索引键与 `.secretscanignore` 匹配都会带反斜杠。
+- **可跳过用例显式化**：`test_workspace_preflight` 的 git/symlink 依赖改为 `SkipTest` 并给出原因，
+  不再在无开发者模式/无 git 的机器上变红。
+- **CI**：新增 `.github/workflows/ci.yml`——治理 job（mark_rules / verify_rules / clause_lint / skill_audit /
+  docs 检索）+ 测试 job 矩阵（ubuntu / windows；macos 未纳入矩阵，仅在本机手测），跑 `unittest discover` 两个目录与 dsh harness。
+- **社区文件**：`SECURITY.md`（含 advisory 边界说明）、`CONTRIBUTING.md`、issue/PR 模板。
+- **未采纳**：政策 30KB 拆分（主理席一致认为会引入「附件漏挂 → 政策静默失效」风险，列为发布后单独评估）。
+- 遗留：GitHub 仓库 description/topics、tag 需在合并 main 后设置（本机无 gh CLI）。
+
 ## docs 检索判据补齐（2026-11-03，dev，不改政策版本）
 
 `hit08` 是长期唯一的判据缺口（9/10）。根因不是索引坏了，而是**判据标题被当检索词用**：原标题「新 harness 几步」

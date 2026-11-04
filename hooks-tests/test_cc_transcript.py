@@ -17,6 +17,8 @@
 """
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import shutil
 import subprocess
 import sys
@@ -206,7 +208,8 @@ class CcTranscript(unittest.TestCase):
         res = self.analyze(path)
         write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
         self.assertFalse(write["would_deny"])
-        self.assertTrue(write["targets"][0].endswith("artifacts/x.txt"))
+        self.assertTrue(write["targets"][0].replace("\\", "/").endswith("artifacts/x.txt"),
+                        write["targets"][0])   # Windows 上是反斜杠，比较前归一化
 
     def test_full_read_then_gate_write_allowed(self):
         path = self.write([
@@ -423,11 +426,11 @@ class CcTranscript(unittest.TestCase):
     def test_changed_but_untargeted_gap(self):
         # 真实 git 仓 + 未提交改动，且转录里没有对应写入命令 → gap
         for args in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):
-            subprocess.run(["git", "-C", str(self.ws), *args], capture_output=True)
-        (self.ws / "probe.txt").write_text("v1\n")
+            subprocess.run(["git", "-C", str(self.ws), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args], capture_output=True)
+        (self.ws / "probe.txt").write_text("v1\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(self.ws), "add", "-A"], capture_output=True)
-        subprocess.run(["git", "-C", str(self.ws), "commit", "-qm", "init"], capture_output=True)
-        (self.ws / "probe.txt").write_text("v2\n")
+        subprocess.run(["git", "-C", str(self.ws), "-c", "user.name=ci", "-c", "user.email=ci@example.com", "commit", "-qm", "init"], capture_output=True)
+        (self.ws / "probe.txt").write_text("v2\n", encoding="utf-8")
         path = self.write([("Bash", {"command": "echo hi > artifacts/w.txt"}, "", False)])
         res = self.analyze(path)
         gaps = [e for e in res["events"] if e.get("reason") == "changed-but-untargeted"]

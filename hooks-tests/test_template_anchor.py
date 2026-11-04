@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import subprocess
 import sys
 import tempfile
@@ -44,14 +46,14 @@ class TemplateAnchor(unittest.TestCase):
     def _init_git(self, repo: Path):
         for args in (["init", "-q"], ["config", "user.email", "t@t"],
                      ["config", "user.name", "t"]):
-            r = subprocess.run(["git", "-C", str(repo), *args],
-                               capture_output=True, text=True)
+            r = subprocess.run(["git", "-C", str(repo), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args],
+                               capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(r.returncode, 0, r.stderr)
 
     def _git_commit_all(self, repo: Path):
         subprocess.run(["git", "-C", str(repo), "add", "-A"], capture_output=True)
         r = subprocess.run(["git", "-C", str(repo), "commit", "-qm", "init"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def run_anchor(self, template=None, env_extra=None):
@@ -62,7 +64,7 @@ class TemplateAnchor(unittest.TestCase):
         env.pop("WORKSPACE_TEMPLATE_CLONE", None)
         if env_extra:
             env.update(env_extra)
-        p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=90)
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env, timeout=90)
         out = {}
         try:
             out = json.loads(p.stdout) if p.stdout.strip() else {}
@@ -95,7 +97,7 @@ class TemplateAnchor(unittest.TestCase):
         self._init_git(self.clone)
         self._git_commit_all(self.clone)
         # 只新增非受比文件（未提交 → 脏），受比文件干净 → template_clean:false
-        (self.clone / "scratch.txt").write_text("x\n")
+        (self.clone / "scratch.txt").write_text("x\n", encoding="utf-8")
         rc, out = self.run_anchor(template=self.clone)
         self.assertEqual(rc, 1)
         self.assertTrue(out.get("clean"), "受比文件干净时 clean 应仍为 true（验证门禁键）")

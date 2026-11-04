@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import os
+
+os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import subprocess
 import sys
 import tempfile
@@ -37,7 +39,7 @@ class AgentScope(unittest.TestCase):
         (self.base / ".git").mkdir()
         self.ws = self.base / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
-        (self.ws / core.BOOTSTRAP_REL).write_text("{}")
+        (self.ws / core.BOOTSTRAP_REL).write_text("{}", encoding="utf-8")
         self.gate = self.ws / core.GATE_FILE
         self.gate.write_bytes((ROOT / core.GATE_FILE).read_bytes())
         self.raw = self.gate.read_bytes()
@@ -88,7 +90,7 @@ class AgentScope(unittest.TestCase):
         key = core.scoped_id("s3", None)   # 记账用例用主作用域（子作用域需委托）
         self.read_full(key)
         target = self.ws / "target.txt"
-        target.write_text("before\n")
+        target.write_text("before\n", encoding="utf-8")
         base = core.file_sha(str(target))
         core.evaluate_pre_write(str(self.ws), "codex", key, [str(target)])
         intents = [e for e in self.events(key) if e.get("type") == "gate-intent"]
@@ -101,9 +103,9 @@ class AgentScope(unittest.TestCase):
         key = core.scoped_id("s4", None)
         self.read_full(key)
         target = self.ws / "out.txt"
-        target.write_text("before\n")
+        target.write_text("before\n", encoding="utf-8")
         core.evaluate_pre_write(str(self.ws), "codex", key, [str(target)])
-        target.write_text("after\n")
+        target.write_text("after\n", encoding="utf-8")
         res = core.evaluate_post_write(str(self.ws), "codex", key, [str(target)])
         self.assertTrue(res["committed"], "有意图的写必须落 gate-commit")
         self.assertEqual(res["committed"][0]["new_sha"], core.file_sha(str(target)))
@@ -112,7 +114,7 @@ class AgentScope(unittest.TestCase):
     def test_post_write_without_intent_is_unobserved(self):
         key = core.scoped_id("s5", "agent-noint")
         target = self.ws / "sneaky.txt"
-        target.write_text("x\n")
+        target.write_text("x\n", encoding="utf-8")
         res = core.evaluate_post_write(str(self.ws), "codex", key, [str(target)])
         self.assertTrue(res["unobserved"], "无意图的写必须记 unobserved-write")
         self.assertEqual(res["unobserved"][0]["reason"], "no-intent")
@@ -127,7 +129,7 @@ class AgentScope(unittest.TestCase):
         subprocess.run(["git", "add", "-A"], cwd=self.ws, check=True)
         subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=a",
                         "commit", "-qm", "init"], cwd=self.ws, check=True)
-        (self.ws / "untracked.txt").write_text("changed\n")
+        (self.ws / "untracked.txt").write_text("changed\n", encoding="utf-8")
         core.worktree_audit(str(self.ws), "codex", key, "stop")
         recs = [e for e in self.events(key) if e.get("type") == "unobserved-write"]
         self.assertTrue(any(r.get("detected_by") == "worktree-diff" for r in recs),
@@ -145,7 +147,7 @@ class AgentScope(unittest.TestCase):
         }
         env = {**os.environ, "GATE_CLIENT": "codex", "PYTHONDONTWRITEBYTECODE": "1"}
         p = subprocess.run([PY, str(HOOK), "post_bash"], input=json.dumps(payload),
-                           text=True, capture_output=True, env=env)
+                           text=True, encoding="utf-8", capture_output=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
         files = sorted(x.name for x in (self.ws / ".workspace" / ".hook-state").glob("*.json"))
         self.assertTrue(any("s7.agent-e2e" in f for f in files), f"作用域状态未生成：{files}")
@@ -165,7 +167,7 @@ class AgentScope(unittest.TestCase):
                 fh.write(json.dumps({"client": "codex", "session_id": "r",
                                      "type": "gate-commit", "target": target,
                                      "new_sha": old, "ts": str(i), "pad": pad}) + "\n")
-        (self.ws / "rot.txt").write_text("rotated\n")
+        (self.ws / "rot.txt").write_text("rotated\n", encoding="utf-8")
         core._append_commit_ledger(ws, "codex", "r", {"type": "gate-commit",
                                                       "target": target, "new_sha": new})
         lines = [l for l in ledger.read_text(encoding="utf-8").splitlines() if l.strip()]

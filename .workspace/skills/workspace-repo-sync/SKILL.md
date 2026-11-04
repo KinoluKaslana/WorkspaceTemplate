@@ -1,7 +1,7 @@
 ---
 name: workspace-repo-sync
 description: "Use when syncing the workspace's own git repo across devices (notes/TOOLS/artifacts changed elsewhere), or when recorded tool paths may belong to another machine. 跨设备同步工作区自身仓库时使用：先核验登记事实与工具真实性，再让用户裁决差异。"
-version: 1.1.1
+version: 1.1.2
 ---
 
 # Workspace Repo Sync — 工作区自身仓库的跨设备同步
@@ -38,7 +38,7 @@ python3 scripts/workspace_preflight.py            # 人读
 python3 scripts/workspace_preflight.py --json     # 机器读
 ```
 
-输出 9 项：`host / workspace_root / python / template_clone / skills / template_files / notes_index / docs_index / git`，
+输出 10 项：`host / workspace_root / python / gate / template_clone / skills / template_files / notes_index / docs_index / git`，
 每项带 `recorded / actual / status / action`。判定：
 
 | status | 含义 | 动作 |
@@ -148,6 +148,7 @@ git status -sb                                  # 期望：ahead/behind 归零�
 - [ ] `TEMPLATE_FILES` 全部存在（缺文件时 `verify_rules` 与 hooks 都会失真）；
 - [ ] `.workspace/skills/` 目录与 `skills/REGISTRY.md`、`TOOLS.md` 三方一致；
 - [ ] hook 插件在本机是否真的启用（`HERMES_HOME/.env`、`hermes config get plugins.enabled`），未启用时守门不生效；
+- [ ] `gate_status.py --require <当前 harness> --ttl-minutes 30` 有运行期证据（跨设备最容易漏的一条：dsh 每次启动都要 `--patch`）；
 - [ ] `.workspace/.hook-state/` 被 git 忽略（设备间不共享会话账本）；
 - [ ] `docs/.index.json` 若存在则 `check` 通过（索引按内容指纹，跨设备会 stale）。
 

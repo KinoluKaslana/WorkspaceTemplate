@@ -84,7 +84,7 @@ class ApplyPatchAnsiProcess(unittest.TestCase):
         (self.base / ".git").mkdir()
         self.ws = self.base / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
-        (self.ws / core.BOOTSTRAP_REL).write_text("{}")
+        (self.ws / core.BOOTSTRAP_REL).write_text("{}", encoding="utf-8")
         (self.ws / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
         self.sid = "w6-ansi"
 
@@ -92,7 +92,7 @@ class ApplyPatchAnsiProcess(unittest.TestCase):
         payload = {"session_id": self.sid, "cwd": str(self.ws), **fields}
         env = {**os.environ, "GATE_CLIENT": client, "PYTHONDONTWRITEBYTECODE": "1"}
         p = subprocess.run([sys.executable, "-B", str(HOOK), event],
-                           input=json.dumps(payload), text=True, capture_output=True,
+                           input=json.dumps(payload), text=True, encoding="utf-8", capture_output=True,
                            env=env, cwd=str(self.ws), timeout=20)
         self.assertEqual(p.returncode, 0, f"exit!=0 stderr={p.stderr}")
         return json.loads(p.stdout) if p.stdout.strip() else {}

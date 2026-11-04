@@ -103,7 +103,7 @@ def build(docs: Path, out: Path) -> dict:
     for p in files:
         raw = p.read_bytes()
         fp = f"c{len(raw)}:{sha256_bytes(raw)}"
-        rel = str(p.relative_to(docs.parent))
+        rel = p.relative_to(docs.parent).as_posix()
         filemap[rel] = fp
         sections.extend(_sections_for(p, rel, fp))
     df: dict[str, int] = {}
@@ -122,7 +122,7 @@ def freshness(docs: Path, idx: dict) -> dict:
     if idx.get("schema") != SCHEMA:
         return {"ok": False, "reason": "schema", "detail": idx.get("schema")}
     stale: list[dict] = []
-    on_disk = {str(p.relative_to(docs.parent)): p
+    on_disk = {p.relative_to(docs.parent).as_posix(): p
                for p in docs.glob("*.md") if not p.name.startswith(".")}
     indexed = idx.get("files") or {}
     for rel, fp in indexed.items():

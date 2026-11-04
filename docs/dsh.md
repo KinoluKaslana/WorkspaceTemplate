@@ -51,6 +51,7 @@ dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 | `read` | `post_read` | 记读证据；正文解析要求「行号连续 + 标准尾注」 |
 | `write` / `edit` / `str_replace_editor` | `pre_write` / `post_write` | 目标取 `file_path` 或 `path`；两者都缺 → 拒绝（不猜） |
 | `bash` / `pwsh` → hook 侧 `Bash` | `pre_bash` | 未读时：静态重定向 **拒**、解释器写 **拒**；变量间接 / `awk` 重定向 **放行（盲区）** |
+| `bash` / `pwsh` 调用结束 | `post_shell` | 最小差集审计：盲区写留下的磁盘变化 → `worktree-change` + `unobserved-write`（report-only，不改变工具结果） |
 | 其他 | — | 不拦 |
 
 **pwsh 实测矩阵**（Windows PowerShell 5.1，经 win-host 在真实 Windows 上执行；下表为**真实创建文件**通过的部分）：
@@ -97,8 +98,9 @@ New-Object System.IO.StreamWriter / [IO.File]::OpenWrite
 > 旧分类器把它们全判成「无写目标」→ 放行。现在 `wtarget.classify_pwsh()` 覆盖上述 10 类，
 > 并用 `tests/test_pwsh_writes.py` 锁住。
 >
-> **未做**：dsh 本体没有在 Windows 上跑过（Windows 侧没装 dsh），所以「dsh 的 pwsh 工具 → 本 hook」
-> 这一跳是**按契约接线 + 两侧各自实测**，不是端到端。
+> **已在真机做过**：dsh 本体在 Windows 上跑过（`0.2.1-rc.5`，headless，真实模型回合），
+> 「dsh 的 pwsh 工具 → 本 hook」这一跳是端到端验过的（见下方 Windows 侧的 `pwsh` 用例）。
+> 早期「Windows 侧没装 dsh」的限制已不存在。
 
 **bash 实测矩阵**（未读状态，同一 hook 直接驱动）：
 
@@ -128,7 +130,7 @@ ls -la                            → ALLOW
 | hook 缺失 / 超时 30s | 放 + 日志 | `hook-missing` / `hook-timeout` |
 | hook 缺失 + `WORKSPACE_GATE_DSH_FAIL_CLOSED=1` | 拒 | `deny`，文件未创建 |
 
-**Windows（同一版本，Node 24.22.2，headless）**
+**Windows（dsh 0.2.1-rc.5，Node 24.22.2，headless）**
 
 | 用例 | 结果 | 证据 |
 |---|---|---|
@@ -141,9 +143,36 @@ ls -la                            → ALLOW
 | hook 缺失 + `FAIL_CLOSED=1` | 拒 | deny，文件未创建 |
 | 非 UTF-8 输入（hook 级） | 拒 | `deny` + `UnicodeDecodeError` |
 | deny 文案（正常输入） | 可读 | 含 `AGENT_RULES.md` 与缺失区间，无 U+FFFD |
+| 三会话并发（同一工作区，3 个 headless 进程同一秒起） | 隔离 | 1 放（整读后 `write`，`gate-intent`→`gate-commit`）/ 2 拒（`write` 与 `pwsh` 各一，`[workspace-gate:no-read]`）；3 份账本互不串号 ✅ |
 
-**未测（如实）：** ① 会话隔离单独一例——每回合本就是新会话（未读即拒已由「未读 write」覆盖），但
-「模型自行先读」会让该例退化成非未读场景，故不单列；② Windows 运行时工具枚举——`tools.definitions()`
+**Windows 多会话并发（2026-11-04 真机，dsh 0.2.1-rc.5 / Node 24.22.2 / headless）**
+
+同一工作区同时起 3 个 headless 会话，日志里 3 条 `{"event":"apply"}` 落在同一秒：
+
+| 会话 | 指令 | 结果 | 证据 |
+|---|---|---|---|
+| A | 完整读 `AGENT_RULES.md` → `write a2.txt` | 放行 | 文件内容 `ok`；账本 `reads.AGENT_RULES.md` = `coverage [[1,204]]`、`complete true`；`gate-intent` / `gate-commit` 各 1 条 |
+| B | 直接 `write b2.txt`（禁止读文件） | 拒绝 | 文件不存在；`gate-deny` 指向 `b2.txt`；模型回执引用 `[workspace-gate:no-read]`「已覆盖 无；缺失 1..204」 |
+| C | 直接 `pwsh Set-Content c2.txt`（禁止读文件） | 拒绝 | 文件不存在；`gate-deny` 指向 `c2.txt`，文案同上 |
+
+- 三份 `dsh-session-<uuid>.json` 同时存在且全部可 `json` 解析；B/C 的 `reads` 为 `{}`，A 的读证据未被继承。
+- 两轮各跑一次、结果一致：一轮经 **win-host 加密通道**下发，一轮经 WSL interop 直调；两轮会话 id 不同，决策与落盘完全同形。
+- 确定性并发探针（3 进程直调 `hook.py`，不经模型）**6/6 PASS**：只有读者账本含完整覆盖、B/C `no-read` 拒、账本无撕裂。
+- 边界：这是 3 个**顶层会话**的并发。同一父会话下的并发子会话、>3 会话的压力未做。
+- B 的账本另有 1 条 `unobserved-write`（dsh 在 deny 之后仍发 post 事件），属三态审计的保守记录，**不代表写入发生**（文件不存在）。
+
+**5 会话加压（2026-11-04，同一工作区，1 读 + 4 未读，write/pwsh 混合）**
+
+| 期望 | 实测 |
+|---|---|
+| 只有读者落地 | `r5.txt` 存在；`x5b.txt` / `x5c.txt` / `x5d.txt` / `x5e.txt` 均不存在 ✅ |
+| 账本互不串号 | 5 份 `dsh-session-*.json` 全部可解析：恰好 1 份含 `reads.AGENT_RULES.md` 且带 `gate-intent` / `gate-commit`，其余 4 份 `reads={}`、各带 1 条 `gate-deny`（目标分别为 x5b / x5c / x5d / x5e） ✅ |
+| 插件在 5 个进程里都加载 | 日志 5 条 `{"event":"apply"}` ✅ |
+
+> 仍**未测**：>5 会话、长时稳定性、同一父会话下的并发子会话。
+
+**未测（如实）：** ① 顶层并发已补证到 3 会话与 5 会话（见上）；仍未测的是**同一父会话下的并发子会话**、
+**>5 会话压力**与**长时稳定性**；② Windows 运行时工具枚举——`tools.definitions()`
 在该平台返回空数组（Linux 可枚举 25 个），改用「Linux 枚举 + 全仓 grep 只命中 Anthropic SDK」作为
 `str_replace_editor` 不存在的证据。
 
@@ -204,9 +233,30 @@ ls -la                            → ALLOW
 **已知限制（如实）**：
 
 - **bash 盲区**：变量间接与 `awk`/重定向类外部程序写不被识别——这是已声明的盲区，不是待修 bug（要修需要 shell 解析器）。
+- **盲区的事后可见性**（2026-11-04 起）：dsh 没有会话结束钩子——探针实测只有 `session/flush` 触发（一次会话约 12 次，
+  是耐久检查点），`session/end-seed` 是会话日志的种子标记。所以改由**插件在工具调用后**做最小差集审计：
+  触发面是 shell（`post_shell`）**与不在只读集合里的未知工具**（`post_tool`）；git 仓库用 `git status`，
+  非 git 工作区用 **mtime 水位线**（状态只存 `audit_watermark_ns`，不存全量文件清单——清单落盘就得截断，
+  截断会让干净树持续报假阳性）；「没有对应 `gate-commit` 的变化」记成 `unobserved-write`
+  （report-only，不 deny；最小间隔 `WORKSPACE_GATE_DSH_AUDIT_MS`，默认 5000 ms；基线在会话第一次工具调用时建立）。
+  每条审计同时追加到 `.workspace/.hook-state/audit-dsh.jsonl`（256 KiB 轮转）——会话状态的 `events` 只有 50 条窗口，
+  审计记录会被后面的普通事件顶掉，jsonl 才是留得住的出口。
+  真机实测（Windows，`0.2.1-rc.5`）：`& ('Set'+'-Content') -Path blind3.txt -Value ok` 被静态分类器放行、
+  文件真的写出来，同一会话账本随后出现 `worktree-change(source=post_shell, git=false, files=[blind3.txt])`
+  与 `unobserved-write → D:\wt\ws\blind3.txt`。
+  边界：**事后记录不能撤销已发生的写入**；非 git 工作区靠 mtime 判定，**同尺寸同 mtime 的复写会漏**（要抓需要内容哈希或文件系统通知，未做）；
+  基线/审计都有条数上限（扫描最多 2000/200 条），超大工作区可能漏报。
 - 子 agent **没有委托机制**：dsh 子会话必须自己读政策才能写；父不能代授（与 CC/Codex 的 `delegations.py` 不对齐，属已知差异）。
 - `str_replace_editor`：当前构建运行时枚举 25 个工具，未见该名；合成用例已验证其 `path` 映射会触发写前拦截。此项**仅映射已验，非真实工具端到端验证**。
-- `pwsh`：**已在真实 Windows 上验证命令语义与分类结果**（见上方矩阵）；但 dsh 本体未在 Windows 运行，端到端未验。
+- `pwsh`：**已在真实 Windows 上验证命令语义与分类结果**（见上方矩阵），在 `0.2.1-rc.5` 上做过真实模型回合端到端；`0.2.2-alpha.2` 的 Windows 侧未跑过（Windows 安装的是 rc.5）。
+
+**怎么读这条审计**：
+
+```bash
+grep -h '"type": "unobserved-write"' .workspace/.hook-state/audit-dsh.jsonl   # 未观测写（含 session_id）
+grep -h '"type": "snapshot-incomplete"' .workspace/.hook-state/audit-dsh.jsonl # 哈希预算被打满：那一轮只覆盖了预算内的文件
+```
+
 
 ### Windows 其余面（2026-11-03 真机）
 
@@ -267,8 +317,8 @@ chcp 65001 > $null
 
 - 上表与 V1–V11 的**真实回合**证据跑在 `0.2.1-rc.4` 上；本机现为 **`0.2.2-alpha.2`**（`dsh --version`）。
 - 在新版本上已复验：`--dump-config` 仍出现 `workspace-gate-dsh` → `file://…/plugin.js`；
-  `tests/dsh_harness.mjs` **8/8 PASS**（未读拒 / 读后放 / 改版再拒 / 非写放 / 工作区外放 / edit / 缺身份 fail-closed）。
-- **未做**：0.2.2-alpha.2 上的真实模型回合。插件契约（`tools/pre-execute`）未变，但这条不能拿旧证据顶替。
+  `tests/dsh_harness.mjs` **9/9 PASS**（未读拒 / deny 带 `no-read` / `str_replace_editor` 的 `path` 别名 / 非写放 / 读后放 / 改版再拒 / 工作区外放 / `edit` 的 `file_path` 别名 / 缺身份 fail-closed）。
+- **真实回合**：`0.2.2-alpha.2` 上已跑过（Linux，2026-11-03 超严格测试，见 §4.0）；Windows 侧的真机回合跑在 **`0.2.1-rc.5`** 上——两端版本不同，不能互相顶替。
 
 ## 5.1 在 headless 里跑（账号登录，无 API key）
 

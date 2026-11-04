@@ -16,7 +16,19 @@ export const inject = ['tools']
 
 const WRITE_TOOLS = new Set(['write', 'edit', 'str_replace_editor'])
 const SHELL_TOOLS = new Set(['bash', 'pwsh'])
+// 明确只读的工具：它们之后不需要做差集审计。不在这个集合里的工具（含未来的新工具）
+// 一律审计——"未知工具"正是最可能绕开写前识别的入口。
+const READ_ONLY_TOOLS = new Set(['read', 'glob', 'grep', 'web_fetch', 'web_search',
+                                 'ls', 'list', 'todo', 'todo_write', 'task', 'skill'])
 const HOOK_TIMEOUT_MS = 20000
+// 审计最小间隔：一条命令里连发多次 shell 时不必重复走差集。可用环境变量覆盖。
+function auditIntervalMs() {
+  const raw = Number(process.env.WORKSPACE_GATE_DSH_AUDIT_MS)
+  if (!Number.isFinite(raw)) return 5000
+  return Math.min(60000, Math.max(0, Math.floor(raw)))
+}
+let lastAuditAt = 0
+const startedSessions = new Set()
 // 失败姿态可配：默认 advisory（放行 + 审计），置 1 则 fail-closed（拒绝）。
 // 依据 R107：客户端层超时/加载失败默认 fail-open；需要更强保证时由用户显式开启。
 const FAIL_CLOSED = process.env.WORKSPACE_GATE_DSH_FAIL_CLOSED === '1'
@@ -245,6 +257,19 @@ export function apply(ctx) {
       return { kind: 'deny', reason: `[workspace-gate:no-session] 无法确定 dsh 会话身份，无法核对读证据；写入被拒绝（fail-closed）。` }
     }
 
+    // dsh 没有 SessionStart 事件：第一次工具调用就是会话起点，据此处初始化
+    // worktree 基线（否则 shell 差集审计会把会话开始前就脏的文件全报成 unobserved）。
+    const sidKey = String(data.session_id)
+    if (!startedSessions.has(sidKey)) {
+      startedSessions.add(sidKey)
+      try {
+        await runHook('session_start', { client: 'dsh', session_id: sidKey,
+                                         cwd: cwdOf(), hook_event_name: 'SessionStart' })
+      } catch (e) {
+        logLine({ event: 'session_start', decision: 'allow', reason: 'start-error', error: String(e).slice(0, 120) })
+      }
+    }
+
     const res = await runHook(event, data)
     if (res.decision === 'deny') {
       logLine({ event, decision: 'deny', tool, call: exec?.callId })
@@ -280,6 +305,24 @@ export function apply(ctx) {
         }
       } catch (e) {
         logLine({ event, decision: 'allow', reason: 'post-error', error: String(e) })
+      }
+    }
+    if (!READ_ONLY_TOOLS.has(tool)) {
+      // 盲区事后可见：shell 写没法静态判全（变量间接 / awk 重定向），未知工具也可能写。
+      // 这两类之后再跑一次差集审计：磁盘上出现「没有对应 gate-commit 的变化」就记
+      // unobserved-write。report-only——不改变本次工具结果，也不能把已发生的写变回拒绝。
+      try {
+        const sid = sidByCall.get(String(exec?.callId ?? '')) || sessionId(exec, ctx) || lastSid
+        if (sid && Date.now() - lastAuditAt >= auditIntervalMs()) {
+          lastAuditAt = Date.now()
+          const source = SHELL_TOOLS.has(tool) ? 'post_shell' : 'post_tool'
+          const data = { client: 'dsh', session_id: String(sid), cwd: cwdOf(),
+                         hook_event_name: 'PostToolUse', tool_name: tool, source }
+          const r = await runHook(source, data)
+          logLine({ event: source, decision: r.decision, tool, sid: data.session_id, code: r.code ?? null })
+        }
+      } catch (e) {
+        logLine({ event: 'post_audit', decision: 'allow', reason: 'audit-error', error: String(e).slice(0, 120) })
       }
     }
     return next()

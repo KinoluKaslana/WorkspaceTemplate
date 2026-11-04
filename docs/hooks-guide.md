@@ -336,6 +336,14 @@ claude -p "执行一条 Bash：printf x >> POLICY2.md" \
 
 ---
 
+### 6.1 没有收尾事件的 harness（dsh）：写后差集审计
+
+dsh 不暴露会话结束钩子（实测只有 `session/flush`，是耐久检查点）。所以盲区可见性改由**插件在工具调用后**触发
+`hook.py post_shell` / `post_tool` 做一次最小差集：git 仓库用 `git status`，非 git 工作区用 **mtime 水位线 + 哈希兜底**
+（覆盖 `cp -p` / `tar -x` 这类保留 mtime 的写；预算 1 MiB/文件、32 MiB/轮，超预算记 `snapshot-incomplete`）。
+「磁盘上变了但没有对应 `gate-commit`」记成 `unobserved-write`，report-only，不改变工具结果。
+完整机制与真机证据见 [`docs/dsh.md`](dsh.md)；判据边界（事后不可撤销、同尺寸同 mtime 需哈希、扫描上限）在那里一并写明。
+
 ## 7. 常见问题
 
 **Q1：deny 说「共 188 行」，但 `wc -l` 是 187，是不是 bug？**
@@ -374,7 +382,7 @@ Codex 侧：未读时按 B′ 拒（解释器/包装类）；**已读后直接�
 ## 9. 自测与回归
 
 ```bash
-# 9 套测试（当前共 94 例）
+# 11 套测试（当前共 114 例）
 for t in hooks-tests/test_*.py; do printf "%-40s " "$t"; python3 -B "$t" 2>&1 | tail -1; done
 
 # 治理文件完整性（文件哈希 + 条款级）
@@ -392,6 +400,8 @@ python3 scripts/verify_rules.py --workspace .
 | `test_cc_transcript` | 转录回放：路径三重校验、读证据、跨 Stop 账本、写后消费、同轮二次写 |
 | `test_cc_wiring` | 真实启动 hook.py 的 Stop/SessionEnd 接线 |
 | `test_agent_scope` | 作用域键、父子读证据隔离、intent/commit、无意图写落 unobserved、worktree 差集 |
+| `test_delegation` | 子 Agent 委托签发/校验/过期/撤销 |
+| `test_dsh_post_shell` | dsh 写后差集审计：git/非 git 两条路径、水位线、哈希兜底、700 文件无假阳性、审计落 jsonl |
 
 ---
 

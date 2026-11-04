@@ -23,7 +23,10 @@ GATE_MATRIX = [str(ROOT / GATE_REL)]
 
 def _matrix():
     """(command, expected_kind, expect_gate_hit, note)。覆盖判定纪律 3–8 + 对抗负样本。"""
-    W = CWD_MATRIX
+    # bash 里反斜杠是转义符：Windows 盘符路径在命令串里必须写成 `D:/wt/ws/...`，
+    # 否则 `D:\wt` 会被解析成 `D:wt`（那是 shell 语义，不是分类器的缺陷）。
+    # cwd 仍用系统真实路径（CWD_MATRIX），只有命令串里的写法归一化。
+    W = CWD_MATRIX.replace("\\", "/")
     return [
         ("echo hi > AGENT_RULES.md", "write", True, "redirect:>"),
         ("printf 'x' >> AGENT_RULES.md", "write", True, "redirect:>>"),

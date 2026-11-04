@@ -205,6 +205,10 @@ def main(argv: list[str]) -> int:
                               "hint": "给 --template 或 --clone-url"}, ensure_ascii=False))
             return 1
         tpl.parent.mkdir(parents=True, exist_ok=True)
+        # 本地目录当 URL 时统一转 file:// URL：Git for Windows 会把 `D:\wt\ws` 这类裸盘符路径
+        # 交给 MSYS 路径转换，结果 dest 变成 `/d/wt/ws` 而失败（CI Windows 上就是这么红的）。
+        if os.path.isdir(os.path.expanduser(url)):
+            url = Path(url).expanduser().resolve().as_uri()
         p = subprocess.run(["git", "clone", "--quiet", url, str(tpl)], capture_output=True, text=True)
         if p.returncode != 0:
             print(json.dumps({"error": "clone-failed", "url": url, "stderr": p.stderr.strip()[:300]},
@@ -375,6 +379,7 @@ def main(argv: list[str]) -> int:
         boot_path = ws / ".workspace" / "bootstrap.json"
         boot = json.loads(boot_path.read_text(encoding="utf-8"))
         python_before = json.dumps(boot.get("python"), sort_keys=True)
+        gate_before = json.dumps(boot.get("gate"), sort_keys=True)
         tpl_sec = boot.setdefault("template", {})
         tpl_sec["current_policy_version"] = after
         tpl_sec["last_synced_at"] = dt.date.today().isoformat()
@@ -387,6 +392,10 @@ def main(argv: list[str]) -> int:
         python_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8")).get("python"),
                                   sort_keys=True)
         report["python_mode_preserved"] = (python_before == python_after)
+        # §15：同步不得改写本机的 gate 接线结论（运行期事实不是模板事实）
+        gate_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8")).get("gate"),
+                                sort_keys=True)
+        report["gate_preserved"] = (gate_before == gate_after)
         report.update({"backup": str(backup), "copied": copied,
                        "bootstrap": {"current_policy_version": after,
                                      "last_synced_ref": wanted,

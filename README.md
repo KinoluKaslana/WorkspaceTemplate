@@ -8,10 +8,12 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v3.3.1-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.5.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
+[![CI](https://github.com/KinoluKaslana/WorkspaceTemplate/actions/workflows/ci.yml/badge.svg)](https://github.com/KinoluKaslana/WorkspaceTemplate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [快速开始](#快速开始) · [第一次打开](#第一次打开会发生什么) · [规则分层与完整性](#规则分层与完整性校验) · [工作区生命周期](#工作区生命周期-skills) · [目录结构](#目录结构) · [常见问题](#常见问题)
 
@@ -61,7 +63,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 机械守门补强 | 拒绝码前缀、委托审计、`gate-deny` 独立核验、审计十三型 | 插件 1.9.0 + `docs/hooks-catalog.md` §2.6 |
 | skills 契约化 | 7 个 skill 必须齐 8 维；`skill_audit.py` 缺节即失败；REGISTRY 由目录派生 | `docs/skills.md` §1 |
 | Python 三选一 | **uv 默认** / 手动 venv / MCP；已配置不被改写 | R2–R8 + `pyenv_init.py` |
-| 跨设备可核验 | 9 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
+| 跨设备可核验 | 10 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
 | docs 检索（可选） | 确定性索引，**省账单不省 token**，命中 10/10 | `docs/docs-retrieval.md` |
 
 > 完整文档入口：[`docs/README.md`](docs/README.md)（按读者选路径）。
@@ -246,6 +248,14 @@ tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gat
 dsh --profile web --patch .dsh/workspace-gate/cordis.yml
 ```
 
+**政策 §15（与 §0 的 Python 选择同性质）要求开工前核验接线**。dsh 没有项目级自动发现：不带 `--patch` 启动，就等于完全没有 gate——读证据、写前拦截、事后审计都不会发生，但工作区里的文件一个不少。所以「克隆下来长这样」不等于「已经受管」，先查接线再干活：
+
+```bash
+python3 scripts/gate_status.py --ttl-minutes 30                 # 四种 harness 各自有没有运行期证据
+python3 scripts/gate_status.py --require dsh,cc --ttl-minutes 30 # 要求项缺证据 → 退出码 1
+```
+
+判定看的是**运行期证据**而不是文件在不在：`cc`/`codex` 看 `.workspace/.hook-state/gate.log` 里的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 与 `.hook-state/dsh-session-*.json` 账本。
 dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走静态可判写，`read` 记读证据；插件异常/hook 超时放行并记 `.workspace/.dsh-gate.log`，拿不到会话身份则 fail-closed。已在**真实模型回合**里验证（dsh headless + DeepSeek 账号）：未读先写被拒且文件未创建、先读后写放行、`bash` 重定向写被拒；另有 8 条走真实 `plugin.js`+`hook.py` 的合成用例。细节与已知限制见 **[docs/dsh.md](docs/dsh.md)**。
 
 ## 工作区生命周期 skills
@@ -255,12 +265,12 @@ dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走�
 | Skill | 版本 | 触发 | 做什么 |
 |---|---|---|---|
 | [template-update](.workspace/skills/template-update/SKILL.md) | 3.2.1 | "同步模板/换成某个分支或标签"，或版本落后、`verify_rules` 报漂移 | 按 **任意 ref**（分支/标签/提交）同步模板层：dry-run → 备份（MANIFEST）→ 整文件替换 → custom 引用迁移 → `--vs-template` 验证；`--prune` 清理上游已删文件 |
-| [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.1 | 换设备、别端改了 notes/TOOLS、怀疑工具失效 | 先 `workspace_preflight.py` 核验登记与实机 → 用户裁决方向/分叉/冲突 → 拉后重建索引与四验 |
-| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.2.0 | "初始化/接管这个工作区"，或无可信血缘、无条款标记 | 盘点 → 差异判定 → pre-v2.0 迁移（本地语义进 custom）→ Python（已配置则不动）→ git 决策 → 登记 → 验证 |
+| [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.2 | 换设备、别端改了 notes/TOOLS、怀疑工具失效 | 先 `workspace_preflight.py` 核验登记与实机 → 用户裁决方向/分叉/冲突 → 拉后重建索引与四验 |
+| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.2.1 | "初始化/接管这个工作区"，或无可信血缘、无条款标记 | 盘点 → 差异判定 → pre-v2.0 迁移（本地语义进 custom）→ Python（已配置则不动）→ git 决策 → 登记 → 验证 |
 | [git-init](.workspace/skills/git-init/SKILL.md) | 1.1.0 | "建 git 仓库"，或 `git.status=declined` 后改主意 | init → .gitignore → 登记 → 审查暂存清单 → 提交 → 核提交树；含撤销建仓 |
 | [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 任务模式产物落盘、准备声明完成 | 产物清点（无仓用时间戳列举）→ 查 INDEX → note 三选一 → 索引回写 → 外部动作验证 → 三档口径声明 |
 | [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 工作区模板版本旧、缺现行 skill / 无 `template_sync.py` | 从模板快照自举 → `--apply` → `--sync-registry` + TOOLS 补登 → 四条验收 |
-| [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.2.0 | docs 改动、索引 stale、命中率下降 | build/check → 命中报告 → 只在真实缺口下加别名（上限 8、留一验证）→ 五条验收 |
+| [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | docs 改动、索引 stale、命中率下降 | build/check → 命中报告 → 只在真实缺口下加别名（上限 8、留一验证）→ 五条验收 |
 
 **边界**：工作区**自身** git 仓库的分支切换、迁移、历史改写不在任何 skill 内——由用户自行维护。
 
@@ -319,7 +329,7 @@ Agent 将自动完成：
 │   ├── architecture.md     # 四层模型 / 写路径 / 读证据 / 失败姿态 / 跨设备
 │   ├── policy-language.md  # 政策双轨：受控词表 + 条款属性 + clause_lint
 │   ├── skills.md           # 7 个 skill 的触发、边界、组合流程、8 维契约
-│   ├── tools.md            # 10 个脚本的用法与退出码
+│   ├── tools.md            # 15 个脚本的用法与退出码
 │   ├── hooks-guide.md      # 三 harness hook 技术详解（原理 + 作用 + 排查）
 │   ├── hooks-catalog.md    # 事件清单 + 新 harness 接入 7 步 + 验收断言
 │   └── docs-retrieval.md   # docs 检索工具与实测结论（省账单不省 token）
@@ -339,7 +349,7 @@ Agent 将自动完成：
 │   ├── mark_rules.py        # 条款 ID 标记 + 注册表生成
 │   ├── verify_rules.py      # 双级校验 + --vs-template 权威比对
 │   ├── skill_audit.py       # skills 契约 / 双登记 / --sync-registry
-│   ├── workspace_preflight.py # 跨设备 9 项预检
+│   ├── workspace_preflight.py # 跨设备 10 项预检
 │   ├── template_sync.py     # 任意 ref 同步 + --prune
 │   ├── pyenv_init.py        # uv / venv / mcp 三模式初始化
 │   ├── docs_index.py        # docs 确定性索引
@@ -483,3 +493,11 @@ Agent 将自动完成：
 从一个清晰的 Workspace 开始，让业务决定能力，让规则约束能力。
 
 </div>
+
+---
+
+## 许可
+
+本项目以 [MIT](LICENSE) 发布。你若把它改造成自己的 Workspace 模板，保留许可证声明即可，无需公开你的修改。
+
+发现安全问题请走[私密报告](SECURITY.md)，不要开公开 issue。

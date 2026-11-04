@@ -15,13 +15,13 @@
 ## 运行
 
 ```bash
-for t in test_wtarget test_bash_dispatch test_apply_patch_ansi test_w2_anchor test_authz test_template_anchor test_cc_transcript test_cc_wiring; do
+for t in test_wtarget test_bash_dispatch test_apply_patch_ansi test_w2_anchor test_authz test_template_anchor test_cc_transcript test_cc_wiring test_dsh_post_shell; do
   python3 -B hooks-tests/$t.py
 done
 python3 -B hooks-tests/replay_wtarget.py --unit   # 同一识别器矩阵（回放脚本的单测模式）
 ```
 
-当前规模（9 套）：`test_wtarget` 4 类（内含 86 条断言矩阵）、`test_bash_dispatch` 21、`test_apply_patch_ansi` 9、`test_w2_anchor` 3、`test_authz` 5、`test_template_anchor` 4、`test_cc_transcript` 33、`test_cc_wiring` 6、`test_agent_scope` 9——**共 94 例**，全绿。
+当前规模（11 套）：`test_wtarget` 4 类（内含 86 条断言矩阵）、`test_bash_dispatch` 21、`test_apply_patch_ansi` 9、`test_w2_anchor` 3、`test_authz` 5、`test_template_anchor` 4、`test_cc_transcript` 33、`test_cc_wiring` 6、`test_agent_scope` 9、`test_delegation` 9、`test_dsh_post_shell` 11——**共 114 例**，全绿。
 
 要求 Python ≥ 3.10（纯 stdlib，不装依赖）。测试全部是**进程级**：真实启动 `.workspace/hooks/hook.py`、stdin 喂 payload；**不是**原生 Codex / Claude Code 会话 E2E（原生行为证据见各轮 `*-TEST-REPORT.md` 与 `ROUNDS-FACTS.md`）。
 

@@ -48,7 +48,7 @@ def wp(ws: Path, aliases):
 
 def audit(ws: Path, *args):
     p = subprocess.run([sys.executable, "-B", "scripts/docs_alias_audit.py", *args],
-                       cwd=ws, capture_output=True, text=True)
+                       cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return p.returncode, p.stdout
 
 
@@ -93,7 +93,7 @@ class AliasAudit(unittest.TestCase):
                       "source": "probe-only"}])
         rc, out = audit(self.ws, "--restore")
         self.assertEqual(rc, 0, out)
-        self.assertEqual(json.loads((self.ws / "docs" / ".aliases.json").read_text())["aliases"], [])
+        self.assertEqual(json.loads((self.ws / "docs" / ".aliases.json").read_text(encoding="utf-8", errors="replace"))["aliases"], [])
 
 
 if __name__ == "__main__":

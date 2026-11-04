@@ -31,7 +31,7 @@ class AuthzToken(unittest.TestCase):
         (self.base / ".git").mkdir()
         self.ws = self.base / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
-        (self.ws / core.BOOTSTRAP_REL).write_text("{}")
+        (self.ws / core.BOOTSTRAP_REL).write_text("{}", encoding="utf-8")
         (self.ws / core.GATE_FILE).write_bytes((ROOT / core.GATE_FILE).read_bytes())
         self.sid = "w2a-" + self._testMethodName
 
@@ -40,14 +40,14 @@ class AuthzToken(unittest.TestCase):
                "--ttl", str(ttl)]
         for t in targets:
             cmd += ["--target", t]
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=20)
 
     def invoke(self, event, client, **fields):
         payload = {"session_id": self.sid, "cwd": str(self.ws), **fields}
         env = {**os.environ, "GATE_CLIENT": client, "PYTHONDONTWRITEBYTECODE": "1"}
         env.pop("WORKSPACE_TEMPLATE_CLONE", None)
         p = subprocess.run([PY, "-B", str(HOOK), event], input=json.dumps(payload),
-                           text=True, capture_output=True, env=env, cwd=str(self.ws),
+                           text=True, encoding="utf-8", capture_output=True, env=env, cwd=str(self.ws),
                            timeout=30)
         self.assertEqual(p.returncode, 0, f"exit!=0 stderr={p.stderr}")
         return json.loads(p.stdout) if p.stdout.strip() else {}
@@ -57,7 +57,7 @@ class AuthzToken(unittest.TestCase):
 
     def state_events(self):
         p = core._state_path(str(self.ws), "codex", self.sid)
-        st = json.loads(p.read_text()) if p.exists() else {}
+        st = json.loads(p.read_text(encoding="utf-8", errors="replace")) if p.exists() else {}
         return st.get("events", [])
 
     def write_gate(self):
