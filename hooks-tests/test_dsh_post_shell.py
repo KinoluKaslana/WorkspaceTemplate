@@ -20,6 +20,7 @@ import json
 import os
 
 os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,8 @@ class PostShellAudit(unittest.TestCase):
         self.sid = "dsh-postshell-" + self._testMethodName
 
     def git(self, *args):
+        if not shutil.which("git"):
+            raise unittest.SkipTest("未安装 git：该用例需要真实 git 仓库")
         r = subprocess.run(["git", "-C", str(self.ws), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout

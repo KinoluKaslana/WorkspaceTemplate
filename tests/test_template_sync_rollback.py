@@ -1,5 +1,6 @@
 """template_sync 的备份/回滚：MANIFEST 三段 + 回滚放回 replaced、删除 added。"""
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,7 @@ def _source_ref() -> str:
     return "main"
 
 
+@unittest.skipUnless(shutil.which("git"), "未安装 git：本套用例需要真实 git 仓库")
 class Rollback(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

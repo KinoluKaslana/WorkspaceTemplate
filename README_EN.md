@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v3.5.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.5.3-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -34,6 +34,19 @@ WorkspaceTemplate turns those principles into a small, explicit set of files. It
 
 > [!IMPORTANT]
 > The repository root is the usable Workspace template; there is no second template directory to enter. The README is a GitHub landing page and onboarding guide, not an Agent policy source. [`AGENT_RULES.md`](AGENT_RULES.md) is the sole authoritative policy.
+
+## When **not** to use it
+
+The cost here is mechanical consistency: 118 clauses, 10 preflight checks, and three gate layers
+(plugin / client hooks / post-hoc diff audit). It does not pay off when:
+
+- **One-off tasks or single-file edits** — reading the policy, running preflight and writing a note costs more than the change itself.
+- **Occasional Q&A only** — the gate's value comes from long-lived, repeated, multi-session work.
+- **You need hard isolation or multi-tenancy** — the gate stops unconscious skips, **not deliberate bypass**; same-uid means no security boundary.
+- **Running in-repo hook code in your client is not acceptable** — Codex/Claude Code hooks are executable scripts shipped with the repo.
+- **You don't want to track versions** — the clause set (R1..R118) and the template sync chain move together.
+
+See “Why It Exists” and “Core Capabilities” above for where it does fit.
 
 ## Core Capabilities
 

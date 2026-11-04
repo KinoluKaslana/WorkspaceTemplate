@@ -426,6 +426,8 @@ class CcTranscript(unittest.TestCase):
     def test_changed_but_untargeted_gap(self):
         # 真实 git 仓 + 未提交改动，且转录里没有对应写入命令 → gap
         for args in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):
+            if not shutil.which("git"):
+                raise unittest.SkipTest("未安装 git：该用例需要真实 git 仓库")
             subprocess.run(["git", "-C", str(self.ws), "-c", "user.name=ci", "-c", "user.email=ci@example.com", *args], capture_output=True)
         (self.ws / "probe.txt").write_text("v1\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(self.ws), "add", "-A"], capture_output=True)
