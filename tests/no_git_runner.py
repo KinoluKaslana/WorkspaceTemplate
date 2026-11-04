@@ -2,6 +2,7 @@
 
 用法：python3 tools/no_git_runner.py（在模板仓根目录）
 """
+import os
 import shutil
 import sys
 import unittest
@@ -20,6 +21,9 @@ shutil.which = _fake_which
 loader = unittest.TestLoader()
 suite = unittest.TestSuite()
 for d in ("tests", "hooks-tests"):
+    # 实例（派生工作区）没有 hooks-tests/：模板仓自用，缺失就跳过而不是 ImportError
+    if not os.path.isdir(d):
+        continue
     suite.addTests(loader.discover(d, pattern="test_*.py", top_level_dir=d))
 
 res = unittest.TextTestRunner(verbosity=0).run(suite)
