@@ -15,8 +15,11 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DOCS = [ROOT / "README.md", ROOT / "README_EN.md", *sorted((ROOT / "docs").glob("*.md"))]
+DOCS = [ROOT / "README.md", ROOT / "README_EN.md", ROOT / "CONTRIBUTING.md", ROOT / "SECURITY.md",
+        ROOT / "UPGRADE.md", *sorted((ROOT / "docs").glob("*.md"))]
 LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+WORD_NUM = {"One": 1, "Two": 2, "Three": 3, "Four": 4, "Five": 5, "Six": 6,
+            "Seven": 7, "Eight": 8, "Nine": 9, "Ten": 10, "Fourteen": 14}
 
 
 def skills() -> dict[str, str]:
@@ -90,6 +93,73 @@ class DocsConsistency(unittest.TestCase):
         m = re.search(r"# Workspace skills（(\d+) 个）", (ROOT / "docs" / "skills.md").read_text(encoding="utf-8"))
         self.assertEqual(int(m.group(1)), n_skills if m else -1,
                          f"docs/skills.md 标题计数应为 {n_skills}")
+
+    def test_d7_prose_counts_match_disk(self):
+        """散文里的计数也必须与磁盘一致。
+
+        曾经的漏网：`docs/README.md` 写「6 个 skill / 10 个脚本」、`README_EN.md` 写「Six skills」、
+        `docs/architecture.md` 的架构图写「R1..R108 / scripts/（10 个）」——d6 只查了少数几处
+        固定格式，散文计数就一路漂到发布前才被审计席抓到。这里按「数字 + 单位」扫全部文档，
+        少写、多写、写旧版本号都会红。
+        """
+        disk_skills = len(skills())
+        disk_scripts = len(list((ROOT / "scripts").glob("*.py")))
+        clause_ids = [int(n) for n in re.findall(r"<!-- id:R(\d+) -->",
+                                                 (ROOT / "AGENT_RULES.md").read_text(encoding="utf-8"))]
+        max_clause = max(clause_ids) if clause_ids else 0
+        bad = []
+        for md in DOCS:
+            text = md.read_text(encoding="utf-8")
+            rel = md.relative_to(ROOT)
+            for m in re.finditer(r"(\d+)\s*个\s*(?:workspace\s*)?skill", text):
+                if int(m.group(1)) != disk_skills:
+                    bad.append(f"{rel}: 写 {m.group(1)} 个 skill（磁盘 {disk_skills}）")
+            for m in re.finditer(r"(\d+)\s*个\s*脚本", text):
+                if int(m.group(1)) != disk_scripts:
+                    bad.append(f"{rel}: 写 {m.group(1)} 个脚本（磁盘 {disk_scripts}）")
+            for m in re.finditer(r"scripts/（(\d+)\s*个）|scripts/，(\d+)\s*个", text):
+                n = int(m.group(1) or m.group(2))
+                if n != disk_scripts:
+                    bad.append(f"{rel}: 写 scripts {n} 个（磁盘 {disk_scripts}）")
+            for m in re.finditer(r"\b(One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Fourteen)\s+skills?\b", text):
+                n = WORD_NUM[m.group(1)]
+                if n != disk_skills:
+                    bad.append(f"{rel}: 写 '{m.group(1)} skills'（磁盘 {disk_skills}）")
+            for m in re.finditer(r"R1\.\.R(\d+)", text):
+                if int(m.group(1)) != max_clause:
+                    bad.append(f"{rel}: 条款范围写 R1..R{m.group(1)}（实际 R1..R{max_clause}）")
+        self.assertEqual(bad, [], "散文计数漂移：\n" + "\n".join(bad))
+
+    def test_d9_github_layer_is_not_template_layer(self):
+        """`.github/` 是模板仓自己的 CI 基础设施，不下发到实例：不得出现在 TEMPLATE_FILES。
+
+        曾经的误判：审计席把 `.github/scripts/release_anchor.py` 未列入清单当成缺口——实际整层
+        都不在清单里，属设计而非遗漏。这条断言把这个边界钉住，防止将来有人只加一个文件。
+        """
+        from verify_rules import TEMPLATE_FILES  # noqa: E402
+        bad = [f for f in TEMPLATE_FILES if f.startswith(".github/")]
+        self.assertEqual(bad, [], f".github/ 不应进模板层清单：{bad}")
+        self.assertTrue((ROOT / ".github" / "scripts" / "release_anchor.py").is_file(),
+                        "模板仓仍需要该脚本（CI 用），只是不下发")
+
+    def test_d8_skill_table_versions_match_skill_md(self):
+        """README / README_EN / docs/skills.md 的 skill 表版本列必须等于 SKILL.md 的 version。
+
+        d2 只查 docs/skills.md，两份 README 的版本列无人管——实测漂移过
+        （`docs-retrieval-maintenance` 写 1.2.0，SKILL.md 是 1.3.0），发布前才被审计席抓到。
+        """
+        bad = []
+        for name, ver in skills().items():
+            if not ver:
+                continue
+            row = re.compile(r"\|\s*\[" + re.escape(name) + r"\]\([^)]*\)\s*\|\s*([^|]+?)\s*\|")
+            for md in DOCS:
+                text = md.read_text(encoding="utf-8")
+                for m in row.finditer(text):
+                    got = m.group(1).strip()
+                    if got != ver:
+                        bad.append(f"{md.relative_to(ROOT)}: {name} 写 {got}（SKILL.md {ver}）")
+        self.assertEqual(bad, [], "skill 表版本漂移：\n" + "\n".join(bad))
 
 
 if __name__ == "__main__":

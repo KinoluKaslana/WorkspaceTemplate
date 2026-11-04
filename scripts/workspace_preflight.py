@@ -9,6 +9,7 @@
   host            当前主机名
   workspace_root  TOOLS §1 是否登记了本机路径、是否与当前 cwd 一致
   python          bootstrap 记录的 venv 是否存在、版本是否一致
+  gate            bootstrap.gate 结论 vs 运行期证据（§15；configured 但 TTL 内无证据 = mismatch）
   template_clone  template.local_clone 是否存在、remote 是否与 source_repo 一致、HEAD 分支
   skills          目录 ↔ REGISTRY.md ↔ TOOLS.md 三方一致
   template_files  TEMPLATE_FILES 是否齐全
@@ -53,6 +54,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--workspace", default=".")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--strict", action="store_true")
+    ap.add_argument("--harness", default="",
+                    help="当前在用的 harness（cc,codex,hermes,dsh，逗号分隔）：给了就要求它已在 gate 结论里")
     a = ap.parse_args(argv)
 
     ws = Path(a.workspace).expanduser().resolve()
@@ -116,6 +119,42 @@ def main(argv: list[str]) -> int:
             rows.append(item("python", "mcp", "mcp", NA, "MCP 模式：核验 provider/tool 仍可用"))
     else:
         rows.append(item("python", "unconfigured", mode, BAD, "按 §0 询问用户后配置"))
+
+    # 2b) Gate 接线（§15）：登记状态 vs 运行期证据
+    gate = boot.get("gate") or {}
+    g_status = gate.get("status")
+    g_harness = [h for h in (gate.get("harness") or []) if h]
+    want = [h.strip() for h in (getattr(a, "harness", "") or "").split(",") if h.strip()]
+    if not g_status:
+        rows.append(item("gate", "未记录", "—", WARN,
+                         "按 §15 核验后记录：python3 scripts/gate_status.py --require <harness> --record"))
+    elif g_status not in ("configured", "unconfigured"):
+        rows.append(item("gate", g_status, g_status, BAD,
+                         "非法 status（只允许 configured / unconfigured）：按 §15 重新 --record"))
+    elif g_status != "configured":
+        rows.append(item("gate", g_status, g_status, WARN,
+                         "已记录「无 gate」：接线后按 §15 重新核验并翻转状态"))
+    elif want and (set(want) - set(g_harness)):
+        rows.append(item("gate", {"harness": g_harness}, {"required": want}, BAD,
+                         "当前 harness 不在已登记的接线结论里：先按 §15 核验该端并 --record"))
+    elif not g_harness:
+        rows.append(item("gate", "configured（缺 harness）", "", BAD,
+                         "bootstrap.gate.harness 为空：重新用 --record 写入"))
+    else:
+        ttl = min(float(gate.get("ttl_minutes") or 30), 30.0)
+        rc, out = sh(sys.executable, str(Path(__file__).resolve().parent / "gate_status.py"),
+                     "--workspace", str(ws), "--require", ",".join(g_harness),
+                     "--ttl-minutes", str(ttl), "--json")
+        try:
+            probe = json.loads(out)
+            fresh = probe.get("missing") == []
+        except ValueError:
+            probe, fresh = {}, False
+        rows.append(item("gate", {"harness": g_harness, "ttl": ttl},
+                         {"missing": (probe or {}).get("missing", ["?"])},
+                         OK if fresh else BAD,
+                         "" if fresh else "声明已接线但 TTL 内没有证据：确认 harness 启动方式（dsh 需 --patch）"))
+
 
     # 3) 模板克隆
     tpl = boot.get("template") or {}

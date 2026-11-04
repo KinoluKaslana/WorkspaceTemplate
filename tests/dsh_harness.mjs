@@ -19,6 +19,8 @@ if (spawnSync('python3', ['-c', 'import sys'], { stdio: 'ignore' }).status !== 0
 }
 
 process.env.WORKSPACE_GATE_DSH_CWD = ws
+// 审计节流在测试里必须为 0，否则同一进程里第二次审计会被 5s 窗口挡掉（测的就不是逻辑了）
+process.env.WORKSPACE_GATE_DSH_AUDIT_MS = '0'
 const plugin = await import(pluginPath)
 const handlers = {}
 plugin.apply({ on: (e, fn) => { handlers[e] = fn } })
@@ -72,6 +74,22 @@ check('edit tool also gated (file_path alias)', r.kind === 'deny')
 const noSession = { name: 'write', arguments: { path: 'AGENT_RULES.md' }, callId: 'call-nosess', agent: {} }
 r = await pre(noSession, nextAllow)
 check('missing session fails closed', r.kind === 'deny')
+
+// shell 调用的盲区事后可见：post-execute 之后必须留一条 post_shell 审计，且不改变工具结果
+const logPath = join(ws, '.workspace', '.dsh-gate.log')
+const beforeLog = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+r = await post(mk('bash', { command: 'awk \'BEGIN{print "x" > "blind.txt"}\'' }),
+               { isError: false, content: [] }, nextAllow)
+check('shell post-execute does not block', !(r && r.kind === 'deny'))
+const afterLog = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+check('post_shell audit recorded', afterLog.length > beforeLog.length && afterLog.includes('"event":"post_shell"'))
+
+// 未知工具（不在只读集合里）也要审计：未来新增的写工具正是绕开写前识别的入口
+const beforeUnknown = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+r = await post(mk('some_future_writer', { path: join(ws, 'x.txt') }), { isError: false }, nextAllow)
+check('unknown tool post does not block', !(r && r.kind === 'deny'))
+const afterUnknown = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+check('post_tool audit recorded for unknown tool', afterUnknown.length > beforeUnknown.length && afterUnknown.includes('"event":"post_tool"'))
 
 const failed = results.filter((x) => !x.ok)
 if (asJson) console.log(JSON.stringify({ results, passed: results.length - failed.length, total: results.length }))

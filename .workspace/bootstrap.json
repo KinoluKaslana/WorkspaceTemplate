@@ -18,6 +18,15 @@
     "decision_source": null,
     "configured_at": null
   },
+  "gate": {
+    "status": "unconfigured",
+    "harness": [],
+    "evidence": {},
+    "ttl_minutes": 30,
+    "decision_source": "template：运行期结论不入模板分发；各机器按 §15 本地 --record",
+    "checked_at": "2026-11-04T09:27:14+0800",
+    "note": "§15：gate 是否在跑取决于 harness 启动方式（dsh 无自动发现）。核验入口 scripts/gate_status.py；文件存在不等于已受管。本文件随模板分发，这里只允许 unconfigured——运行期结论由各机器本地记录。"
+  },
   "skills": {
     "registered_roots": [
       "workspace-skills"
@@ -39,7 +48,7 @@
   },
   "template": {
     "source_repo": "https://github.com/KinoluKaslana/WorkspaceTemplate",
-    "current_policy_version": "3.4.0",
+    "current_policy_version": "3.5.0",
     "last_synced_at": "2026-09-16"
   }
 }

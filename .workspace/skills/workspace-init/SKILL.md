@@ -1,7 +1,7 @@
 ---
 name: workspace-init
 description: "Use when initializing or adopting a workspace created from an OLD WorkspaceTemplate version (pre-v2.0), or any workspace whose governance files predate the locked-template + custom-override architecture. 初始化/接管老版本模板工作区时使用。"
-version: 1.2.0
+version: 1.2.1
 ---
 
 # Workspace Init — 老版本工作区初始化 skill
@@ -35,7 +35,8 @@ version: 1.2.0
 1. **先盘点、后动手**：任何写操作前完成第 1 步全量盘点。
 2. **用户语义零丢失**：本地规则迁入 custom 层；本地独有 commit 导出 patch；备份先行。
 3. **venv 必须、git 可选**：Python 运行时按 §0.1/§0.2 必须落地；git 按 §0.3 由用户决策。
-4. **失败即停**：任一步校验不过，停下报告，不带病前进。
+4. **gate 接线先于第一次写**：§15 的核验（`gate_status.py --require <harness>`）在**第 2 步之前**跑完——接管动作本身就要写工作区文件，未接线时写下去没有守门兜底。
+5. **失败即停**：任一步校验不过，停下报告，不带病前进。
 
 ## 详细流程（九步）
 
@@ -50,6 +51,13 @@ ls "$WS"/*.custom.md 2>/dev/null; ls "$WS/notes/" 2>/dev/null | head
 ```
 
 记录到初始化报告：模板版本线（版本头）、是否有条款标记、`.git` 状态与 remote、既有 custom 文件、notes 规模、工作树脏文件数。
+
+盘点完**立刻**做 §15 的 gate 核验（先于任何写操作）：
+
+```bash
+<py> scripts/gate_status.py --require <当前 harness> --ttl-minutes 30   # 无证据 → 先报告，不在未接线状态接管
+```
+
 
 ### 第 2 步：定位模板源并确认目标版本
 
@@ -155,7 +163,11 @@ remote 指向他处 / 历史无法确认 → **暂停，向用户展示发现并
 
 ### 第 9 步：初始化报告
 
-`盘点结果 → 迁移清单（迁入 custom 的规则块）→ Python 模式 → git 决策与 patch 备份位置 → 校验三项结果 → 版本（工作区旧版 → 模板版）`。建 note 记录初始化结论（按 AGENT_RULES §9）。
+`盘点结果 → 迁移清单（迁入 custom 的规则块）→ Python 模式 → gate 接线结论 → git 决策与 patch 备份位置 → 校验三项结果 → 版本（工作区旧版 → 模板版）`。建 note 记录初始化结论（按 AGENT_RULES §9）。
+
+**gate 接线（§15，与 Python 同性质）**：初始化完成前必须对当前 harness 跑一次 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，
+有运行期证据才写 `--record`（`configured`）；没有证据就按 §15 报告并让用户裁决（`--force --user-decision '<原话>'` 记 `unconfigured`）。
+复制/克隆来的工作区最容易在这里假阳性——文件全在、gate 没跑。
 
 ## 维护
 

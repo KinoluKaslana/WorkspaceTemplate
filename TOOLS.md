@@ -145,7 +145,7 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | **delivery-closure** | 交付闭环六步（产物清点→note 判定→索引回写→外部动作与机械验证→完成声明格式）。入口 `.workspace/skills/delivery-closure/SKILL.md`（v1.0.0）。触发：任务模式产物落盘、准备声明完成 |
 | **legacy-workspace-upgrade** | 入口 `.workspace/skills/legacy-workspace-upgrade/SKILL.md`（v1.0.0）。旧版本工作区自举升级；触发见其 frontmatter description |
 | **docs-retrieval-maintenance** | 维护 `docs/` 检索链路（索引/别名表/命中报告）。入口 `.workspace/skills/docs-retrieval-maintenance/SKILL.md`（v1.1.0）。配套 `scripts/docs_index.py`（build/check/query）、`scripts/docs_hit_report.py`（判据集命中）、`scripts/docs_alias_audit.py`（死指针/指纹/来源合规/留一验证/`--restore`）、判据集 `tests/docs_probe.json`、缺口日志 `docs/.miss-log.jsonl`。触发：docs 改动、`check` 报 stale/unindexed、标题改名、命中低于阈值、用户报搜不到 |
-| **workspace-repo-sync** | 跨设备同步工作区自身仓库。入口 `.workspace/skills/workspace-repo-sync/SKILL.md`（v1.0.0）；机械入口 `python3 scripts/workspace_preflight.py [--json] [--strict]` 核验 9 项（host/根路径/python/template_clone/skills/template_files/notes_index/docs_index/git）。触发：换设备、另端改了 notes/TOOLS、疑似工具失效 |
+| **workspace-repo-sync** | 跨设备同步工作区自身仓库。入口 `.workspace/skills/workspace-repo-sync/SKILL.md`（v1.1.2）；机械入口 `python3 scripts/workspace_preflight.py [--json] [--strict]` 核验 10 项（host/根路径/python/gate/template_clone/skills/template_files/notes_index/docs_index/git）。触发：换设备、另端改了 notes/TOOLS、疑似工具失效 |
 | **skills 健康检查** | `python3 scripts/skill_audit.py [--strict]`：检查 `.workspace/skills/*` 的 frontmatter、触发语、semver、条款 ID 与路径引用、`REGISTRY.md`/`TOOLS.md` 双登记；维护节奏见 `skills/REGISTRY.md`「维护节奏」 |
 | **template-update（分支同步）** | v2.1.0 起支持指定模板分支：入口仍是 `.workspace/skills/template-update/SKILL.md`；机械入口 `scripts/template_sync.py --workspace . --branch <main|dev|alpha> [--apply --verify]`（dry-run 默认；用 `git worktree` 取目标提交快照，不动模板克隆工作树） |
 | **check_template.py SHA-256** | `bbfa379269a3a3982a3d65997f9dac31f30b0cb939167e98cdc09959bfccd489` |
@@ -162,6 +162,26 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | **用法** | `python3 scripts/mark_rules.py mark AGENT_RULES.md`；`python3 scripts/verify_rules.py --workspace .`；`python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTemplate` |
 | **来源/副作用** | 模板内置；mark 写入目标 md 与注册表，verify 只读（`--json` 落盘报告） |
 | **核验日期** | 2026-08-31 |
+
+### 4.5 `gate_status.py` — harness 接线自检（只读）
+
+| 项 | 内容 |
+|---|---|
+| **类型** | Python 标准库 CLI |
+| **作用** | 判「现在到底有没有 gate 在跑」：`cc`/`codex` 看 `.workspace/.hook-state/gate.log` 的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.dsh-gate.log` 的 `apply` 与 `.hook-state/dsh-session-*.json`；`--require` 缺证据 → 退出码 1 |
+| **位置** | `scripts/gate_status.py` |
+| **SHA-256** | `4629d5979c6fbc65a2cd4405eaeea18ecb59e4e0ffd783feff05b0cda94a4399` |
+| **运行时** | §2 中已配置的 Python；无第三方依赖 |
+| **来源与信任边界** | 模板内置、只读日志与状态文件；证据是**运行期**的，插件没加载就没有证据——这正是要判的东西 |
+| **副作用/数据外发** | 默认只读 + stdout；`--record` **会写** `.workspace/bootstrap.json` 的 `gate` 节（原子替换），不联网 |
+| **核验日期** | 2026-11-04 |
+
+为什么需要：dsh **没有项目级自动发现**，不带 `--patch` 启动等于完全没有 gate（读证据、写前拦截、事后审计都不发生）；`cc`/`codex` 依赖项目受信，`hermes` 依赖 env + config 双开关。克隆下来文件齐全 ≠ 已经受管。
+
+```bash
+<configured-python> scripts/gate_status.py --ttl-minutes 30
+<configured-python> scripts/gate_status.py --require dsh,cc --ttl-minutes 30 --json
+```
 
 ## 5. Notes 索引
 

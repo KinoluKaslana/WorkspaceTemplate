@@ -10,6 +10,25 @@ ROOT = Path(__file__).resolve().parents[1]
 SYNC = ROOT / "scripts" / "template_sync.py"
 
 
+def _source_ref() -> str:
+    """同步来源 ref：优先 HEAD 的提交 sha。
+
+    不能用写死的 `main`：CI 里 `actions/checkout` 是单分支浅克隆（推 dev 时本地只有 dev），
+    `--ref main` 会以 `ref-not-found` 失败——那会让 CI 在任何非 main 分支上永久红，
+    而测试真正要验的是备份/回滚机制，与分支名无关。
+    取 HEAD sha 在完整克隆、浅克隆、detached HEAD 三种形态下都成立。
+    """
+    try:
+        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+                           capture_output=True, text=True)
+        sha = r.stdout.strip()
+        if r.returncode == 0 and sha:
+            return sha
+    except OSError:
+        pass
+    return "main"
+
+
 class Rollback(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -29,7 +48,7 @@ class Rollback(unittest.TestCase):
 
     def run_sync(self, *args):
         return subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                               "--template", str(ROOT), "--ref", "main", *args],
+                               "--template", str(ROOT), "--ref", _source_ref(), *args],
                               capture_output=True, text=True, cwd=ROOT)
 
     def test_apply_writes_manifest_sections(self):

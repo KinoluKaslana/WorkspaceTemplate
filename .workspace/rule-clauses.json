@@ -112,10 +112,16 @@
       "R109": "## 14. 规范用语与条款属性（双轨）",
       "R110": "1. **受控词表**：条款正文只用四个情态词——`必须`（MUST）、`不得`（MUST_NOT）、`应当`（SHOULD）、`可以`/`可`（MAY）。**禁止**用「尽量」「必要时」「建议」「通常」等模糊量词表达义务；条件必须写成可判定的触发条件（什么状态、什么动作、什么证据）。描述性内容若不含义务，不构成情态句。",
       "R111": "2. **机器属性**：每条条款的属性（`severity` / `trigger` / `check` / `reviewed`）存 `.workspace/clauses.meta.json`，键为 R 号，随模板层分发并哈希锁定；属性**不改变**义务本身，冲突以本文件为准。改条款正文（含新增/删除 R 号）必须同步该文件，否则 `scripts/clause_lint.py` 失败。",
-      "R112": "3. **`check` 的准入**：`MUST`/`MUST_NOT` 的 `check` 必须是可执行命令（复用 `verify_rules` / `skill_audit` / `workspace_preflight` / `docs_hit_report` / hook `selfcheck`）或 `manual:<非空理由>`；`manual` 只允许用于「需要用户裁决/意图判断」的条款，且不得用来替代已可机械判定的事实。`clause_lint` 独立成门（findings>0 即失败），不并入 `verify_rules` 与 `skill_audit`，避免红灯归属混淆。"
+      "R112": "3. **`check` 的准入**：`MUST`/`MUST_NOT` 的 `check` 必须是可执行命令（复用 `verify_rules` / `skill_audit` / `workspace_preflight` / `docs_hit_report` / hook `selfcheck`）或 `manual:<非空理由>`；`manual` 只允许用于「需要用户裁决/意图判断」的条款，且不得用来替代已可机械判定的事实。`clause_lint` 独立成门（findings>0 即失败），不并入 `verify_rules` 与 `skill_audit`，避免红灯归属混淆。",
+      "R113": "## 15. 守门接线核验（与 Python 选择同性质，§0 的补充）",
+      "R114": "1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/gate.log` 的 `client=` 行；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/dsh-session-*.json` 账本。",
+      "R115": "2. 没有证据时，必须在第一条受管写入之前向用户报告「当前 harness 的 gate 未接线」并给出该 harness 的启用命令，由用户决定先接线还是明确接受无 gate 继续；不得把工作区当作已受管继续写入。",
+      "R116": "3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入 `.workspace/bootstrap.json`；机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。",
+      "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
+      "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。"
     },
-    "file_sha256": "5c79ccd43ee18406d32c521c609fed544f431250c1bae51db48d69db3322b1a3",
-    "marked": 112
+    "file_sha256": "b9a2acf285985916911c278bb9d3606a3ba23624899299a519a04cf141dde4a4",
+    "marked": 118
   },
   "LICENSE": {
     "clauses": {},
@@ -129,32 +135,32 @@
   },
   "CONTRIBUTING.md": {
     "clauses": {},
-    "file_sha256": "713b0a8ec8567ce31ff50747be799fdc704b0112f5c3f726b0c1a5387f3b76c4",
+    "file_sha256": "ca4ea98d4544ec91b931fdd047d4965da3a21a09e7ab6f6c4f3098838a946dfe",
     "marked": 0
   },
   "AGENTS.md": {
     "clauses": {},
-    "file_sha256": "ebdc1b47abfdc5c082d2179547103c07e106ed899f031e5f91e9a0f86943e173",
+    "file_sha256": "2cef02e99e183646f63b038e1a3361e09d0d86d355642fa507900be69d0a07c5",
     "marked": 0
   },
   "CLAUDE.md": {
     "clauses": {},
-    "file_sha256": "1c15ad990ceeae190261924fc705b347a884cc7ff03c53bd0eb88c81a5f19531",
+    "file_sha256": "970f2d84950fcddfd420745d4f18cdc81f06c6d44901bbfff41b90a1920488ce",
     "marked": 0
   },
   "HERMES.md": {
     "clauses": {},
-    "file_sha256": "00f324d76f824a154afad53531e1c59ec763502cf7a16863940d329dcebf6f1b",
+    "file_sha256": "9a4e1e3050d8cfaa6fdc0bf824d111ddf4bbea2f33d2f0129b06c8d6f6fa99bb",
     "marked": 0
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "893b13912c3703829cfc82efe25f611a65907656817a08c7b4975b88c35008df",
+    "file_sha256": "a03f51a08ea19c666c31900775fff7fd60e45362b944923eadeba26bc9c1edca",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "2bbf7397a4f7a6a6c600b4b6b4e8a90b172335d996e67332df33f7d29eb5c93e",
+    "file_sha256": "74c9ae7ef37711ec6bb3509096325ba0b5e38f1111e47cd671509a501465b130",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -179,7 +185,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "6caca6e4827e1840a30b54ba7370b0568140d564a8d1485aa590e852c32eed0e",
+    "file_sha256": "f6293cd554574db42e26698782f0016f2d19206cb7bf7d7e311f690528561991",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -194,7 +200,7 @@
   },
   ".workspace/skills/workspace-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "8afd6c3a58b6a985826045953bf7d3f5fe658218fe5001be0200e9b426d7b926",
+    "file_sha256": "e4ec989bd1980d6bbb6706ac771826db4a6475200ac950d2b8f703bc66c10f1f",
     "marked": 0
   },
   ".workspace/skills/git-init/SKILL.md": {
@@ -229,7 +235,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "fb46a66215bcc763d55cf41cd6b6ab04f99a23964d82b9feef93554c0be460d6",
+    "file_sha256": "a92227c598f7fd2730d8e67bff4d2e330c3c2454caf6b44dcd676f49b60332ec",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -239,7 +245,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "bfa391d345e8eba744a10130cb7b394239ee3663875db29fd92742f00c26a02c",
+    "file_sha256": "07d308c21cb48b7d5aa0d9c9957e23c0c9ed8d301a449f0d604b1185df31939d",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -269,32 +275,32 @@
   },
   "docs/README.md": {
     "clauses": {},
-    "file_sha256": "2e4386ff02b616a81567c345a7b3008f7d212237eae09b2fd4e4570b1e4ed4df",
+    "file_sha256": "13e0fdd05454adb17ed777124d13deaf96c8b00d5081908cf5eb1099577241dc",
     "marked": 0
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "f70c575b31224eba8c74b56bf730096b9c47df983206ec83fa855f8c90fe8cf1",
+    "file_sha256": "36ae5ce4b8beb1aa1d11b47a22de402aaf6e6865d5793b24b00b0440dff0a334",
     "marked": 0
   },
   "docs/skills.md": {
     "clauses": {},
-    "file_sha256": "b3de6cb16d2a3bd4eeb08bf57d4ecb1ddd2c06d4b6a350477936e193fa692365",
+    "file_sha256": "d52884167addbc103c79531e3674cb74facc2828182803929ea5c00f5a832c03",
     "marked": 0
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "09a85306642334de801cd2e4fe40c1bd954f512851f1644ba302ba6e5a5e78e1",
+    "file_sha256": "d487a558a787d3ce7466408a4081d93495f51827392cf39e8d13a0ec28a67ded",
     "marked": 0
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "d651d20822bfd85170f4fdac79c54f137a9e219e6835bf759ee961db8f31a278",
+    "file_sha256": "b8c7560b7edb96a745e61c6efbda2d217b5e74ee69d027bedeae52a8de77a194",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
     "clauses": {},
-    "file_sha256": "3cb44db9b366f9ee489cb41ebc368ebcb47ffafcb613291817edfda995caf600",
+    "file_sha256": "4a465aa89cd2da0e44d9a2cd532c011f1f7d839f80601ad936a0e1fb4eac73db",
     "marked": 0
   },
   "docs/docs-retrieval.md": {
@@ -314,12 +320,12 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "97bdea851640900777d7d1e550ad32737131875e8760f6fa5b380e9915addd6c",
+    "file_sha256": "dc2931f58c8ad708e081fa3fa55ef19d223814acf25e33d831cef534c32fc320",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "8dbf32cd2370fa6684dfef1d83f32f094e245a38dd55e5f0d58cd80aec5821e4",
+    "file_sha256": "98e2b9f8b01415f7c29bbff61c237a3652b232b697ba7f54b4abeaad4ed7eec6",
     "marked": 0
   },
   "tests/test_clause_lint.py": {
@@ -349,12 +355,12 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "fa68a967aa9d2adb6444f82165f3d61574915ed53a3272f5e38af345d67056af",
+    "file_sha256": "129bc97121979f8ecdce6acd281b2c7081a19eed756645cbd8afcf5c190b7263",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
     "clauses": {},
-    "file_sha256": "69f48895876c725e0f506c5c2631e066f850ec11d693e40d3664a714ab101cb9",
+    "file_sha256": "d1bda5fc3c66e266cb538c1c0aa3bad778b5d36dd8c89a56aa82247ad467cafe",
     "marked": 0
   },
   ".dsh/workspace-gate/cordis.yml": {
@@ -369,7 +375,7 @@
   },
   "tests/dsh_harness.mjs": {
     "clauses": {},
-    "file_sha256": "bae85fb72eb14bda78433cf53363c25589cb961dc2aa436cc87411e60935852e",
+    "file_sha256": "79d987c7bbff41fa96276958a51cc38f7493bf51077c36b271313f2c84ea8254",
     "marked": 0
   },
   "tests/test_dsh_wiring.py": {
@@ -389,7 +395,7 @@
   },
   ".workspace/clauses.meta.json": {
     "clauses": {},
-    "file_sha256": "33a69fbb711bdee3cd88cd02317166633fd8279ccecfaac4569db9d7e8347276",
+    "file_sha256": "c656260ddf6c5924dae6ab24244a5842d0ca22009d71619b81085a83e32f771b",
     "marked": 0
   },
   "docs/harness-onboarding.md": {
@@ -404,7 +410,7 @@
   },
   ".workspace/skills/workspace-repo-sync/SKILL.md": {
     "clauses": {},
-    "file_sha256": "da700feafa595cac3f93b9400883b38a14da64728eaeefa8ac41e75ea94abc91",
+    "file_sha256": "c43f51316bb01fd8a3b8faceef29c184de19c05ac109117a9b0d2f75f980251b",
     "marked": 0
   },
   "tests/test_alias_audit.py": {
@@ -439,12 +445,12 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "8b764f7817e2b3517bc773e3f828dc42e81bc7e8d7566962dc076d90de576f2c",
+    "file_sha256": "d19787d3beb76352a18e564152ae338b7373c784f27efab9b3995935808557e8",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "13b49084905500f6bc4b948b2130444c6edb9fc935dded09c1d51fa68d014b09",
+    "file_sha256": "99486673d0e45c9d47981e2094c2239993f0728f80d8e927ab6d3dbe5ddd2504",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
@@ -480,6 +486,16 @@
   ".claude/settings.json": {
     "clauses": {},
     "file_sha256": "6250b74286024e33bbed83e51429ccc6bf7af7467f32692f28f1f8f011288535",
+    "marked": 0
+  },
+  "scripts/gate_status.py": {
+    "clauses": {},
+    "file_sha256": "f40f5f85bd7d29f62a148b4a90b53a4051e5acfe0280c2e8cbc545bd72adfbdb",
+    "marked": 0
+  },
+  "tests/test_gate_status.py": {
+    "clauses": {},
+    "file_sha256": "1bfe0a9daf585e528c7061ec2a14ffdb8aef4847ac6b730fb0e7d0f97a167fca",
     "marked": 0
   }
 }

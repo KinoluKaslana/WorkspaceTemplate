@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`3.4.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`3.5.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -19,7 +19,7 @@
 **未表态时的默认**：按 uv 走；uv 不可用且用户不愿安装，再回到手动 venv / MCP，二者由用户选，不得静默降级。
 **既有工作区不回改**：`python.mode` 一旦配置（`uv` / `local-venv` / `mcp`），模板升级、迁移、仓库同步**均不得改写**；uv 默认只作用于 `unconfigured` 的新工作区。切模式只能由用户明确要求。
 
-**子 Agent 无用户通道时不得反复追问**：沿用父会话已记录的模式（`.workspace/bootstrap.json` 的 `python.mode`）；父也未配置时，报告该阻塞并停止依赖 Python 的操作，把决定交回父 Agent/用户。
+**子 Agent 无用户通道时不得反复追问**：沿用父会话已记录的模式（`.workspace/bootstrap.json` 的 `python.mode`）；父也未配置时，报告该阻塞并停止依赖 Python 的操作，把决定交回父 Agent/用户。守门接线核验与 Python 选择同属启动前必须项，见 §15。
 
 ### 0.1 创建本地版本化 venv（uv 默认 / 手动） <!-- id:R3 -->
 
@@ -201,3 +201,15 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 1. **受控词表**：条款正文只用四个情态词——`必须`（MUST）、`不得`（MUST_NOT）、`应当`（SHOULD）、`可以`/`可`（MAY）。**禁止**用「尽量」「必要时」「建议」「通常」等模糊量词表达义务；条件必须写成可判定的触发条件（什么状态、什么动作、什么证据）。描述性内容若不含义务，不构成情态句。 <!-- id:R110 -->
 2. **机器属性**：每条条款的属性（`severity` / `trigger` / `check` / `reviewed`）存 `.workspace/clauses.meta.json`，键为 R 号，随模板层分发并哈希锁定；属性**不改变**义务本身，冲突以本文件为准。改条款正文（含新增/删除 R 号）必须同步该文件，否则 `scripts/clause_lint.py` 失败。 <!-- id:R111 -->
 3. **`check` 的准入**：`MUST`/`MUST_NOT` 的 `check` 必须是可执行命令（复用 `verify_rules` / `skill_audit` / `workspace_preflight` / `docs_hit_report` / hook `selfcheck`）或 `manual:<非空理由>`；`manual` 只允许用于「需要用户裁决/意图判断」的条款，且不得用来替代已可机械判定的事实。`clause_lint` 独立成门（findings>0 即失败），不并入 `verify_rules` 与 `skill_audit`，避免红灯归属混淆。 <!-- id:R112 -->
+
+## 15. 守门接线核验（与 Python 选择同性质，§0 的补充） <!-- id:R113 -->
+
+gate 是否在跑取决于 **harness 的启动方式**，不是工作区的属性：dsh 没有项目级自动发现（不带
+`--patch .dsh/workspace-gate/cordis.yml` 启动就等于没有 gate），hermes 需要 `HERMES_ENABLE_PROJECT_PLUGINS=true`
+与 config `plugins.enabled` 同时成立，cc/codex 依赖项目受信。「工作区里文件都在」不能推断「已经受管」。
+
+1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/gate.log` 的 `client=` 行；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/dsh-session-*.json` 账本。 <!-- id:R114 -->
+2. 没有证据时，必须在第一条受管写入之前向用户报告「当前 harness 的 gate 未接线」并给出该 harness 的启用命令，由用户决定先接线还是明确接受无 gate 继续；不得把工作区当作已受管继续写入。 <!-- id:R115 -->
+3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入 `.workspace/bootstrap.json`；机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。 <!-- id:R116 -->
+4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。 <!-- id:R117 -->
+5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。 <!-- id:R118 -->

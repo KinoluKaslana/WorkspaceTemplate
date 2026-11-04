@@ -302,8 +302,92 @@ def record_intent(state: dict, targets: list[str]) -> list[dict]:
     return recs
 
 
+def _git_ok(ws_root: str) -> bool:
+    """工作区是不是 git 仓库。git 在模板里是可选初始化项（§0.3），必须能区分
+    「不是仓库」和「是仓库但干净」——`git status` 两者都返回非空/空，靠 rc 判。"""
+    try:
+        r = subprocess.run(["git", "-C", ws_root, "rev-parse", "--is-inside-work-tree"],
+                           capture_output=True, text=True, timeout=5)
+        return r.returncode == 0 and (r.stdout or "").strip() == "true"
+    except Exception:
+        return False
+
+
+def _recent_files(ws_root: str, since_ns: int, cap: int = 2000) -> list[str]:
+    """非 git 工作区的差集：扫出 mtime ≥ 水位的文件（相对路径，'/' 分隔）。
+
+    为什么不存全量基线：基线要落进会话状态，条数一多就得截断，截断后**干净的树**也会
+    每次审计都报一堆假阳性（实测 700 文件 / 截断 500 → 每次 20 条假告警）。水位线是
+    O(1) 状态，且「本次会话后有没有人动过这个文件」正是要回答的问题。
+    """
+    skip = {".git", ".workspace", "node_modules", "__pycache__", ".venv", "dist", "build", ".mypy_cache"}
+    out: list[str] = []
+    try:
+        for root, dirs, files in os.walk(ws_root):
+            dirs[:] = [d for d in dirs if d not in skip and not d.startswith(".venv-")]
+            for name in files:
+                p = os.path.join(root, name)
+                try:
+                    st = os.stat(p)
+                except OSError:
+                    continue
+                if st.st_mtime_ns >= since_ns:
+                    out.append(os.path.relpath(p, ws_root).replace(os.sep, "/"))
+                    if len(out) >= cap:
+                        return out
+    except Exception:
+        return out
+    return out
+
+
+HASH_MAX_FILE = 1 << 20          # 单文件超过 1 MiB 不算哈希（预算留给小文件）
+HASH_BUDGET_BYTES = 32 << 20     # 每次哈希扫描最多读 32 MiB
+HASH_CAP = 2000                  # 最多记多少个文件的指纹
+
+
+def _hash_baseline_path(ws_root: str, client: str, session_id: str):
+    return Path(ws_root) / STATE_DIRNAME / ("hashes-%s-%s.json" % (client, session_id))
+
+
+def _scan_hashes(ws_root: str, budget: int = HASH_BUDGET_BYTES,
+                 max_file: int = HASH_MAX_FILE, cap: int = HASH_CAP):
+    """对预算内的小文件算 sha256，返回 ({rel: sha}, complete)。
+
+    为什么需要这一层：非 git 工作区的水位线只看 mtime，而 `cp -p` / `tar -x` /
+    `rsync -t` 这类写会**保留原 mtime**——只靠水位线会漏。哈希兜底按预算覆盖小文件，
+    超预算的文件记 `complete=False`（宁可标不完整，也不假装覆盖了）。
+    """
+    out: dict[str, str] = {}
+    used = 0
+    skip = {".git", ".workspace", "node_modules", "__pycache__", ".venv", "dist", "build", ".mypy_cache"}
+    try:
+        for root, dirs, files in os.walk(ws_root):
+            dirs[:] = [d for d in dirs if d not in skip and not d.startswith(".venv-")]
+            for name in files:
+                p = os.path.join(root, name)
+                try:
+                    st = os.stat(p)
+                except OSError:
+                    continue
+                if st.st_size > max_file:
+                    continue
+                if used + st.st_size > budget or len(out) >= cap:
+                    return out, False
+                sha = file_sha(p)
+                if sha:
+                    out[os.path.relpath(p, ws_root).replace(os.sep, "/")] = sha
+                    used += st.st_size
+    except Exception:
+        return out, False
+    return out, True
+
+
 def worktree_snapshot(ws_root: str) -> dict[str, str | None]:
-    """工作区快照：git status 列出的路径 → 内容 sha（用于「本次会话新增变化」）。"""
+    """git 工作区快照：git status 列出的路径 → 内容 sha。
+
+    非 git 工作区返回空（差集改由 `_recent_files` 的水位线完成，见 `worktree_audit`）——
+    不要在这里回退成"全量文件清单"，那份清单必须落盘，落盘就得截断，截断就制造假阳性。
+    """
     snap: dict[str, str | None] = {}
     try:
         st = subprocess.run(["git", "-C", ws_root, "status", "--porcelain"],
@@ -979,8 +1063,20 @@ def evaluate_session_start(ws_root: str, client: str, session_id: str,
             state["env"]["permission_mode"] = permission_mode
         _mark_activity(state)
         if not isinstance(state.get("worktree_baseline"), dict):
-            snap = worktree_snapshot(ws_root)
+            snap = worktree_snapshot(ws_root) if _git_ok(ws_root) else {}
             state["worktree_baseline"] = dict(list(snap.items())[:500])
+        # 非 git 工作区的差集靠这条水位线（mtime ≥ 水位）。git 工作区不依赖它。
+        state.setdefault("audit_watermark_ns", time.time_ns())
+        if not _git_ok(ws_root):
+            # 哈希兜底基线：`cp -p` / `tar -x` 这类保 mtime 的写只靠水位线会漏。
+            hp = _hash_baseline_path(ws_root, client, session_id)
+            if not hp.exists():
+                try:
+                    hashes, _complete = _scan_hashes(ws_root)
+                    hp.parent.mkdir(parents=True, exist_ok=True)
+                    hp.write_text(json.dumps(hashes), encoding="utf-8")
+                except Exception as exc:
+                    log(ws_root, f"hash baseline failed: {exc}")
         ch = state["reminder"]["channels"]
         unread = [g for g in conf["gate_files"]
                   if not (state["reads"].get(g) or {}).get("complete")]
@@ -1236,73 +1332,132 @@ def _append_audit(ws_root: str, client: str, state: dict) -> None:
         pass
 
 
+AUDIT_JSONL_MAX_BYTES = 256 * 1024
+
+
+def _append_audit_jsonl(ws_root: str, client: str, rec: dict) -> None:
+    """把审计事件追加到工作区级 `audit-<client>.jsonl`（有界轮转）。
+
+    为什么：`state["events"]` 只保留最后 50 条（有界窗口，防止状态文件无限增长）。
+    一次长会话里审计记录会被后面的普通事件顶掉——实测 60 条事件后，早先的
+    `unobserved-write` 直接消失。审计是"事后可见"的唯一出口，丢了就等于没做。
+    """
+    try:
+        path = Path(ws_root) / STATE_DIRNAME / ("audit-%s.jsonl" % client)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        if path.stat().st_size > AUDIT_JSONL_MAX_BYTES:
+            os.replace(str(path), str(path) + ".1")
+    except Exception as exc:
+        log(ws_root, f"audit jsonl failed: {exc}")
+
+
 def append_audit_event(ws_root: str, client: str, session_id: str, record: dict) -> None:
-    """向审计槽位追加一条事件（有界 50）。report-only：异常吞掉记 log，绝不影响判定。"""
+    """向审计槽位追加一条事件（有界 50）。report-only：异常吞掉记 log，绝不影响判定。
+
+    同一份记录同时落到 `audit-<client>.jsonl`：状态窗口会轮转，jsonl 不会。
+    """
     try:
         if not isinstance(record, dict) or not record.get("type"):
             return
         rec = dict(record)
         rec.setdefault("ts", time.strftime("%Y-%m-%d %H:%M:%S"))
+        rec.setdefault("session_id", session_id)
         with _StateLock(ws_root, client, session_id):
             state = load_state(ws_root, client, session_id)
             events = state.get("events")
             if not isinstance(events, list):
                 events = []
-            events.append(rec)
+            events.append(dict(record, ts=rec["ts"]))
             state["events"] = events[-50:]
             save_state(ws_root, client, session_id, state)
+        _append_audit_jsonl(ws_root, client, rec)
     except Exception as exc:
         log(ws_root, f"append_audit_event failed: {exc}")
 
 
 def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> None:
     """W3 客户端无关差集审计（最小版）。git status --porcelain + git diff --stat，
-    把结果作为 worktree-change 记录写入 audit（report-only，不产生 deny）。"""
-    if source not in ("stop", "session_end"):
+    把结果作为 worktree-change 记录写入 audit（report-only，不产生 deny）。
+
+    source 取值：
+      - `stop` / `session_end`：客户端自己的收尾事件（CC `Stop`、Codex `SessionEnd`）；
+      - `post_shell`：客户端**没有**收尾事件时的替代口径（dsh），在每次 shell 工具调用后
+        做一次最小差集——shell 写是静态分类器的盲区，写前拦不住，至少让它事后可见。
+    """
+    if source not in ("stop", "session_end", "post_shell", "post_tool"):
         return
-    try:
-        status = subprocess.run(["git", "-C", ws_root, "status", "--porcelain"],
-                                capture_output=True, text=True, timeout=5)
-        diff = subprocess.run(["git", "-C", ws_root, "diff", "--stat"],
-                              capture_output=True, text=True, timeout=5)
-    except Exception as exc:
-        log(ws_root, f"worktree_audit git failed: {exc}")
-        return
-    if status.returncode != 0:
-        log(ws_root, f"worktree_audit git status rc={status.returncode}")
-        return
+    is_git = _git_ok(ws_root)
+    status = diff = None
     files: list[str] = []
-    for line in (status.stdout or "").splitlines():
-        if len(line) < 4:
-            continue
-        path = line[3:].strip()
-        if " -> " in path:  # rename: "R  old -> new"
-            path = path.split(" -> ")[-1].strip()
-        if path:
-            files.append(path)
-    append_audit_event(ws_root, client, session_id, {
-        "type": "worktree-change",
-        "files": files,
-        "source": source,
-        "diff_stat": (diff.stdout or "").strip(),
-    })
+    if is_git:
+        try:
+            status = subprocess.run(["git", "-C", ws_root, "status", "--porcelain"],
+                                    capture_output=True, text=True, timeout=5)
+            diff = subprocess.run(["git", "-C", ws_root, "diff", "--stat"],
+                                  capture_output=True, text=True, timeout=5)
+        except Exception as exc:
+            log(ws_root, f"worktree_audit git failed: {exc}")
+            status, diff = None, None
+        if status is not None and status.returncode == 0:
+            for line in (status.stdout or "").splitlines():
+                if len(line) < 4:
+                    continue
+                path = line[3:].strip()
+                if " -> " in path:  # rename: "R  old -> new"
+                    path = path.split(" -> ")[-1].strip()
+                if path:
+                    files.append(path)
     # 未观测写：worktree 里有内容变化、但本会话没有对应 gate-commit 的目标。
     # report-only，最多 20 条；不代表 deny，只是"没有经过 gate 观测"。
     try:
         state = load_state(ws_root, client, session_id)
-        baseline = state.get("worktree_baseline") if isinstance(state.get("worktree_baseline"), dict) else {}
-        current = worktree_snapshot(ws_root)
-        changed = {rel for rel, sha in current.items() if baseline.get(rel) != sha}
+        if is_git:
+            _b = state.get("worktree_baseline")
+            baseline: dict = _b if isinstance(_b, dict) else {}
+            current = worktree_snapshot(ws_root)
+            changed = {rel for rel, sha in current.items() if baseline.get(rel) != sha}
+            abs_sha: dict[str, str | None] = {os.path.normpath(os.path.join(ws_root, rel)): sha
+                                              for rel, sha in current.items()}
+        else:
+            watermark = int(state.get("audit_watermark_ns") or 0)
+            changed = set(_recent_files(ws_root, watermark))
+            # 哈希兜底：覆盖"保留原 mtime"的写（cp -p / tar -x / rsync -t）。
+            try:
+                hp = _hash_baseline_path(ws_root, client, session_id)
+                prev = json.loads(hp.read_text(encoding="utf-8")) if hp.is_file() else {}
+                cur, complete = _scan_hashes(ws_root)
+                if isinstance(prev, dict):
+                    for rel, sha in cur.items():
+                        old = prev.get(rel)
+                        if old is not None and old != sha:
+                            changed.add(rel)
+                hp.parent.mkdir(parents=True, exist_ok=True)
+                hp.write_text(json.dumps(cur), encoding="utf-8")
+                if not complete:
+                    append_audit_event(ws_root, client, session_id,
+                                       {"type": "snapshot-incomplete",
+                                        "reason": "hash-budget", "source": source})
+            except Exception as exc:
+                log(ws_root, f"hash audit failed: {exc}")
+            abs_sha = {os.path.normpath(os.path.join(ws_root, rel)): None for rel in changed}
+        append_audit_event(ws_root, client, session_id, {
+            "type": "worktree-change",
+            "files": (files or sorted(changed))[:200],
+            "source": source,
+            "diff_stat": (diff.stdout if diff is not None else "").strip(),
+            "git": is_git,
+        })
         committed = {e.get("target") for e in (state.get("events") or [])
                      if isinstance(e, dict) and e.get("type") == "gate-commit"}
         # 只认同 sha 的 commit（commits.jsonl 记录），不按路径无条件跳过：否则
         # 「被 commit 过、随后又被未观测改动」会漏报（DS 复核 ②/④）。
-        abs_sha = {os.path.normpath(os.path.join(ws_root, rel)): sha
-                   for rel, sha in current.items()}
         committed |= committed_targets(ws_root, abs_sha)
         gate_abs = { (_norm_join(ws_root, g)) for g in load_conf(ws_root)["gate_files"] }
         pending = []
-        for rel in [f for f in files if f in changed][:200]:
+        # 以 changed 为准而不是 git 列表：非 git 工作区没有 porcelain 输出，但差集仍然成立。
+        for rel in sorted(changed)[:200]:
             abs_path = os.path.normpath(os.path.join(ws_root, rel))
             if not os.path.isfile(abs_path):
                 continue
@@ -1317,5 +1472,10 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
                             "ts": time.strftime("%Y-%m-%d %H:%M:%S")})
         for rec in pending[:20]:
             append_audit_event(ws_root, client, session_id, rec)
+        if not is_git:
+            # 水位推进：下一次只看这之后被动过的文件（O(1) 状态，不需要存全量基线）。
+            state = load_state(ws_root, client, session_id)
+            state["audit_watermark_ns"] = time.time_ns()
+            save_state(ws_root, client, session_id, state)
     except Exception as exc:
         log(ws_root, f"worktree unobserved-audit failed: {exc}")

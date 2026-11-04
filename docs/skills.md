@@ -7,8 +7,8 @@
 | skill | 版本 | 一句话 | 进入条件 |
 |---|---|---|---|
 | [`template-update`](../.workspace/skills/template-update/SKILL.md) | 3.2.1 | 从**任意 ref**（分支/标签/提交）同步模板层 | 用户要同步模板；bootstrap 版本落后；`verify_rules` 报漂移 |
-| [`workspace-repo-sync`](../.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.1 | 跨设备同步**工作区自身**仓库 | 换设备；别端改了 notes/TOOLS；工具疑似失效 |
-| [`workspace-init`](../.workspace/skills/workspace-init/SKILL.md) | 1.2.0 | 初始化/接管老版本或半初始化工作区 | 无 bootstrap 血缘；无条款标记；全新实例化 |
+| [`workspace-repo-sync`](../.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.2 | 跨设备同步**工作区自身**仓库 | 换设备；别端改了 notes/TOOLS；工具疑似失效 |
+| [`workspace-init`](../.workspace/skills/workspace-init/SKILL.md) | 1.2.1 | 初始化/接管老版本或半初始化工作区 | 无 bootstrap 血缘；无条款标记；全新实例化 |
 | [`git-init`](../.workspace/skills/git-init/SKILL.md) | 1.1.0 | 为工作区建 git 仓库并登记 | `git.status=declined` 后用户改主意；"建 git 仓库" |
 | [`delivery-closure`](../.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 声明完成前的交付闭环 | 任务模式产物落盘、准备说"完成" |
 | [`docs-retrieval-maintenance`](../.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | 维护 docs 索引与别名表 | docs 改动、`check` 报 stale、命中率下降 |
@@ -51,7 +51,7 @@ python3 scripts/template_sync.py --workspace . --ref alpha --apply --verify --js
 ### 2.2 `workspace-repo-sync`
 
 ```bash
-python3 scripts/workspace_preflight.py            # 9 项登记事实核验（先跑）
+python3 scripts/workspace_preflight.py            # 10 项登记事实核验（先跑）
 git fetch --all --prune && git status -sb         # 只读看清差异
 # 由用户决定：方向 / ff|merge|rebase / 冲突处置
 ```

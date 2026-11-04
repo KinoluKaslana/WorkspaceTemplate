@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v3.4.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.5.0-single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -188,17 +188,17 @@ Boundary that must be stated alongside: **Claude Code Bash writes are neither su
 
 ## Workspace Lifecycle Skills
 
-Six skills ship with the template in `.workspace/skills/` (workspace-skills namespace) and are registered in `skills/REGISTRY.md` and `TOOLS.md`; each must satisfy the 8-dimension contract checked by `skill_audit.py`:
+Seven skills ship with the template in `.workspace/skills/` (workspace-skills namespace) and are registered in `skills/REGISTRY.md` and `TOOLS.md`; each must satisfy the 8-dimension contract checked by `skill_audit.py`:
 
 | Skill | Version | Trigger | What it does |
 |---|---|---|---|
 | [template-update](.workspace/skills/template-update/SKILL.md) | 3.2.1 | "sync the template / switch to a branch or tag", or version lag / verify drift | Sync template layer from **any ref** (branch/tag/commit): dry-run → backup (MANIFEST) → whole-file replacement → custom migration → `--vs-template`; `--prune` removes files deleted upstream |
-| [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.1 | New device, notes/TOOLS changed elsewhere, or tooling looks broken | `workspace_preflight.py` (9 checks) → user decides direction/merge/conflicts → pull → rebuild indexes → four-way re-verification |
-| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.2.0 | "initialize / adopt this workspace", or no trustworthy lineage / no clause markers | Inventory → diff verdict → pre-v2.0 migration → Python (keep if configured) → git decision → registry → verify |
+| [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.2 | New device, notes/TOOLS changed elsewhere, or tooling looks broken | `workspace_preflight.py` (10 checks) → user decides direction/merge/conflicts → pull → rebuild indexes → four-way re-verification |
+| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.2.1 | "initialize / adopt this workspace", or no trustworthy lineage / no clause markers | Inventory → diff verdict → pre-v2.0 migration → Python (keep if configured) → git decision → registry → verify |
 | [git-init](.workspace/skills/git-init/SKILL.md) | 1.1.0 | "create a git repo", or `git.status=declined` then mind changed | init → .gitignore → register → review staging → commit → verify tree; includes rollback |
 | [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | Before declaring a task-mode deliverable complete | Artifact inventory (timestamp listing when no repo) → INDEX → note decision → index write-back → external verification → three-tier completion wording |
 | [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | workspace built from an old template, missing current skills / `template_sync.py` | clone snapshot → `--apply` → `--sync-registry` + TOOLS rows → four acceptances |
-| [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.2.0 | docs changed, index stale, hit rate dropped | build/check → hit report → aliases only from real miss logs (cap 8, leave-one-out) → five acceptances |
+| [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | docs changed, index stale, hit rate dropped | build/check → hit report → aliases only from real miss logs (cap 8, leave-one-out) → five acceptances |
 
 ## How It Works
 

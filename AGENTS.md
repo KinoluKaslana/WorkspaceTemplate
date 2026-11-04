@@ -4,7 +4,7 @@
 
 ## 首先
 
-在做任何操作前，必须**完整读取 [AGENT_RULES.md](AGENT_RULES.md)**，并检查 `.workspace/bootstrap.json` 是否要求执行首次 Python 选择协议。
+在做任何操作前，必须**完整读取 [AGENT_RULES.md](AGENT_RULES.md)**，并检查 `.workspace/bootstrap.json` 是否要求执行首次 Python 选择协议；**动手前还须按 §15 核验 gate 接线**（`scripts/gate_status.py --require <harness> --ttl-minutes 30`，无证据先报告，不在未接线状态下写工作区文件）。
 
 读完 `AGENT_RULES.md` 后，按序读取并遵守：① [`AGENT_RULES.custom.md`](AGENT_RULES.custom.md)（若存在）→ ② 本客户端专属的 [`AGENTS.custom.md`](AGENTS.custom.md)（若存在）。**规则冲突时，`AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）的优先级永远最高。**
 
