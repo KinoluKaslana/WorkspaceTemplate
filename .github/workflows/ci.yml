@@ -52,8 +52,19 @@ jobs:
       - name: unittest (tests + hooks-tests)
         shell: bash
         run: |
-          python -m unittest discover -s tests -p 'test_*.py' -v
-          python -m unittest discover -s hooks-tests -p 'test_*.py' -v
+          # 失败时把「哪个测试红了」写成 GitHub annotation：step 日志要 admin 权限才能下载，
+          # 而 annotations 是公开可读的——出问题时才能从 API 直接定位，不用靠人贴日志。
+          rc=0
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/t1.log || rc=1
+          python -m unittest discover -s hooks-tests -p 'test_*.py' -v 2>&1 | tee /tmp/t2.log || rc=1
+          if [ "$rc" -ne 0 ]; then
+            grep -hE '^(FAIL|ERROR): ' /tmp/t1.log /tmp/t2.log | head -25 | while IFS= read -r line; do
+              echo "::error title=ci-failed-test::$line"
+            done
+            echo "---- tail of failures ----"
+            grep -hE -A6 '^(FAIL|ERROR): ' /tmp/t1.log /tmp/t2.log | tail -80
+            exit 1
+          fi
       - name: dsh harness (node)
         if: always()
         shell: bash
