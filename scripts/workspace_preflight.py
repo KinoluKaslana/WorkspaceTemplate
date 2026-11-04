@@ -150,10 +150,18 @@ def main(argv: list[str]) -> int:
             fresh = probe.get("missing") == []
         except ValueError:
             probe, fresh = {}, False
-        rows.append(item("gate", {"harness": g_harness, "ttl": ttl},
+        # 区分「过期」与「没有证据」：证据过期常见于工作区闲置（插件只在其事件发生时写日志），
+        # 判 BAD 会天天误报；完全没有证据才是「声明与事实矛盾」。
+        ages = [((probe.get("clients") or {}).get(h) or {}).get("last_seen_minutes") for h in g_harness]
+        ever = any(a is not None for a in ages)
+        stale_but_known = (not fresh) and ever and all(a is not None for a in ages)
+        rows.append(item("gate", {"harness": g_harness, "ttl": ttl,
+                                  "last_seen_minutes": ages},
                          {"missing": (probe or {}).get("missing", ["?"])},
-                         OK if fresh else BAD,
-                         "" if fresh else "声明已接线但 TTL 内没有证据：确认 harness 启动方式（dsh 需 --patch）"))
+                         OK if fresh else (WARN if stale_but_known else BAD),
+                         "" if fresh else ("证据已过期：写入前重跑 gate_status --require <harness>"
+                                           if stale_but_known
+                                           else "声明已接线但没有任何证据：确认 harness 启动方式（dsh 需 --patch）")))
 
 
     # 3) 模板克隆

@@ -2,6 +2,13 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.4（2026-11-04）：实例可用性两处修正
+
+- `tests/no_git_runner.py` 容忍缺失目录：派生实例没有 `hooks-tests/`（不下发），之前在实例上跑会
+  `ImportError: Start directory is not importable`。
+- `workspace_preflight` 的 `gate` 项区分「证据过期」与「没有任何证据」：前者是工作区闲置的正常形态
+  （插件只在其事件发生时写日志），判 `warn` 并提示写入前重跑 `gate_status`；后者才判 `mismatch`。
+
 ## 3.5.3（2026-11-04）：把「机械一致性」的承诺补齐
 
 - **git 缺失时的行为与文档一致**：`test_template_anchor` / `test_template_sync_rollback` 整类 skip，
