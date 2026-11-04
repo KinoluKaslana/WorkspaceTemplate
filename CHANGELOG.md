@@ -2,6 +2,12 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.2（2026-11-04）：补上 D7 的实例豁免（3.5.1 漏改一处循环）
+
+- `test_d7_prose_counts_match_disk` 的 README 豁免在 3.5.1 只落到了 D8，D7 仍按模板标准扫实例 README，
+  导致同步完的实例继续红。本版把 `user_home` 与 `continue` 补进 D7。
+- 验证：模板仓 9/9 通过；实例（TemplateDev）同步后 103 通过（1 skip）。
+
 ## 3.5.1（2026-11-04）：模板仓专属检查不再误伤派生实例
 
 - `tests/test_docs_consistency.py` 的 D7/D8 之前对 `README.md` / `README_EN.md` 一律按模板标准查计数与 skill 版本列，
