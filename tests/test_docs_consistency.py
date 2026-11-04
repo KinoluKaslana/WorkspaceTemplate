@@ -31,6 +31,21 @@ def skills() -> dict[str, str]:
     return out
 
 
+def _is_template_repo() -> bool:
+    """本仓是模板正主，还是派生实例。
+
+    派生实例的 `README.md` / `README_EN.md` 属用户首页（`template_sync` 明确豁免），
+    计数与版本列由用户自己维护；`.github/` 也不下发。拿模板正主的标准去要求实例，
+    会把刚同步干净的实例判红——所以这些检查只在模板仓严格生效。
+    """
+    boot = ROOT / ".workspace" / "bootstrap.json"
+    try:
+        data = json.loads(boot.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return (data.get("workspace_status") or "").strip() == "template"
+
+
 class DocsConsistency(unittest.TestCase):
     def test_d1_links_resolve(self):
         bad = []
@@ -139,8 +154,9 @@ class DocsConsistency(unittest.TestCase):
         from verify_rules import TEMPLATE_FILES  # noqa: E402
         bad = [f for f in TEMPLATE_FILES if f.startswith(".github/")]
         self.assertEqual(bad, [], f".github/ 不应进模板层清单：{bad}")
-        self.assertTrue((ROOT / ".github" / "scripts" / "release_anchor.py").is_file(),
-                        "模板仓仍需要该脚本（CI 用），只是不下发")
+        if _is_template_repo():
+            self.assertTrue((ROOT / ".github" / "scripts" / "release_anchor.py").is_file(),
+                            "模板仓仍需要该脚本（CI 用），只是不下发")
 
     def test_d8_skill_table_versions_match_skill_md(self):
         """README / README_EN / docs/skills.md 的 skill 表版本列必须等于 SKILL.md 的 version。
@@ -149,11 +165,14 @@ class DocsConsistency(unittest.TestCase):
         （`docs-retrieval-maintenance` 写 1.2.0，SKILL.md 是 1.3.0），发布前才被审计席抓到。
         """
         bad = []
+        user_home = not _is_template_repo()
         for name, ver in skills().items():
             if not ver:
                 continue
             row = re.compile(r"\|\s*\[" + re.escape(name) + r"\]\([^)]*\)\s*\|\s*([^|]+?)\s*\|")
             for md in DOCS:
+                if user_home and md.name.startswith("README"):
+                    continue      # 实例的 README 是用户首页（同步豁免），版本列不归模板管
                 text = md.read_text(encoding="utf-8")
                 for m in row.finditer(text):
                     got = m.group(1).strip()

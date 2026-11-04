@@ -2,6 +2,14 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.1（2026-11-04）：模板仓专属检查不再误伤派生实例
+
+- `tests/test_docs_consistency.py` 的 D7/D8 之前对 `README.md` / `README_EN.md` 一律按模板标准查计数与 skill 版本列，
+  但实例的 README 是**用户首页**（`template_sync` 明确豁免、不覆盖）——同步完的实例必然红。现在只在模板仓
+  （`bootstrap.workspace_status == "template"`）严格检查，实例跳过 README。
+- D9 的「`release_anchor.py` 仍在仓内」半边改为仅模板仓断言：`.github/` 整层不下发，实例没有这个文件是正常的。
+- 无政策语义变更；`workspace_status` 仍是 3.5.0 的条款集（R1..R118）。
+
 ## 3.5.0（2026-11-04）：守门接线核验上升为 §15 必须项（与 Python 同性质）
 
 - **新 §15（R113–R118，§0 的补充）**：gate 是否在跑取决于 **harness 的启动方式**，不是工作区的属性——
