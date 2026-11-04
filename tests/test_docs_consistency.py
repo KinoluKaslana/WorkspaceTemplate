@@ -4,8 +4,12 @@
 D1 所有相对链接可解析（README.md / README_EN.md / docs/*.md）
 D2 docs/skills.md 覆盖磁盘上的每个 skill，且版本号与 SKILL.md frontmatter 一致
 D3 docs/tools.md 覆盖 scripts/ 下每个 .py
-D4 docs/architecture.md 的政策版本与 TEMPLATE_FILES 条数与实际一致
+D4 政策版本没有漂移（docs/architecture.md、README/README_EN 徽章）
 D5 README.md 提到每个 skill 名
+D6/D7 计数（TEMPLATE_FILES、skills、scripts）与磁盘一致
+D8 docs/skills.md 表格里的版本与 SKILL.md 一致
+D9 `.github/` 层不进模板层
+D10 shields 静态徽章 URL 结构合法（`/badge/label-message-color`）
 运行：python3 -B tests/test_docs_consistency.py
 """
 import json
@@ -164,6 +168,36 @@ class DocsConsistency(unittest.TestCase):
         if _is_template_repo():
             self.assertTrue((ROOT / ".github" / "scripts" / "release_anchor.py").is_file(),
                             "模板仓仍需要该脚本（CI 用），只是不下发")
+
+    def test_d10_shields_badges_are_well_formed(self):
+        """shields 静态徽章是 `/badge/<label>-<message>-<color>`。
+
+        message 里出现**裸 `-`** 会被当成字段分隔：`policy-v3.5.4-single%20source…` 里的
+        `v3.5.4` 被当成 message、`single source of truth` 被当成颜色段，shields 于是返回
+        `404: badge not found`——徽章坏掉但页面照常渲染，肉眼与「链接能不能打开」都看不出来。
+        字面量连字符要写 `--`，空格写 `%20`。
+        """
+        if not _is_template_repo():
+            self.skipTest("派生实例的 README 属用户首页（用户自维护）")
+        colors = {"brightgreen", "green", "yellowgreen", "yellow", "orange", "red", "blue",
+                  "lightgrey", "grey", "gray", "success", "important", "critical",
+                  "informational", "inactive", "blueviolet"}
+        url_re = re.compile(r"https://img\.shields\.io/badge/([^\s)\"']+)")
+        bad = []
+        for name in ("README.md", "README_EN.md"):
+            path = ROOT / name
+            if not path.exists():
+                continue
+            for raw in url_re.findall(path.read_text(encoding="utf-8")):
+                body = raw.split("?")[0].replace("--", "\x00")   # `--` = 合法的字面量连字符
+                parts = body.split("-")
+                if len(parts) != 3:
+                    bad.append(f"{name}: {raw} → 被切成 {len(parts)} 段（message 里的裸 `-` 要写成 `--` 或 `%20`）")
+                    continue
+                color = parts[2].removesuffix(".svg")
+                if not (re.fullmatch(r"[0-9a-fA-F]{3,8}", color) or color.lower() in colors):
+                    bad.append(f"{name}: {raw} → 颜色段 `{parts[2]}` 既不是 hex 也不是已知色名")
+        self.assertEqual(bad, [], "徽章 URL 结构错误：\n" + "\n".join(bad))
 
     def test_d8_skill_table_versions_match_skill_md(self):
         """README / README_EN / docs/skills.md 的 skill 表版本列必须等于 SKILL.md 的 version。
