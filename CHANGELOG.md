@@ -2,6 +2,16 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.5（2026-11-04）：修掉一直 404 的策略徽章
+
+- **根因**：shields 静态徽章是 `/badge/<label>-<message>-<color>`。`policy-v3.5.4-single%20source%20of%20truth-6f42c1`
+  里 `v3.5.4` 与 `single` 之间用了裸 `-`，shields 把 `v3.5.4` 当成 message、把 `single source of truth` 当成颜色段，
+  于是返回 `404: badge not found`。徽章坏掉但页面照常渲染，只看文字看不出来——之前几轮扫描都在看图片链接的 HTTP 状态，
+  没看返回的 SVG 内容，所以一直漏。
+- **修法**：message 里的空格编码成 `%20`（不再用裸 `-` 分隔）：`policy-v3.5.5%20single%20source%20of%20truth-6f42c1`。
+- **加机械检查**：`tests/test_docs_consistency.py` 新增 D10——解析 README / README_EN 里每个 `img.shields.io/badge/…`，
+  要求恰好三段（label / message / color）、`--` 视为合法转义、颜色段是 hex 或已知色名。这条能在离线状态下抓住同类错误。
+
 ## 3.5.4（2026-11-04）：实例可用性两处修正
 
 - `tests/no_git_runner.py` 容忍缺失目录：派生实例没有 `hooks-tests/`（不下发），之前在实例上跑会
