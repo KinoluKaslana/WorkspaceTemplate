@@ -3,6 +3,7 @@
 // 退出码：0 全过；1 有失败；2 环境不满足（缺文件/缺 python3）。
 import { readFileSync, appendFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 const ws = process.argv[2]
@@ -21,7 +22,8 @@ if (spawnSync('python3', ['-c', 'import sys'], { stdio: 'ignore' }).status !== 0
 process.env.WORKSPACE_GATE_DSH_CWD = ws
 // 审计节流在测试里必须为 0，否则同一进程里第二次审计会被 5s 窗口挡掉（测的就不是逻辑了）
 process.env.WORKSPACE_GATE_DSH_AUDIT_MS = '0'
-const plugin = await import(pluginPath)
+// Windows 上 import() 不接受裸盘符路径（ERR_UNSUPPORTED_ESM_URL_SCHEME），统一转 file:// URL
+const plugin = await import(pathToFileURL(pluginPath).href)
 const handlers = {}
 plugin.apply({ on: (e, fn) => { handlers[e] = fn } })
 const pre = handlers['tools/pre-execute']

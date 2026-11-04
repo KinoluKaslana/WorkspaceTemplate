@@ -73,8 +73,14 @@ def digest_command(command: str) -> str:
 
 
 def slug_for_cwd(cwd: str) -> str:
-    """CC 的 project slug：绝对路径把 '/' 换成 '-'，并前置 '-'。"""
-    return "-" + os.path.abspath(cwd).lstrip("/").replace("/", "-")
+    """CC 的 project slug：绝对路径把分隔符换成 '-'，并前置 '-'。
+
+    Windows 的盘符冒号不能进目录名（`C:/Users` → `C-Users`）；分隔符统一先转 '/' 再替换，
+    否则 Windows 上会得到 `-C:/Users/...` 这种非法名字（hooks-tests 在 Windows CI 上 39 个 error 的根因）。
+    这里只用于「定位/隔离 projects 目录」，不参与任何安全判定。
+    """
+    p = os.path.abspath(cwd).replace("\\", "/").replace(os.sep, "/").lstrip("/")
+    return "-" + p.replace(":", "-").replace("/", "-")
 
 
 def _real(path: str) -> str:

@@ -235,7 +235,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "a92227c598f7fd2730d8e67bff4d2e330c3c2454caf6b44dcd676f49b60332ec",
+    "file_sha256": "daf15c2a7f28b60b9d6b7dedf8aae887b48f593053d854c123f3e62ad9b0f639",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -375,7 +375,7 @@
   },
   "tests/dsh_harness.mjs": {
     "clauses": {},
-    "file_sha256": "79d987c7bbff41fa96276958a51cc38f7493bf51077c36b271313f2c84ea8254",
+    "file_sha256": "4f90b0f715a9d48383661792c54191af1c46dbe528e28df27625d2ddbb7be6bd",
     "marked": 0
   },
   "tests/test_dsh_wiring.py": {
@@ -465,7 +465,7 @@
   },
   ".workspace/hooks/cc_transcript.py": {
     "clauses": {},
-    "file_sha256": "8a99f5c8da6f4bb3abfa1e55183800f2359dbf69aa488e9eadfaea0ca5f3a7e5",
+    "file_sha256": "207250569bfbd2626dd9daf2eb49ead984ec355f75b5b637d6b18cdf97906a5c",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {

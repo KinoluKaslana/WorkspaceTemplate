@@ -206,7 +206,8 @@ class CcTranscript(unittest.TestCase):
         res = self.analyze(path)
         write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
         self.assertFalse(write["would_deny"])
-        self.assertTrue(write["targets"][0].endswith("artifacts/x.txt"))
+        self.assertTrue(write["targets"][0].replace("\\", "/").endswith("artifacts/x.txt"),
+                        write["targets"][0])   # Windows 上是反斜杠，比较前归一化
 
     def test_full_read_then_gate_write_allowed(self):
         path = self.write([

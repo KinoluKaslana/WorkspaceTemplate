@@ -205,6 +205,10 @@ def main(argv: list[str]) -> int:
                               "hint": "给 --template 或 --clone-url"}, ensure_ascii=False))
             return 1
         tpl.parent.mkdir(parents=True, exist_ok=True)
+        # 本地目录当 URL 时统一转 file:// URL：Git for Windows 会把 `D:\wt\ws` 这类裸盘符路径
+        # 交给 MSYS 路径转换，结果 dest 变成 `/d/wt/ws` 而失败（CI Windows 上就是这么红的）。
+        if os.path.isdir(os.path.expanduser(url)):
+            url = Path(url).expanduser().resolve().as_uri()
         p = subprocess.run(["git", "clone", "--quiet", url, str(tpl)], capture_output=True, text=True)
         if p.returncode != 0:
             print(json.dumps({"error": "clone-failed", "url": url, "stderr": p.stderr.strip()[:300]},
