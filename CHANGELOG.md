@@ -14,6 +14,9 @@
   2. 状态节 `bootstrap.readme = {status, mode, decided_at}`（默认 `undecided`）；
   3. 机械入口 `python3 scripts/workspace_preflight.py --record-readme auto|provided|declined`；
   4. 预检第 11 项 `readme`：建仓后仍 `undecided` → **warn**（不阻塞，但必须被看见），状态非法或缺 `decided_at` → mismatch。
+- **修复（Windows CI 红因）**：解释器文件存在但不是本平台可执行格式（`bin/python` 的 sh 脚本、或没有执行位）时，
+  `--layout-only` 以前直接抛 `OSError` 崩溃（整个预检拿不到 JSON）；现在 `sh()` 兜住 `OSError`/`SubprocessError` 并统一 UTF-8，
+  版本降级为 `null`，布局与解释器路径照常报。用例 `test_p24`，反证：去掉兜底 → 7 failures + 17 errors。
 - 流程落点：`git-init` skill 由「五步」扩为「六步」（第 5 步即 README 决策，v1.2.0）；
   `workspace-init` 增第 6b 步（v1.3.0）。文档计数 10 项 → 11 项、条款 118 → 127。
 
