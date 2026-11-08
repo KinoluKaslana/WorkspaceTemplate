@@ -768,6 +768,9 @@ def handle(event: str, data: dict) -> None:
         ws = core.find_workspace(cwd)
         if ws:
             core.anchor_baseline(ws, client, sid)
+            # 接线证据：gate_status 只认 `client=` 行。没有这一行，只读会话（从不写盘）会被判「未接线」，
+            # 而事实上 hook 已经在跑——那是假阴性，不是安全侧。
+            core.log(ws, f"session_start client={client} session={sid}")
         result = (core.evaluate_session_start(ws, client, sid, data.get("permission_mode"))
                   if ws else {"action": "none"})
         if result.get("action") == "context":

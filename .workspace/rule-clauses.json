@@ -295,7 +295,7 @@
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "7f91f64331397c9a293e057ebbcdd964b8236ac894e33fa7980cf63da8268089",
+    "file_sha256": "f38635d2a06c534cf1603c6a12b53072c02f9b0e97558b6a846493bcc7b4d350",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
@@ -445,7 +445,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "d19787d3beb76352a18e564152ae338b7373c784f27efab9b3995935808557e8",
+    "file_sha256": "ed65b7aa00655dab1d8c5087917721765e33aa5e41906dda10106e3484ca97a7",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {

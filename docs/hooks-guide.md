@@ -223,6 +223,8 @@ GATE_CLIENT=codex "$PY" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.wo
 哈希就失效，codex 下次启动会显示 `Hooks need review — N hooks are new or changed`，选 `Trust all and continue` 才继续生效。
 验证是否真的生效：跑一次 `codex exec`，看 `.workspace/.hook-state/codex-<thread_id>.json` 是否新增。
 
+`SessionStart` 同时会往 `.workspace/.hook-state/gate.log` 追加一条 `session_start client=codex session=<sid>`：这是 `scripts/gate_status.py --require codex` 判定「已接线」的最小证据，只读会话（从不写盘）也有。
+
 ### 4.2 Bash 分派：先看是不是 `apply_patch`，再静态识别写
 
 ```

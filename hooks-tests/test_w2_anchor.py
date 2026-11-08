@@ -62,6 +62,17 @@ class W2Anchor(unittest.TestCase):
                 "tool_input": {"command": "cat AGENT_RULES.md"},
                 "tool_response": {"exit_code": 0, "stdout": data.decode("utf-8")}}
 
+    def test_w2_session_start_writes_wiring_evidence(self):
+        """只读会话也要留接线证据：gate_status 只认 gate.log 里的 `client=` 行。
+
+        没有这一行，「hook 在跑但从不写盘」的会话会被判 `未接线`——假阴性，且会让人去重装已经生效的 hook。
+        """
+        self.invoke("session_start", "codex")
+        log = self.ws / core.STATE_DIRNAME / "gate.log"
+        self.assertTrue(log.is_file(), "session_start 未写 gate.log")
+        text = log.read_text(encoding="utf-8", errors="replace")
+        self.assertIn("client=codex", text)
+
     def test_byte_change_revokes_and_audits(self):
         self.invoke("session_start", "codex")
         self.invoke("post_bash", "codex", **self.codex_cat_read_payload())
