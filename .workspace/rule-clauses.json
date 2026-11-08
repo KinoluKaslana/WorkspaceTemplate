@@ -118,10 +118,19 @@
       "R115": "2. 没有证据时，必须在第一条受管写入之前向用户报告「当前 harness 的 gate 未接线」并给出该 harness 的启用命令，由用户决定先接线还是明确接受无 gate 继续；不得把工作区当作已受管继续写入。",
       "R116": "3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入 `.workspace/bootstrap.json`；机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。",
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
-      "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。"
+      "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。",
+      "R119": "## 16. 建仓后的 README 决策（§0.3 的补充）",
+      "R120": "1. 建仓动作完成后，Agent **必须**询问用户是否需要重构 README。",
+      "R121": "2. 用户回答需要时，Agent **必须**让用户在两种生成方式中明确选择其一：自动生成（仅依据工作区现有内容）或说明后生成（用户先提供说明/要点，再结合工作区现有内容）。",
+      "R122": "3. 用户未明确选择前，Agent **不得**开始生成 README。",
+      "R123": "4. 两种方式都**必须**以工作区现有内容为准（现有文件、skills、脚本、notes、政策条款）。",
+      "R124": "5. Agent **不得**编造工作区中不存在的功能、命令或目录。",
+      "R125": "6. 用户说明与工作区事实冲突时，按用户说明写，并**必须**在交付时指出冲突点。",
+      "R126": "7. 决策**必须**写入 `.workspace/bootstrap.json` 的 `readme` 节（`status` 为 `generated-auto` / `generated-provided` / `declined`，未决策保持 `undecided`，并记 `mode` 与 `decided_at`），机械入口 `python3 scripts/workspace_preflight.py --record-readme auto|provided|declined`。",
+      "R127": "8. 生成结果**必须**经用户确认后才写入 `README.md`；该文件是用户首页，模板同步豁免。"
     },
-    "file_sha256": "d9c3afb0fd3d1de56024b6e1776f719d9b230e4dfd9af7f605614eb3d0243242",
-    "marked": 118
+    "file_sha256": "da0e11f6b08c69e38d280ee6c48746b9a4c865363d326951086964e06cc8120e",
+    "marked": 127
   },
   "LICENSE": {
     "clauses": {},
@@ -155,17 +164,17 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "3f1ed023c9adb5f815742e2585f6d6765451c3f13337fa5ddfbb9957ad9aa9c9",
+    "file_sha256": "fa1174ba4d65368c1703b9815e1fd161324a8674539dca3adba663ea0e6c8f62",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "da5da6fc9f63e71ac2aab62b0a9e88b2dd07e226598e0f45ac23f2a51f439749",
+    "file_sha256": "2b1a02f5b183bf0d9378820f80b82c9f9e88906df522db96533bca5bf6114324",
     "marked": 0
   },
   "notes/rebuild_index.py": {
     "clauses": {},
-    "file_sha256": "ab58ae0cfef26b282f998274db3f8199713cc29f99198a80d1f05946b2a561e8",
+    "file_sha256": "49cd6c0882ae542f278822e3dfa39603e636bf814a0d1e022f41803ff3737cc3",
     "marked": 0
   },
   "notes/_TEMPLATE.md": {
@@ -195,17 +204,17 @@
   },
   ".workspace/skills/template-update/check_template.py": {
     "clauses": {},
-    "file_sha256": "b72728769a323e64325b6759c731b39fb0ddb7cb1be00411391e7b28eb41909f",
+    "file_sha256": "7824e592e4f87950a5e328e9e9b2ac02354d24dca1572a3e5d7c4230b61f90d8",
     "marked": 0
   },
   ".workspace/skills/workspace-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "03d72f462984d9752e2df0da4f2e2472178cc838f9957a0410edb3d60653d0ba",
+    "file_sha256": "89c7962cfbb0c4be00fab38a7ab80ca191208d5751c1d495cbed1e3f40ca319b",
     "marked": 0
   },
   ".workspace/skills/git-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "ade2298496cd720054821771eb2ac28477cd303495a63ad4d4bb51ed41877884",
+    "file_sha256": "0c4b17cb8627d231d48b167f266130d5a6c9b2a16d663a1118988904b9048341",
     "marked": 0
   },
   ".workspace/skills/delivery-closure/SKILL.md": {
@@ -235,7 +244,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "609a04fd5f318ecddb24596e69aa46f2e9e5339f8a38621c8f843da49f265947",
+    "file_sha256": "ef4746f6bff8afed4b6901b0cd8e59e0dd4f9029358f92b132dbfc97d6e28a0d",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -245,22 +254,22 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "c11df1a8e363cce667049bb6768670a5ca4bf511cdc0e6f7b08204b570f90624",
+    "file_sha256": "ff6cc3ecdaa870da063aa6828dcc17cc9bde95980b46bca092a585a274cbf033",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "fd2a761c83258c0a4ecf2e238ae03536da3acd76658591984d6bc963d9cddcc2",
+    "file_sha256": "2617185ba3391805193e12192fe9e41ade056b015a19bfd8057a625ace720baf",
     "marked": 0
   },
   "tests/test_pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "196bbeeaf777183f44322706f0fa97ac16ab9bf9491a505995be3ed2378c84c0",
+    "file_sha256": "6d7d7a47cf91df5775270fb7418b31faa237d9ddaf67453ccd0ca98fbb550294",
     "marked": 0
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "b93374110c547797ba2a7ea1c442b1aa0222281ec63a45df8f7596101857e92f",
+    "file_sha256": "cc1835b8059600f8b9d22b119c986c1735c54a07e1369593631c9d5d07b12456",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
@@ -280,17 +289,17 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "272863e5e56dd30e4cdc044c25a733c3459ac327272155b4f45440c88fcd18e1",
+    "file_sha256": "b21af751b313d758df59ba4f5ba80ad2b43f07a84e297a675105fd2d2087e92b",
     "marked": 0
   },
   "docs/skills.md": {
     "clauses": {},
-    "file_sha256": "d52884167addbc103c79531e3674cb74facc2828182803929ea5c00f5a832c03",
+    "file_sha256": "681b5110cd8ca7d439f7e1636c522b677c2557a2fb4eba06692665fd5d87b7e8",
     "marked": 0
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "e77dfbcb22b3c9f865c378265b5477418332bf92b7782f90c507c95509e08571",
+    "file_sha256": "becdb069d4468d7fd54d826a7e5daa19787666cee2e72b85b86b7b46eee83660",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -335,12 +344,12 @@
   },
   "tests/test_check_scripts.py": {
     "clauses": {},
-    "file_sha256": "496b834dce090f5144ccef37da4cb40c5a275fa21959e8d29a66f83e52f80701",
+    "file_sha256": "111c1af4bf1679f577040b865e1c60743f6808e6bc1b706e9e63f1906a80cf42",
     "marked": 0
   },
   "scripts/version_check.py": {
     "clauses": {},
-    "file_sha256": "ee3f82c3168cd5981236b74d8bea6165f5051553b8747653044137212714027b",
+    "file_sha256": "b213c082b419b132c7c3d3d5893742c779099c819d6f1481c3d8d61ea67932aa",
     "marked": 0
   },
   "scripts/notes_index_check.py": {
@@ -395,7 +404,7 @@
   },
   ".workspace/clauses.meta.json": {
     "clauses": {},
-    "file_sha256": "c656260ddf6c5924dae6ab24244a5842d0ca22009d71619b81085a83e32f771b",
+    "file_sha256": "9c6a886fe277111336a0ef0651d54ca2fa27db48d23e34e3ec28d2a791035da0",
     "marked": 0
   },
   "docs/harness-onboarding.md": {
@@ -410,7 +419,7 @@
   },
   ".workspace/skills/workspace-repo-sync/SKILL.md": {
     "clauses": {},
-    "file_sha256": "c43f51316bb01fd8a3b8faceef29c184de19c05ac109117a9b0d2f75f980251b",
+    "file_sha256": "583500c7c2ae363aafabaf32c265c96d48ba20ca0fac87707a58fd7a231fb247",
     "marked": 0
   },
   "tests/test_alias_audit.py": {
@@ -470,7 +479,7 @@
   },
   ".workspace/hooks/template_anchor.py": {
     "clauses": {},
-    "file_sha256": "1e13a2d838a683037dfdf07c8f8e84c272d76286934738df4b4db2963218166d",
+    "file_sha256": "9073dcc638b7d7ec36ffb95459cdd33c2457fd7e4b5f5027333be2c0dfbe12c1",
     "marked": 0
   },
   ".workspace/hooks/delegations.py": {
@@ -490,7 +499,7 @@
   },
   "scripts/gate_status.py": {
     "clauses": {},
-    "file_sha256": "f40f5f85bd7d29f62a148b4a90b53a4051e5acfe0280c2e8cbc545bd72adfbdb",
+    "file_sha256": "02ff03ae8531e957952d6215fc56aca01ecb412ec27b8b18f6418fecdf1f2f76",
     "marked": 0
   },
   "tests/test_gate_status.py": {

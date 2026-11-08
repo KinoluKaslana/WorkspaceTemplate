@@ -31,6 +31,8 @@ def mkws(tmp: Path) -> Path:
     (ws / ".workspace").mkdir(parents=True)
     (ws / "scripts").mkdir()
     shutil.copyfile(SRC / SCRIPT, ws / SCRIPT)
+    # 布局口径在 workspace_preflight.py 里，两脚本必须一起分发（真实工作区里都是 TEMPLATE_FILES）
+    shutil.copyfile(SRC / "scripts" / "workspace_preflight.py", ws / "scripts" / "workspace_preflight.py")
     (ws / ".workspace" / "bootstrap.json").write_text(
         json.dumps({"schema_version": 1, "workspace_status": "template",
                     "python": {"mode": "unconfigured"}}, ensure_ascii=False), encoding="utf-8")

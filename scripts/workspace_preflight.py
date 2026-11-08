@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import platform
 import shutil
@@ -57,6 +58,50 @@ def venv_interpreter(venv_dir: Path) -> Path | None:
     return None
 
 
+def venv_layout(venv_dir: Path) -> str:
+    """返回解释器所在布局：`posix` / `windows` / `none`。"""
+    for parts in VENV_INTERPRETERS:
+        if venv_dir.joinpath(*parts).is_file():
+            return "windows" if parts[0] == "Scripts" else "posix"
+    return "none"
+
+
+def resolve_venv_dir(ws: Path, ident: str) -> Path:
+    r"""把 bootstrap 里的 `runtime.identifier` 解析成 venv 目录。
+
+    支持三种写法：venv 目录名（相对工作区）、POSIX 绝对路径、Windows 盘符路径（`D:\ws\.venv-314`）。
+    解析口径只此一处——preflight 的 python 项与 `--layout-only` 都走它。
+    """
+    ident = (ident or "").strip()
+    if re.match(r"^[A-Za-z]:[\\/]", ident):
+        return Path(ident.replace("\\", "/"))
+    path = Path(ident) if ident else ws
+    if ident and not path.is_absolute():
+        path = ws / ident
+    return path
+
+
+def describe_layout(venv_dir: Path) -> dict:
+    """只读诊断：这个 venv 目录里解释器在哪、是什么版本。
+
+    **布局是本机派生事实，永远现算**——不接受外部传入的布局/解释器路径
+    （那会把"现场核验"降级成"信任一份可能过期或被伪造的快照"）。
+    """
+    exe = venv_interpreter(venv_dir)
+    out = {
+        "venv": str(venv_dir),
+        "layout": venv_layout(venv_dir),
+        "interpreter": str(exe) if exe else None,
+        "version": None,
+        "candidates": [f"{a}/{b}" for a, b in VENV_INTERPRETERS],
+        "source": "probed-on-host",
+    }
+    if exe:
+        _, ver = sh(str(exe), "-c", "import sys;print(sys.version.split()[0])")
+        out["version"] = ver or None
+    return out
+
+
 def item(id_: str, recorded, actual, status: str, action: str = "") -> dict:
     return {"id": id_, "recorded": recorded, "actual": actual, "status": status, "action": action}
 
@@ -70,6 +115,10 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", default=".")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--record-readme", default="", metavar="MODE",
+                    help="记录 README 决策：auto=按工作区内容自动生成 / provided=用户提供说明后结合生成 / declined=不重构")
+    ap.add_argument("--layout-only", action="store_true",
+                    help="只读诊断：打印本机 venv 布局 JSON（exit 0=找到解释器，3=没有）")
     ap.add_argument("--strict", action="store_true")
     ap.add_argument("--harness", default="",
                     help="当前在用的 harness（cc,codex,hermes,dsh，逗号分隔）：给了就要求它已在 gate 结论里")
@@ -80,7 +129,52 @@ def main(argv: list[str]) -> int:
     if not boot_p.is_file():
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
-    boot = json.loads(boot_p.read_text(encoding="utf-8"))
+    boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
+    if a.record_readme:
+        mode = a.record_readme.strip().lower()
+        allowed = {"auto": "generated-auto", "provided": "generated-provided", "declined": "declined"}
+        if mode not in allowed:
+            print(json.dumps({"error": "bad-mode", "allowed": sorted(allowed)}, ensure_ascii=False))
+            return 2
+        rd = boot.setdefault("readme", {})
+        rd.update({"status": allowed[mode], "mode": mode,
+                   "decided_at": dt.datetime.now().isoformat(timespec="seconds")})
+        boot_p.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"readme": rd}, ensure_ascii=False))
+        return 0
+    if a.layout_only:
+        pysec = boot.get("python") or {}
+        mode = pysec.get("mode") or "unconfigured"
+        ident = ((pysec.get("runtime") or {}).get("identifier") or "").strip()
+        # 先按 mode 分流，再决定要不要探测：mcp/unconfigured 根本不碰文件系统。
+        # （曾把 describe_layout 放在分流之前：mcp 模式下会去执行工作区根目录里恰好存在的 bin/python。）
+        info = {"mode": mode, "venv": None, "layout": "n/a", "interpreter": None, "version": None,
+                "candidates": [f"{a}/{b}" for a, b in VENV_INTERPRETERS], "source": "probed-on-host"}
+        if mode == "mcp":
+            info.update({"applicable": False,
+                         "note": "MCP 模式没有本地 venv；要核验的是 MCP provider/tool 是否可用"})
+            print(json.dumps(info, ensure_ascii=False))
+            return 0
+        if mode == "unconfigured":
+            info.update({"layout": "none", "applicable": False,
+                         "note": "python.mode 未配置：先按 §0 选择运行时（uv / venv / mcp）"})
+            print(json.dumps(info, ensure_ascii=False))
+            return 3
+        if not ident:
+            # 空 identifier 绝不能回退到工作区根：根目录里的 bin/python 与"这个工作区登记的 venv"无关，
+            # 探测它会给出假阳性 exit 0。
+            info.update({"layout": "none", "applicable": True,
+                         "note": "bootstrap 未记录 python.runtime.identifier：回写 venv 目录后再诊断"})
+            print(json.dumps(info, ensure_ascii=False))
+            return 3
+        info = describe_layout(resolve_venv_dir(ws, ident))
+        info["mode"] = mode
+        info["applicable"] = True          # uv 与 local-venv 都建本地 venv，布局规则相同
+        if mode == "uv":
+            uv = ((pysec.get("runtime") or {}).get("uv")) or shutil.which("uv") or ""
+            info["uv"] = {"path": uv or None, "available": bool(uv and shutil.which(uv))}
+        print(json.dumps(info, ensure_ascii=False))
+        return 0 if info["interpreter"] else 3
     tools_p = ws / "TOOLS.md"
     tools = tools_p.read_text(encoding="utf-8") if tools_p.is_file() else ""
     rows: list[dict] = []
@@ -106,13 +200,7 @@ def main(argv: list[str]) -> int:
     mode = py.get("mode")
     if mode in ("local-venv", "uv"):
         ident = ((py.get("runtime") or {}).get("identifier") or "").strip()
-        # 登记的可能是「venv 目录名」（相对工作区）或绝对路径（含 Windows 盘符写法）
-        if re.match(r"^[A-Za-z]:[\\/]", ident):
-            venv_dir = Path(ident.replace("\\", "/"))
-        else:
-            venv_dir = Path(ident) if ident else ws
-            if ident and not venv_dir.is_absolute():
-                venv_dir = ws / ident
+        venv_dir = resolve_venv_dir(ws, ident)
         venv_py = venv_interpreter(venv_dir) if ident else None
         want = py.get("version") or (py.get("runtime") or {}).get("version")
         if not ident:
@@ -274,6 +362,23 @@ def main(argv: list[str]) -> int:
                          "" if same else "remote 与 bootstrap 不一致：确认后更新记录"))
     else:
         rows.append(item("git", "initialized?", "no .git", WARN, "本机无仓库：clone 或按 git-init 建仓"))
+
+    # 10) README 决策（§0.4）：建仓后必须问过用户"要不要重构 README"，并记录用户选的方式
+    README_STATES = {"undecided", "generated-auto", "generated-provided", "declined"}
+    rd = boot.get("readme") or {}
+    rd_status = (rd.get("status") or "undecided").strip()
+    git_ready = ((boot.get("git") or {}).get("status") == "initialized")
+    if rd_status not in README_STATES:
+        rows.append(item("readme", rd_status, sorted(README_STATES), BAD,
+                         "bootstrap.readme.status 非法：只允许 " + "/".join(sorted(README_STATES))))
+    elif git_ready and rd_status == "undecided":
+        rows.append(item("readme", "undecided", "git=initialized", WARN,
+                         "建仓后未记录 README 决策：先问用户是否需要重构，再记 --record-readme auto|provided|declined"))
+    elif rd_status != "undecided" and not rd.get("decided_at"):
+        rows.append(item("readme", {"status": rd_status}, "缺 decided_at", BAD,
+                         "记录决策时间（--record-readme 会写入）"))
+    else:
+        rows.append(item("readme", rd_status, rd.get("mode") or "—", OK))
 
     bad = [r for r in rows if r["status"] == BAD]
     warn = [r for r in rows if r["status"] == WARN]

@@ -8,7 +8,7 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v3.5.7%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.5.9%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -39,13 +39,13 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 
 ## 什么时候**不该**用它
 
-这套东西的成本在「机械一致性」：118 条政策、10 项预检、三层门禁（plugin / 客户端 hook / 差集审计）。以下场景它不划算：
+这套东西的成本在「机械一致性」：127 条政策、11 项预检、三层门禁（plugin / 客户端 hook / 差集审计）。以下场景它不划算：
 
 - **一次性任务或单文件改动**：读完政策、跑预检、写 note 的时间比改代码还长，直接干活更快。
 - **只是偶尔问答**：`hook` 与 `preflight` 的收益来自「长期、反复、多会话」；一次性咨询用不上。
 - **需要强隔离或多租户**：守门防的是「无意识跳过」，**不防主动绕过**——同 uid 没有安全边界，恶意绕过要靠沙箱/OS 权限。
 - **不能接受客户端执行仓内 hook 代码**：Codex/Claude Code 的 hook 是随仓分发的可执行脚本，合规上不接受就别装。
-- **不想跟版本**：政策条款集（R1..R118）与模板同步链是配套的；长期停在旧版本会碰到条款演进与 `verify_rules` 漂移。
+- **不想跟版本**：政策条款集（R1..R127）与模板同步链是配套的；长期停在旧版本会碰到条款演进与 `verify_rules` 漂移。
 
 正向的适用范围见上面的「为什么需要它」与「核心能力」。
 
@@ -75,7 +75,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 机械守门补强 | 拒绝码前缀、委托审计、`gate-deny` 独立核验、审计十三型 | 插件 1.9.0 + `docs/hooks-catalog.md` §2.6 |
 | skills 契约化 | 7 个 skill 必须齐 8 维；`skill_audit.py` 缺节即失败；REGISTRY 由目录派生 | `docs/skills.md` §1 |
 | Python 三选一 | **uv 默认** / 手动 venv / MCP；已配置不被改写 | R2–R8 + `pyenv_init.py` |
-| 跨设备可核验 | 10 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
+| 跨设备可核验 | 11 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
 | docs 检索（可选） | 确定性索引，**省账单不省 token**，命中 10/10 | `docs/docs-retrieval.md` |
 
 > 完整文档入口：[`docs/README.md`](docs/README.md)（按读者选路径）。
@@ -278,8 +278,8 @@ dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走�
 |---|---|---|---|
 | [template-update](.workspace/skills/template-update/SKILL.md) | 3.2.1 | "同步模板/换成某个分支或标签"，或版本落后、`verify_rules` 报漂移 | 按 **任意 ref**（分支/标签/提交）同步模板层：dry-run → 备份（MANIFEST）→ 整文件替换 → custom 引用迁移 → `--vs-template` 验证；`--prune` 清理上游已删文件 |
 | [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.2 | 换设备、别端改了 notes/TOOLS、怀疑工具失效 | 先 `workspace_preflight.py` 核验登记与实机 → 用户裁决方向/分叉/冲突 → 拉后重建索引与四验 |
-| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.2.1 | "初始化/接管这个工作区"，或无可信血缘、无条款标记 | 盘点 → 差异判定 → pre-v2.0 迁移（本地语义进 custom）→ Python（已配置则不动）→ git 决策 → 登记 → 验证 |
-| [git-init](.workspace/skills/git-init/SKILL.md) | 1.1.0 | "建 git 仓库"，或 `git.status=declined` 后改主意 | init → .gitignore → 登记 → 审查暂存清单 → 提交 → 核提交树；含撤销建仓 |
+| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.3.0 | "初始化/接管这个工作区"，或无可信血缘、无条款标记 | 盘点 → 差异判定 → pre-v2.0 迁移（本地语义进 custom）→ Python（已配置则不动）→ git 决策 → 登记 → 验证 |
+| [git-init](.workspace/skills/git-init/SKILL.md) | 1.2.0 | "建 git 仓库"，或 `git.status=declined` 后改主意 | init → .gitignore → 登记 → 审查暂存清单 → 提交 → 核提交树；含撤销建仓 |
 | [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 任务模式产物落盘、准备声明完成 | 产物清点（无仓用时间戳列举）→ 查 INDEX → note 三选一 → 索引回写 → 外部动作验证 → 三档口径声明 |
 | [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 工作区模板版本旧、缺现行 skill / 无 `template_sync.py` | 从模板快照自举 → `--apply` → `--sync-registry` + TOOLS 补登 → 四条验收 |
 | [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | docs 改动、索引 stale、命中率下降 | build/check → 命中报告 → 只在真实缺口下加别名（上限 8、留一验证）→ 五条验收 |
@@ -361,7 +361,7 @@ Agent 将自动完成：
 │   ├── mark_rules.py        # 条款 ID 标记 + 注册表生成
 │   ├── verify_rules.py      # 双级校验 + --vs-template 权威比对
 │   ├── skill_audit.py       # skills 契约 / 双登记 / --sync-registry
-│   ├── workspace_preflight.py # 跨设备 10 项预检
+│   ├── workspace_preflight.py # 跨设备 11 项预检
 │   ├── template_sync.py     # 任意 ref 同步 + --prune
 │   ├── pyenv_init.py        # uv / venv / mcp 三模式初始化
 │   ├── docs_index.py        # docs 确定性索引

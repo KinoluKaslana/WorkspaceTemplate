@@ -1,7 +1,7 @@
 ---
 name: workspace-init
 description: "Use when initializing or adopting a workspace created from an OLD WorkspaceTemplate version (pre-v2.0), or any workspace whose governance files predate the locked-template + custom-override architecture. 初始化/接管老版本模板工作区时使用。"
-version: 1.2.1
+version: 1.3.0
 ---
 
 # Workspace Init — 老版本工作区初始化 skill
@@ -147,6 +147,13 @@ remote 指向他处 / 历史无法确认 → **暂停，向用户展示发现并
 
 - **现在建** → 执行 git-init skill 全流程；
 - **暂不建** → bootstrap `git.status: "declined"`，报告注明"后续说'建 git 仓库'即可触发 git-init skill"。
+
+### 第 6b 步：README 决策（AGENT_RULES §0.4）
+
+本步在建仓决策之后、skills 登记之前执行：问用户是否需要重构 README；需要时让用户在
+`auto`（仅按工作区现有内容生成）与 `provided`（用户先给说明再结合现有内容生成）中明确选一个，
+用 `python3 scripts/workspace_preflight.py --record-readme auto|provided|declined` 记录，
+生成结果经用户确认后才写 `README.md`。
 
 ### 第 7 步：skills 登记核验
 

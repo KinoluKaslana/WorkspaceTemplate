@@ -57,6 +57,16 @@ class VersionCheck(Base):
         self.assertEqual(p.returncode, 1)
         self.assertIn("E5", p.stdout)
 
+    def test_bootstrap_with_bom_is_readable(self):
+        """Windows 的 PowerShell/记事本会写 UTF-8 BOM；带 BOM 的 bootstrap.json 不能被当成"非法 JSON"。"""
+        self.write()
+        boot = self.root / ".workspace" / "bootstrap.json"
+        boot.write_bytes(b"\xef\xbb\xbf" + boot.read_bytes())
+        p = self.run_script("version_check.py")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertNotIn("E5", p.stdout)
+        self.assertNotIn("不是合法 JSON", p.stdout)
+
     def test_changelog_absent_skips_unless_required(self):
         self.write()
         (self.root / "CHANGELOG.md").unlink()

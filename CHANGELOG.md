@@ -2,6 +2,59 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.9（2026-11-09）：建仓后的 README 决策（§0.4）
+
+- **新条款 §0.4（R119–R127）**：用户建仓后，Agent **必须**先问"是否需要重构 README"；
+  需要时**必须**让用户在两种方式中明确选一个——`auto`（仅依据工作区现有内容生成）或
+  `provided`（用户先给说明/要点，再结合现有内容生成）；未明确选择前**不得**动笔。
+  两种方式都以工作区事实为准、**不得**编造不存在的功能/命令/目录；`provided` 下用户说明与事实冲突时按用户说明写，
+  但**必须**在交付时点名冲突。
+- **四层对齐**（与 Python 选择同级）：
+  1. 政策条款 `AGENT_RULES.md` §0.4；
+  2. 状态节 `bootstrap.readme = {status, mode, decided_at}`（默认 `undecided`）；
+  3. 机械入口 `python3 scripts/workspace_preflight.py --record-readme auto|provided|declined`；
+  4. 预检第 11 项 `readme`：建仓后仍 `undecided` → **warn**（不阻塞，但必须被看见），状态非法或缺 `decided_at` → mismatch。
+- 流程落点：`git-init` skill 由「五步」扩为「六步」（第 5 步即 README 决策，v1.2.0）；
+  `workspace-init` 增第 6b 步（v1.3.0）。文档计数 10 项 → 11 项、条款 118 → 127。
+
+## 3.5.8（2026-11-09）：venv 布局口径收敛到一处 + 只读诊断
+
+- **消掉复制粘贴**：`scripts/pyenv_init.py` 原来自己复制了一份 `VENV_INTERPRETERS` / `venv_interpreter`
+  （改动前两份完全相同）。现在改为 `from workspace_preflight import …`——布局知识只有一处，
+  "init 能建、preflight 说没有"这类漂移不可能再出现。用例 `test_p12_single_source` 用**函数对象同一性**
+  （`is`）把这条钉住，复制回来会直接红。
+- **新增只读诊断**：`python3 scripts/workspace_preflight.py --workspace . --layout-only`
+  输出 `{venv, layout, interpreter, version, candidates, source}`；`layout` ∈ `posix|windows|none`，
+  退出码 0=找到解释器 / 3=没有。给人和 CI 一个"为什么这条 mismatch"的答案，不必读代码。
+- **不接受的方案（审议席一致否决）**：把布局当参数传进来（JSON 字符串 / 文件 / 环境变量）。
+  理由：布局是本机派生事实，外部传入等于把"现场核验"降级成"信任一份可能过期或被伪造的快照"，
+  且与 `bootstrap.python.runtime.identifier`（记 venv 目录）语义重叠。`--layout-only` 只读，**没有 `--apply`**：
+  自动改 `identifier` 是替用户做运行时选择。
+- **不新增第 16 个脚本**：两个席位都算过账——为 4 个候选路径新增 `scripts/py_layout.py` 会连带
+  `TEMPLATE_FILES`、tools 表、architecture 计数、发布锚与测试，收益为负；诊断能力用 `--layout-only` 零成本拿到。
+- 用例：`test_p10/p11`（`--layout-only` 的 JSON 形状与退出码、`none` 不伪造版本）、`test_p12`（单源同一性）。
+- **按运行时模式分流（列席追问后补）**：`--layout-only` 会读 `bootstrap.python.mode`——
+  `mcp` 模式没有本地 venv，输出 `layout=n/a`、`applicable=false`、**exit 0**（不报 3，否则自动化会把"本来就没有 venv"当成故障）；
+  `unconfigured` 输出 `applicable=false` + 提示先按 §0 选运行时、exit 3；`uv` 与 `local-venv` 都是本地 venv，
+  走同一套布局规则（`uv venv` 在 Windows 同样产出 `Scripts\python.exe`）。
+- **同行依赖显式化**：`pyenv_init.py` 现在 import `workspace_preflight.py`；两者必须一起分发。
+  单独拷一个时给出明确报错（exit 2 + 一行动因），而不是裸 `ModuleNotFoundError`；测试夹具同步改成两个脚本一起拷。
+- 用例追加：`test_p13/p14/p15`（mcp 不适用 / unconfigured / uv 同规则）。
+- **bootstrap.json 允许 UTF-8 BOM（真机探针踩到）**：Windows 的 PowerShell 5.1 `Set-Content -Encoding UTF8`
+  和记事本都会写 BOM；旧版 `json.loads(read_text("utf-8"))` 直接 `Unexpected UTF-8 BOM`，
+  preflight / pyenv_init / gate_status / template_sync 全部读不出 bootstrap。四处统一改成 `utf-8-sig`
+  （无 BOM 时行为不变）。用例 `test_p16_bootstrap_with_bom`，并做过"改回 utf-8 → 红"的反证。
+- **按审议席 ROUND-2 修的三处**：
+  ① `--layout-only` 先按 mode 分流再决定探测——`mcp` 模式不再去执行工作区根目录里恰好存在的 `bin/python`；
+  ② **空 `identifier` 不再回退工作区根**（那里的 `bin/python` 与登记的 venv 无关，会给出假阳性 exit 0），
+     改为 `layout=none` + 提示回写 identifier + exit 3；
+  ③ `uv` 模式额外输出 `uv.available/uv.path`——只报"布局找到解释器"会让 CI 把"uv 二进制缺失"当成健康。
+- **BOM 支持补齐到全部生产 reader**：除 preflight / pyenv_init / gate_status / template_sync 外，
+  再补 `scripts/version_check.py`、`notes/rebuild_index.py`、`.workspace/skills/template-update/check_template.py`（3 处）、
+  `.workspace/hooks/template_anchor.py`。`version_check` 之前会把带 BOM 的 bootstrap 误报成"不是合法 JSON"（R2 门假红）。
+- 真机复核（Windows，真 venv）：`local-venv` → `layout=windows` / `Scripts\python.exe` / `3.14.7` / exit 0；
+  `mcp` → `layout=n/a` / exit 0；`unconfigured` → exit 3；**带 BOM 的 bootstrap** → 同上正常。
+
 ## 3.5.7（2026-11-09）：Windows CI 上的编码崩溃
 
 - **根因**：`scripts/template_sync.py` 在失败路径上 `print` 中文；Windows 的 CI 管道用 cp1252，

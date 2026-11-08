@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v3.5.7%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.5.9%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -44,7 +44,7 @@ The cost here is mechanical consistency: 118 clauses, 10 preflight checks, and t
 - **Occasional Q&A only** — the gate's value comes from long-lived, repeated, multi-session work.
 - **You need hard isolation or multi-tenancy** — the gate stops unconscious skips, **not deliberate bypass**; same-uid means no security boundary.
 - **Running in-repo hook code in your client is not acceptable** — Codex/Claude Code hooks are executable scripts shipped with the repo.
-- **You don't want to track versions** — the clause set (R1..R118) and the template sync chain move together.
+- **You don't want to track versions** — the clause set (R1..R127) and the template sync chain move together.
 
 See “Why It Exists” and “Core Capabilities” above for where it does fit.
 
@@ -207,8 +207,8 @@ Seven skills ship with the template in `.workspace/skills/` (workspace-skills na
 |---|---|---|---|
 | [template-update](.workspace/skills/template-update/SKILL.md) | 3.2.1 | "sync the template / switch to a branch or tag", or version lag / verify drift | Sync template layer from **any ref** (branch/tag/commit): dry-run → backup (MANIFEST) → whole-file replacement → custom migration → `--vs-template`; `--prune` removes files deleted upstream |
 | [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.2 | New device, notes/TOOLS changed elsewhere, or tooling looks broken | `workspace_preflight.py` (10 checks) → user decides direction/merge/conflicts → pull → rebuild indexes → four-way re-verification |
-| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.2.1 | "initialize / adopt this workspace", or no trustworthy lineage / no clause markers | Inventory → diff verdict → pre-v2.0 migration → Python (keep if configured) → git decision → registry → verify |
-| [git-init](.workspace/skills/git-init/SKILL.md) | 1.1.0 | "create a git repo", or `git.status=declined` then mind changed | init → .gitignore → register → review staging → commit → verify tree; includes rollback |
+| [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.3.0 | "initialize / adopt this workspace", or no trustworthy lineage / no clause markers | Inventory → diff verdict → pre-v2.0 migration → Python (keep if configured) → git decision → registry → verify |
+| [git-init](.workspace/skills/git-init/SKILL.md) | 1.2.0 | "create a git repo", or `git.status=declined` then mind changed | init → .gitignore → register → review staging → commit → verify tree; includes rollback |
 | [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | Before declaring a task-mode deliverable complete | Artifact inventory (timestamp listing when no repo) → INDEX → note decision → index write-back → external verification → three-tier completion wording |
 | [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | workspace built from an old template, missing current skills / `template_sync.py` | clone snapshot → `--apply` → `--sync-registry` + TOOLS rows → four acceptances |
 | [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | docs changed, index stale, hit rate dropped | build/check → hit report → aliases only from real miss logs (cap 8, leave-one-out) → five acceptances |

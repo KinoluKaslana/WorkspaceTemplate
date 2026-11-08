@@ -1,7 +1,7 @@
 ---
 name: git-init
 description: "Use when the user asks to create/initialize a git repository for a workspace that previously declined one (bootstrap git.status=declined), or to re-record git info in bootstrap. 为此前未建仓的工作区创建 git 仓库并登记 bootstrap 时使用。"
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Git Init — 工作区 git 仓库创建 skill
@@ -18,7 +18,7 @@ version: 1.1.0
 2. `.git` 已存在但 bootstrap 无记录 → 按接管处理：确认 remote 非模板库后直接登记（第 4 步）。
 3. `.git` remote 仍指向模板库 → 先按 workspace-init skill 第 6a 步抹除（含独有 commit patch 备份），再走本流程。
 
-## 流程（五步）
+## 流程（六步）
 
 ### 第 1 步：决策确认
 
@@ -74,7 +74,19 @@ git push -u origin <branch>    # 需用户凭据/授权；失败不回滚本地�
 
 同时 TOOLS.md 记一行环境事实（仓库地址、分支、初始化日期）。
 
-### 第 5 步：验证与报告
+### 第 5 步：README 决策（AGENT_RULES §0.4，建仓后必问）
+
+建仓完成后立刻问用户：**是否需要重构 README？**
+
+- 用户说「不需要」→ `python3 scripts/workspace_preflight.py --record-readme declined`
+- 用户说「需要」→ 让用户在两种方式中**明确选一个**，不许代选、不许混合：
+  - `auto`：仅依据工作区现有内容（文件、skills、脚本、notes）生成；
+  - `provided`：用户先给说明/要点，再结合工作区现有内容生成。
+  选定后 `--record-readme auto|provided`，再按所选方式产出，**经用户确认后才写 `README.md`**。
+- 两种方式都不得编造工作区里不存在的功能/命令/目录；`provided` 方式下用户说明与事实冲突时按用户说明写，
+  并在交付时点名冲突。
+
+### 第 6 步：验证与报告
 
 ```bash
 git log --oneline -1 && git status --short | head -3 && git remote -v

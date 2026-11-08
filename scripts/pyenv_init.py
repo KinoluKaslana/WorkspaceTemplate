@@ -39,20 +39,18 @@ def run(cmd: list[str], **kw) -> tuple[int, str]:
     return p.returncode, (p.stdout or p.stderr).strip()
 
 
-VENV_INTERPRETERS = (("bin", "python"), ("bin", "python3"),
-                     ("Scripts", "python.exe"), ("Scripts", "python3.exe"))
-
-
-def venv_interpreter(vdir: Path) -> Path | None:
-    """venv 里的解释器：POSIX 是 bin/python，Windows 是 Scripts/python.exe。
-
-    与 workspace_preflight.py 的同名函数保持一致（两处都是"判断 venv 是否可用"的唯一口径）。
-    """
-    for parts in VENV_INTERPRETERS:
-        cand = vdir.joinpath(*parts)
-        if cand.is_file():
-            return cand
-    return None
+# 布局口径只有一处：workspace_preflight.py 里的 VENV_INTERPRETERS / venv_interpreter。
+# 这里 import 而不是复制——曾经两份复制粘贴过，改一处忘一处就会让"init 能建、preflight 说没有"。
+try:
+    from workspace_preflight import VENV_INTERPRETERS, venv_interpreter  # noqa: F401
+except ImportError:                       # 以 `scripts.pyenv_init` 形式被 import 时 sys.path[0] 不是 scripts/
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        from workspace_preflight import VENV_INTERPRETERS, venv_interpreter  # noqa: F401
+    except ImportError:
+        print("pyenv_init 需要同目录下的 workspace_preflight.py（venv 布局口径的唯一来源）；"
+              "两者随 TEMPLATE_FILES 一起分发，请勿单独拷贝其中一个。", file=sys.stderr)
+        raise SystemExit(2)
 
 
 def py_version(exe: str) -> str | None:
@@ -84,7 +82,7 @@ def main(argv: list[str]) -> int:
     if not boot_p.is_file():
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
-    boot = json.loads(boot_p.read_text(encoding="utf-8"))
+    boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
     cur_mode = ((boot.get("python") or {}).get("mode")) or "unconfigured"
     out: dict = {"mode": a.mode, "apply": a.apply, "existing_mode": cur_mode}
     if a.apply and cur_mode not in ("unconfigured", None) and not a.force:

@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         b = ws / ".workspace" / "bootstrap.json"
         if b.is_file():
             try:
-                data = json.loads(b.read_text(encoding="utf-8"))
+                data = json.loads(b.read_text(encoding="utf-8-sig"))
                 clone = (data.get("template") or {}).get("clone_path")
             except Exception:
                 clone = None
