@@ -2,6 +2,17 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.7（2026-11-09）：Windows CI 上的编码崩溃
+
+- **根因**：`scripts/template_sync.py` 在失败路径上 `print` 中文；Windows 的 CI 管道用 cp1252，
+  `UnicodeEncodeError` 把真正的失败原因盖掉——v3.5.6 的 Windows 作业就是这个红（`test_verify_exception_rolls_back` ERROR）。
+- **修法**：模块导入时对 `sys.stdout` / `sys.stderr` 做 `reconfigure(errors="replace")`，
+  不可编码字符用替代符，而不是在报错路径上再抛一次。
+- **测试加严**：两处就地调用 `main()` 的用例用 `contextlib.redirect_stdout/stderr` 兜住输出，
+  不再受终端编码影响。
+- 复现与验证（Windows 真机，`PYTHONIOENCODING=cp1252`）：旧脚本 + 旧测试 → `UnicodeEncodeError`；
+  新脚本 → `OK`；新脚本 + 新测试 → `OK`。
+
 ## 3.5.6（2026-11-04）：同步改成事务性的——失败不留半套状态
 
 - **`--verify` 不通过默认自动回滚**：以前 verify 报 `clean: false` 只返回 rc=2，工作区停在「模板文件已替换、

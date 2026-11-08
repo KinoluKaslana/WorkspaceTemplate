@@ -26,6 +26,15 @@ import re
 import shutil
 import subprocess
 import sys
+
+# Windows 的控制台/CI 管道常见 cp1252：中文 print 会抛 UnicodeEncodeError，
+# 把真正的失败原因盖掉（Windows CI 上就是这么红的）。改成不可编码字符用替代符，
+# 而不是让脚本在报错路径上再抛一次。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")      # type: ignore[union-attr]
+    except Exception:
+        pass
 import tempfile
 from pathlib import Path
 
