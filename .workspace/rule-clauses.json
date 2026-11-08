@@ -120,7 +120,7 @@
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
       "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。"
     },
-    "file_sha256": "fcfc7b28c1eb7089588a08fa68611cd742b407e0b8a675750bb9b13524db7c84",
+    "file_sha256": "b66b389380a98727e09662e2f6ba56ce9e23af8931ecfe1f6011b53eee9c5463",
     "marked": 118
   },
   "LICENSE": {
@@ -155,12 +155,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "a6726768e52715709dc3e967a81438a3e937d46806c0a6e3bbb404c15d7aa878",
+    "file_sha256": "1e422c890ee9e273333a62c0d747e60e9663704b7d54665d59b5d9ff7f05bc2c",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "7a943827107dc6b256dd95c856ec54a8ed4e51e15deae787fc2914049ea7d6c1",
+    "file_sha256": "bf3fdb347dfcbc8f5cf6630c4c99ea604f198736b3de8e199d3af58cb0aa2de5",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -190,7 +190,7 @@
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "c50c1f4f4ce081cc5c723e004d5e8331e33167409dfa155d8ab8407732f8b4d2",
+    "file_sha256": "b28e029c65a184018b1a0eed4c023775b0e5e94aeb0fb2231ec9189b4c547b41",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -235,7 +235,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "daf15c2a7f28b60b9d6b7dedf8aae887b48f593053d854c123f3e62ad9b0f639",
+    "file_sha256": "81a3b585c49335aef535539a30b49f02bbe8e80c92c4c3b5782eda2275305b20",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -280,7 +280,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "38ed87d27569f905797c8bfeec1fe8ef46fae0f0768b6d6ca514f88a486c9666",
+    "file_sha256": "e8de78b64603308a2d9b86e99456d6385657d9fa0c6bae0efd3a361801aa56ff",
     "marked": 0
   },
   "docs/skills.md": {
@@ -290,7 +290,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "d487a558a787d3ce7466408a4081d93495f51827392cf39e8d13a0ec28a67ded",
+    "file_sha256": "f23ece3e7a4a82e01f9a7bc857632cc7b01acb19c5e3f5d26cdf330934d63853",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -325,7 +325,7 @@
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "72c3c0dd3154b7f551446feb340ed417c60fffdbefe0f6f5e0738d1f5fdcf05a",
+    "file_sha256": "862e01795a04145a0af0721c7e7b95c2bfcc19811ff76160f036e23072117578",
     "marked": 0
   },
   "tests/test_clause_lint.py": {

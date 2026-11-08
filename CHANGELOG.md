@@ -2,6 +2,18 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.6（2026-11-04）：同步改成事务性的——失败不留半套状态
+
+- **`--verify` 不通过默认自动回滚**：以前 verify 报 `clean: false` 只返回 rc=2，工作区停在「模板文件已替换、
+  但校验不过」的中间态，用户得自己记住备份目录再 `--rollback`。现在默认按 MANIFEST 回滚到同步前，
+  打印回滚结果并返回 2；确实想保留现场（例如要对着半成品排查）用新增的 `--keep-on-fail`。
+- **写盘中途异常也自动回滚**：落盘段（复制、`--prune`、bootstrap 更新）整体纳入 try，任一异常按 MANIFEST
+  回滚并返回 rc=3，不再留下「一部分文件是新的」的工作区。
+- 新增 `tests/test_template_sync_rollback.py::Transactional` 三个用例（verify 失败回滚 / `--keep-on-fail` 保留 /
+  写盘异常回滚），并用「关掉自动回滚」做过红灯反证（2 条红）。
+- 说明：`--rollback` 备份机制本来就有（4 个既有用例），缺的是「失败时自动用它」；`git` 只用于从模板仓
+  按 ref 取文件，与回滚无关——无 git 环境下这几个用例是 skip，不是失败。
+
 ## 3.5.5（2026-11-04）：修掉一直 404 的策略徽章
 
 - **根因**：shields 静态徽章是 `/badge/<label>-<message>-<color>`。`policy-v3.5.4-single%20source%20of%20truth-6f42c1`
