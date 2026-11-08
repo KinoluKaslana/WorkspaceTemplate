@@ -125,7 +125,7 @@ uv 未安装时脚本 exit 3 并给安装方式；**不得**替用户联网安�
 
 - `unconfigured` → 按 §0 询问用户：本地版本化 venv（推荐，`§0.1` 流程）或 MCP Python（`§0.2` 流程）。完成后 `workspace_status: active`。
 - `local-venv`/`mcp` → 核验登记信息仍有效（venv 存在、解释器版本一致），失效则按上条重新配置。
-- 验证：`"$WS/.venv-*/bin/python" --version`（或 MCP 工具实测），结果写入 TOOLS.md。
+- 验证：`"$WS/.venv-*/bin/python" --version`（Windows 是 `.venv-*\Scripts\python.exe`；`preflight` 两种布局都认），结果写入 TOOLS.md。
 
 ### 第 6 步：git 标记处置 + 建仓决策（AGENT_RULES §0.3）
 

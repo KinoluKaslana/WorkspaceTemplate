@@ -40,6 +40,23 @@ def sh(*args: str, cwd: Path | None = None) -> tuple[int, str]:
     return p.returncode, (p.stdout or p.stderr).strip()
 
 
+VENV_INTERPRETERS = (("bin", "python"), ("bin", "python3"),
+                     ("Scripts", "python.exe"), ("Scripts", "python3.exe"))
+
+
+def venv_interpreter(venv_dir: Path) -> Path | None:
+    """venv 里的解释器：POSIX 是 `bin/python`，Windows 是 `Scripts/python.exe`。
+
+    只认 `bin/python` 会把所有 Windows/MINGW 工作区判成 mismatch——路径布局是平台事实，
+    不是用户配错。按顺序取第一个真实存在的候选。
+    """
+    for parts in VENV_INTERPRETERS:
+        cand = venv_dir.joinpath(*parts)
+        if cand.is_file():
+            return cand
+    return None
+
+
 def item(id_: str, recorded, actual, status: str, action: str = "") -> dict:
     return {"id": id_, "recorded": recorded, "actual": actual, "status": status, "action": action}
 
@@ -89,13 +106,23 @@ def main(argv: list[str]) -> int:
     mode = py.get("mode")
     if mode in ("local-venv", "uv"):
         ident = ((py.get("runtime") or {}).get("identifier") or "").strip()
-        venv_py = ws / ident / "bin" / "python"
+        # 登记的可能是「venv 目录名」（相对工作区）或绝对路径（含 Windows 盘符写法）
+        if re.match(r"^[A-Za-z]:[\\/]", ident):
+            venv_dir = Path(ident.replace("\\", "/"))
+        else:
+            venv_dir = Path(ident) if ident else ws
+            if ident and not venv_dir.is_absolute():
+                venv_dir = ws / ident
+        venv_py = venv_interpreter(venv_dir) if ident else None
         want = py.get("version") or (py.get("runtime") or {}).get("version")
         if not ident:
             rows.append(item("python", "未记录 identifier", "", BAD, "回写 bootstrap.python.runtime.identifier"))
-        elif not venv_py.exists():
-            rows.append(item("python", str(venv_py), "missing", BAD,
-                             "本机按 §0.1 重建 venv（venv 目录不跨设备共享）"))
+        elif venv_py is None:
+            rows.append(item("python", {"venv": str(venv_dir),
+                                        "searched": [f"{a}/{b}" for a, b in VENV_INTERPRETERS]},
+                             "missing", BAD,
+                             "本机按 §0.1 重建 venv（venv 目录不跨设备共享）；"
+                             "POSIX 是 bin/python，Windows 是 Scripts/python.exe"))
         else:
             _, out = sh(str(venv_py), "-c", "import sys;print(sys.version.split()[0])")
             ok = (not want) or out.startswith(str(want))

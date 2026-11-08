@@ -39,6 +39,22 @@ def run(cmd: list[str], **kw) -> tuple[int, str]:
     return p.returncode, (p.stdout or p.stderr).strip()
 
 
+VENV_INTERPRETERS = (("bin", "python"), ("bin", "python3"),
+                     ("Scripts", "python.exe"), ("Scripts", "python3.exe"))
+
+
+def venv_interpreter(vdir: Path) -> Path | None:
+    """venv 里的解释器：POSIX 是 bin/python，Windows 是 Scripts/python.exe。
+
+    与 workspace_preflight.py 的同名函数保持一致（两处都是"判断 venv 是否可用"的唯一口径）。
+    """
+    for parts in VENV_INTERPRETERS:
+        cand = vdir.joinpath(*parts)
+        if cand.is_file():
+            return cand
+    return None
+
+
 def py_version(exe: str) -> str | None:
     rc, out = run([exe, "-c", "import sys;print(sys.version.split()[0])"])
     return out if rc == 0 else None
@@ -102,8 +118,8 @@ def main(argv: list[str]) -> int:
             out["venv"] = {"path": str(vdir), "created": True}
         else:
             out["venv"] = {"path": str(vdir), "created": False, "would_create": True}
-        py = vdir / "bin" / "python"
-        ver = py_version(str(py)) if py.exists() else None
+        py = venv_interpreter(vdir)
+        ver = py_version(str(py)) if py else None
         out.update({"uv": uv, "uv_version": uv_ver, "python_version": ver,
                     "identifier": vdir.name})
         if a.apply:
@@ -136,8 +152,8 @@ def main(argv: list[str]) -> int:
             out["venv"] = {"path": str(vdir), "created": True}
         else:
             out["venv"] = {"path": str(vdir), "created": False, "would_create": True}
-        py = vdir / "bin" / "python"
-        ver = py_version(str(py)) if py.exists() else None
+        py = venv_interpreter(vdir)
+        ver = py_version(str(py)) if py else None
         out.update({"python_version": ver, "identifier": vdir.name})
         if a.apply:
             pysec = boot.setdefault("python", {})

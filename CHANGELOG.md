@@ -11,6 +11,7 @@
   回滚并返回 rc=3，不再留下「一部分文件是新的」的工作区。
 - 新增 `tests/test_template_sync_rollback.py::Transactional` 三个用例（verify 失败回滚 / `--keep-on-fail` 保留 /
   写盘异常回滚），并用「关掉自动回滚」做过红灯反证（2 条红）。
+- **`preflight` 的 Python 项不再写死 POSIX 路径**：以前只查 `<venv>/bin/python`，Windows / MINGW 的 venv 是 `<venv>/Scripts/python.exe`，于是那条**永远 mismatch**（不是用户配错）。现在按 `bin/python`、`bin/python3`、`Scripts/python.exe`、`Scripts/python3.exe` 顺序取第一个存在的；`pyenv_init.py` 用同一口径判断刚建的 venv 是否可用。新增 3 条用例（两种布局 + 都没有时返回 None）+ 1 条 Windows 布局的端到端用例，并用「只留 bin/python」做过红灯反证（2 条红）。
 - 说明：`--rollback` 备份机制本来就有（4 个既有用例），缺的是「失败时自动用它」；`git` 只用于从模板仓
   按 ref 取文件，与回滚无关——无 git 环境下这几个用例是 skip，不是失败。
 
