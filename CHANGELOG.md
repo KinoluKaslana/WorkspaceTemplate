@@ -12,6 +12,9 @@
 - 新增 `tests/test_template_sync_rollback.py::Transactional` 三个用例（verify 失败回滚 / `--keep-on-fail` 保留 /
   写盘异常回滚），并用「关掉自动回滚」做过红灯反证（2 条红）。
 - **`preflight` 的 Python 项不再写死 POSIX 路径**：以前只查 `<venv>/bin/python`，Windows / MINGW 的 venv 是 `<venv>/Scripts/python.exe`，于是那条**永远 mismatch**（不是用户配错）。现在按 `bin/python`、`bin/python3`、`Scripts/python.exe`、`Scripts/python3.exe` 顺序取第一个存在的；`pyenv_init.py` 用同一口径判断刚建的 venv 是否可用。新增 3 条用例（两种布局 + 都没有时返回 None）+ 1 条 Windows 布局的端到端用例，并用「只留 bin/python」做过红灯反证（2 条红）。
+- **跨平台口径补齐（审议席 must-change）**：R5/R7、`README.md`、`README_EN.md`、`TOOLS.md` 的装包命令原来只写 `<venv>/bin/python`，Windows 上是错的；现在统一注明 `<venv>\Scripts\python.exe`。§13 的「六脚本」按实测改为「七脚本」，与 `docs/hooks-catalog.md` 对齐。
+- **回滚失败单独可见**：同步失败且回滚也失败时返回 **rc=4**（需按 `MANIFEST.txt` 手工恢复），不再与「已回滚」共用 rc=3；`--verify` 的校验器本身起不来（抛异常）也走回滚，返回 3。
+- 测试加严：回滚后 `bootstrap.json` **逐字节**与同步前一致（不只比版本字段）；新增校验器异常注入用例。
 - 说明：`--rollback` 备份机制本来就有（4 个既有用例），缺的是「失败时自动用它」；`git` 只用于从模板仓
   按 ref 取文件，与回滚无关——无 git 环境下这几个用例是 skip，不是失败。
 

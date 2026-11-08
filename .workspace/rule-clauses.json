@@ -5,9 +5,9 @@
       "R2": "## 0. 首次启动：必须询问 Python 运行时选择",
       "R3": "### 0.1 创建本地版本化 venv（uv 默认 / 手动）",
       "R4": "1. 只读盘点 `python3`/`python` 的路径与版本，并检测 `uv` 是否存在（`command -v uv && uv --version`）；模板脚本需 Python ≥3.10，更旧时报告限制并请用户选择（装新运行时/MCP/明确授权适配），不静默降级。",
-      "R5": "2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python .venv-312/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `.venv-312/bin/python -m pip install <pkg>`。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。",
+      "R5": "2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python <venv>/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `<venv>/bin/python -m pip install <pkg>`。**Windows 上解释器在 `<venv>\\Scripts\\python.exe`**，上述 `<venv>/bin/python` 一律按此替换（`scripts/workspace_preflight.py` 两种布局都认）。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。",
       "R6": "3. 初始化只创建运行时，**不得**联网升级包管理器、**不得**预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。",
-      "R7": "4. 验证 `<venv>/bin/python` 的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。",
+      "R7": "4. 验证 `<venv>/bin/python`（Windows：`<venv>\\Scripts\\python.exe`）的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。",
       "R8": "5. **必须**将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。",
       "R9": "### 0.2 选择 MCP Python",
       "R10": "1. 检查会话实际可用的 MCP Python 工具，记录 provider/server、tool 名、版本、文件系统/网络/依赖持久性与输出限制。",
@@ -120,7 +120,7 @@
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
       "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。"
     },
-    "file_sha256": "b66b389380a98727e09662e2f6ba56ce9e23af8931ecfe1f6011b53eee9c5463",
+    "file_sha256": "65ac0ebb31dcf2586fcfdccf5ca5fb2f0e0d0dbe9cb60aec71a89cfa973dd09a",
     "marked": 118
   },
   "LICENSE": {
@@ -155,12 +155,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "1e422c890ee9e273333a62c0d747e60e9663704b7d54665d59b5d9ff7f05bc2c",
+    "file_sha256": "d87aa0fc8a5b47ed5e226af8d5fb5ed34d133a8b5ed7faf160bd1307c1727c07",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "bf3fdb347dfcbc8f5cf6630c4c99ea604f198736b3de8e199d3af58cb0aa2de5",
+    "file_sha256": "29908b34473486ece6c5036faf63c48df1d1eb9f30d05797369b7944787efdfc",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -235,7 +235,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "81a3b585c49335aef535539a30b49f02bbe8e80c92c4c3b5782eda2275305b20",
+    "file_sha256": "69c179dd13f4a36a2ba2f2baf3feee52656a9fe7a25c64db94c772ae19102565",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -290,7 +290,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "f23ece3e7a4a82e01f9a7bc857632cc7b01acb19c5e3f5d26cdf330934d63853",
+    "file_sha256": "e77dfbcb22b3c9f865c378265b5477418332bf92b7782f90c507c95509e08571",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -325,7 +325,7 @@
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "862e01795a04145a0af0721c7e7b95c2bfcc19811ff76160f036e23072117578",
+    "file_sha256": "548564b5e655c47e0b052b259b32f4f2ceb80d99e635f7e82da9c997121fec3b",
     "marked": 0
   },
   "tests/test_clause_lint.py": {

@@ -125,7 +125,7 @@ The three Python modes are mutually exclusive; switching later requires an expli
 |---|---|---|---|
 | Best for | Fast, reproducible dependency resolution | A box with a known-good interpreter and no uv | No local Python initialization, or a managed compute environment |
 | Initialization | `uv venv .venv-<mm> --python <ver>` | `<python> -m venv .venv-<mm>` | Creates no local venv |
-| Installing packages | `uv pip install --python .venv-<mm>/bin/python <pkg>` | `.venv-<mm>/bin/python -m pip install <pkg>` | Depends on verified MCP capabilities |
+| Installing packages | `uv pip install --python .venv-<mm>/bin/python <pkg>`（Windows：`.venv-<mm>\Scripts\python.exe`） | `.venv-<mm>/bin/python -m pip install <pkg>`（Windows 同上） | Depends on verified MCP capabilities |
 | Network by default | No; **when uv is missing we only show install methods, never install it for you** | No | Depends on the provider |
 | Dependency persistence | Persists inside the venv | Persists inside the venv | Must not be assumed |
 | If unavailable | `pyenv_init.py` exits 3 with install methods; the user may decline | Reports the exact interpreter or `venv`-module blocker | Never pretends configuration succeeded |

@@ -157,10 +157,13 @@ class Transactional(unittest.TestCase):
                               capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
 
     def test_verify_failure_rolls_back(self):
+        boot_before = (self.ws / ".workspace" / "bootstrap.json").read_bytes()
         p = self.run_sync("--apply", "--verify")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("自动回滚", p.stderr)
         self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
+        # bootstrap 逐字节回到同步前（含 python/gate 段，不只是版本字段）
+        self.assertEqual((self.ws / ".workspace" / "bootstrap.json").read_bytes(), boot_before)
         self.assertFalse((self.ws / "scripts").exists())      # 本次新增的目录被清掉
         boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
         self.assertEqual((boot.get("template") or {}).get("current_policy_version"), "2.4.0")
@@ -170,6 +173,29 @@ class Transactional(unittest.TestCase):
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertNotIn("自动回滚", p.stderr)          # 明确要求保留：不回滚
         self.assertIn("9.9.9", (self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"))
+
+    def test_verify_exception_rolls_back(self):
+        """校验器本身抛异常（不是 clean:false）也要回滚，rc=3。"""
+        import importlib.util
+        import unittest.mock as mock
+
+        spec = importlib.util.spec_from_file_location("tpl_sync_mod", SYNC)
+        mod = importlib.util.module_from_spec(spec)          # type: ignore[arg-type]
+        spec.loader.exec_module(mod)                          # type: ignore[union-attr]
+        real_run = subprocess.run
+
+        def fake_run(cmd, *a, **kw):
+            if any("verify_rules.py" in str(c) for c in cmd):
+                raise FileNotFoundError("injected: verify 起不来")
+            return real_run(cmd, *a, **kw)
+
+        boot_before = (self.ws / ".workspace" / "bootstrap.json").read_bytes()
+        with mock.patch.object(mod.subprocess, "run", side_effect=fake_run):
+            rc = mod.main(["--workspace", str(self.ws), "--template", str(self.tpl),
+                           "--ref", "HEAD", "--apply", "--verify"])
+        self.assertEqual(rc, 3)
+        self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
+        self.assertEqual((self.ws / ".workspace" / "bootstrap.json").read_bytes(), boot_before)
 
     @unittest.skipIf(os.name == "nt", "Windows 上创建符号链接需要额外权限")
     def test_write_failure_rolls_back(self):

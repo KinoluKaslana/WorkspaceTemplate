@@ -405,7 +405,10 @@ def main(argv: list[str]) -> int:
             report["copied"] = []
             if a.json:
                 print(json.dumps(report, ensure_ascii=False))
-            print(f"已自动回滚（backup={backup}, rc={rb}）", file=sys.stderr)
+            if rb != 0:
+                print(f"回滚也失败（rc={rb}）：按 {backup}/MANIFEST.txt 手工恢复", file=sys.stderr)
+                return 4
+            print(f"已自动回滚（backup={backup}）", file=sys.stderr)
             return 3
 
         python_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8")).get("python"),
@@ -423,10 +426,22 @@ def main(argv: list[str]) -> int:
         verify = None
         if a.verify:
             out_json = ws / ".workspace" / ".verify-tmp.json"
-            p = subprocess.run([sys.executable, str(ws / "scripts" / "verify_rules.py"),
-                                "--workspace", str(ws), "--vs-template", str(wt),
-                                "--json", str(out_json)],
-                               cwd=ws, capture_output=True, text=True)
+            try:
+                p = subprocess.run([sys.executable, str(ws / "scripts" / "verify_rules.py"),
+                                    "--workspace", str(ws), "--vs-template", str(wt),
+                                    "--json", str(out_json)],
+                                   cwd=ws, capture_output=True, text=True)
+            except Exception as exc:  # noqa: BLE001 —— 校验器本身起不来也算同步失败
+                rb = _rollback(ws, backup)
+                report["auto_rollback"] = {"reason": f"verify-exception: {exc}", "rollback_rc": rb}
+                print(f"verify 无法运行：{exc}", file=sys.stderr)
+                if a.json:
+                    print(json.dumps(report, ensure_ascii=False))
+                if rb != 0:
+                    print(f"回滚也失败（rc={rb}）：按 {backup}/MANIFEST.txt 手工恢复", file=sys.stderr)
+                    return 4
+                print(f"已自动回滚（backup={backup}）", file=sys.stderr)
+                return 3
             try:
                 verify = json.loads(out_json.read_text(encoding="utf-8"))
             except Exception:
@@ -438,7 +453,13 @@ def main(argv: list[str]) -> int:
                 # 校验不通过 = 这次同步没有产出可用的工作区：回到同步前，而不是留一套半对的状态
                 rb = _rollback(ws, backup)
                 report["auto_rollback"] = {"reason": "verify-not-clean", "rollback_rc": rb}
-                print(f"verify 未通过，已自动回滚（backup={backup}, rc={rb}）；"
+                if rb != 0:
+                    print(f"verify 未通过且回滚失败（rc={rb}）：按 {backup}/MANIFEST.txt 手工恢复",
+                          file=sys.stderr)
+                    if a.json:
+                        print(json.dumps(report, ensure_ascii=False))
+                    return 4
+                print(f"verify 未通过，已自动回滚（backup={backup}）；"
                       f"要用当前结果请加 --keep-on-fail", file=sys.stderr)
                 if a.json:
                     print(json.dumps(report, ensure_ascii=False))

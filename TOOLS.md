@@ -75,8 +75,8 @@ CC 的 Bash 归因走**转录回放**（`cc_transcript.py`）：只读 platform 
 初始化后把完整调用写成：
 
 ```bash
-<workspace-root>/.venv-<major><minor>/bin/python <script.py>
-<workspace-root>/.venv-<major><minor>/bin/python -m pip install <required-package>
+<workspace-root>/.venv-<major><minor>/bin/python <script.py>          # Windows: .venv-<mm>\Scripts\python.exe
+<workspace-root>/.venv-<major><minor>/bin/python -m pip install <required-package>   # Windows 同上
 ```
 
 只在当前任务需要时新增兼容依赖；不直接用系统 Python 运行任务脚本，不向系统 site-packages 安装。

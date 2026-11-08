@@ -170,7 +170,7 @@ flowchart LR
 |---|---|---|---|
 | 适合 | 想要快、可复现、依赖解析稳定的项目 | 机器已有合意解释器、不想引入 uv | 不希望初始化本地 Python，或客户端已有受管计算环境 |
 | 初始化 | `uv venv .venv-<mm> --python <ver>` | `<python> -m venv .venv-<mm>` | 不创建本地 venv |
-| 装包 | `uv pip install --python .venv-<mm>/bin/python <pkg>` | `.venv-<mm>/bin/python -m pip install <pkg>` | 取决于 MCP 能力，必须登记 |
+| 装包 | `uv pip install --python .venv-<mm>/bin/python <pkg>`（Windows：`.venv-<mm>\Scripts\python.exe`） | `.venv-<mm>/bin/python -m pip install <pkg>`（Windows 同上） | 取决于 MCP 能力，必须登记 |
 | 默认联网 | 否；**uv 缺失只提示安装方式，不自动装** | 否 | 取决于 MCP 实测能力 |
 | 依赖持久性 | venv 内持久保存 | venv 内持久保存 | 取决于 provider，不能假定 |
 | 不可用时 | exit 3 + 安装方式；用户可拒绝 | 报告解释器或 `venv` 模块的精确阻塞 | 不伪装成功，请用户接入 MCP 或回退 |

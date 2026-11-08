@@ -24,9 +24,9 @@
 ### 0.1 创建本地版本化 venv（uv 默认 / 手动） <!-- id:R3 -->
 
 1. 只读盘点 `python3`/`python` 的路径与版本，并检测 `uv` 是否存在（`command -v uv && uv --version`）；模板脚本需 Python ≥3.10，更旧时报告限制并请用户选择（装新运行时/MCP/明确授权适配），不静默降级。 <!-- id:R4 -->
-2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python .venv-312/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `.venv-312/bin/python -m pip install <pkg>`。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。 <!-- id:R5 -->
+2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python <venv>/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `<venv>/bin/python -m pip install <pkg>`。**Windows 上解释器在 `<venv>\Scripts\python.exe`**，上述 `<venv>/bin/python` 一律按此替换（`scripts/workspace_preflight.py` 两种布局都认）。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。 <!-- id:R5 -->
 3. 初始化只创建运行时，**不得**联网升级包管理器、**不得**预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。 <!-- id:R6 -->
-4. 验证 `<venv>/bin/python` 的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。 <!-- id:R7 -->
+4. 验证 `<venv>/bin/python`（Windows：`<venv>\Scripts\python.exe`）的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。 <!-- id:R7 -->
 5. **必须**将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。 <!-- id:R8 -->
 
 若候选解释器不存在、`venv` 模块缺失或创建需要系统包/提权，不绕过审批；向用户报告精确阻塞，征求安装授权或改用 MCP Python。
@@ -184,7 +184,7 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 
 ## 13. 客户端治理 hook（Claude Code / Codex） <!-- id:R101 -->
 
-模板随仓库分发客户端写前守门 hook（`.workspace/hooks/` 六脚本 + `.codex/hooks.json` + `.claude/settings.json`，均随 `TEMPLATE_FILES` 哈希锁定）：在 Codex CLI / Claude Code 的 hook 层落地「先读再写」，是 §12 的客户端侧扩展；脚本清单、拒绝码、审计事件与静态可判写清单见 `docs/hooks-catalog.md` §2.6：
+模板随仓库分发客户端写前守门 hook（`.workspace/hooks/` 七脚本 + `.codex/hooks.json` + `.claude/settings.json`，均随 `TEMPLATE_FILES` 哈希锁定）：在 Codex CLI / Claude Code 的 hook 层落地「先读再写」，是 §12 的客户端侧扩展；脚本清单、拒绝码、审计事件与静态可判写清单见 `docs/hooks-catalog.md` §2.6：
 
 1. **适用与身份**：只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份由 `bootstrap.json` 存在性承担；脚本在 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定。**身份粒度**：状态键 `session_id`，子 agent 再拼 `.agent_id`（CC 主子共用 `session_id`，实测；Codex 子 agent payload 带 `agent_id`），**账本不继承父读证据；仅经 R98 的有效委托引用父证据**；`SubagentStart`/`SubagentStop` 落 `agent-start`/`agent-stop`。 <!-- id:R102 -->
 2. **守门判据**：Codex `apply_patch` 与 Bash 静态可判写（清单见 catalog §2.6）在目标属本工作区且未完整读 gate 当前修订时 deny；解释器/包装类未读即 deny；其余不可判形态只审计不拦（`unresolved-command`）。 <!-- id:R103 -->
