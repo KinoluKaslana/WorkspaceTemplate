@@ -1,14 +1,14 @@
 # 架构：政策 · 守门 · 流程 · 工具
 
 > 实现说明，不构成政策。判定口径以 [`AGENT_RULES.md`](../AGENT_RULES.md) 为准。
-> 当前对应：政策 **3.5.8** · 插件 **1.9.0** · `TEMPLATE_FILES` **78** 项 · skills **7** 个 · scripts **15** 个。
+> 当前对应：政策 **3.5.9** · 插件 **1.9.0** · `TEMPLATE_FILES` **78** 项 · skills **7** 个 · scripts **15** 个。
 
 ## 1. 四层模型
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ ① 政策层  AGENT_RULES.md（+ *.custom.md）                     │
-│    唯一权威；条款 ID R1..R118；模板层锁定只读                  │
+│    唯一权威；条款 ID R1..R127；模板层锁定只读                  │
 └───────────────┬──────────────────────────────────────────────┘
                 │ 读（主 Agent 每任务完整读并常驻）
 ┌───────────────▼──────────────────────────────────────────────┐
@@ -78,7 +78,7 @@ Agent 决定写 X
 | 仓库共享 | `notes/`、`skills/`、`scripts/`、`docs/` | 走 git；冲突由用户裁决 |
 | 派生/易变 | `docs/.index.json`、`notes/INDEX.md`、`.hook-state/` | 拉取后重建；`.hook-state/` 必须被 gitignore |
 
-`workspace_preflight.py` 把这三类差异摊开（10 项），`workspace-repo-sync` skill 负责按用户裁决执行。
+`workspace_preflight.py` 把这三类差异摊开（11 项），`workspace-repo-sync` skill 负责按用户裁决执行。
 
 ## 6. 模板演进与实例的关系
 

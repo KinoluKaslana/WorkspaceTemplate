@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import platform
 import shutil
@@ -114,6 +115,8 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", default=".")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--record-readme", default="", metavar="MODE",
+                    help="记录 README 决策：auto=按工作区内容自动生成 / provided=用户提供说明后结合生成 / declined=不重构")
     ap.add_argument("--layout-only", action="store_true",
                     help="只读诊断：打印本机 venv 布局 JSON（exit 0=找到解释器，3=没有）")
     ap.add_argument("--strict", action="store_true")
@@ -127,6 +130,18 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
     boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
+    if a.record_readme:
+        mode = a.record_readme.strip().lower()
+        allowed = {"auto": "generated-auto", "provided": "generated-provided", "declined": "declined"}
+        if mode not in allowed:
+            print(json.dumps({"error": "bad-mode", "allowed": sorted(allowed)}, ensure_ascii=False))
+            return 2
+        rd = boot.setdefault("readme", {})
+        rd.update({"status": allowed[mode], "mode": mode,
+                   "decided_at": dt.datetime.now().isoformat(timespec="seconds")})
+        boot_p.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"readme": rd}, ensure_ascii=False))
+        return 0
     if a.layout_only:
         pysec = boot.get("python") or {}
         mode = pysec.get("mode") or "unconfigured"
@@ -347,6 +362,23 @@ def main(argv: list[str]) -> int:
                          "" if same else "remote 与 bootstrap 不一致：确认后更新记录"))
     else:
         rows.append(item("git", "initialized?", "no .git", WARN, "本机无仓库：clone 或按 git-init 建仓"))
+
+    # 10) README 决策（§0.4）：建仓后必须问过用户"要不要重构 README"，并记录用户选的方式
+    README_STATES = {"undecided", "generated-auto", "generated-provided", "declined"}
+    rd = boot.get("readme") or {}
+    rd_status = (rd.get("status") or "undecided").strip()
+    git_ready = ((boot.get("git") or {}).get("status") == "initialized")
+    if rd_status not in README_STATES:
+        rows.append(item("readme", rd_status, sorted(README_STATES), BAD,
+                         "bootstrap.readme.status 非法：只允许 " + "/".join(sorted(README_STATES))))
+    elif git_ready and rd_status == "undecided":
+        rows.append(item("readme", "undecided", "git=initialized", WARN,
+                         "建仓后未记录 README 决策：先问用户是否需要重构，再记 --record-readme auto|provided|declined"))
+    elif rd_status != "undecided" and not rd.get("decided_at"):
+        rows.append(item("readme", {"status": rd_status}, "缺 decided_at", BAD,
+                         "记录决策时间（--record-readme 会写入）"))
+    else:
+        rows.append(item("readme", rd_status, rd.get("mode") or "—", OK))
 
     bad = [r for r in rows if r["status"] == BAD]
     warn = [r for r in rows if r["status"] == WARN]

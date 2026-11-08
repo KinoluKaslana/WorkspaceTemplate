@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`3.5.8`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`3.5.9`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -48,6 +48,9 @@
 2. **询问建仓决策**：用户选择（a）立即建仓——Agent 引导 `git init` + 首次提交 + 用户自己的 remote（多设备同步）；或（b）暂不建仓——保持纯文件工作区，后续用户可随时要求执行 git-init skill。 <!-- id:R16 -->
 3. **记录到 bootstrap**：`git` 节记录 `status`（`initialized` / `declined`）、remote、初始化日期；`declined` 不是终态，后续执行 git-init skill 时翻转为 `initialized`。 <!-- id:R17 -->
 4. 本节流程由 `.workspace/skills/` 下两个 skill 承载：`workspace-init`（首次初始化）、`git-init`（后补建仓）；步骤以 skill 正文为准。模板层文件同步（含按分支/标签/提交取用）走 `template-update`。 <!-- id:R18 -->
+
+
+建仓完成后按 §16 处理 README（是否重构、以及用哪种方式生成）。
 
 ## 1. 角色、业务与工作模式 <!-- id:R19 -->
 
@@ -213,3 +216,16 @@ gate 是否在跑取决于 **harness 的启动方式**，不是工作区的属�
 3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入 `.workspace/bootstrap.json`；机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。 <!-- id:R116 -->
 4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。 <!-- id:R117 -->
 5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。 <!-- id:R118 -->
+
+## 16. 建仓后的 README 决策（§0.3 的补充） <!-- id:R119 -->
+
+用户完成建仓（`git.status` 变为 `initialized`，含当场建仓）后，Agent 按本节处理 README。
+
+1. 建仓动作完成后，Agent **必须**询问用户是否需要重构 README。 <!-- id:R120 -->
+2. 用户回答需要时，Agent **必须**让用户在两种生成方式中明确选择其一：自动生成（仅依据工作区现有内容）或说明后生成（用户先提供说明/要点，再结合工作区现有内容）。 <!-- id:R121 -->
+3. 用户未明确选择前，Agent **不得**开始生成 README。 <!-- id:R122 -->
+4. 两种方式都**必须**以工作区现有内容为准（现有文件、skills、脚本、notes、政策条款）。 <!-- id:R123 -->
+5. Agent **不得**编造工作区中不存在的功能、命令或目录。 <!-- id:R124 -->
+6. 用户说明与工作区事实冲突时，按用户说明写，并**必须**在交付时指出冲突点。 <!-- id:R125 -->
+7. 决策**必须**写入 `.workspace/bootstrap.json` 的 `readme` 节（`status` 为 `generated-auto` / `generated-provided` / `declined`，未决策保持 `undecided`，并记 `mode` 与 `decided_at`），机械入口 `python3 scripts/workspace_preflight.py --record-readme auto|provided|declined`。 <!-- id:R126 -->
+8. 生成结果**必须**经用户确认后才写入 `README.md`；该文件是用户首页，模板同步豁免。 <!-- id:R127 -->

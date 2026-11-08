@@ -146,6 +146,47 @@ class Preflight(unittest.TestCase):
                    cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
         return p.returncode, json.loads(p.stdout)
 
+    def test_p20_readme_undecided_after_git_init_warns(self):
+        """建仓后必须有过 README 决策；只 warn 不 mismatch（它不阻塞，但必须被看见）。"""
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["git"] = {"status": "initialized", "remote": "", "default_branch": "main"}
+        boot.pop("readme", None)
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        rc, data = run(self.ws)
+        item = [i for i in data["items"] if i["id"] == "readme"][0]
+        self.assertEqual(item["status"], "warn", item)
+        self.assertIn("--record-readme", item["action"])
+
+    def test_p21_readme_bad_status_is_mismatch(self):
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["readme"] = {"status": "whatever"}
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        rc, data = run(self.ws)
+        self.assertEqual(rc, 1, data)
+        self.assertIn("readme", {i["id"] for i in data["items"] if i["status"] == "mismatch"})
+
+    def test_p22_record_readme_writes_and_verifies(self):
+        """机械入口：--record-readme 写 bootstrap.readme，随后 preflight 该项转 ok。"""
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["git"] = {"status": "initialized", "remote": "", "default_branch": "main"}
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        import subprocess as sp
+        p = sp.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--record-readme", "provided"],
+                   cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        saved = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))["readme"]
+        self.assertEqual(saved["status"], "generated-provided")
+        self.assertTrue(saved["decided_at"])
+        rc, data = run(self.ws)
+        item = [i for i in data["items"] if i["id"] == "readme"][0]
+        self.assertEqual(item["status"], "ok", item)
+
+    def test_p23_record_readme_rejects_bad_mode(self):
+        import subprocess as sp
+        p = sp.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--record-readme", "auto-magic"],
+                   cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+
     def test_p16_bootstrap_with_bom(self):
         """Windows 的 PowerShell/记事本会写 UTF-8 BOM；带 BOM 的 bootstrap.json 也必须能读。
 

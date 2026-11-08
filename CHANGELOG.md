@@ -2,6 +2,21 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.9（2026-11-09）：建仓后的 README 决策（§0.4）
+
+- **新条款 §0.4（R119–R127）**：用户建仓后，Agent **必须**先问"是否需要重构 README"；
+  需要时**必须**让用户在两种方式中明确选一个——`auto`（仅依据工作区现有内容生成）或
+  `provided`（用户先给说明/要点，再结合现有内容生成）；未明确选择前**不得**动笔。
+  两种方式都以工作区事实为准、**不得**编造不存在的功能/命令/目录；`provided` 下用户说明与事实冲突时按用户说明写，
+  但**必须**在交付时点名冲突。
+- **四层对齐**（与 Python 选择同级）：
+  1. 政策条款 `AGENT_RULES.md` §0.4；
+  2. 状态节 `bootstrap.readme = {status, mode, decided_at}`（默认 `undecided`）；
+  3. 机械入口 `python3 scripts/workspace_preflight.py --record-readme auto|provided|declined`；
+  4. 预检第 11 项 `readme`：建仓后仍 `undecided` → **warn**（不阻塞，但必须被看见），状态非法或缺 `decided_at` → mismatch。
+- 流程落点：`git-init` skill 由「五步」扩为「六步」（第 5 步即 README 决策，v1.2.0）；
+  `workspace-init` 增第 6b 步（v1.3.0）。文档计数 10 项 → 11 项、条款 118 → 127。
+
 ## 3.5.8（2026-11-09）：venv 布局口径收敛到一处 + 只读诊断
 
 - **消掉复制粘贴**：`scripts/pyenv_init.py` 原来自己复制了一份 `VENV_INTERPRETERS` / `venv_interpreter`

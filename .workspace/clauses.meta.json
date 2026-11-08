@@ -706,5 +706,59 @@
     "trigger": "gate-wiring",
     "check": "manual:结论形式（接线或用户明确接受无 gate）需人判断",
     "reviewed": true
+  },
+  "R119": {
+    "severity": "INFO",
+    "trigger": "readme-decision",
+    "check": "",
+    "reviewed": true
+  },
+  "R120": {
+    "severity": "MUST",
+    "trigger": "readme-decision",
+    "check": "manual:是否询问属交互义务；机械侧只能校记录（R126）",
+    "reviewed": true
+  },
+  "R121": {
+    "severity": "MUST",
+    "trigger": "readme-decision",
+    "check": "manual:二选一必须由用户明确表达，Agent 不得代选",
+    "reviewed": true
+  },
+  "R122": {
+    "severity": "MUST_NOT",
+    "trigger": "readme-decision",
+    "check": "manual:是否在用户选择前就动笔，属过程义务",
+    "reviewed": true
+  },
+  "R123": {
+    "severity": "MUST",
+    "trigger": "readme-decision",
+    "check": "manual:是否以工作区事实为准，需人读交付物",
+    "reviewed": true
+  },
+  "R124": {
+    "severity": "MUST_NOT",
+    "trigger": "readme-decision",
+    "check": "manual:是否编造不存在的功能/命令/目录，需人读交付物",
+    "reviewed": true
+  },
+  "R125": {
+    "severity": "MUST",
+    "trigger": "readme-decision",
+    "check": "manual:冲突是否在交付时点名，需人读交付说明",
+    "reviewed": true
+  },
+  "R126": {
+    "severity": "MUST",
+    "trigger": "readme-decision",
+    "check": "python3 scripts/workspace_preflight.py",
+    "reviewed": true
+  },
+  "R127": {
+    "severity": "MUST",
+    "trigger": "readme-decision",
+    "check": "manual:写盘前是否取得用户确认，属交互义务",
+    "reviewed": true
   }
 }

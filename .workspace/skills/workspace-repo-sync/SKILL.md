@@ -38,7 +38,7 @@ python3 scripts/workspace_preflight.py            # 人读
 python3 scripts/workspace_preflight.py --json     # 机器读
 ```
 
-输出 10 项：`host / workspace_root / python / gate / template_clone / skills / template_files / notes_index / docs_index / git`，
+输出 11 项：`host / workspace_root / python / gate / template_clone / skills / template_files / notes_index / docs_index / git / readme`，
 每项带 `recorded / actual / status / action`。判定：
 
 | status | 含义 | 动作 |
