@@ -107,7 +107,7 @@
       "R104": "3. **客户端差异（必须明说）**：CC 仅 `Write`/`Edit` 受管，**Bash 写不订阅、不拦截**；`Stop`/`SessionEnd` 的差集与指纹锚只到文件/目录级，但**可经转录回放做事后归因**（子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放，作用域含 `.agent_id`）。**事后归因不等于拦截**，`would_deny=true` 不表示写入被阻止；转录可被同 uid 删改，不得据此推断整仓受管。命令原文默认不落盘（只记 digest），需 `audit_command_text=true` 显式开启。回放与归因细则见 catalog §2.7。",
       "R105": "4. **证据与审计**：读证据绑指纹 `c<size>:<sha256>` 与覆盖 `1..total`；审计十三型（清单见 catalog §2.6）。`gate-deny` 记拒绝本身，作用域含 `.agent_id`，可在 `audit-<client>.jsonl` 独立核验。写前 `gate-intent` → 写后 `gate-commit` 对账，缺失一侧记 `unobserved-write`（**不表示通过**）。只记路径/哈希/会话/动作，不落正文。`unresolved-command` 只含 `tool_use_id`/`client`/`digest`/`class`，不落原文、不可直读归因；`worktree-change` 粒度受 git 限制，文件级归因须由 `completion-gate` 补证。账本轮转与压缩规则见 catalog §2.7。",
       "R106": "5. **调参与豁免**：行为调参写 `.workspace/gate.custom.json`（`enabled`/`gate_files`/`write_tools`）；合法直改 gate 文件用**操作级单次令牌**（`python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --ttl 300`），令牌单次消耗、目标集合精确匹配、无通配；不得以「父 Agent 身份」作为豁免依据（payload 无身份字段）。",
-      "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（10 个 definition，含 SubagentStart/Stop），变更需重审；CC `-p` 免信任但会执行仓内 hook，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，守门只防「无意识跳过」。",
+      "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（10 个 definition，含 SubagentStart/Stop）；`.codex/hooks.json` 任一命令变更后既有 `trusted_hash` 失效，codex 会要求重新信任（`Hooks need review`），不重走则该 hook 不执行（客户端 fail-open）；CC `-p` 免信任但会执行仓内 hook，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，守门只防「无意识跳过」。",
       "R108": "7. **子 Agent 任务书（extends R66）**：派发前必须交付，至少含 ①用户目标与验收 ②精确工作区与**可写目标集合**（逐项绝对路径，禁通配）③只读范围 ④禁止动作（显式含 R67 中央文件）⑤授权来源（父会话标识 + 父已读政策的声明）；并据以为该子会话签发委托记录。**可写集合不得超出父自身已授权范围，不得包含治理文件与 R67 中央文件**；未列出的目标子 Agent 一律不得写。",
       "R109": "## 14. 规范用语与条款属性（双轨）",
       "R110": "1. **受控词表**：条款正文只用四个情态词——`必须`（MUST）、`不得`（MUST_NOT）、`应当`（SHOULD）、`可以`/`可`（MAY）。**禁止**用「尽量」「必要时」「建议」「通常」等模糊量词表达义务；条件必须写成可判定的触发条件（什么状态、什么动作、什么证据）。描述性内容若不含义务，不构成情态句。",
@@ -120,7 +120,7 @@
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
       "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。"
     },
-    "file_sha256": "65ac0ebb31dcf2586fcfdccf5ca5fb2f0e0d0dbe9cb60aec71a89cfa973dd09a",
+    "file_sha256": "23c92a5dab9a7e893898bcb30c14954015bd61e0075d9e6f8b3742bbb3f3af5a",
     "marked": 118
   },
   "LICENSE": {
@@ -295,7 +295,7 @@
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "b8c7560b7edb96a745e61c6efbda2d217b5e74ee69d027bedeae52a8de77a194",
+    "file_sha256": "7f91f64331397c9a293e057ebbcdd964b8236ac894e33fa7980cf63da8268089",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
@@ -480,7 +480,7 @@
   },
   ".codex/hooks.json": {
     "clauses": {},
-    "file_sha256": "e886b8c86aa310c3d21e1832d435bb3edcde8f8085fe75018611f4c994a9dcad",
+    "file_sha256": "d5f1d9955ca2d88d06ab1ea5a3855951940fe71ebe0113da2a2cfff074ba473f",
     "marked": 0
   },
   ".claude/settings.json": {
