@@ -1,4 +1,6 @@
 """template_sync 的备份/回滚：MANIFEST 三段 + 回滚放回 replaced、删除 added。"""
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -190,7 +192,9 @@ class Transactional(unittest.TestCase):
             return real_run(cmd, *a, **kw)
 
         boot_before = (self.ws / ".workspace" / "bootstrap.json").read_bytes()
-        with mock.patch.object(mod.subprocess, "run", side_effect=fake_run):
+        # 就地调用会写真实 stdout/stderr：用 StringIO 兜住，避免终端编码（cp1252）影响断言
+        with mock.patch.object(mod.subprocess, "run", side_effect=fake_run), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             rc = mod.main(["--workspace", str(self.ws), "--template", str(self.tpl),
                            "--ref", "HEAD", "--apply", "--verify"])
         self.assertEqual(rc, 3)
@@ -205,7 +209,8 @@ class Transactional(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("tpl_sync_mod4", SYNC)
         mod = importlib.util.module_from_spec(spec)          # type: ignore[arg-type]
         spec.loader.exec_module(mod)                          # type: ignore[union-attr]
-        with mock.patch.object(mod, "_rollback", return_value=2):
+        with mock.patch.object(mod, "_rollback", return_value=2), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             rc = mod.main(["--workspace", str(self.ws), "--template", str(self.tpl),
                            "--ref", "HEAD", "--apply", "--verify"])
         self.assertEqual(rc, 4)
