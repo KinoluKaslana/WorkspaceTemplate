@@ -1,4 +1,4 @@
-"""W0 席位：CC/Codex Bash 分派回归（真实进程级启动部署 hook，非原生客户端 E2E）。
+r"""W0 席位：CC/Codex Bash 分派回归（真实进程级启动部署 hook，非原生客户端 E2E）。
 
 每个用例独立 session_id + 独立临时工作区副本；断言 exit 0 与输出 JSON 顶层形状。
 run_fix_suite.py 之外独立运行：`<workspace>/.venv-314/bin/python -B …`（Windows：`.venv-314\Scripts\python.exe -B …`；或直接用当前解释器 `python3 -B …`）

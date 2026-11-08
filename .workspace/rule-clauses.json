@@ -325,7 +325,7 @@
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "548564b5e655c47e0b052b259b32f4f2ceb80d99e635f7e82da9c997121fec3b",
+    "file_sha256": "dacc2937c3e8f9f9ab86d95499954d7d444fd24e7fc3a1c7ea1f58ae2194480f",
     "marked": 0
   },
   "tests/test_clause_lint.py": {
