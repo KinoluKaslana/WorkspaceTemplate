@@ -254,7 +254,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "ff6cc3ecdaa870da063aa6828dcc17cc9bde95980b46bca092a585a274cbf033",
+    "file_sha256": "0ddb349a003ed33ab924bc5a906360a2c3292ea5661e6f5aaa25d1924f754f00",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -269,7 +269,7 @@
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "cc1835b8059600f8b9d22b119c986c1735c54a07e1369593631c9d5d07b12456",
+    "file_sha256": "0bd3a224f4f29c487d18f03df16226a7ac09f016bb5655335323763946465861",
     "marked": 0
   },
   "tests/test_skill_audit.py": {

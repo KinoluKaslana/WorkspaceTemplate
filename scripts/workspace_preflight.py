@@ -37,8 +37,19 @@ OK, WARN, BAD, NA = "ok", "warn", "mismatch", "n/a"
 
 
 def sh(*args: str, cwd: Path | None = None) -> tuple[int, str]:
-    p = subprocess.run(list(args), cwd=str(cwd) if cwd else None, capture_output=True, text=True)
-    return p.returncode, (p.stdout or p.stderr).strip()
+    """跑一个外部命令并取输出。
+
+    - 统一 UTF-8：Windows 默认 cp1252，解释器输出非 ASCII 时会 UnicodeDecodeError；
+    - 兜住 OSError：目标文件不是本平台可执行格式（例如 Windows 上的 `bin/python` 脚本、
+      或没有执行权限的普通文件）时，只应**降级**（版本未知），不该让整个预检崩掉。
+    """
+    try:
+        p = subprocess.run(list(args), cwd=str(cwd) if cwd else None,
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+    except (OSError, subprocess.SubprocessError) as e:
+        return 127, f"{type(e).__name__}: {e}"
+    return p.returncode, (p.stdout or p.stderr or "").strip()
 
 
 VENV_INTERPRETERS = (("bin", "python"), ("bin", "python3"),
@@ -97,8 +108,10 @@ def describe_layout(venv_dir: Path) -> dict:
         "source": "probed-on-host",
     }
     if exe:
-        _, ver = sh(str(exe), "-c", "import sys;print(sys.version.split()[0])")
-        out["version"] = ver or None
+        rc, ver = sh(str(exe), "-c", "import sys;print(sys.version.split()[0])")
+        # 只有真正跑成功才认这个版本；跑不起来（不是本平台可执行格式 / 没权限）就留 None，
+        # 不把错误文本冒充成版本号。
+        out["version"] = (ver or None) if rc == 0 else None
     return out
 
 

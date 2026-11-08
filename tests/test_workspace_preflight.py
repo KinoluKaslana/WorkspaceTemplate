@@ -146,6 +146,23 @@ class Preflight(unittest.TestCase):
                    cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
         return p.returncode, json.loads(p.stdout)
 
+    def test_p24_unrunnable_interpreter_degrades_not_crash(self):
+        """解释器文件存在但不是本平台可执行格式（Windows 上的 sh 脚本、或没执行位的普通文件）：
+        版本应降级为 None，整个预检不能崩（历史上 Windows CI 就是在这里 ERROR）。"""
+        d = self.ws / ".venv-999" / "bin"
+        d.mkdir(parents=True, exist_ok=True)
+        stub = d / "python"
+        stub.write_text("not an executable\n", encoding="utf-8")
+        stub.chmod(0o644)
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-999"}}
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"],
+                           cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        data = json.loads(p.stdout)          # 没崩：stdout 仍是合法 JSON
+        self.assertIsNone(data["version"], data)
+
     def test_p20_readme_undecided_after_git_init_warns(self):
         """建仓后必须有过 README 决策；只 warn 不 mismatch（它不阻塞，但必须被看见）。"""
         boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
