@@ -181,6 +181,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--rollback", default=None, metavar="BACKUP_DIR",
                     help="按备份目录的 MANIFEST.txt 回滚（放回 replaced、删除 added）")
     ap.add_argument("--verify", action="store_true")
+    ap.add_argument("--keep-on-fail", action="store_true",
+                    help="verify 未通过时保留已写入的结果（默认自动回滚到同步前）")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
@@ -342,52 +344,72 @@ def main(argv: list[str]) -> int:
             "[added]\n" + "\n".join(added) + "\n"
             "[preserved]\n" + "\n".join(preserved) + "\n", encoding="utf-8")
 
-        copied = []
-        for rel in files:
-            src = wt / rel
-            if not src.is_file() or rel in skipped:
-                continue
-            dst = ws / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
-            copied.append(rel)
-
-        pruned = []
-        if a.prune and removed_upstream:
-            for rel in removed_upstream:
-                tgt = ws / rel
-                if not tgt.exists():
-                    continue
-                bak = backup / rel
-                bak.parent.mkdir(parents=True, exist_ok=True)
-                if tgt.is_dir():
-                    shutil.copytree(tgt, bak, dirs_exist_ok=True)
-                    shutil.rmtree(tgt)
-                else:
-                    shutil.copy2(tgt, bak)
-                    tgt.unlink()
-                    parent = tgt.parent
-                    while parent != ws and parent.is_dir() and not any(parent.iterdir()):
-                        parent.rmdir()
-                        parent = parent.parent
-                pruned.append(rel)
-            report["pruned"] = pruned
-            if pruned:
-                with (backup / "MANIFEST.txt").open("a", encoding="utf-8") as fh:
-                    fh.write("[pruned]\n" + "\n".join(pruned) + "\n")
-
         boot_path = ws / ".workspace" / "bootstrap.json"
-        boot = json.loads(boot_path.read_text(encoding="utf-8"))
-        python_before = json.dumps(boot.get("python"), sort_keys=True)
-        gate_before = json.dumps(boot.get("gate"), sort_keys=True)
-        tpl_sec = boot.setdefault("template", {})
-        tpl_sec["current_policy_version"] = after
-        tpl_sec["last_synced_at"] = dt.date.today().isoformat()
-        tpl_sec["last_synced_ref"] = wanted
-        if kind in ("commit", "tag"):             # 分支、标签或裸提交：记 requested ref
-            tpl_sec["last_synced_branch"] = wanted
-        tpl_sec["last_synced_commit"] = commit
-        boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        boot_before = json.loads(boot_path.read_text(encoding="utf-8"))
+        python_before = json.dumps(boot_before.get("python"), sort_keys=True)
+        gate_before = json.dumps(boot_before.get("gate"), sort_keys=True)
+
+        def _apply_changes() -> list[str]:
+            """真正落盘的部分：任一异常都交给外层回滚，不留半套状态。"""
+            done: list[str] = []
+            for rel in files:
+                src = wt / rel
+                if not src.is_file() or rel in skipped:
+                    continue
+                dst = ws / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                done.append(rel)
+
+            dropped: list[str] = []
+            if a.prune and removed_upstream:
+                for rel in removed_upstream:
+                    tgt = ws / rel
+                    if not tgt.exists():
+                        continue
+                    bak = backup / rel
+                    bak.parent.mkdir(parents=True, exist_ok=True)
+                    if tgt.is_dir():
+                        shutil.copytree(tgt, bak, dirs_exist_ok=True)
+                        shutil.rmtree(tgt)
+                    else:
+                        shutil.copy2(tgt, bak)
+                        tgt.unlink()
+                        parent = tgt.parent
+                        while parent != ws and parent.is_dir() and not any(parent.iterdir()):
+                            parent.rmdir()
+                            parent = parent.parent
+                    dropped.append(rel)
+                report["pruned"] = dropped
+                if dropped:
+                    with (backup / "MANIFEST.txt").open("a", encoding="utf-8") as fh:
+                        fh.write("[pruned]\n" + "\n".join(dropped) + "\n")
+
+            boot = json.loads(boot_path.read_text(encoding="utf-8"))
+            tpl_sec = boot.setdefault("template", {})
+            tpl_sec["current_policy_version"] = after
+            tpl_sec["last_synced_at"] = dt.date.today().isoformat()
+            tpl_sec["last_synced_ref"] = wanted
+            if kind in ("commit", "tag"):             # 分支、标签或裸提交：记 requested ref
+                tpl_sec["last_synced_branch"] = wanted
+            tpl_sec["last_synced_commit"] = commit
+            boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            return done
+
+        try:
+            copied = _apply_changes()
+        except Exception as exc:  # noqa: BLE001 —— 写盘中途失败必须回到同步前
+            print(f"同步失败：{exc}", file=sys.stderr)
+            rb = _rollback(ws, backup)
+            report["auto_rollback"] = {"reason": f"exception: {exc}", "rollback_rc": rb}
+            report["copied"] = []
+            if a.json:
+                print(json.dumps(report, ensure_ascii=False))
+            if rb != 0:
+                print(f"回滚也失败（rc={rb}）：按 {backup}/MANIFEST.txt 手工恢复", file=sys.stderr)
+                return 4
+            print(f"已自动回滚（backup={backup}）", file=sys.stderr)
+            return 3
 
         python_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8")).get("python"),
                                   sort_keys=True)
@@ -404,10 +426,22 @@ def main(argv: list[str]) -> int:
         verify = None
         if a.verify:
             out_json = ws / ".workspace" / ".verify-tmp.json"
-            p = subprocess.run([sys.executable, str(ws / "scripts" / "verify_rules.py"),
-                                "--workspace", str(ws), "--vs-template", str(wt),
-                                "--json", str(out_json)],
-                               cwd=ws, capture_output=True, text=True)
+            try:
+                p = subprocess.run([sys.executable, str(ws / "scripts" / "verify_rules.py"),
+                                    "--workspace", str(ws), "--vs-template", str(wt),
+                                    "--json", str(out_json)],
+                                   cwd=ws, capture_output=True, text=True)
+            except Exception as exc:  # noqa: BLE001 —— 校验器本身起不来也算同步失败
+                rb = _rollback(ws, backup)
+                report["auto_rollback"] = {"reason": f"verify-exception: {exc}", "rollback_rc": rb}
+                print(f"verify 无法运行：{exc}", file=sys.stderr)
+                if a.json:
+                    print(json.dumps(report, ensure_ascii=False))
+                if rb != 0:
+                    print(f"回滚也失败（rc={rb}）：按 {backup}/MANIFEST.txt 手工恢复", file=sys.stderr)
+                    return 4
+                print(f"已自动回滚（backup={backup}）", file=sys.stderr)
+                return 3
             try:
                 verify = json.loads(out_json.read_text(encoding="utf-8"))
             except Exception:
@@ -415,6 +449,21 @@ def main(argv: list[str]) -> int:
             finally:
                 out_json.unlink(missing_ok=True)
             report["verify"] = {"clean": verify.get("clean"), "findings": verify.get("findings", [])[:10]}
+            if not verify.get("clean") and not a.keep_on_fail:
+                # 校验不通过 = 这次同步没有产出可用的工作区：回到同步前，而不是留一套半对的状态
+                rb = _rollback(ws, backup)
+                report["auto_rollback"] = {"reason": "verify-not-clean", "rollback_rc": rb}
+                if rb != 0:
+                    print(f"verify 未通过且回滚失败（rc={rb}）：按 {backup}/MANIFEST.txt 手工恢复",
+                          file=sys.stderr)
+                    if a.json:
+                        print(json.dumps(report, ensure_ascii=False))
+                    return 4
+                print(f"verify 未通过，已自动回滚（backup={backup}）；"
+                      f"要用当前结果请加 --keep-on-fail", file=sys.stderr)
+                if a.json:
+                    print(json.dumps(report, ensure_ascii=False))
+                return 2
 
         if a.json:
             print(json.dumps(report, ensure_ascii=False))

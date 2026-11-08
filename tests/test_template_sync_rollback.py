@@ -1,5 +1,6 @@
 """template_sync 的备份/回滚：MANIFEST 三段 + 回滚放回 replaced、删除 added。"""
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -104,6 +105,119 @@ class Rollback(unittest.TestCase):
                             "--rollback", str(bk)], capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
         self.assertEqual(p.returncode, 2)
         self.assertIn("MANIFEST", p.stderr + p.stdout)
+
+
+def _make_fixture_template(base: Path) -> Path:
+    """最小的「模板仓」：两个 TEMPLATE_FILES + 一个永远 clean=false 的 verify_rules 桩。"""
+    tpl = base / "tpl"
+    (tpl / "scripts").mkdir(parents=True)
+    (tpl / "AGENT_RULES.md").write_text("# 模板\n\n> **模板政策版本：`9.9.9`。**\n", encoding="utf-8")
+    (tpl / "README.md").write_text("template readme\n", encoding="utf-8")
+    (tpl / "scripts" / "verify_rules.py").write_text(
+        'TEMPLATE_FILES = ["AGENT_RULES.md", "README.md"]\n'
+        "import json\n"
+        "import sys\n"
+        "if __name__ == '__main__':\n"
+        "    data = {'clean': False, 'findings': ['forced-by-test']}\n"
+        "    if '--json' in sys.argv:\n"
+        "        open(sys.argv[sys.argv.index('--json') + 1], 'w', encoding='utf-8').write(json.dumps(data))\n"
+        "    print(json.dumps(data))\n",
+        encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(tpl)], check=True)
+    subprocess.run(["git", "-C", str(tpl), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tpl), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                    "commit", "-q", "-m", "tpl"], check=True)
+    return tpl
+
+
+@unittest.skipUnless(shutil.which("git"), "未安装 git：本套用例需要真实 git 仓库")
+class Transactional(unittest.TestCase):
+    """同步是事务性的：verify 不过或写盘中途失败，默认回到同步前，不留半套状态。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.tpl = _make_fixture_template(base)
+        self.ws = base / "ws"
+        (self.ws / ".workspace").mkdir(parents=True)
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps({
+            "workspace_status": "active",
+            "python": {"mode": "local-venv", "runtime": {"identifier": "/x/.venv-312", "version": "3.12.0"}},
+            "template": {"source_repo": str(ROOT), "current_policy_version": "2.4.0"},
+        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        self.old_rules = "# 旧规则\n\n> **模板政策版本：`2.4.0`。**\n"
+        (self.ws / "AGENT_RULES.md").write_text(self.old_rules, encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_sync(self, *args):
+        return subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                               "--template", str(self.tpl), "--ref", "HEAD", *args],
+                              capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+
+    def test_verify_failure_rolls_back(self):
+        boot_before = (self.ws / ".workspace" / "bootstrap.json").read_bytes()
+        p = self.run_sync("--apply", "--verify")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("自动回滚", p.stderr)
+        self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
+        # bootstrap 逐字节回到同步前（含 python/gate 段，不只是版本字段）
+        self.assertEqual((self.ws / ".workspace" / "bootstrap.json").read_bytes(), boot_before)
+        self.assertFalse((self.ws / "scripts").exists())      # 本次新增的目录被清掉
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        self.assertEqual((boot.get("template") or {}).get("current_policy_version"), "2.4.0")
+
+    def test_verify_failure_keep_on_fail(self):
+        p = self.run_sync("--apply", "--verify", "--keep-on-fail")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertNotIn("自动回滚", p.stderr)          # 明确要求保留：不回滚
+        self.assertIn("9.9.9", (self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"))
+
+    def test_verify_exception_rolls_back(self):
+        """校验器本身抛异常（不是 clean:false）也要回滚，rc=3。"""
+        import importlib.util
+        import unittest.mock as mock
+
+        spec = importlib.util.spec_from_file_location("tpl_sync_mod", SYNC)
+        mod = importlib.util.module_from_spec(spec)          # type: ignore[arg-type]
+        spec.loader.exec_module(mod)                          # type: ignore[union-attr]
+        real_run = subprocess.run
+
+        def fake_run(cmd, *a, **kw):
+            if any("verify_rules.py" in str(c) for c in cmd):
+                raise FileNotFoundError("injected: verify 起不来")
+            return real_run(cmd, *a, **kw)
+
+        boot_before = (self.ws / ".workspace" / "bootstrap.json").read_bytes()
+        with mock.patch.object(mod.subprocess, "run", side_effect=fake_run):
+            rc = mod.main(["--workspace", str(self.ws), "--template", str(self.tpl),
+                           "--ref", "HEAD", "--apply", "--verify"])
+        self.assertEqual(rc, 3)
+        self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
+        self.assertEqual((self.ws / ".workspace" / "bootstrap.json").read_bytes(), boot_before)
+
+    def test_rollback_failure_returns_4(self):
+        """回滚本身失败时返回 4（与「已回滚」的 2/3 区分），提示按 MANIFEST 手工恢复。"""
+        import importlib.util
+        import unittest.mock as mock
+
+        spec = importlib.util.spec_from_file_location("tpl_sync_mod4", SYNC)
+        mod = importlib.util.module_from_spec(spec)          # type: ignore[arg-type]
+        spec.loader.exec_module(mod)                          # type: ignore[union-attr]
+        with mock.patch.object(mod, "_rollback", return_value=2):
+            rc = mod.main(["--workspace", str(self.ws), "--template", str(self.tpl),
+                           "--ref", "HEAD", "--apply", "--verify"])
+        self.assertEqual(rc, 4)
+
+    @unittest.skipIf(os.name == "nt", "Windows 上创建符号链接需要额外权限")
+    def test_write_failure_rolls_back(self):
+        # 悬空符号链接：第二个文件复制时抛 FileNotFoundError，前面已写入的 AGENT_RULES.md 必须被放回
+        (self.ws / "README.md").symlink_to(self.ws / "missing" / "x.md")
+        p = self.run_sync("--apply")
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        self.assertIn("自动回滚", p.stderr)
+        self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
 
 
 if __name__ == "__main__":

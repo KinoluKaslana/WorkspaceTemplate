@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v3.5.5%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.5.6%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -125,7 +125,7 @@ The three Python modes are mutually exclusive; switching later requires an expli
 |---|---|---|---|
 | Best for | Fast, reproducible dependency resolution | A box with a known-good interpreter and no uv | No local Python initialization, or a managed compute environment |
 | Initialization | `uv venv .venv-<mm> --python <ver>` | `<python> -m venv .venv-<mm>` | Creates no local venv |
-| Installing packages | `uv pip install --python .venv-<mm>/bin/python <pkg>` | `.venv-<mm>/bin/python -m pip install <pkg>` | Depends on verified MCP capabilities |
+| Installing packages | `uv pip install --python .venv-<mm>/bin/python <pkg>` (Windows: `.venv-<mm>\Scripts\python.exe`) | `.venv-<mm>/bin/python -m pip install <pkg>` (Windows: same) | Depends on verified MCP capabilities |
 | Network by default | No; **when uv is missing we only show install methods, never install it for you** | No | Depends on the provider |
 | Dependency persistence | Persists inside the venv | Persists inside the venv | Must not be assumed |
 | If unavailable | `pyenv_init.py` exits 3 with install methods; the user may decline | Reports the exact interpreter or `venv`-module blocker | Never pretends configuration succeeded |

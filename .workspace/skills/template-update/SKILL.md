@@ -96,7 +96,7 @@ PY
 **回滚用脚本，不手抄反向清单**：
 
 ```bash
-python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --rollback <备份目录>
+python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --rollback <备份目录>   # 手动回滚（失败时已自动执行）
 ```
 
 它放回 `[replaced]`、删除 `[added]`、复原 `[preserved]`；只放回不删除会让新版多出来的文件留在工作区
@@ -107,7 +107,7 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --rollback <备�
 ```bash
 python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF"            # dry-run
 python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
-        --apply --verify --json                                                         # 写盘
+        --apply --verify --json                                                         # 写盘；verify 不过会自动回滚
 ```
 
 脚本输出（`--json` 可机器读）：`requested_ref / resolved_ref / ref_kind / commit`、版本前后、

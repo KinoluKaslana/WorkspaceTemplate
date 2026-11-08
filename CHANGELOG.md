@@ -2,6 +2,24 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.6（2026-11-04）：同步改成事务性的——失败不留半套状态
+
+- **`--verify` 不通过默认自动回滚**：以前 verify 报 `clean: false` 只返回 rc=2，工作区停在「模板文件已替换、
+  但校验不过」的中间态，用户得自己记住备份目录再 `--rollback`。现在默认按 MANIFEST 回滚到同步前，
+  打印回滚结果并返回 2；确实想保留现场（例如要对着半成品排查）用新增的 `--keep-on-fail`。
+- **写盘中途异常也自动回滚**：落盘段（复制、`--prune`、bootstrap 更新）整体纳入 try，任一异常按 MANIFEST
+  回滚并返回 rc=3，不再留下「一部分文件是新的」的工作区。
+- 新增 `tests/test_template_sync_rollback.py::Transactional` 三个用例（verify 失败回滚 / `--keep-on-fail` 保留 /
+  写盘异常回滚），并用「关掉自动回滚」做过红灯反证（2 条红）。
+- **`preflight` 的 Python 项不再写死 POSIX 路径**：以前只查 `<venv>/bin/python`，Windows / MINGW 的 venv 是 `<venv>/Scripts/python.exe`，于是那条**永远 mismatch**（不是用户配错）。现在按 `bin/python`、`bin/python3`、`Scripts/python.exe`、`Scripts/python3.exe` 顺序取第一个存在的；`pyenv_init.py` 用同一口径判断刚建的 venv 是否可用。新增 3 条用例（两种布局 + 都没有时返回 None）+ 1 条 Windows 布局的端到端用例，并用「只留 bin/python」做过红灯反证（2 条红）。
+- **跨平台口径补齐（审议席 must-change）**：R5/R7、`README.md`、`README_EN.md`、`TOOLS.md` 的装包命令原来只写 `<venv>/bin/python`，Windows 上是错的；现在统一注明 `<venv>\Scripts\python.exe`。§13 的「六脚本」按实测改为「七脚本」，与 `docs/hooks-catalog.md` 对齐。
+- **回滚失败单独可见**：同步失败且回滚也失败时返回 **rc=4**（需按 `MANIFEST.txt` 手工恢复），不再与「已回滚」共用 rc=3；`--verify` 的校验器本身起不来（抛异常）也走回滚，返回 3。
+- 测试加严：回滚后 `bootstrap.json` **逐字节**与同步前一致（不只比版本字段）；新增校验器异常注入用例。
+- **接线证据假阴性修复**：`gate.log` 原来只在 `post_write` / 生命周期对账时写 `client=` 行，于是「hook 在跑但整个会话只读」会被 `gate_status` 判成 `未接线`（假阴性）。现在 `session_start` 也写一条 `session_start client=<client> session=<sid>`；用例 `hooks-tests/test_w2_anchor.py` 覆盖，并做过「去掉该行 → 红」的反证。
+- **Codex hook 不再写死 `/usr/bin/python3`**：10 条命令统一改为 `GATE_PY` → `/usr/bin/python3` → PATH(`python3`/`python`) 的解析前缀；命令字符串变更使既有 `trusted_hash` 失效，已按 R107 重走 `/hooks` 重新信任（`~/.codex/config.toml` 的 `hooks.state` 哈希已更新）。
+- 说明：`--rollback` 备份机制本来就有（4 个既有用例），缺的是「失败时自动用它」；`git` 只用于从模板仓
+  按 ref 取文件，与回滚无关——无 git 环境下这几个用例是 skip，不是失败。
+
 ## 3.5.5（2026-11-04）：修掉一直 404 的策略徽章
 
 - **根因**：shields 静态徽章是 `/badge/<label>-<message>-<color>`。`policy-v3.5.4-single%20source%20of%20truth-6f42c1`

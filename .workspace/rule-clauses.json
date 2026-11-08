@@ -5,9 +5,9 @@
       "R2": "## 0. 首次启动：必须询问 Python 运行时选择",
       "R3": "### 0.1 创建本地版本化 venv（uv 默认 / 手动）",
       "R4": "1. 只读盘点 `python3`/`python` 的路径与版本，并检测 `uv` 是否存在（`command -v uv && uv --version`）；模板脚本需 Python ≥3.10，更旧时报告限制并请用户选择（装新运行时/MCP/明确授权适配），不静默降级。",
-      "R5": "2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python .venv-312/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `.venv-312/bin/python -m pip install <pkg>`。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。",
+      "R5": "2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python <venv>/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `<venv>/bin/python -m pip install <pkg>`。**Windows 上解释器在 `<venv>\\Scripts\\python.exe`**，上述 `<venv>/bin/python` 一律按此替换（`scripts/workspace_preflight.py` 两种布局都认）。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。",
       "R6": "3. 初始化只创建运行时，**不得**联网升级包管理器、**不得**预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。",
-      "R7": "4. 验证 `<venv>/bin/python` 的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。",
+      "R7": "4. 验证 `<venv>/bin/python`（Windows：`<venv>\\Scripts\\python.exe`）的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。",
       "R8": "5. **必须**将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。",
       "R9": "### 0.2 选择 MCP Python",
       "R10": "1. 检查会话实际可用的 MCP Python 工具，记录 provider/server、tool 名、版本、文件系统/网络/依赖持久性与输出限制。",
@@ -107,7 +107,7 @@
       "R104": "3. **客户端差异（必须明说）**：CC 仅 `Write`/`Edit` 受管，**Bash 写不订阅、不拦截**；`Stop`/`SessionEnd` 的差集与指纹锚只到文件/目录级，但**可经转录回放做事后归因**（子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放，作用域含 `.agent_id`）。**事后归因不等于拦截**，`would_deny=true` 不表示写入被阻止；转录可被同 uid 删改，不得据此推断整仓受管。命令原文默认不落盘（只记 digest），需 `audit_command_text=true` 显式开启。回放与归因细则见 catalog §2.7。",
       "R105": "4. **证据与审计**：读证据绑指纹 `c<size>:<sha256>` 与覆盖 `1..total`；审计十三型（清单见 catalog §2.6）。`gate-deny` 记拒绝本身，作用域含 `.agent_id`，可在 `audit-<client>.jsonl` 独立核验。写前 `gate-intent` → 写后 `gate-commit` 对账，缺失一侧记 `unobserved-write`（**不表示通过**）。只记路径/哈希/会话/动作，不落正文。`unresolved-command` 只含 `tool_use_id`/`client`/`digest`/`class`，不落原文、不可直读归因；`worktree-change` 粒度受 git 限制，文件级归因须由 `completion-gate` 补证。账本轮转与压缩规则见 catalog §2.7。",
       "R106": "5. **调参与豁免**：行为调参写 `.workspace/gate.custom.json`（`enabled`/`gate_files`/`write_tools`）；合法直改 gate 文件用**操作级单次令牌**（`python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --ttl 300`），令牌单次消耗、目标集合精确匹配、无通配；不得以「父 Agent 身份」作为豁免依据（payload 无身份字段）。",
-      "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（10 个 definition，含 SubagentStart/Stop），变更需重审；CC `-p` 免信任但会执行仓内 hook，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，守门只防「无意识跳过」。",
+      "R107": "6. **信任与边界**：Codex 首次需 `/hooks` 逐条信任（10 个 definition，含 SubagentStart/Stop）；`.codex/hooks.json` 任一命令变更后既有 `trusted_hash` 失效，codex 会要求重新信任（`Hooks need review`），不重走则该 hook 不执行（客户端 fail-open）；CC `-p` 免信任但会执行仓内 hook，交互式需 workspace trust；hook 超时/加载失败为客户端 fail-open；同 uid 无安全边界，守门只防「无意识跳过」。",
       "R108": "7. **子 Agent 任务书（extends R66）**：派发前必须交付，至少含 ①用户目标与验收 ②精确工作区与**可写目标集合**（逐项绝对路径，禁通配）③只读范围 ④禁止动作（显式含 R67 中央文件）⑤授权来源（父会话标识 + 父已读政策的声明）；并据以为该子会话签发委托记录。**可写集合不得超出父自身已授权范围，不得包含治理文件与 R67 中央文件**；未列出的目标子 Agent 一律不得写。",
       "R109": "## 14. 规范用语与条款属性（双轨）",
       "R110": "1. **受控词表**：条款正文只用四个情态词——`必须`（MUST）、`不得`（MUST_NOT）、`应当`（SHOULD）、`可以`/`可`（MAY）。**禁止**用「尽量」「必要时」「建议」「通常」等模糊量词表达义务；条件必须写成可判定的触发条件（什么状态、什么动作、什么证据）。描述性内容若不含义务，不构成情态句。",
@@ -120,7 +120,7 @@
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
       "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。"
     },
-    "file_sha256": "fcfc7b28c1eb7089588a08fa68611cd742b407e0b8a675750bb9b13524db7c84",
+    "file_sha256": "23c92a5dab9a7e893898bcb30c14954015bd61e0075d9e6f8b3742bbb3f3af5a",
     "marked": 118
   },
   "LICENSE": {
@@ -155,12 +155,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "a6726768e52715709dc3e967a81438a3e937d46806c0a6e3bbb404c15d7aa878",
+    "file_sha256": "d87aa0fc8a5b47ed5e226af8d5fb5ed34d133a8b5ed7faf160bd1307c1727c07",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "7a943827107dc6b256dd95c856ec54a8ed4e51e15deae787fc2914049ea7d6c1",
+    "file_sha256": "37932221a661735c90ab90e7da9f2dcf0ccc00e9803a33818a7a78f5d5a45e8c",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -190,7 +190,7 @@
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "c50c1f4f4ce081cc5c723e004d5e8331e33167409dfa155d8ab8407732f8b4d2",
+    "file_sha256": "b28e029c65a184018b1a0eed4c023775b0e5e94aeb0fb2231ec9189b4c547b41",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -200,7 +200,7 @@
   },
   ".workspace/skills/workspace-init/SKILL.md": {
     "clauses": {},
-    "file_sha256": "e4ec989bd1980d6bbb6706ac771826db4a6475200ac950d2b8f703bc66c10f1f",
+    "file_sha256": "03d72f462984d9752e2df0da4f2e2472178cc838f9957a0410edb3d60653d0ba",
     "marked": 0
   },
   ".workspace/skills/git-init/SKILL.md": {
@@ -235,7 +235,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "daf15c2a7f28b60b9d6b7dedf8aae887b48f593053d854c123f3e62ad9b0f639",
+    "file_sha256": "69c179dd13f4a36a2ba2f2baf3feee52656a9fe7a25c64db94c772ae19102565",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -245,12 +245,12 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "746880fb4d19630d0656254b9ec3c27e77ed4041b0c1e07c6769a4fe5fe2a487",
+    "file_sha256": "c11df1a8e363cce667049bb6768670a5ca4bf511cdc0e6f7b08204b570f90624",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "46def9cf2d98f17ee8a7430a21493ab6c1e138288e55a2ba6385767d53cf78ba",
+    "file_sha256": "fd2a761c83258c0a4ecf2e238ae03536da3acd76658591984d6bc963d9cddcc2",
     "marked": 0
   },
   "tests/test_pyenv_init.py": {
@@ -260,7 +260,7 @@
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "bb6774e9daf66eb95f04e613a4fe648ef1317299561b091e3f1fb4f839683321",
+    "file_sha256": "b93374110c547797ba2a7ea1c442b1aa0222281ec63a45df8f7596101857e92f",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
@@ -280,7 +280,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "38ed87d27569f905797c8bfeec1fe8ef46fae0f0768b6d6ca514f88a486c9666",
+    "file_sha256": "e8de78b64603308a2d9b86e99456d6385657d9fa0c6bae0efd3a361801aa56ff",
     "marked": 0
   },
   "docs/skills.md": {
@@ -290,12 +290,12 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "d487a558a787d3ce7466408a4081d93495f51827392cf39e8d13a0ec28a67ded",
+    "file_sha256": "e77dfbcb22b3c9f865c378265b5477418332bf92b7782f90c507c95509e08571",
     "marked": 0
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "b8c7560b7edb96a745e61c6efbda2d217b5e74ee69d027bedeae52a8de77a194",
+    "file_sha256": "f38635d2a06c534cf1603c6a12b53072c02f9b0e97558b6a846493bcc7b4d350",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
@@ -310,7 +310,7 @@
   },
   "UPGRADE.md": {
     "clauses": {},
-    "file_sha256": "b438bf47679a66ae4073acd9d191da28a33ab0d98bbeb9dc4ad851f361591f37",
+    "file_sha256": "6e5cfca8920b540b4563a820dfed44921b69b63d6b1d64d297a7071bbb9b5da0",
     "marked": 0
   },
   ".workspace/skills/legacy-workspace-upgrade/SKILL.md": {
@@ -325,7 +325,7 @@
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "72c3c0dd3154b7f551446feb340ed417c60fffdbefe0f6f5e0738d1f5fdcf05a",
+    "file_sha256": "dacc2937c3e8f9f9ab86d95499954d7d444fd24e7fc3a1c7ea1f58ae2194480f",
     "marked": 0
   },
   "tests/test_clause_lint.py": {
@@ -445,7 +445,7 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "d19787d3beb76352a18e564152ae338b7373c784f27efab9b3995935808557e8",
+    "file_sha256": "ed65b7aa00655dab1d8c5087917721765e33aa5e41906dda10106e3484ca97a7",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
@@ -480,7 +480,7 @@
   },
   ".codex/hooks.json": {
     "clauses": {},
-    "file_sha256": "e886b8c86aa310c3d21e1832d435bb3edcde8f8085fe75018611f4c994a9dcad",
+    "file_sha256": "d5f1d9955ca2d88d06ab1ea5a3855951940fe71ebe0113da2a2cfff074ba473f",
     "marked": 0
   },
   ".claude/settings.json": {

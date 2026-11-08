@@ -193,10 +193,17 @@ post_tool_call ──► 若是 read_file：把「读了哪些行 + 当时的指
 
 ### 4.1 接线：`.codex/hooks.json`
 
+每条命令都先用同一段前缀解析解释器（可用 `GATE_PY` 覆盖，其次 `/usr/bin/python3`，再退回 PATH 里的 `python3`/`python`）：
+
+```sh
+PY=${GATE_PY:-$( [ -x /usr/bin/python3 ] && echo /usr/bin/python3 || command -v python3 || command -v python )}; [ -n "$PY" ] || exit 0
+GATE_CLIENT=codex "$PY" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.workspace/hooks/hook.py" session_start
+```
+
 ```json
 {
   "hooks": {
-    "SessionStart":     [{"hooks": [{"type": "command", "command": "GATE_CLIENT=codex python3 .../hook.py session_start"}]}],
+    "SessionStart":     [{"hooks": [{"type": "command", "command": "PY=${GATE_PY:-...}; [ -n \"$PY\" ] || exit 0; GATE_CLIENT=codex \"$PY\" .../hook.py session_start"}]}],
     "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "GATE_CLIENT=codex python3 .../hook.py prompt_submit"}]}],
     "PreToolUse": [
       {"matcher": "^Bash$",       "hooks": [{"type": "command", "command": "... hook.py pre_bash"}]},
@@ -210,6 +217,13 @@ post_tool_call ──► 若是 read_file：把「读了哪些行 + 当时的指
 ```
 
 `GATE_CLIENT=codex` 是关键：payload 里没有可靠的「我是谁」字段，客户端身份靠这一个环境变量显式声明（`hook.py` 只用 payload 探测做兜底）。
+
+**改了 `.codex/hooks.json` 就必须重走一次 `/hooks`**：信任按「每条 hook 的 `trusted_hash`」记录在
+`~/.codex/config.toml` 的 `[hooks.state."<hooks.json 绝对路径>:<event>:<group>:<index>"]`；命令字符串一变，
+哈希就失效，codex 下次启动会显示 `Hooks need review — N hooks are new or changed`，选 `Trust all and continue` 才继续生效。
+验证是否真的生效：跑一次 `codex exec`，看 `.workspace/.hook-state/codex-<thread_id>.json` 是否新增。
+
+`SessionStart` 同时会往 `.workspace/.hook-state/gate.log` 追加一条 `session_start client=codex session=<sid>`：这是 `scripts/gate_status.py --require codex` 判定「已接线」的最小证据，只读会话（从不写盘）也有。
 
 ### 4.2 Bash 分派：先看是不是 `apply_patch`，再静态识别写
 

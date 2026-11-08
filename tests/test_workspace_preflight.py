@@ -126,5 +126,58 @@ class Preflight(unittest.TestCase):
         self.assertEqual(st["template_clone"], "mismatch")
 
 
+    @unittest.skipIf(os.name == "nt", "POSIX 上用 shell 桩模拟 .exe 解释器")
+    def test_p6_venv_layout_scripts_python_exe(self):
+        """Windows 布局（Scripts/python.exe）不能因为找不到 bin/python 就判 mismatch。"""
+        scripts = self.ws / ".venv-999" / "Scripts"
+        scripts.mkdir(parents=True)
+        stub = scripts / "python.exe"
+        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        stub.chmod(0o755)
+        rc, data = run(self.ws)
+        py = [i for i in data["items"] if i["id"] == "python"][0]
+        self.assertNotEqual(py["status"], "mismatch", py)
+        self.assertIn("Scripts/python.exe", str(py))
+
+
+def _load(name):
+    sys.path.insert(0, str(SRC / "scripts"))
+    try:
+        import importlib
+        return importlib.import_module(name)
+    finally:
+        sys.path.pop(0)
+
+
+class VenvLayout(unittest.TestCase):
+    """venv 解释器位置是平台事实：POSIX=bin/python，Windows=Scripts/python.exe。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="venv-")
+        self.addCleanup(self.tmp.cleanup)
+        self.venv = Path(self.tmp.name) / ".venv-314"
+
+    def _touch(self, *parts):
+        f = self.venv.joinpath(*parts)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("", encoding="utf-8")
+        return f
+
+    def test_p7_posix_layout(self):
+        f = self._touch("bin", "python")
+        for mod in ("workspace_preflight", "pyenv_init"):
+            self.assertEqual(_load(mod).venv_interpreter(self.venv), f, mod)
+
+    def test_p8_windows_layout(self):
+        f = self._touch("Scripts", "python.exe")
+        for mod in ("workspace_preflight", "pyenv_init"):
+            self.assertEqual(_load(mod).venv_interpreter(self.venv), f, mod)
+
+    def test_p9_no_interpreter(self):
+        (self.venv / "lib").mkdir(parents=True)
+        for mod in ("workspace_preflight", "pyenv_init"):
+            self.assertIsNone(_load(mod).venv_interpreter(self.venv), mod)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
