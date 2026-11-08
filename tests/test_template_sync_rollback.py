@@ -197,6 +197,19 @@ class Transactional(unittest.TestCase):
         self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
         self.assertEqual((self.ws / ".workspace" / "bootstrap.json").read_bytes(), boot_before)
 
+    def test_rollback_failure_returns_4(self):
+        """回滚本身失败时返回 4（与「已回滚」的 2/3 区分），提示按 MANIFEST 手工恢复。"""
+        import importlib.util
+        import unittest.mock as mock
+
+        spec = importlib.util.spec_from_file_location("tpl_sync_mod4", SYNC)
+        mod = importlib.util.module_from_spec(spec)          # type: ignore[arg-type]
+        spec.loader.exec_module(mod)                          # type: ignore[union-attr]
+        with mock.patch.object(mod, "_rollback", return_value=2):
+            rc = mod.main(["--workspace", str(self.ws), "--template", str(self.tpl),
+                           "--ref", "HEAD", "--apply", "--verify"])
+        self.assertEqual(rc, 4)
+
     @unittest.skipIf(os.name == "nt", "Windows 上创建符号链接需要额外权限")
     def test_write_failure_rolls_back(self):
         # 悬空符号链接：第二个文件复制时抛 FileNotFoundError，前面已写入的 AGENT_RULES.md 必须被放回
