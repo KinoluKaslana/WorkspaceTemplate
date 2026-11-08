@@ -160,7 +160,7 @@
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "29908b34473486ece6c5036faf63c48df1d1eb9f30d05797369b7944787efdfc",
+    "file_sha256": "37932221a661735c90ab90e7da9f2dcf0ccc00e9803a33818a7a78f5d5a45e8c",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -310,7 +310,7 @@
   },
   "UPGRADE.md": {
     "clauses": {},
-    "file_sha256": "b438bf47679a66ae4073acd9d191da28a33ab0d98bbeb9dc4ad851f361591f37",
+    "file_sha256": "6e5cfca8920b540b4563a820dfed44921b69b63d6b1d64d297a7071bbb9b5da0",
     "marked": 0
   },
   ".workspace/skills/legacy-workspace-upgrade/SKILL.md": {

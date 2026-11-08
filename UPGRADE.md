@@ -74,7 +74,7 @@ python3 scripts/skill_audit.py --tools-snippet    # 打印需补进 TOOLS.md 的
 ```
 
 **旧 `bootstrap.python` 记录不全时**（`preflight` 报 `python` mismatch）：
-- `python.runtime.identifier` 写**venv 目录的绝对路径**（如 `/path/.venv-314`，不是 `.../bin/python`）；`python.version` 写该 venv 的 `X.Y.Z`（`preflight` 读 `python.version`，缺失时回退 `python.runtime.version`）；
+- `python.runtime.identifier` 写**venv 目录的绝对路径**（如 `/path/.venv-314` 或 `D:\ws\.venv-314`，**不是** `.../bin/python` / `...\Scripts\python.exe`）；`python.version` 写该 venv 的 `X.Y.Z`（`preflight` 读 `python.version`，缺失时回退 `python.runtime.version`）；
 - 记录指向的 venv 已不存在（换机/搬目录）→ 按 §0.1 **重建同模式 venv**，`python.mode` 不变；
 - 模式本身为 `unconfigured` 才走 `scripts/pyenv_init.py`（uv 默认）。
 
