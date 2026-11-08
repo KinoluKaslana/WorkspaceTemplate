@@ -130,20 +130,34 @@ def main(argv: list[str]) -> int:
     if a.layout_only:
         pysec = boot.get("python") or {}
         mode = pysec.get("mode") or "unconfigured"
-        ident = ((pysec.get("runtime") or {}).get("identifier") or "")
-        info = describe_layout(resolve_venv_dir(ws, ident))
-        info["mode"] = mode
+        ident = ((pysec.get("runtime") or {}).get("identifier") or "").strip()
+        # 先按 mode 分流，再决定要不要探测：mcp/unconfigured 根本不碰文件系统。
+        # （曾把 describe_layout 放在分流之前：mcp 模式下会去执行工作区根目录里恰好存在的 bin/python。）
+        info = {"mode": mode, "venv": None, "layout": "n/a", "interpreter": None, "version": None,
+                "candidates": [f"{a}/{b}" for a, b in VENV_INTERPRETERS], "source": "probed-on-host"}
         if mode == "mcp":
-            # MCP 模式没有本地 venv：布局不适用，不能因为"找不到解释器"就报 3（那会被自动化当成故障）
-            info.update({"layout": "n/a", "applicable": False,
+            info.update({"applicable": False,
                          "note": "MCP 模式没有本地 venv；要核验的是 MCP provider/tool 是否可用"})
             print(json.dumps(info, ensure_ascii=False))
             return 0
         if mode == "unconfigured":
-            info.update({"applicable": False, "note": "python.mode 未配置：先按 §0 选择运行时（uv / venv / mcp）"})
+            info.update({"layout": "none", "applicable": False,
+                         "note": "python.mode 未配置：先按 §0 选择运行时（uv / venv / mcp）"})
             print(json.dumps(info, ensure_ascii=False))
             return 3
+        if not ident:
+            # 空 identifier 绝不能回退到工作区根：根目录里的 bin/python 与"这个工作区登记的 venv"无关，
+            # 探测它会给出假阳性 exit 0。
+            info.update({"layout": "none", "applicable": True,
+                         "note": "bootstrap 未记录 python.runtime.identifier：回写 venv 目录后再诊断"})
+            print(json.dumps(info, ensure_ascii=False))
+            return 3
+        info = describe_layout(resolve_venv_dir(ws, ident))
+        info["mode"] = mode
         info["applicable"] = True          # uv 与 local-venv 都建本地 venv，布局规则相同
+        if mode == "uv":
+            uv = ((pysec.get("runtime") or {}).get("uv")) or shutil.which("uv") or ""
+            info["uv"] = {"path": uv or None, "available": bool(uv and shutil.which(uv))}
         print(json.dumps(info, ensure_ascii=False))
         return 0 if info["interpreter"] else 3
     tools_p = ws / "TOOLS.md"

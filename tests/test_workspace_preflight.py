@@ -159,6 +159,52 @@ class Preflight(unittest.TestCase):
         self.assertNotIn("raw", data, data)              # 能解析出报告，而不是 JSONDecodeError
         self.assertIsInstance(data.get("items"), list)
 
+    def test_p17_mcp_never_probes_workspace_interpreter(self):
+        """mcp 模式即使工作区根目录里恰好有 bin/python，也不该去执行它（更不该报出它的版本）。"""
+        stub_dir = self.ws / "bin"
+        stub_dir.mkdir(parents=True)
+        stub = stub_dir / "python"
+        stub.write_text(f'#!/bin/sh\necho 9.9.9\n', encoding="utf-8")
+        stub.chmod(0o755)
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["python"] = {"mode": "mcp", "runtime": {"mcp_server": "x", "mcp_tool": "y", "identifier": None}}
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        rc, data = self._layout_only()
+        self.assertEqual(rc, 0, data)
+        self.assertEqual(data["layout"], "n/a")
+        self.assertIsNone(data["interpreter"])
+        self.assertIsNone(data["version"])          # 没有执行根目录那个桩
+
+    def test_p18_empty_identifier_no_false_positive(self):
+        """空 identifier 不能回退到工作区根目录：那里的 bin/python 不属于本工作区登记的 venv。"""
+        stub_dir = self.ws / "bin"
+        stub_dir.mkdir(parents=True)
+        stub = stub_dir / "python"
+        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        stub.chmod(0o755)
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ""}}
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        rc, data = self._layout_only()
+        self.assertEqual(rc, 3, data)
+        self.assertEqual(data["layout"], "none")
+        self.assertIn("identifier", data["note"])
+
+    def test_p19_uv_reports_tool_availability(self):
+        """uv 模式除了布局，还要报 uv 工具是否可用（否则 exit 0 会被当成"uv 环境健康"）。"""
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["python"] = {"mode": "uv", "runtime": {"identifier": ".venv-999"}}
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        d = self.ws / ".venv-999" / "bin"
+        d.mkdir(parents=True)
+        stub = d / "python"
+        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        stub.chmod(0o755)
+        rc, data = self._layout_only()
+        self.assertEqual(rc, 0, data)
+        self.assertIn("uv", data)
+        self.assertIn("available", data["uv"])
+
     def test_p13_layout_only_mcp_not_applicable(self):
         """MCP 模式没有本地 venv：布局不适用，exit 0（不能报 3 让自动化当故障）。"""
         boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))

@@ -230,7 +230,7 @@ def main() -> int:
     boot_path = ws / ".workspace" / "bootstrap.json"
     if boot_path.is_file():
         try:
-            boot = json.loads(boot_path.read_text(encoding="utf-8"))
+            boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
         except ValueError:
             boot = {"_parse_error": True}
     base_ver = (boot.get("template") or {}).get("current_policy_version")
@@ -300,8 +300,8 @@ def main() -> int:
                 {"verdict": "drift", "note": "post-merge check", "template_sha": None, "workspace_sha": None},
             )
             try:
-                old_boot = json.loads(bk.read_text(encoding="utf-8"))
-                new_boot = json.loads(cur.read_text(encoding="utf-8"))
+                old_boot = json.loads(bk.read_text(encoding="utf-8-sig"))
+                new_boot = json.loads(cur.read_text(encoding="utf-8-sig"))
             except ValueError:
                 entry["dropped_local_lines"] = ["<bootstrap parse error>"]
             else:

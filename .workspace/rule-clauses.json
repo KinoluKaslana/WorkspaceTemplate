@@ -165,7 +165,7 @@
   },
   "notes/rebuild_index.py": {
     "clauses": {},
-    "file_sha256": "ab58ae0cfef26b282f998274db3f8199713cc29f99198a80d1f05946b2a561e8",
+    "file_sha256": "49cd6c0882ae542f278822e3dfa39603e636bf814a0d1e022f41803ff3737cc3",
     "marked": 0
   },
   "notes/_TEMPLATE.md": {
@@ -195,7 +195,7 @@
   },
   ".workspace/skills/template-update/check_template.py": {
     "clauses": {},
-    "file_sha256": "b72728769a323e64325b6759c731b39fb0ddb7cb1be00411391e7b28eb41909f",
+    "file_sha256": "7824e592e4f87950a5e328e9e9b2ac02354d24dca1572a3e5d7c4230b61f90d8",
     "marked": 0
   },
   ".workspace/skills/workspace-init/SKILL.md": {
@@ -245,7 +245,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "209e47a74c0c1e5be0b84632f3cbb64eaf88b924e367babc572931a0440d4106",
+    "file_sha256": "c2d6c57cfd593038cdabdd4f89c0eace8b08ba520d285b872b443ecbdb623ec2",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -260,7 +260,7 @@
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "985de065a5403db72381c9cc0f00180f1caec94f6cd6866f1179c5bc3bdc14ae",
+    "file_sha256": "2add06414b3998989274b525b13d545f5b8b1a36732d686aa66d2d565e4e74e4",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
@@ -290,7 +290,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "57bf3cf9e55606d46d34d7f24c505d55dda9df1b5843259d15818df59751c650",
+    "file_sha256": "0b4da35057fee387d480e6e50ea39c7e521e2f3da8620d1e192e5d28efc6627d",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -335,12 +335,12 @@
   },
   "tests/test_check_scripts.py": {
     "clauses": {},
-    "file_sha256": "496b834dce090f5144ccef37da4cb40c5a275fa21959e8d29a66f83e52f80701",
+    "file_sha256": "111c1af4bf1679f577040b865e1c60743f6808e6bc1b706e9e63f1906a80cf42",
     "marked": 0
   },
   "scripts/version_check.py": {
     "clauses": {},
-    "file_sha256": "ee3f82c3168cd5981236b74d8bea6165f5051553b8747653044137212714027b",
+    "file_sha256": "b213c082b419b132c7c3d3d5893742c779099c819d6f1481c3d8d61ea67932aa",
     "marked": 0
   },
   "scripts/notes_index_check.py": {
@@ -470,7 +470,7 @@
   },
   ".workspace/hooks/template_anchor.py": {
     "clauses": {},
-    "file_sha256": "1e13a2d838a683037dfdf07c8f8e84c272d76286934738df4b4db2963218166d",
+    "file_sha256": "9073dcc638b7d7ec36ffb95459cdd33c2457fd7e4b5f5027333be2c0dfbe12c1",
     "marked": 0
   },
   ".workspace/hooks/delegations.py": {

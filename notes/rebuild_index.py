@@ -118,7 +118,7 @@ def load_curation(active_count: int) -> tuple[str, bool]:
     last: str | None = None
     if BOOTSTRAP.is_file():
         try:
-            cfg = json.loads(BOOTSTRAP.read_text(encoding="utf-8"))
+            cfg = json.loads(BOOTSTRAP.read_text(encoding="utf-8-sig"))
             cur = (cfg.get("notes") or {}).get("curation") or {}
             threshold = int(cur.get("count_threshold") or DEFAULT_THRESHOLD)
             interval = int(cur.get("interval_days") or DEFAULT_INTERVAL_DAYS)

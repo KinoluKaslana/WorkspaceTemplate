@@ -29,6 +29,14 @@
   和记事本都会写 BOM；旧版 `json.loads(read_text("utf-8"))` 直接 `Unexpected UTF-8 BOM`，
   preflight / pyenv_init / gate_status / template_sync 全部读不出 bootstrap。四处统一改成 `utf-8-sig`
   （无 BOM 时行为不变）。用例 `test_p16_bootstrap_with_bom`，并做过"改回 utf-8 → 红"的反证。
+- **按审议席 ROUND-2 修的三处**：
+  ① `--layout-only` 先按 mode 分流再决定探测——`mcp` 模式不再去执行工作区根目录里恰好存在的 `bin/python`；
+  ② **空 `identifier` 不再回退工作区根**（那里的 `bin/python` 与登记的 venv 无关，会给出假阳性 exit 0），
+     改为 `layout=none` + 提示回写 identifier + exit 3；
+  ③ `uv` 模式额外输出 `uv.available/uv.path`——只报"布局找到解释器"会让 CI 把"uv 二进制缺失"当成健康。
+- **BOM 支持补齐到全部生产 reader**：除 preflight / pyenv_init / gate_status / template_sync 外，
+  再补 `scripts/version_check.py`、`notes/rebuild_index.py`、`.workspace/skills/template-update/check_template.py`（3 处）、
+  `.workspace/hooks/template_anchor.py`。`version_check` 之前会把带 BOM 的 bootstrap 误报成"不是合法 JSON"（R2 门假红）。
 - 真机复核（Windows，真 venv）：`local-venv` → `layout=windows` / `Scripts\python.exe` / `3.14.7` / exit 0；
   `mcp` → `layout=n/a` / exit 0；`unconfigured` → exit 3；**带 BOM 的 bootstrap** → 同上正常。
 

@@ -53,7 +53,7 @@ def main(argv):
     recorded = None
     if BOOT.is_file():
         try:
-            boot = json.loads(BOOT.read_text(encoding="utf-8"))
+            boot = json.loads(BOOT.read_text(encoding="utf-8-sig"))
             recorded = ((boot.get("template") or {}).get("current_policy_version") or "").strip() or None
         except json.JSONDecodeError:
             findings.append({"code": "E3", "message": "bootstrap.json 不是合法 JSON"})
