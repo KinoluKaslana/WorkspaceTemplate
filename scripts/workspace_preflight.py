@@ -57,6 +57,50 @@ def venv_interpreter(venv_dir: Path) -> Path | None:
     return None
 
 
+def venv_layout(venv_dir: Path) -> str:
+    """返回解释器所在布局：`posix` / `windows` / `none`。"""
+    for parts in VENV_INTERPRETERS:
+        if venv_dir.joinpath(*parts).is_file():
+            return "windows" if parts[0] == "Scripts" else "posix"
+    return "none"
+
+
+def resolve_venv_dir(ws: Path, ident: str) -> Path:
+    r"""把 bootstrap 里的 `runtime.identifier` 解析成 venv 目录。
+
+    支持三种写法：venv 目录名（相对工作区）、POSIX 绝对路径、Windows 盘符路径（`D:\ws\.venv-314`）。
+    解析口径只此一处——preflight 的 python 项与 `--layout-only` 都走它。
+    """
+    ident = (ident or "").strip()
+    if re.match(r"^[A-Za-z]:[\\/]", ident):
+        return Path(ident.replace("\\", "/"))
+    path = Path(ident) if ident else ws
+    if ident and not path.is_absolute():
+        path = ws / ident
+    return path
+
+
+def describe_layout(venv_dir: Path) -> dict:
+    """只读诊断：这个 venv 目录里解释器在哪、是什么版本。
+
+    **布局是本机派生事实，永远现算**——不接受外部传入的布局/解释器路径
+    （那会把"现场核验"降级成"信任一份可能过期或被伪造的快照"）。
+    """
+    exe = venv_interpreter(venv_dir)
+    out = {
+        "venv": str(venv_dir),
+        "layout": venv_layout(venv_dir),
+        "interpreter": str(exe) if exe else None,
+        "version": None,
+        "candidates": [f"{a}/{b}" for a, b in VENV_INTERPRETERS],
+        "source": "probed-on-host",
+    }
+    if exe:
+        _, ver = sh(str(exe), "-c", "import sys;print(sys.version.split()[0])")
+        out["version"] = ver or None
+    return out
+
+
 def item(id_: str, recorded, actual, status: str, action: str = "") -> dict:
     return {"id": id_, "recorded": recorded, "actual": actual, "status": status, "action": action}
 
@@ -70,6 +114,8 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", default=".")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--layout-only", action="store_true",
+                    help="只读诊断：打印本机 venv 布局 JSON（exit 0=找到解释器，3=没有）")
     ap.add_argument("--strict", action="store_true")
     ap.add_argument("--harness", default="",
                     help="当前在用的 harness（cc,codex,hermes,dsh，逗号分隔）：给了就要求它已在 gate 结论里")
@@ -80,7 +126,26 @@ def main(argv: list[str]) -> int:
     if not boot_p.is_file():
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
-    boot = json.loads(boot_p.read_text(encoding="utf-8"))
+    boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
+    if a.layout_only:
+        pysec = boot.get("python") or {}
+        mode = pysec.get("mode") or "unconfigured"
+        ident = ((pysec.get("runtime") or {}).get("identifier") or "")
+        info = describe_layout(resolve_venv_dir(ws, ident))
+        info["mode"] = mode
+        if mode == "mcp":
+            # MCP 模式没有本地 venv：布局不适用，不能因为"找不到解释器"就报 3（那会被自动化当成故障）
+            info.update({"layout": "n/a", "applicable": False,
+                         "note": "MCP 模式没有本地 venv；要核验的是 MCP provider/tool 是否可用"})
+            print(json.dumps(info, ensure_ascii=False))
+            return 0
+        if mode == "unconfigured":
+            info.update({"applicable": False, "note": "python.mode 未配置：先按 §0 选择运行时（uv / venv / mcp）"})
+            print(json.dumps(info, ensure_ascii=False))
+            return 3
+        info["applicable"] = True          # uv 与 local-venv 都建本地 venv，布局规则相同
+        print(json.dumps(info, ensure_ascii=False))
+        return 0 if info["interpreter"] else 3
     tools_p = ws / "TOOLS.md"
     tools = tools_p.read_text(encoding="utf-8") if tools_p.is_file() else ""
     rows: list[dict] = []
@@ -106,13 +171,7 @@ def main(argv: list[str]) -> int:
     mode = py.get("mode")
     if mode in ("local-venv", "uv"):
         ident = ((py.get("runtime") or {}).get("identifier") or "").strip()
-        # 登记的可能是「venv 目录名」（相对工作区）或绝对路径（含 Windows 盘符写法）
-        if re.match(r"^[A-Za-z]:[\\/]", ident):
-            venv_dir = Path(ident.replace("\\", "/"))
-        else:
-            venv_dir = Path(ident) if ident else ws
-            if ident and not venv_dir.is_absolute():
-                venv_dir = ws / ident
+        venv_dir = resolve_venv_dir(ws, ident)
         venv_py = venv_interpreter(venv_dir) if ident else None
         want = py.get("version") or (py.get("runtime") or {}).get("version")
         if not ident:

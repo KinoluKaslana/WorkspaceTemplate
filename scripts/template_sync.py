@@ -203,7 +203,7 @@ def main(argv: list[str]) -> int:
     if a.rollback:
         return _rollback(ws, Path(a.rollback).expanduser().resolve(), a.purge_generated)
 
-    boot = json.loads(boot_path.read_text(encoding="utf-8"))
+    boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
     tpl_sec = boot.get("template") or {}
 
     # 模板克隆：显式参数 > TEMPLATE_DIR > bootstrap 记录的本地克隆 > 默认路径
@@ -354,7 +354,7 @@ def main(argv: list[str]) -> int:
             "[preserved]\n" + "\n".join(preserved) + "\n", encoding="utf-8")
 
         boot_path = ws / ".workspace" / "bootstrap.json"
-        boot_before = json.loads(boot_path.read_text(encoding="utf-8"))
+        boot_before = json.loads(boot_path.read_text(encoding="utf-8-sig"))
         python_before = json.dumps(boot_before.get("python"), sort_keys=True)
         gate_before = json.dumps(boot_before.get("gate"), sort_keys=True)
 
@@ -394,7 +394,7 @@ def main(argv: list[str]) -> int:
                     with (backup / "MANIFEST.txt").open("a", encoding="utf-8") as fh:
                         fh.write("[pruned]\n" + "\n".join(dropped) + "\n")
 
-            boot = json.loads(boot_path.read_text(encoding="utf-8"))
+            boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
             tpl_sec = boot.setdefault("template", {})
             tpl_sec["current_policy_version"] = after
             tpl_sec["last_synced_at"] = dt.date.today().isoformat()
@@ -420,11 +420,11 @@ def main(argv: list[str]) -> int:
             print(f"已自动回滚（backup={backup}）", file=sys.stderr)
             return 3
 
-        python_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8")).get("python"),
+        python_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8-sig")).get("python"),
                                   sort_keys=True)
         report["python_mode_preserved"] = (python_before == python_after)
         # §15：同步不得改写本机的 gate 接线结论（运行期事实不是模板事实）
-        gate_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8")).get("gate"),
+        gate_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8-sig")).get("gate"),
                                 sort_keys=True)
         report["gate_preserved"] = (gate_before == gate_after)
         report.update({"backup": str(backup), "copied": copied,

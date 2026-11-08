@@ -260,7 +260,7 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
             print("--force 记录 unconfigured 必须给 --user-decision（用户决定来源）", file=sys.stderr)
             return 2
     try:
-        boot = json.loads(boot_path.read_text(encoding="utf-8"))
+        boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
     except ValueError:
         print(f"{boot_path} 不是合法 JSON，不记录", file=sys.stderr)
         return 2

@@ -140,6 +140,87 @@ class Preflight(unittest.TestCase):
         self.assertIn("Scripts/python.exe", str(py))
 
 
+    def _layout_only(self):
+        import subprocess as sp
+        p = sp.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"],
+                   cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return p.returncode, json.loads(p.stdout)
+
+    def test_p16_bootstrap_with_bom(self):
+        """Windows 的 PowerShell/记事本会写 UTF-8 BOM；带 BOM 的 bootstrap.json 也必须能读。
+
+        真机探针里踩到过：`Set-Content -Encoding UTF8` 写出 BOM，旧版 `json.loads(text)` 直接
+        `JSONDecodeError: Unexpected UTF-8 BOM`，preflight 连报告都出不来。
+        """
+        boot = self.ws / ".workspace" / "bootstrap.json"
+        raw = boot.read_bytes()
+        boot.write_bytes(b"\xef\xbb\xbf" + raw)
+        rc, data = run(self.ws)
+        self.assertNotIn("raw", data, data)              # 能解析出报告，而不是 JSONDecodeError
+        self.assertIsInstance(data.get("items"), list)
+
+    def test_p13_layout_only_mcp_not_applicable(self):
+        """MCP 模式没有本地 venv：布局不适用，exit 0（不能报 3 让自动化当故障）。"""
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["python"] = {"mode": "mcp", "runtime": {"mcp_server": "x", "mcp_tool": "y"}}
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        rc, data = self._layout_only()
+        self.assertEqual(rc, 0, data)
+        self.assertEqual(data["mode"], "mcp")
+        self.assertEqual(data["layout"], "n/a")
+        self.assertFalse(data["applicable"])
+
+    def test_p14_layout_only_unconfigured(self):
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["python"] = {"mode": "unconfigured"}
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        rc, data = self._layout_only()
+        self.assertEqual(rc, 3, data)
+        self.assertFalse(data["applicable"])
+        self.assertIn("未配置", data["note"])
+
+    def test_p15_layout_only_uv_mode_uses_same_rules(self):
+        """uv 模式照样是本地 venv，布局规则与 local-venv 相同。"""
+        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["python"] = {"mode": "uv", "runtime": {"identifier": ".venv-999"}}
+        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        d = self.ws / ".venv-999" / "bin"
+        d.mkdir(parents=True)
+        stub = d / "python"
+        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        stub.chmod(0o755)
+        rc, data = self._layout_only()
+        self.assertEqual(rc, 0, data)
+        self.assertEqual(data["mode"], "uv")
+        self.assertTrue(data["applicable"])
+        self.assertEqual(data["layout"], "posix")
+
+    def test_p10_layout_only_windows(self):
+        """--layout-only：只读诊断，Windows 布局要给 layout=windows 且 exit 0。"""
+        scripts = self.ws / ".venv-999" / "Scripts"
+        scripts.mkdir(parents=True)
+        stub = scripts / "python.exe"
+        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        stub.chmod(0o755)
+        p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"],
+                           cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        data = json.loads(p.stdout)
+        self.assertEqual(data["layout"], "windows")
+        self.assertTrue(data["interpreter"].endswith("python.exe"), data)
+        self.assertEqual(data["source"], "probed-on-host")
+
+    def test_p11_layout_only_missing(self):
+        """--layout-only：找不到解释器时 layout=none、exit 3，且不伪造版本。"""
+        p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"],
+                           cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        data = json.loads(p.stdout)
+        self.assertEqual(data["layout"], "none")
+        self.assertIsNone(data["interpreter"])
+        self.assertIsNone(data["version"])
+
+
 def _load(name):
     sys.path.insert(0, str(SRC / "scripts"))
     try:
@@ -172,6 +253,13 @@ class VenvLayout(unittest.TestCase):
         f = self._touch("Scripts", "python.exe")
         for mod in ("workspace_preflight", "pyenv_init"):
             self.assertEqual(_load(mod).venv_interpreter(self.venv), f, mod)
+
+    def test_p12_single_source(self):
+        """布局口径只有一处：pyenv_init 必须是 workspace_preflight 的同一个函数对象。"""
+        pf = _load("workspace_preflight")
+        init = _load("pyenv_init")
+        self.assertIs(init.venv_interpreter, pf.venv_interpreter)
+        self.assertEqual(init.VENV_INTERPRETERS, pf.VENV_INTERPRETERS)
 
     def test_p9_no_interpreter(self):
         (self.venv / "lib").mkdir(parents=True)
