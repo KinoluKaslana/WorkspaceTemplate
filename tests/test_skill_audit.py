@@ -135,5 +135,57 @@ class SkillAudit(unittest.TestCase):
         self.assertIn("已登记（1 入口：demo）", (ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8"))
 
 
+    def test_a6_sync_registry_handles_non_kebab_names(self):
+        """大写/下划线目录名：读得懂、写得对（不再永久 exit 1），约定问题交给 --strict 提示。
+
+        历史：早期实现用 `[a-z0-9-]+` 匹配首列，而发现器是 `*/SKILL.md`（任意名）——
+        两者不一致会让「能通过检查的名字」永久写不干净。现在解析按列结构做，
+        命名约定单独提示，不再把约定问题伪装成集合不一致。
+        """
+        ws = build(self.root, {"Demo": FULL.format(name="Demo")})
+        rc, out = audit(ws, "--sync-registry")
+        self.assertEqual(rc, 0, out)
+        reg = (ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8")
+        self.assertIn("`.workspace/skills/Demo/SKILL.md`", reg)
+        rc2, out2 = audit(ws, "--strict")
+        self.assertEqual(rc2, 1, out2)          # 只提示约定，不改文件
+        self.assertIn("lowercase-kebab", out2)
+
+    def test_a8_prose_mention_does_not_inflate_entry_count(self):
+        """散文里提到 `.workspace/skills/x/SKILL.md` 不能虚增入口计数（只在入口节内数）。"""
+        ws = build(self.root, {"demo": FULL.format(name="demo")})
+        audit(ws, "--sync-registry")
+        reg = ws / "skills" / "REGISTRY.md"
+        text = reg.read_text(encoding="utf-8")
+        reg.write_text(text.replace("## Skill 入口", "正文示例：`.workspace/skills/demo/SKILL.md`\n\n## Skill 入口", 1),
+                       encoding="utf-8")
+        rc, out = audit(ws, "--strict")
+        self.assertEqual(rc, 0, out)          # 散文里那次提及不该让计数变成 2
+
+    def test_a9_entry_row_name_must_match_path(self):
+        """首列名称与第三列路径不一致时要点名（结构化解析，而不是靠正则巧合）。"""
+        ws = build(self.root, {"demo": FULL.format(name="demo")})
+        audit(ws, "--sync-registry")
+        reg = ws / "skills" / "REGISTRY.md"
+        reg.write_text(reg.read_text(encoding="utf-8").replace(
+            ".workspace/skills/demo/SKILL.md", ".workspace/skills/other/SKILL.md", 1),
+            encoding="utf-8")
+        rc, out = audit(ws, "--strict")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("名称与路径不一致", out)
+
+    def test_a7_sync_registry_escapes_pipe_in_description(self):
+        """描述里带竖线时不能撕开 REGISTRY 表格。"""
+        body = FULL.format(name="demo").replace(
+            'description: "Use when testing demo."', 'description: "Use when testing demo | pipe."')
+        ws = build(self.root, {"demo": body})
+        rc, out = audit(ws, "--sync-registry")
+        self.assertEqual(rc, 0, out)
+        reg = (ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8")
+        self.assertIn("demo \\| pipe", reg)
+        rc2, out2 = audit(ws, "--strict")
+        self.assertEqual(rc2, 0, out2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

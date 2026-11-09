@@ -129,7 +129,7 @@
       "R126": "7. 决策**必须**写入 `.workspace/bootstrap.json` 的 `readme` 节（`status` 为 `generated-auto` / `generated-provided` / `declined`，未决策保持 `undecided`，并记 `mode` 与 `decided_at`），机械入口 `python3 scripts/workspace_preflight.py --record-readme auto|provided|declined`。",
       "R127": "8. 生成结果**必须**经用户确认后才写入 `README.md`；该文件是用户首页，模板同步豁免。"
     },
-    "file_sha256": "83478dadcfbddb13471940456125480f553e9f8d90958cb4995cfa01a7a8375d",
+    "file_sha256": "d7c690e8ff8c051ef25e7d25227e68352ebf260879645ab94c8ff7a606acfb4f",
     "marked": 127
   },
   "LICENSE": {
@@ -144,7 +144,7 @@
   },
   "CONTRIBUTING.md": {
     "clauses": {},
-    "file_sha256": "78b09339343d546d91fb63b8389f820e55225cc111667520c4605046e15fcbb2",
+    "file_sha256": "ff993fe84a913e40a682dc63d412b3087d94e2e7541f3f517a87ea8d0594ceca",
     "marked": 0
   },
   "AGENTS.md": {
@@ -164,12 +164,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "ce926738239cc14a33e85cb06274c685e7c453cb316a405ae21ad0d058ea0ec3",
+    "file_sha256": "252a851772167705155ca9d8582d94942b89f6e0ccc643bec177beca5ff34739",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "b6eb9a9afa3fbc3f25092c0f37f63e0f421d7712a2d4331566c53cc3faf2e46a",
+    "file_sha256": "166db6292ffa81389a8f631e0b558efb5587f592ca2d458c196717e326c21d59",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -244,12 +244,12 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "c1d0bce44aa9fd7e976387b89772882c662481129349ed72e2ef38ff6c99337a",
+    "file_sha256": "01e5dbbced0795b7c0d006993056c9351fb0e0c2668ceef379a726077f387ade",
     "marked": 0
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "5fbbf109eae14ccd1ab44e446dff917e0665d50a0109d4d35191bd843c1845cf",
+    "file_sha256": "8dfa31b1a203d733d5c39766fe09cb376dd98839c9d89359434607d4b6566ea0",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
@@ -274,7 +274,7 @@
   },
   "tests/test_skill_audit.py": {
     "clauses": {},
-    "file_sha256": "d84c8f0ca176e8b74ba5e848663e4f618769f488a10621f7c1802aaeb8a935ff",
+    "file_sha256": "5e58660b51b865db4a9503a4db4139003ddf3d48d936e294dc404ebe337a9a42",
     "marked": 0
   },
   ".workspace/skills/_TEMPLATE.md": {
@@ -289,7 +289,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "0fb25baab3c7094328e73405df388b3739950b64640b2f89da11ae800dda6275",
+    "file_sha256": "415bd917e64c9c7db1ae89369661b018f42a875fa1ae318f26a36adf411b6e34",
     "marked": 0
   },
   "docs/skills.md": {
@@ -299,7 +299,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "becdb069d4468d7fd54d826a7e5daa19787666cee2e72b85b86b7b46eee83660",
+    "file_sha256": "daa873a0f4ba53dce2529932008c6059b3df3d519a4088e13cedcd3b841407e9",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -334,7 +334,7 @@
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "32c9f2628410d5d8c7f1f9130a0ceff85903d4dbc3f9b02c897536f2d7ebf946",
+    "file_sha256": "f8d5c48092d7bfa77b0c5658a70bd0e016849e9809fbd5f114f1f0492c2bf18b",
     "marked": 0
   },
   "tests/test_clause_lint.py": {

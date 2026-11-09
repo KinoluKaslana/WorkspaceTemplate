@@ -2,6 +2,44 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.11（2026-11-10）：审计/回滚缺陷修复 + 「工作区级 skill」评审结论
+
+> 本版把另一个 Agent 在 `75f4b61` 里连带改到已发布 3.5.10 段落的内容独立成版：
+> **同一版本号不得对应两套内容**（tag 是模板同步的版本锚，实例以 tag 为准）。
+
+### 3.5.11-a 上游硬化（原 75f4b61，逐条复核后保留）
+
+- **`skill_audit.py`**：
+  - `--sync-registry` 写完**回读校验**（名称集合 / 声明计数），不再提前 return 把「写坏了」报成 ok；
+    目录名不满足报告正则时 exit 1 并输出 `registry_problems`。
+  - 表内 `description` 的 `|` 转义，避免撕开 REGISTRY 表格行。
+  - `--tools-snippet` 不再吞掉非 TOOLS 的 findings，会另行提示条数。
+- **`template_sync.py`**：
+  - `--rollback --purge-generated` 遇到含非 `workspace-skills` 命名空间的 `skills/REGISTRY.md` 时**保留并告警**
+    ——那是任何脚本都重建不出来的行（个人库、本地层）。
+  - 被清除的生成物先快照到 `<backup>/purged/`，输出恢复路径；「清除」不再等于不可恢复。
+- 新增用例 4 条：`test_a6`（sync 写后校验）、`test_a7`（描述竖线转义）、
+  `test_rollback_keeps_registry_with_foreign_namespace`、`test_rollback_snapshots_purged_generated`。
+  全套 137 → 141 例全绿。
+
+### 3.5.11-b 列席复核后的必修（两席一致指出的三个缺陷）
+
+- **`_registry_has_foreign_namespaces()` 漏判本地层命名空间**：判定用 `startswith("workspace-skills")`，
+  而本地层命名空间 `workspace-skills-local` 正好以它开头 → 被当成模板原生 → 全新工作区会被 purge 静默删掉整张
+  REGISTRY。改为**精确等于** `workspace-skills`；用例 fixture 改用 `workspace-skills-local`（原用例用 `skills`，测不到这一层）。
+- **`registry_invariants()` 的集合正则比发现器窄**：发现器是 `*/SKILL.md`（任意目录名），集合却只认 `[a-z0-9-]+`，
+  大写/下划线目录会让 `--sync-registry` **永久 exit 1 且无法通过改名以外的手段修复**；计数用的又是 `[A-Za-z0-9_-]+`，
+  两处口径不一致。改为**按表格列结构解析**（首列名 vs 第三列路径互相校验），字符类统一为发现的宽度；
+  命名约定（lowercase-kebab）改由 `--strict` 提示，不再伪装成「集合不一致」。
+- **入口计数会被散文虚增**：计数原来对全文 `findall`，正文里提一次路径就算一个入口。改为只在
+  `## Skill 入口` 节内、按行计数。
+
+### 用例（新增/改写 5 条）
+
+`test_a6`（大写名可同步、约定问题交给 `--strict`）、`test_a8`（散文不虚增计数）、`test_a9`（名称与路径必须自洽）、
+`test_rollback_keeps_registry_with_local_layer_namespace`（本地层命名空间不得被 purge）；
+反证：把 `startswith` 或收窄字符类改回去，各自的用例立刻转红。
+
 ## 3.5.10（2026-11-09）：README 豁免补齐「可删除」形态 + `~` 路径展开
 
 - **`verify_rules.py`**：

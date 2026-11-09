@@ -38,4 +38,7 @@ python3 -m unittest discover -s hooks-tests -p 'test_*.py'
   `release_anchor` 失败（`.github/scripts/release_anchor.py`）。这条闸只保证「有留痕」，改得对不对仍然靠评审。
 - 发布前跑一遍 `gate_status.py --require <harness> --ttl-minutes 30` 的**伪证负例**（把 `.dsh-gate.log` 的 `at` 改成 2 小时前、mtime 置现在，必须判过期——`tests/test_gate_status.py` 已固化）。
 - 发布打 tag（`vX.Y.Z`），tag 是模板同步的版本锚点。
+- **改了模板层内容就必须升版本**：CI 在 `main` 上跑 `release_anchor.py --assert-tag-identity`，
+  若 `v<政策版本>` 已存在但与 HEAD 不同树，直接失败——同一版本号不得对应两套内容
+  （已同步的工作区以 tag 为准，会因此永久 TAMPERED）。
 - 详细流程见 `UPGRADE.md`（旧工作区自举）与 `docs/README.md`（文档索引）；模板层同步机制见 `.workspace/skills/template-update/SKILL.md`。
