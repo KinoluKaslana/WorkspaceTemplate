@@ -136,7 +136,7 @@
       "R133": "5. 本地 skill 的登记**必须**由 `scripts/skill_audit.py --sync-registry` 从磁盘派生后写入三处：`skills/REGISTRY.md` 的「## 本地层入口」表、`TOOLS.md` 的本地登记行、`.workspace/bootstrap.json` 的 `skills.registered_roots`；草稿不登记，退役项保留墓碑行。",
       "R134": "6. `approved` 项的审批证据**必须**写在同目录 `APPROVAL.json`（`approved_by` 角色标识、`approved_at`、`approved_skill_sha256` = 当前 `SKILL.md` 字节的 sha256，外加 `approved_directive` 用户原话或存在的 `review_artifact`）；内容变化后**必须**重新批准，删除该文件即撤销批准。"
     },
-    "file_sha256": "07b69b553c456b53e31548fb56a631c866072ad1f7d70a0b409c7d9ced21f602",
+    "file_sha256": "7e051857be8ae65eb001dbb8b39cf4ece0fcb04171766ba8413dadc3925eae55",
     "marked": 134
   },
   "LICENSE": {
@@ -171,12 +171,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "3fbf2e06face0241b4de904a72cf544ce872b03a8717304a37738038b3ec6c21",
+    "file_sha256": "907328a3a7114254cef45eb35aaffa0892deb2a434ab5d2c23e711f6d25a065a",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "0854f11db4e076d0be711d5a154b8f8e873822249085252e941822c190ec094f",
+    "file_sha256": "52044fe3e3931741672c35486def26d66420db7c0de77a94437d7808274b59ce",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -256,7 +256,7 @@
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "d4bc8fbf49c743f630bced5e4db6f858c1213f62405c0312dd8c708f36c124b1",
+    "file_sha256": "b51bad14cb8d230dbfb5c5f8953ad6f7bd4199681f640e2d4eaa2a4e9166823e",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
@@ -286,7 +286,7 @@
   },
   ".workspace/skills/_TEMPLATE.md": {
     "clauses": {},
-    "file_sha256": "83ea03908c5a608828d81fa7b509ac33535548bc507f8616872d521e6068c663",
+    "file_sha256": "1579d142f9add7d45f93ad3495d76bb062ee32498555cbe07df903da09faf2a3",
     "marked": 0
   },
   ".workspace/skills/workspace-skill-authoring/SKILL.md": {
@@ -301,7 +301,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "87c14cfa3c9cc315db7b81fb49c64371234687e4aeb3ea4b61e6649d31e6a5eb",
+    "file_sha256": "c188656ad804ae3eb6de42655a98dd8b07a09fe0b7f84eb9174ba1005f947abd",
     "marked": 0
   },
   "docs/skills.md": {
@@ -341,7 +341,7 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "4a1de8872eef5e71c1b0f12e9785c9120cd7d19406e8fd7884243709068c57e4",
+    "file_sha256": "4d7cd86d80b0584a89c217809913706126108b9e0d9c7552b9dad223ddb9aca0",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
