@@ -225,5 +225,44 @@ class Transactional(unittest.TestCase):
         self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
 
 
+    def test_rollback_keeps_registry_with_foreign_namespace(self):
+        """REGISTRY 里已有用户自己的命名空间时，--purge-generated 不得删除它。
+
+        删掉后 `skill_audit --sync-registry` 只会重建 workspace-skills 那一节，
+        个人库/本地层等行再也回不来 → 静默丢用户数据。
+        """
+        self.assertEqual(self.run_sync("--apply").returncode, 0)
+        reg = self.ws / "skills" / "REGISTRY.md"
+        reg.parent.mkdir(parents=True, exist_ok=True)
+        reg.write_text(
+            "# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
+            "| `workspace-skills` | `.workspace/skills/` | 无 | 已登记（0 入口） | TOOLS |\n"
+            "| `skills` | `/home/u/skills` | 根路由 | 已登记 | TOOLS |\n", encoding="utf-8")
+        bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
+        p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                            "--rollback", str(bk), "--purge-generated"],
+                           capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(reg.is_file(), "含用户命名空间的 REGISTRY 被删掉了")
+        self.assertIn("保留未清除", p.stdout)
+        self.assertIn("`skills`", reg.read_text(encoding="utf-8"))
+
+    def test_rollback_snapshots_purged_generated(self):
+        """被清除的生成物必须先留快照，否则「清除」等于不可恢复。"""
+        self.assertEqual(self.run_sync("--apply").returncode, 0)
+        reg = self.ws / "skills" / "REGISTRY.md"
+        reg.parent.mkdir(parents=True, exist_ok=True)
+        reg.write_text("# generated\n", encoding="utf-8")
+        bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
+        p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                            "--rollback", str(bk), "--purge-generated"],
+                           capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertFalse(reg.exists())
+        snap = bk / "purged" / "skills" / "REGISTRY.md"
+        self.assertTrue(snap.is_file(), "清除前没有留快照")
+        self.assertEqual(snap.read_text(encoding="utf-8"), "# generated\n")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -105,6 +105,23 @@ GENERATED = ("skills/REGISTRY.md", "notes/INDEX.md", "notes/_INVERTED.md",
              "docs/.index.json", "docs/.aliases.json")
 
 
+def _registry_has_foreign_namespaces(path: Path) -> bool:
+    """REGISTRY 里是否登记了 workspace-skills 之外的命名空间（用户自有数据）。
+
+    `skill_audit.py --sync-registry` 只会重建 workspace-skills 那一节与它的计数，
+    所以只要表里还有 `| \\`other-ns\\` |` 这样的行，删掉这个文件就再也重建不出来。
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    for line in text.splitlines():
+        m = re.match(r"^\|\s*`([^`]+)`\s*\|", line)
+        if m and not m.group(1).startswith("workspace-skills"):
+            return True
+    return False
+
+
 def _rollback(ws: Path, backup: Path, purge_generated: bool = False) -> int:
     """按 MANIFEST 回滚：先放回 replaced，再删除 added，最后恢复 preserved。"""
     man = backup / "MANIFEST.txt"
@@ -152,22 +169,37 @@ def _rollback(ws: Path, backup: Path, purge_generated: bool = False) -> int:
             dst = ws / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
-    purged = []
+    purged, kept, snapshotted = [], [], []
     if purge_generated:
         for rel in GENERATED:
             tgt = ws / rel
-            if tgt.is_file() and not (backup / rel).is_file():
-                tgt.unlink()
-                purged.append(rel)
-                parent = tgt.parent
-                while parent != ws and parent.is_dir() and not any(parent.iterdir()):
-                    parent.rmdir()
-                    parent = parent.parent
+            if not tgt.is_file() or (backup / rel).is_file():
+                continue
+            # REGISTRY 里可能已有用户自己的命名空间（例如 skills/个人库、本地层）：
+            # 那是任何脚本都重建不出来的内容，purge 不能静默删掉。
+            if rel == "skills/REGISTRY.md" and _registry_has_foreign_namespaces(tgt):
+                kept.append(rel)
+                continue
+            dst = backup / "purged" / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(tgt, dst)
+            snapshotted.append(rel)
+            tgt.unlink()
+            purged.append(rel)
+            parent = tgt.parent
+            while parent != ws and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
     print(f"回滚完成：放回 {restored}，删除本次新增 {removed}，源 {backup}")
     if purged:
         print("已清除引导期生成（升级前不存在）:", ", ".join(purged))
+        if snapshotted:
+            print("  清除前快照:", ", ".join(str(backup / "purged" / r) for r in snapshotted))
+            print("  需要找回: 从上面的快照目录复制回工作区，或按工作区自己的重建流程重生成")
     elif not purge_generated:
         print("提示：第 3 步生成的工作区自有文件不在 MANIFEST 内；需要一并清除时加 --purge-generated")
+    if kept:
+        print("保留未清除（含工作区自有命名空间，删除会丢用户数据）:", ", ".join(kept))
     return 0
 
 

@@ -22,6 +22,18 @@
   用例需同时设置两者（Windows CI 首轮红在这里）。
 - 该用例在派生实例仓里运行时模板源可能本就没有 `README_EN.md`：改为 `skipTest`（无法验证「不复活」时
   不该崩，也不该假绿）。
+- **`skill_audit.py`**（登记缺口的三处）：
+  - `--sync-registry` 写完**回读校验**（名称集合 / 声明计数），不再提前 return 把「写坏了」报成 ok；
+    目录名不满足报告正则时 exit 1 并输出 `registry_problems`。
+  - 表内 `description` 的 `|` 转义，避免撕开 REGISTRY 表格行。
+  - `--tools-snippet` 不再吞掉非 TOOLS 的 findings，会另行提示条数。
+- **`template_sync.py`**（回滚不再删用户数据）：
+  - `--rollback --purge-generated` 遇到含非 `workspace-skills` 命名空间的 `skills/REGISTRY.md` 时**保留并告警**
+    ——那是任何脚本都重建不出来的行（个人库、本地层）。
+  - 被清除的生成物先快照到 `<backup>/purged/`，输出恢复路径；「清除」不再等于不可恢复。
+- 新增用例 4 条：`test_a6`（sync 写后校验）、`test_a7`（描述竖线转义）、
+  `test_rollback_keeps_registry_with_foreign_namespace`、`test_rollback_snapshots_purged_generated`。
+  全套 137 → 141 例全绿。
 
 ## 3.5.9（2026-11-09）：建仓后的 README 决策（§0.4）
 

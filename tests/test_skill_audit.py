@@ -135,5 +135,30 @@ class SkillAudit(unittest.TestCase):
         self.assertIn("已登记（1 入口：demo）", (ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8"))
 
 
+    def test_a6_sync_registry_fails_when_it_cannot_make_registry_consistent(self):
+        """--sync-registry 写完必须回读校验：目录名含大写时它写出的表自身就不合法。
+
+        原实现在这里直接 return rc，写完不查，把「写坏了」报成 ok。
+        期望：exit 1 + registry_problems 里点名名称集合不一致。
+        """
+        ws = build(self.root, {"Demo": FULL.format(name="Demo")})
+        rc, out = audit(ws, "--sync-registry")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("registry_problems", out)
+        self.assertIn("名称集合", out)
+
+    def test_a7_sync_registry_escapes_pipe_in_description(self):
+        """描述里带竖线时不能撕开 REGISTRY 表格。"""
+        body = FULL.format(name="demo").replace(
+            'description: "Use when testing demo."', 'description: "Use when testing demo | pipe."')
+        ws = build(self.root, {"demo": body})
+        rc, out = audit(ws, "--sync-registry")
+        self.assertEqual(rc, 0, out)
+        reg = (ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8")
+        self.assertIn("demo \\| pipe", reg)
+        rc2, out2 = audit(ws, "--strict")
+        self.assertEqual(rc2, 0, out2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
