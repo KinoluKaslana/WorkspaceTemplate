@@ -18,6 +18,8 @@
 - **`tests/test_docs_consistency.py`**：D1（链接可解析）与 D7（散文计数）在 README_EN 缺失时跳过该文件，
   不再 `FileNotFoundError`；断链检查也放过指向被删首页的链接。
 - `TEMPLATE_FILES` 78 → 79（新增该测试）。
+- 修复该测试的跨平台问题：`~` 展开在 POSIX 取 `HOME`、在 Windows 的 `ntpath` 取 `USERPROFILE`，
+  用例需同时设置两者（Windows CI 首轮红在这里）。
 
 ## 3.5.9（2026-11-09）：建仓后的 README 决策（§0.4）
 
