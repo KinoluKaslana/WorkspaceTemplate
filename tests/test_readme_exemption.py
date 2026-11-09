@@ -135,6 +135,9 @@ class SyncKeepsDeletedReadmeEn(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_t5_deleted_readme_en_not_reinstalled(self):
+        if not (self.ws / "README_EN.md").exists():
+            # 模板源本身就没有 README_EN（例如派生实例仓里跑本用例），无法验证「不复活」
+            self.skipTest("模板源无 README_EN.md")
         (self.ws / "README.md").write_text("# 用户自己的首页\n", encoding="utf-8")  # 本地化
         (self.ws / "README_EN.md").unlink()
         r = subprocess.run([sys.executable, "-B", str(ROOT / "scripts" / "template_sync.py"),

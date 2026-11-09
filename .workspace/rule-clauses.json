@@ -514,7 +514,7 @@
   },
   "tests/test_readme_exemption.py": {
     "clauses": {},
-    "file_sha256": "799486742c78ced12438f0d66629978310ee2da50f293e18df8469c32d058a5d",
+    "file_sha256": "40368bd85eb350262e981ab47d5485a0a1964b8add598097a2bdfa48ca3f02cc",
     "marked": 0
   }
 }

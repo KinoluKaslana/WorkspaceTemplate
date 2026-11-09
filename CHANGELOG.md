@@ -20,6 +20,8 @@
 - `TEMPLATE_FILES` 78 → 79（新增该测试）。
 - 修复该测试的跨平台问题：`~` 展开在 POSIX 取 `HOME`、在 Windows 的 `ntpath` 取 `USERPROFILE`，
   用例需同时设置两者（Windows CI 首轮红在这里）。
+- 该用例在派生实例仓里运行时模板源可能本就没有 `README_EN.md`：改为 `skipTest`（无法验证「不复活」时
+  不该崩，也不该假绿）。
 
 ## 3.5.9（2026-11-09）：建仓后的 README 决策（§0.4）
 
