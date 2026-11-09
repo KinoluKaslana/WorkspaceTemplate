@@ -333,7 +333,8 @@ def main(argv: list[str]) -> int:
         mod = importlib.util.module_from_spec(spec)          # type: ignore[arg-type]
         spec.loader.exec_module(mod)                          # type: ignore[union-attr]
         files = list(mod.TEMPLATE_FILES)
-        missing = [f for f in files if not (ws / f).is_file()]
+        exempt = {"README.md", "README_EN.md"}      # 用户首页：可替换、可删除（R127）
+        missing = [f for f in files if not (ws / f).is_file() and f not in exempt]
         rows.append(item("template_files", len(files),
                          {"present": len(files) - len(missing), "missing": missing[:6]},
                          OK if not missing else BAD,
