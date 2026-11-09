@@ -121,6 +121,12 @@ def _registry_has_foreign_namespaces(path: Path) -> bool:
         # 用 startswith 会把它们当成自己人 → purge 静默删掉用户登记（正是要防的事）。
         if m and m.group(1) != "workspace-skills":
             return True
+    # 纵深：本地层节里只要有数据行，也算用户数据（根表行被手删时仍不会误删）
+    sec = re.search(r"## 本地层入口[^\n]*\n(?:.*\n)*?(?=\n## |\Z)", text)
+    if sec and re.search(r"^\|\s*[^|\s]", sec.group(0), re.M):
+        rows = [ln for ln in sec.group(0).splitlines() if ln.startswith("|") and "---" not in ln]
+        if len(rows) > 2:                     # 表头 + 分隔行之后还有内容
+            return True
     return False
 
 
