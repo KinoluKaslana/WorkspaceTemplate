@@ -263,7 +263,8 @@ class LocalLayer(unittest.TestCase):
         d = self.ws / ".workspace" / "skills-local" / sub / name
         d.mkdir(parents=True)
         body = LOCAL_FULL.format(name=name, state=state)
-        (d / "SKILL.md").write_text(body, encoding="utf-8")
+        # 按字节写：Windows 的 write_text 会把 \n 转成 \r\n，审批哈希是按字节算的
+        (d / "SKILL.md").write_bytes(body.encode("utf-8"))
         import hashlib
         sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
         if approval is None and state == "approved":

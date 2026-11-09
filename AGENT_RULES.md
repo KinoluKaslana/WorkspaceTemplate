@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`3.5.12`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`3.5.13`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
