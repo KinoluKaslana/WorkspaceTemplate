@@ -1,4 +1,4 @@
-# Workspace skills（7 个）
+# Workspace skills（8 个）
 
 > 实现说明，不构成政策。义务与判定标准见 [`AGENT_RULES.md`](../AGENT_RULES.md)；本页只讲**每个 skill 干什么、什么时候进、失败怎么办**。
 
@@ -12,6 +12,7 @@
 | [`git-init`](../.workspace/skills/git-init/SKILL.md) | 1.2.0 | 为工作区建 git 仓库并登记 | `git.status=declined` 后用户改主意；"建 git 仓库" |
 | [`delivery-closure`](../.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 声明完成前的交付闭环 | 任务模式产物落盘、准备说"完成" |
 | [`docs-retrieval-maintenance`](../.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | 维护 docs 索引与别名表 | docs 改动、`check` 报 stale、命中率下降 |
+| [`workspace-skill-authoring`](../.workspace/skills/workspace-skill-authoring/SKILL.md) | 1.0.0 | 把用户要的能力落成**工作区级** skill（含 kebab 命名、审批证据、三处登记） | 用户明确要求新建/修改本地 skill |
 | [`legacy-workspace-upgrade`](../.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 旧版本工作区**自举**升级（缺现行 skill 时） | 工作区模板版本落后且没有 `template-update` 3.x / `template_sync.py` |
 
 **职责边界口诀**：`template-update` 管模板文件；`workspace-repo-sync` 管工作区仓库；`workspace-init`/`git-init` 管从零落地；`delivery-closure` 管收尾；`docs-retrieval-maintenance` 管检索。工作区自身仓库的**分支切换、迁移、历史改写**不在任何 skill 里——**用户自管**。

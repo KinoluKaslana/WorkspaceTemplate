@@ -2,6 +2,25 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.12（2026-11-10）：工作区级（本地）skill —— 模板级能力
+
+按老大三条裁决落地：① 模板内置创建本地 skill 的 skill；② 目录名 lowercase-kebab 由该 skill 强制；
+③ 同名**本地优先**，且这是模板级规则、**不需要** custom 覆写。
+
+- **新政策 §17（R128–R134）**：本地层目录与所有权（`.workspace/skills-local/{<name>,_drafts,_retired}`）、
+  仅用户明确要求才创建、只有 `approved` 可路由、同名本地优先、三处登记由脚本派生、审批证据落 `APPROVAL.json`。
+  R41 补一句收窄：`<root>:<skill>` 消歧只适用于按 §4 引入的**外部 roots**。
+- **新 skill `workspace-skill-authoring` v1.0.0**（第 8 个模板 skill）：缺口证据 → 重叠检查 → kebab 命名 →
+  `_drafts/` 草稿 → 8 维契约 → 转正 + 三处登记 → 审批与试用（首个 skill 的试用如实写 self-bootstrap）。
+  带 fail-fast 前置：不是模板派生工作区就拒绝执行，不在别处散落 `.workspace/skills-local/`。
+- **`skill_audit.py` 双层化**：模板层 + 本地层；本地层查状态机（目录即主事实）、
+  `APPROVAL.json`（`approved_by`/`approved_at`/`approved_skill_sha256` 与当前字节比对，改动即失效）、
+  双表登记与计数；`--sync-registry` 同时重建「## Skill 入口」与「## 本地层入口」并写后回读。
+  无本地根时行为与 3.5.11 完全一致（有用例钉住）。
+- **`workspace_preflight.py` 的 skills 项**改为调用 `skill_audit --strict --json`（单一事实源），
+  老工作区脚本不认 `--json` 时退回内联模板层比对。
+- `_TEMPLATE.md` 去掉重复的「## 维护」节；`TEMPLATE_FILES` 79 → 80；docs/skills.md 7 → 8 个 skill。
+
 ## 3.5.11（2026-11-10）：审计/回滚缺陷修复 + 「工作区级 skill」评审结论
 
 > 本版把另一个 Agent 在 `75f4b61` 里连带改到已发布 3.5.10 段落的内容独立成版：

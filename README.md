@@ -8,7 +8,7 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v3.5.11%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.5.12%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -45,7 +45,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 - **只是偶尔问答**：`hook` 与 `preflight` 的收益来自「长期、反复、多会话」；一次性咨询用不上。
 - **需要强隔离或多租户**：守门防的是「无意识跳过」，**不防主动绕过**——同 uid 没有安全边界，恶意绕过要靠沙箱/OS 权限。
 - **不能接受客户端执行仓内 hook 代码**：Codex/Claude Code 的 hook 是随仓分发的可执行脚本，合规上不接受就别装。
-- **不想跟版本**：政策条款集（R1..R127）与模板同步链是配套的；长期停在旧版本会碰到条款演进与 `verify_rules` 漂移。
+- **不想跟版本**：政策条款集（R1..R134）与模板同步链是配套的；长期停在旧版本会碰到条款演进与 `verify_rules` 漂移。
 
 正向的适用范围见上面的「为什么需要它」与「核心能力」。
 
@@ -56,7 +56,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 单一政策源 | [`AGENT_RULES.md`](AGENT_RULES.md) 统一约束主 Agent 与子 Agent；客户端入口只负责定位它 |
 | 规则分层 | 模板层文件**锁定只读**（同步=整文件替换）；本地规则全部外置到 `<file>.custom.md`，**custom 优先**（§10） |
 | 完整性校验 | 条款带稳定 ID（`<!-- id:Rn -->`）+ 注册表双级校验；`--vs-template` 对模板克隆做**字节级比对 + git 信任锚**，堵死"改文件再重生成注册表"的自我作证漏洞 |
-| 生命周期 skills | 7 个随模板分发到 `.workspace/skills/`：`template-update`（任意 ref 同步）、`workspace-repo-sync`（跨设备同步工作区仓库）、`workspace-init`（接管/首次落地）、`git-init`（建仓）、`delivery-closure`（交付闭环）、`docs-retrieval-maintenance`（文档检索维护）、`legacy-workspace-upgrade`（旧版本工作区自举）。每个 skill 必须满足 8 维契约，`skill_audit.py` 机械检查 |
+| 生命周期 skills | 8 个随模板分发到 `.workspace/skills/`：`template-update`（任意 ref 同步）、`workspace-repo-sync`（跨设备同步工作区仓库）、`workspace-init`（接管/首次落地）、`git-init`（建仓）、`delivery-closure`（交付闭环）、`docs-retrieval-maintenance`（文档检索维护）、`legacy-workspace-upgrade`（旧版本工作区自举）、`workspace-skill-authoring`（把用户要的能力落成**工作区级** skill）。每个 skill 必须满足 8 维契约，`skill_audit.py` 机械检查 |
 | 首次初始化协议 | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) 持久化 `python.mode`（**必须**：`uv` / `local-venv` / `mcp`，默认 uv）与 `git.status`（**可选**：initialized / declined）；**既有工作区一旦配置就不被模板演进改写** |
 | 业务无关 | [`WORKSPACE.md`](WORKSPACE.md) 初始为空，由用户的稳定需求定义目标、范围与验收 |
 | Skills 单路径接入 | 用户只提供根目录，Agent 自动发现入口、记录指纹并处理同名冲突 |
@@ -73,7 +73,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 |---|---|---|
 | 子 Agent 授权模型 | 主 Agent 读完政策并常驻；**子 Agent 不重读全量政策**，写工作区须「目标精确命中委托 + 父证据仍有效」，自读不解锁 | R24 / R98 / R108 + `delegations.py` |
 | 机械守门补强 | 拒绝码前缀、委托审计、`gate-deny` 独立核验、审计十三型 | 插件 1.9.0 + `docs/hooks-catalog.md` §2.6 |
-| skills 契约化 | 7 个 skill 必须齐 8 维；`skill_audit.py` 缺节即失败；REGISTRY 由目录派生 | `docs/skills.md` §1 |
+| skills 契约化 | 8 个 skill 必须齐 8 维；`skill_audit.py` 缺节即失败；REGISTRY 由目录派生 | `docs/skills.md` §1 |
 | Python 三选一 | **uv 默认** / 手动 venv / MCP；已配置不被改写 | R2–R8 + `pyenv_init.py` |
 | 跨设备可核验 | 11 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
 | docs 检索（可选） | 确定性索引，**省账单不省 token**，命中 10/10 | `docs/docs-retrieval.md` |
@@ -272,7 +272,7 @@ dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走�
 
 ## 工作区生命周期 skills
 
-7 个 skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间），登记于 `skills/REGISTRY.md` 与 `TOOLS.md`，全部满足 8 维契约（触发/前置/契约/边界/执行/失败回滚/验收/维护）：
+8 个 skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间），登记于 `skills/REGISTRY.md` 与 `TOOLS.md`，全部满足 8 维契约（触发/前置/契约/边界/执行/失败回滚/验收/维护）：
 
 | Skill | 版本 | 触发 | 做什么 |
 |---|---|---|---|
@@ -282,6 +282,7 @@ dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走�
 | [git-init](.workspace/skills/git-init/SKILL.md) | 1.2.0 | "建 git 仓库"，或 `git.status=declined` 后改主意 | init → .gitignore → 登记 → 审查暂存清单 → 提交 → 核提交树；含撤销建仓 |
 | [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 任务模式产物落盘、准备声明完成 | 产物清点（无仓用时间戳列举）→ 查 INDEX → note 三选一 → 索引回写 → 外部动作验证 → 三档口径声明 |
 | [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 工作区模板版本旧、缺现行 skill / 无 `template_sync.py` | 从模板快照自举 → `--apply` → `--sync-registry` + TOOLS 补登 → 四条验收 |
+| [workspace-skill-authoring](.workspace/skills/workspace-skill-authoring/SKILL.md) | 1.0.0 | 用户明确要求新建/修改**工作区级** skill | 缺口证据 → 重叠检查 → kebab 命名 → 草稿 → 8 维契约 → 转正与三处登记 → 审批/试用 |
 | [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | docs 改动、索引 stale、命中率下降 | build/check → 命中报告 → 只在真实缺口下加别名（上限 8、留一验证）→ 五条验收 |
 
 **边界**：工作区**自身** git 仓库的分支切换、迁移、历史改写不在任何 skill 内——由用户自行维护。
@@ -340,7 +341,7 @@ Agent 将自动完成：
 │   ├── README.md           # 文档索引（按读者选入口 + 必跑命令）
 │   ├── architecture.md     # 四层模型 / 写路径 / 读证据 / 失败姿态 / 跨设备
 │   ├── policy-language.md  # 政策双轨：受控词表 + 条款属性 + clause_lint
-│   ├── skills.md           # 7 个 skill 的触发、边界、组合流程、8 维契约
+│   ├── skills.md           # 8 个 skill 的触发、边界、组合流程、8 维契约
 │   ├── tools.md            # 15 个脚本的用法与退出码
 │   ├── hooks-guide.md      # 三 harness hook 技术详解（原理 + 作用 + 排查）
 │   ├── hooks-catalog.md    # 事件清单 + 新 harness 接入 7 步 + 验收断言
