@@ -89,7 +89,7 @@ python3 scripts/skill_audit.py --tools-snippet    # 打印需补进 TOOLS.md 的
 | **workspace-repo-sync** | 入口 `.workspace/skills/workspace-repo-sync/SKILL.md` |
 ```
 
-**照 `--tools-snippet` 的完整输出抄，不要只抄上面两行**：模板当前带 7 个 skill，少登记一个就会在 `skill_audit --strict` 里报「未登记于 TOOLS.md」。
+**照 `--tools-snippet` 的完整输出抄，不要只抄上面两行**：模板当前带 8 个 skill，少登记一个就会在 `skill_audit --strict` 里报「未登记于 TOOLS.md」。
 
 ## 4. 验收（四条全绿）
 

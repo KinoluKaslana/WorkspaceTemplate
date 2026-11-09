@@ -8,7 +8,8 @@
 
 | 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |
 |---|---|---|---|---|
-| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（7 入口：delivery-closure / docs-retrieval-maintenance / git-init / legacy-workspace-upgrade / template-update / workspace-init / workspace-repo-sync） | `TOOLS.md`「workspace-skills」小节 |
+| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（8 入口：delivery-closure / docs-retrieval-maintenance / git-init / legacy-workspace-upgrade / template-update / workspace-init / workspace-repo-sync / workspace-skill-authoring） | `TOOLS.md`「workspace-skills」小节 |
+| `workspace-skills-local` | `.workspace/skills-local/` | 无路由器；每 skill 独立登记（用户所有） | 已登记（0 个本地 skill） | `TOOLS.md` §4.6 |
 
 ## Skill 入口
 
@@ -21,6 +22,7 @@
 | template-update | Use when syncing a workspace's template layer from any template source revision (branch, tag, or commit) — not tied to one branch. 从任意模板来源（分支/标签/提交）更新工作区模板层时使用。 | `.workspace/skills/template-update/SKILL.md` | workspace-skills |
 | workspace-init | Use when initializing or adopting a workspace created from an OLD WorkspaceTemplate version (pre-v2.0), or any workspace whose governance files predate the locked-template + custom-override architecture. 初始化/接管老版本模板工作区时使用。 | `.workspace/skills/workspace-init/SKILL.md` | workspace-skills |
 | workspace-repo-sync | Use when syncing the workspace's own git repo across devices (notes/TOOLS/artifacts changed elsewhere), or when recorded tool paths may belong to another machine. 跨设备同步工作区自身仓库时使用：先核验登记事实与工具真实性，再让用户裁决差异。 | `.workspace/skills/workspace-repo-sync/SKILL.md` | workspace-skills |
+| workspace-skill-authoring | Use when the user asks to create or modify a workspace-level (local) skill in THIS workspace — 「给我建一个 skill」「把这个流程固化成技能」「改一下本地 skill」。不用于模板层 skill 的修改（那要回模板仓）。当用户明确要求新增/修改工作区级 skill 时使用。 | `.workspace/skills/workspace-skill-authoring/SKILL.md` | workspace-skills |
 
 ## 职责边界（workspace-skills）
 
@@ -47,3 +49,10 @@
 3. 只在当前任务需要时完整读目标 `SKILL.md`，再按其相对引用渐进读资源。
 4. 复用前核对 `TOOLS.md` 中的 revision/入口指纹；发生变化时先审查再更新。
 5. 本文件只由父 Agent 或唯一集成 Agent 串行修改。
+
+## 本地层入口
+
+> 由 `skill_audit.py --sync-registry` 生成；只有 `approved` 可作路由依据。
+
+| 路由 ID | 状态 | 触发摘要 | 入口 |
+|---|---|---|---|

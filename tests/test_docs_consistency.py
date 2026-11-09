@@ -99,6 +99,8 @@ class DocsConsistency(unittest.TestCase):
         self.assertEqual(offenders, [], "; ".join(offenders))
 
     def test_d5_readme_lists_all_skills(self):
+        if not _is_template_repo():
+            self.skipTest("派生实例的 README 是用户首页，不参与模板 skill 清单检查")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         missing = [n for n in skills() if n not in readme]
         self.assertEqual(missing, [], f"README 未提到：{missing}")

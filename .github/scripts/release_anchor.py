@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -119,15 +120,73 @@ def self_test() -> int:
         return 0 if good else 1
 
 
+def tag_identity(root: Path) -> tuple[bool, dict]:
+    """同一版本号不得对应两套**分发内容**：tag `v<policy>` 存在时，其 TEMPLATE_FILES
+    的 blob 必须与 HEAD 的完全相同。
+
+    为什么要这条：`version_check` 只比「政策 / CHANGELOG / bootstrap」三个字符串；
+    脚本内容改了但版本号没升，它照样绿，而工作区以 tag 为同步锚 → 已同步的工作区对 dev
+    永久 TAMPERED（3.5.10/3.5.11 的真实事故）。
+
+    只比 TEMPLATE_FILES，不比整棵树：`.github/`、CI 配置这类不下发的东西改了不需要升版本。
+    tag 还不存在时给 warning（发布流程里 main 先推、tag 后打，属正常顺序）。
+    """
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+
+    if git("rev-parse", "HEAD").returncode != 0:
+        return False, {"error": "not a git repo"}
+    ver = None
+    for line in (root / "AGENT_RULES.md").read_text(encoding="utf-8").splitlines()[:6]:
+        m = re.search(r"模板政策版本：`([0-9]+\.[0-9]+\.[0-9]+)`", line)
+        if m:
+            ver = m.group(1)
+            break
+    if not ver:
+        return False, {"error": "policy version not found"}
+    tag = f"v{ver}"
+    if git("rev-parse", f"refs/tags/{tag}^{{commit}}").returncode != 0:
+        return True, {"version": ver, "tag": tag, "verdict": "tag-missing",
+                      "hint": f"{tag} 尚未创建（main 先推、tag 后打属正常）；发布完成前不要同步实例"}
+
+    verify_src = (root / "scripts" / "verify_rules.py").read_text(encoding="utf-8")
+    st = verify_src.index("TEMPLATE_FILES")
+    en = verify_src.index("]", verify_src.index("[", st)) + 1
+    ns: dict = {}
+    exec(compile(verify_src[st:en], "<tf>", "exec"), ns)          # noqa: S102 - 只取常量清单
+    files = ns["TEMPLATE_FILES"]
+
+    def blobs(rev: str) -> dict[str, str]:
+        out = git("ls-tree", "-r", rev).stdout
+        m = {}
+        for line in out.splitlines():
+            meta, _, path = line.partition("\t")
+            m[path] = meta.split()[2]
+        return m
+
+    head_b, tag_b = blobs("HEAD"), blobs(f"refs/tags/{tag}")
+    diffs = [f for f in files if head_b.get(f) != tag_b.get(f)]
+    ok = not diffs
+    return ok, {"version": ver, "tag": tag, "checked_files": len(files),
+                "differing": diffs[:8], "verdict": "pass" if ok else "content-mismatch",
+                "hint": "" if ok else "分发内容与同名 tag 不同：改了模板层文件就必须升版本，不要复用已发布版本号"}
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base")
     ap.add_argument("--head")
     ap.add_argument("--root", default=str(ROOT))
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--assert-tag-identity", action="store_true",
+                    help="发布分支用：tag v<policy> 必须存在且 tree == HEAD tree")
     a = ap.parse_args(argv)
     if a.self_test:
         return self_test()
+    if a.assert_tag_identity:
+        ok, info = tag_identity(Path(a.root))
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+        return 0 if ok else 1
     if not a.base or not a.head:
         ap.error("--base and --head are required (or use --self-test)")
     ok, info = check(Path(a.root), a.base, a.head)
