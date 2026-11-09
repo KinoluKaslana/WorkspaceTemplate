@@ -2,6 +2,19 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.10（2026-11-09）：README 豁免补齐「可删除」形态 + `~` 路径展开
+
+- **`verify_rules.py`**：
+  - `--vs-template` 路径现在 `expanduser`——此前 `~/Github/WorkspaceTemplate` 会被解析成
+    `<cwd>/~/...` 而报 `dir not found`（文档里却一直推荐这个写法）。
+  - 两个 README 在**文件级**与**模板比对**两处都按豁免处理：缺失报 `info` 的
+    `ABSENT … (README exemption)`，不再报 `MISSING`——否则用户删掉英文首页后永远红。
+- **`template_sync.py`**：`readme_is_local` 成立时，缺失的 `README_EN.md` 视为用户主动删除，
+  同步不再装回来（原逻辑为「避免 verify 报 MISSING」强制安装）。
+- 新增 `tests/test_readme_exemption.py`（5 例）：替换/删除豁免、非豁免缺失仍拦、`~` 展开、
+  同步不复活已删文件；三条反证（去掉 expanduser / 去掉 ABSENT 豁免 / 去掉 sync 判断）各自变红。
+- `TEMPLATE_FILES` 78 → 79（新增该测试）。
+
 ## 3.5.9（2026-11-09）：建仓后的 README 决策（§0.4）
 
 - **新条款 §0.4（R119–R127）**：用户建仓后，Agent **必须**先问"是否需要重构 README"；

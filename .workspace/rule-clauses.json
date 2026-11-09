@@ -129,7 +129,7 @@
       "R126": "7. 决策**必须**写入 `.workspace/bootstrap.json` 的 `readme` 节（`status` 为 `generated-auto` / `generated-provided` / `declined`，未决策保持 `undecided`，并记 `mode` 与 `decided_at`），机械入口 `python3 scripts/workspace_preflight.py --record-readme auto|provided|declined`。",
       "R127": "8. 生成结果**必须**经用户确认后才写入 `README.md`；该文件是用户首页，模板同步豁免。"
     },
-    "file_sha256": "da0e11f6b08c69e38d280ee6c48746b9a4c865363d326951086964e06cc8120e",
+    "file_sha256": "83478dadcfbddb13471940456125480f553e9f8d90958cb4995cfa01a7a8375d",
     "marked": 127
   },
   "LICENSE": {
@@ -164,12 +164,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "fa1174ba4d65368c1703b9815e1fd161324a8674539dca3adba663ea0e6c8f62",
+    "file_sha256": "ce926738239cc14a33e85cb06274c685e7c453cb316a405ae21ad0d058ea0ec3",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "2b1a02f5b183bf0d9378820f80b82c9f9e88906df522db96533bca5bf6114324",
+    "file_sha256": "b6eb9a9afa3fbc3f25092c0f37f63e0f421d7712a2d4331566c53cc3faf2e46a",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -194,7 +194,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "6fd51221375f57d3aa9aef8f36cb5491a16001d8e838b4939a149c60b3fb5028",
+    "file_sha256": "b2e2599766f51d6a3ff5e5d5ccc3cfc6b65276d3c8d264134acb64483ce4fa05",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -244,7 +244,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "ef4746f6bff8afed4b6901b0cd8e59e0dd4f9029358f92b132dbfc97d6e28a0d",
+    "file_sha256": "c1d0bce44aa9fd7e976387b89772882c662481129349ed72e2ef38ff6c99337a",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -289,7 +289,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "b21af751b313d758df59ba4f5ba80ad2b43f07a84e297a675105fd2d2087e92b",
+    "file_sha256": "0fb25baab3c7094328e73405df388b3739950b64640b2f89da11ae800dda6275",
     "marked": 0
   },
   "docs/skills.md": {
@@ -510,6 +510,11 @@
   "tests/no_git_runner.py": {
     "clauses": {},
     "file_sha256": "2ceacdcb895f4a18e9b12deff55b6135d5d4e170d544291de31ca4817c236cc8",
+    "marked": 0
+  },
+  "tests/test_readme_exemption.py": {
+    "clauses": {},
+    "file_sha256": "dcd770c7c138775eddf836b6996b30abbf1cae0917fc914fe4b36716e8522cdb",
     "marked": 0
   }
 }

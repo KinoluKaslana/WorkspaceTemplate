@@ -291,7 +291,9 @@ def main(argv: list[str]) -> int:
                 continue
             if rel in ("README.md", "README_EN.md") and (a.keep_readme or readme_is_local):
                 # 只保用户已有的首页；README_EN 缺失时仍安装（否则 verify 报 MISSING）
-                if rel == "README.md" or (ws / rel).is_file():
+                # README.md 恒保留；README_EN 缺失时：用户首页已本地化（readme_is_local）就视为用户主动删除，
+                # 不装回来（verify_rules 对豁免文件缺失只报 info，不再报 MISSING）
+                if rel == "README.md" or (ws / rel).is_file() or readme_is_local:
                     skipped.append(rel)
                     continue
             if not dst.is_file() or src.read_bytes() != dst.read_bytes():

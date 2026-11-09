@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -119,6 +120,7 @@ TEMPLATE_FILES = [
     "scripts/gate_status.py",
     "tests/test_gate_status.py",
     "tests/no_git_runner.py",
+    "tests/test_readme_exemption.py",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.
@@ -155,7 +157,10 @@ def verify_file_level(ws: Path, registry: dict) -> tuple[list[str], list[str]]:
     for rel, entry in registry.items():
         p = ws / rel
         if not p.is_file():
-            findings.append(f"[file] MISSING {rel}")
+            if rel in README_EXEMPT:
+                info.append(f"[file] ABSENT {rel} (README exemption: user homepage may be removed)")
+            else:
+                findings.append(f"[file] MISSING {rel}")
             continue
         actual = sha256(p)
         if actual != entry.get("file_sha256"):
@@ -277,7 +282,10 @@ def verify_vs_template(ws: Path, tpl: Path) -> tuple[list[str], list[str], dict]
         if not t.is_file():
             continue  # older template versions may lack some files
         if not w.exists():
-            findings.append(f"[vs-template] MISSING {rel}")
+            if rel in README_EXEMPT:
+                info.append(f"[vs-template] ABSENT {rel} (README exemption: user homepage may be removed)")
+            else:
+                findings.append(f"[vs-template] MISSING {rel}")
         elif t.read_bytes() != w.read_bytes():
             if rel in README_EXEMPT:
                 info.append(f"[vs-template] REPLACED {rel} (README exemption: user homepage allowed)")
@@ -306,7 +314,8 @@ def main() -> int:
     info: list[str] = []
     template_meta = {}
     if args.vs_template:
-        tpl = Path(args.vs_template).resolve()
+        # `~` 必须展开：不展开会被解析成 <cwd>/~/... 而报 dir not found（实测踩过）
+        tpl = Path(os.path.expanduser(args.vs_template)).resolve()
         if not tpl.is_dir():
             print(json.dumps({"error": f"--vs-template dir not found: {tpl}"}))
             return 2
