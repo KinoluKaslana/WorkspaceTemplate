@@ -73,6 +73,7 @@ TEMPLATE_FILES = [
     "tests/test_workspace_preflight.py",
     "tests/test_skill_audit.py",
     ".workspace/skills/_TEMPLATE.md",
+    ".workspace/skills/workspace-skill-authoring/SKILL.md",
     "docs/README.md",
     "docs/architecture.md",
     "docs/skills.md",

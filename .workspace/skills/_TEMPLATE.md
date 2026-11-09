@@ -2,6 +2,8 @@
 name: <目录名，与 .workspace/skills/<dir>/ 同名>
 description: "Use when <触发状态或用户话术>；不用于 <相邻职责>。<中文触发语>。"
 version: 0.1.0
+# 本地层（.workspace/skills-local/）必须有 status：draft|approved|deprecated|removed；模板层不需要
+# status: draft
 ---
 
 # <名称> — <一句话职责>
@@ -57,9 +59,5 @@ version: 0.1.0
 
 - 改本 skill 后：`python3 scripts/skill_audit.py --strict`（含 REGISTRY/TOOLS 双登记与计数自洽）；
 - 同步 `skills/REGISTRY.md` 与 `TOOLS.md`；需要重排用 `--sync-registry`；
-- 版本语义：PATCH=措辞/示例；MINOR=新增步骤或能力；MAJOR=改变职责边界或验收口径。
-
-## 维护
-
-- 版本历史见仓库 `CHANGELOG.md`；版本按语义化递增（PATCH 措辞 / MINOR 能力 / MAJOR 边界）。
-- 改动后跑 `python3 scripts/skill_audit.py --strict`。
+- 版本语义：PATCH=措辞/示例；MINOR=新增步骤或能力；MAJOR=改变职责边界或验收口径；
+- 版本历史见仓库 `CHANGELOG.md`。
