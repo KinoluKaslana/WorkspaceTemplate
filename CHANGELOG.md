@@ -2,7 +2,18 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
-## 3.5.12（2026-11-10）
+## 3.5.13（2026-11-10）
+
+3.5.12 打 tag 后的 CI 红（两处），修正后重发。**这次是新的 tag 门禁自己抓到的**：
+
+| 红因 | 事实 | 修法 |
+|---|---|---|
+| `verify_rules` HASH-DIFF `docs/architecture.md` | 3.5.12 提交前改了 `docs/architecture.md` 与 `README_EN.md`，但最后一次写盘后没重跑 `mark_rules registry` → tag 里的 `rule-clauses.json` 与文件字节不一致（与 3.5.12 事故同型） | 重建注册表后重发；`tag-gate` 工作流已把「打 tag 即跑全门禁」变成拦截 |
+| Windows `test_l1/l7` 红 | `approved_skill_sha256` 改为按字节后，夹具用 `write_text`（Windows 上把 `\n` 写成 `\r\n`）→ 哈希对不上 | 夹具改 `write_bytes`，与「审批绑字节」语义一致 |
+
+不改变 3.5.12 的任何行为；条款数仍 134。
+
+## 3.5.12（2026-11-10，tag 已撤回）
 
 本地层 skill 的机械加固：列席两席独立复核 3.5.11 的 `skill_audit` / `template_sync`，共修 10 处（每条都有回归用例）。
 
