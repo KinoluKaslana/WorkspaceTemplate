@@ -53,13 +53,16 @@ def _is_template_repo() -> bool:
 class DocsConsistency(unittest.TestCase):
     def test_d1_links_resolve(self):
         bad = []
+        exempt_missing = {"README.md", "README_EN.md"}   # 用户首页可删（R127）
         for md in DOCS:
+            if not md.is_file():
+                continue                     # README_EN 被用户删除时不该让文档检查崩
             base = md.parent
             for target in LINK.findall(md.read_text(encoding="utf-8")):
                 t = target.split("#")[0].strip()
                 if not t or t.startswith(("http://", "https://", "mailto:")):
                     continue
-                if not (base / t).exists():
+                if not (base / t).exists() and Path(t).name not in exempt_missing:
                     bad.append(f"{md.relative_to(ROOT)} -> {target}")
         self.assertEqual(bad, [], "断链：\n" + "\n".join(bad))
 
@@ -133,6 +136,8 @@ class DocsConsistency(unittest.TestCase):
         bad = []
         user_home = not _is_template_repo()
         for md in DOCS:
+            if not md.is_file():
+                continue                     # 同上：缺失的 README_EN 不参与计数核对
             text = md.read_text(encoding="utf-8")
             rel = md.relative_to(ROOT)
             if user_home and md.name.startswith("README"):

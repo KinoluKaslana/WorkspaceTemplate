@@ -13,6 +13,10 @@
   同步不再装回来（原逻辑为「避免 verify 报 MISSING」强制安装）。
 - 新增 `tests/test_readme_exemption.py`（5 例）：替换/删除豁免、非豁免缺失仍拦、`~` 展开、
   同步不复活已删文件；三条反证（去掉 expanduser / 去掉 ABSENT 豁免 / 去掉 sync 判断）各自变红。
+- **`workspace_preflight.py`**：模板层齐全性检查同样豁免两个 README——用户删掉英文首页后
+  不再报 `template_files` mismatch。
+- **`tests/test_docs_consistency.py`**：D1（链接可解析）与 D7（散文计数）在 README_EN 缺失时跳过该文件，
+  不再 `FileNotFoundError`；断链检查也放过指向被删首页的链接。
 - `TEMPLATE_FILES` 78 → 79（新增该测试）。
 
 ## 3.5.9（2026-11-09）：建仓后的 README 决策（§0.4）

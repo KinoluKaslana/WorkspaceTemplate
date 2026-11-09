@@ -254,7 +254,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "0ddb349a003ed33ab924bc5a906360a2c3292ea5661e6f5aaa25d1924f754f00",
+    "file_sha256": "354719079c3f8f0f386f7d38c6fb9f1f5ee57e61ca69267b0d52905706f51fc7",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -329,7 +329,7 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "bdd4a805433d51bd6e5bb66284da83587b76dd4d55927989bb760273e996a8b6",
+    "file_sha256": "4a1de8872eef5e71c1b0f12e9785c9120cd7d19406e8fd7884243709068c57e4",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
