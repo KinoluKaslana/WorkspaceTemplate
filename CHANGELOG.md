@@ -2,6 +2,15 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.13（2026-11-10）：修复 3.5.12 的两处发布态缺陷
+
+- **条款注册表未重建**：3.5.12 的最后一个提交改了 `skill_audit.py` 与 `_TEMPLATE.md` 却没重跑
+  `mark_rules.py registry`，于是 tag 里的 `.workspace/rule-clauses.json` 与文件字节不一致——
+  所有从该 tag 同步的实例 `verify_rules` 直接红。已重建并复核；教训：**门禁要在最后一次写盘之后跑**，
+  不是提交前跑一次就够。
+- **`test_docs_consistency` 的 D5**（README 必须列出全部 skill）在派生实例上误伤：实例 README 是用户首页，
+  不再要求它列模板 skill 清单；与 D1/D7 同口径，按 `workspace_status` 跳过。
+
 ## 3.5.12（2026-11-10）：工作区级（本地）skill —— 模板级能力
 
 按老大三条裁决落地：① 模板内置创建本地 skill 的 skill；② 目录名 lowercase-kebab 由该 skill 强制；
