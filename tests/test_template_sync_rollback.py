@@ -247,6 +247,28 @@ class Transactional(unittest.TestCase):
         self.assertIn("保留未清除", p.stdout)
         self.assertIn("`skills`", reg.read_text(encoding="utf-8"))
 
+    def test_rollback_keeps_registry_with_local_layer_namespace(self):
+        """本地层命名空间 `workspace-skills-local` 也是用户数据：purge 不得删。
+
+        历史 bug：判定用 `startswith("workspace-skills")`，而本地层恰好以它开头 →
+        被判成模板原生 → 一个刚引入本地层的全新工作区会被静默删掉整张 REGISTRY。
+        """
+        self.assertEqual(self.run_sync("--apply").returncode, 0)
+        reg = self.ws / "skills" / "REGISTRY.md"
+        reg.parent.mkdir(parents=True, exist_ok=True)
+        reg.write_text(
+            "# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
+            "| `workspace-skills` | `.workspace/skills/` | 无 | 已登记（0 入口） | TOOLS |\n"
+            "| `workspace-skills-local` | `.workspace/skills-local/` | 无 | 已登记（1 个本地 skill） | TOOLS |\n",
+            encoding="utf-8")
+        bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
+        p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                            "--rollback", str(bk), "--purge-generated"],
+                           capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(reg.is_file(), "含本地层命名空间的 REGISTRY 被删掉了")
+        self.assertIn("workspace-skills-local", reg.read_text(encoding="utf-8"))
+
     def test_rollback_snapshots_purged_generated(self):
         """被清除的生成物必须先留快照，否则「清除」等于不可恢复。"""
         self.assertEqual(self.run_sync("--apply").returncode, 0)

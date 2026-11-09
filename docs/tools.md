@@ -14,6 +14,7 @@
 | `secret_scan.py` | 高置信度明文凭据扫描（只打印脱敏片段） | `[--root PATH] [--json]` | 0 / 1 |
 | `clause_lint.py` | 条款属性门：正文用词 ↔ `clauses.meta.json` 声明一致 | `[--strict] [--report] [--json]` | 0 / 1 |
 | `skill_audit.py` | skills 契约节 / 双登记 / 计数与名称集合 / 引用路径 | `[--strict] [--sync-registry] [--tools-snippet] [--json]` | 0 / 1 |
+| ↳ `--sync-registry` 契约 | 写完**回读校验**（名称集合 + 入口节计数）；不一致或 I/O 失败 → exit 1 并输出 `registry_problems`。入口行按列结构解析（首列名必须与第三列路径自洽），字符宽度与发现器一致；目录名不符 lowercase-kebab 只在 `--strict` 提示 | 同上 | 0 / 1 |
 | `docs_index.py` | docs 确定性索引：`build` / `check` / `query` | `build`；`query <词> --json --top 2` | 0 / 1(stale) / 2(缺索引) / 3(stale 查询) |
 | `docs_hit_report.py` | 判据集命中报告（`tests/docs_probe.json`） | `--min 9 --top 2 --json` | 0 达标 / 1 未达标 / 2 stale |
 | `docs_alias_audit.py` | 别名审计：死指针/指纹漂移/来源合规/留一验证 | `[--strict] [--restore] [--json]` | 0 / 1 |
@@ -41,6 +42,7 @@ python3 scripts/verify_rules.py --workspace . --vs-template ~/Github/WorkspaceTe
 python3 scripts/skill_audit.py                 # 逐 skill 列出 findings
 python3 scripts/skill_audit.py --strict        # 0 findings 才 exit 0
 python3 scripts/skill_audit.py --sync-registry # 按磁盘目录重写 REGISTRY 入口表（文件不存在时新建）
+# 写完会回读校验：exit 1 表示「重建后仍不自洽」，看 registry_problems 定位（多为入口行名/路径不一致）
 python3 scripts/skill_audit.py --tools-snippet # 打印未登记 skill 的 TOOLS.md 行（不写文件）
 python3 scripts/skill_audit.py --sync-registry # 按磁盘目录重写 REGISTRY 入口表与计数
 ```

@@ -117,7 +117,9 @@ def _registry_has_foreign_namespaces(path: Path) -> bool:
         return False
     for line in text.splitlines():
         m = re.match(r"^\|\s*`([^`]+)`\s*\|", line)
-        if m and not m.group(1).startswith("workspace-skills"):
+        # 精确比较：`workspace-skills-local` 等本地层命名空间**不是**模板原生命名空间，
+        # 用 startswith 会把它们当成自己人 → purge 静默删掉用户登记（正是要防的事）。
+        if m and m.group(1) != "workspace-skills":
             return True
     return False
 

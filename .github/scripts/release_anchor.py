@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -119,15 +120,57 @@ def self_test() -> int:
         return 0 if good else 1
 
 
+def tag_identity(root: Path) -> tuple[bool, dict]:
+    """同一版本号只能对应一棵树：tag `v<policy>` 存在时，其 tree 必须等于 HEAD 的 tree。
+
+    为什么要这条：`version_check` 只比「政策 / CHANGELOG / bootstrap」三个字符串，
+    脚本内容改了但版本号没升，它照样绿；而工作区以 tag 为同步锚，于是「同名两套内容」
+    会让所有已同步的工作区对 dev 永久 TAMPERED（3.5.10 → 3.5.11 的真实事故）。
+    只在发布分支（main）上跑：dev 天然领先 tag，不应因此变红。
+    """
+    head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                          capture_output=True, text=True)
+    if head.returncode != 0:
+        return False, {"error": "not a git repo"}
+    ver = None
+    for line in (root / "AGENT_RULES.md").read_text(encoding="utf-8").splitlines()[:6]:
+        m = re.search(r"模板政策版本：`([0-9]+\.[0-9]+\.[0-9]+)`", line)
+        if m:
+            ver = m.group(1)
+            break
+    if not ver:
+        return False, {"error": "policy version not found"}
+    tag = f"v{ver}"
+    t = subprocess.run(["git", "-C", str(root), "rev-parse", f"refs/tags/{tag}^{{commit}}"],
+                       capture_output=True, text=True)
+    if t.returncode != 0:
+        return False, {"version": ver, "tag": tag, "verdict": "tag-missing",
+                       "hint": f"发布必须先打 {tag} 指向当前 HEAD"}
+    tag_tree = subprocess.run(["git", "-C", str(root), "rev-parse", f"{tag}^{{tree}}"],
+                              capture_output=True, text=True).stdout.strip()
+    head_tree = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD^{tree}"],
+                               capture_output=True, text=True).stdout.strip()
+    ok = tag_tree == head_tree
+    return ok, {"version": ver, "tag": tag, "tag_tree": tag_tree[:12],
+                "head_tree": head_tree[:12], "verdict": "pass" if ok else "tree-mismatch",
+                "hint": "" if ok else "同名 tag 指向的树与 HEAD 不同：改内容必须升版本，不要复用已发布的版本号"}
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base")
     ap.add_argument("--head")
     ap.add_argument("--root", default=str(ROOT))
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--assert-tag-identity", action="store_true",
+                    help="发布分支用：tag v<policy> 必须存在且 tree == HEAD tree")
     a = ap.parse_args(argv)
     if a.self_test:
         return self_test()
+    if a.assert_tag_identity:
+        ok, info = tag_identity(Path(a.root))
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+        return 0 if ok else 1
     if not a.base or not a.head:
         ap.error("--base and --head are required (or use --self-test)")
     ok, info = check(Path(a.root), a.base, a.head)

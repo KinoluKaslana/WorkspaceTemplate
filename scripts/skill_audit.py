@@ -57,20 +57,48 @@ def clause_ids() -> set[str]:
 
 
 
+# 目录名允许的字符：与 `SKILLS.glob("*/SKILL.md")` 的发现能力保持一致（不窄于发现，
+# 否则「磁盘有、正则匹配不到」会被报成集合不一致，且无法通过改名以外的手段修复）。
+# 约定仍是 lowercase-kebab；非约定的名字由 `--strict` 报建议改名，不阻断读写。
+NAME_CHARS = r"[A-Za-z0-9._-]+"
+KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _entry_section(registry: str) -> str:
+    """只取 `## Skill 入口` 这一节：散文里提到路径不该虚增入口计数。"""
+    m = re.search(r"## Skill 入口\n(?:.*\n)*?(?=\n## |\Z)", registry)
+    return m.group(0) if m else ""
+
+
 def registry_invariants(rows: list[dict], registry: str) -> list[str]:
-    """REGISTRY 的两条不变量：名称集合 == 磁盘集合；声明计数 == 实际行数。
+    """REGISTRY 的两条不变量：名称集合 == 磁盘集合；声明计数 == 入口节实际行数。
 
     单独成函数，是为了让 `--sync-registry` 写完以后再验一次——
     原实现的 sync 分支提前 return，写完不校验，写坏了也报 ok。
     """
     problems: list[str] = []
     disk_names = {r["skill"] for r in rows if r["skill"] != "(registry)"}
-    reg_names = set(re.findall(r"\|\s*([a-z0-9-]+)\s*\|[^\n]*\.workspace/skills/\1/SKILL\.md", registry))
+    section = _entry_section(registry)
+    # 结构化解析入口行：首列 = 名称，第三列 = 入口路径；两者必须自洽
+    reg_names: set[str] = set()
+    for line in section.splitlines():
+        # 竖线可能是被转义过的（描述里的 `\|`），只按未转义的切列
+        cells = ([c.strip() for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+                 if line.strip().startswith("|") else [])
+        if len(cells) < 3:
+            continue
+        name = cells[0].strip("`").strip()
+        m = re.search(rf"\.workspace/skills/({NAME_CHARS})/SKILL\.md", cells[2])
+        if not m:
+            continue
+        if m.group(1) != name:
+            problems.append(f"入口行名称与路径不一致：首列 {name!r} / 路径 {m.group(1)!r}")
+        reg_names.add(name)
     if disk_names != reg_names:
         problems.append(f"REGISTRY 名称集合与目录不一致：缺 {sorted(disk_names - reg_names)}，多 {sorted(reg_names - disk_names)}")
     m = re.search(r"已登记（(\d+)\s*入口", registry)
     declared = int(m.group(1)) if m else None
-    listed = len(re.findall(r"\.workspace/skills/[A-Za-z0-9_-]+/SKILL\.md", registry))
+    listed = len([ln for ln in section.splitlines() if re.search(rf"\.workspace/skills/{NAME_CHARS}/SKILL\.md", ln)])
     if declared is not None and declared != listed:
         problems.append(f"REGISTRY 声明 {declared} 入口，实际列出 {listed} 行")
     return problems
@@ -203,6 +231,16 @@ def main(argv: list[str]) -> int:
                           "registry_problems": problems,
                           "other_findings": other}, ensure_ascii=False))
         return 0 if ok else 1
+
+    # 命名约定（仅 --strict）：目录名按 lowercase-kebab；非约定名可读写，但应在下一版迁移
+    if a.strict:
+        for r in rows:
+            if r["skill"] != "(registry)" and not KEBAB_RE.match(r["skill"]):
+                r["findings"].append(f"目录名 {r['skill']!r} 不符 lowercase-kebab 约定（可读写，建议改名）")
+                if r["ok"]:
+                    r["ok"] = False
+                    bad += 1
+                break
 
     # 登记不变量：名称集合 == 磁盘集合；声明计数 == 实际行数
     for p in registry_invariants([x for x in rows if x["skill"] != "(registry)"], registry):
