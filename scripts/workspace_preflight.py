@@ -312,19 +312,37 @@ def main(argv: list[str]) -> int:
     else:
         rows.append(item("template_clone", "未登记", "", WARN, "如需模板同步，在 bootstrap.template 登记"))
 
-    # 4) skills 三方一致
-    disk = {p.parent.name for p in (ws / ".workspace" / "skills").glob("*/SKILL.md")}
-    reg_p = ws / "skills" / "REGISTRY.md"
-    reg = reg_p.read_text(encoding="utf-8") if reg_p.is_file() else ""
-    reg_entries = set(re.findall(r"\.workspace/skills/([A-Za-z0-9_-]+)/SKILL\.md", reg))
-    if disk != reg_entries:
-        rows.append(item("skills", sorted(reg_entries), sorted(disk), BAD,
-                         "目录与 REGISTRY 不一致：以磁盘为准补登记，或恢复缺失 skill"))
-    else:
-        unlisted = sorted(s for s in disk if s not in tools)
-        rows.append(item("skills", sorted(disk), {"count": len(disk), "not_in_TOOLS": unlisted},
-                         OK if not unlisted else WARN,
-                         "" if not unlisted else "在 TOOLS.md 补登记"))
+    # 4) skills：优先用 skill_audit 做单一事实源（覆盖模板层 + 本地层，含状态与审批证据）；
+    #    脚本缺失或老版本不认 --json 时，退回内联的模板层三方比对。
+    audit = ws / "scripts" / "skill_audit.py"
+    audited = False
+    if audit.is_file():
+        rc, out = sh(str(sys.executable), "-B", str(audit), "--strict", "--json")
+        try:
+            data = json.loads(out)
+        except Exception:
+            data = None
+        if isinstance(data, dict) and "rows" in data:
+            audited = True
+            failing = [r for r in data["rows"] if not r.get("ok")]
+            detail = {"skills": data.get("skills"), "failing": len(failing),
+                      "first": [f"{r['skill']}: {r['findings'][0]}" for r in failing[:3]]}
+            rows.append(item("skills", "skill_audit --strict", detail,
+                             OK if rc == 0 else BAD,
+                             "" if rc == 0 else "按上面首条 finding 修；登记用 --sync-registry"))
+    if not audited:
+        disk = {p.parent.name for p in (ws / ".workspace" / "skills").glob("*/SKILL.md")}
+        reg_p = ws / "skills" / "REGISTRY.md"
+        reg = reg_p.read_text(encoding="utf-8") if reg_p.is_file() else ""
+        reg_entries = set(re.findall(r"\.workspace/skills/([A-Za-z0-9_-]+)/SKILL\.md", reg))
+        if disk != reg_entries:
+            rows.append(item("skills", sorted(reg_entries), sorted(disk), BAD,
+                             "目录与 REGISTRY 不一致：以磁盘为准补登记，或恢复缺失 skill"))
+        else:
+            unlisted = sorted(s for s in disk if s not in tools)
+            rows.append(item("skills", sorted(disk), {"count": len(disk), "not_in_TOOLS": unlisted},
+                             OK if not unlisted else WARN,
+                             "" if not unlisted else "在 TOOLS.md 补登记"))
 
     # 5) TEMPLATE_FILES 齐全
     try:

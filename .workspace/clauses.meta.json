@@ -760,5 +760,47 @@
     "trigger": "readme-decision",
     "check": "manual:写盘前是否取得用户确认，属交互义务",
     "reviewed": true
+  },
+  "R128": {
+    "severity": "INFO",
+    "trigger": "local-skill",
+    "check": "",
+    "reviewed": true
+  },
+  "R129": {
+    "severity": "MUST",
+    "trigger": "local-skill",
+    "check": "python3 scripts/skill_audit.py --strict",
+    "reviewed": true
+  },
+  "R130": {
+    "severity": "MUST",
+    "trigger": "local-skill",
+    "check": "manual:是否只在用户明确要求时创建，属交互义务",
+    "reviewed": true
+  },
+  "R131": {
+    "severity": "MUST",
+    "trigger": "local-skill",
+    "check": "python3 scripts/skill_audit.py --strict",
+    "reviewed": true
+  },
+  "R132": {
+    "severity": "MUST",
+    "trigger": "local-skill",
+    "check": "manual:同名时按裸名路由到哪一层，需读 REGISTRY 与任务上下文",
+    "reviewed": true
+  },
+  "R133": {
+    "severity": "MUST",
+    "trigger": "local-skill",
+    "check": "python3 scripts/skill_audit.py --strict",
+    "reviewed": true
+  },
+  "R134": {
+    "severity": "MUST",
+    "trigger": "local-skill",
+    "check": "python3 scripts/skill_audit.py --strict",
+    "reviewed": true
   }
 }

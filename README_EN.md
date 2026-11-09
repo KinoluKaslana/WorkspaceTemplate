@@ -8,7 +8,7 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
-[![Policy](https://img.shields.io/badge/policy-v3.5.11%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.5.12%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -44,7 +44,7 @@ The cost here is mechanical consistency: 118 clauses, 10 preflight checks, and t
 - **Occasional Q&A only** — the gate's value comes from long-lived, repeated, multi-session work.
 - **You need hard isolation or multi-tenancy** — the gate stops unconscious skips, **not deliberate bypass**; same-uid means no security boundary.
 - **Running in-repo hook code in your client is not acceptable** — Codex/Claude Code hooks are executable scripts shipped with the repo.
-- **You don't want to track versions** — the clause set (R1..R127) and the template sync chain move together.
+- **You don't want to track versions** — the clause set (R1..R134) and the template sync chain move together.
 
 See “Why It Exists” and “Core Capabilities” above for where it does fit.
 
@@ -55,7 +55,7 @@ See “Why It Exists” and “Core Capabilities” above for where it does fit.
 | One policy source | [`AGENT_RULES.md`](AGENT_RULES.md) governs primary and delegated Agents; client entry files only point to it |
 | Rule layering | Template-layer files are **locked read-only** (sync = whole-file replacement); local rules live in `<file>.custom.md` and **custom takes precedence** (§10) |
 | Integrity verification | Stable clause IDs (`<!-- id:Rn -->`) + registry-based two-level verification; `--vs-template` byte-compares against the template clone with a **git trust anchor**, closing the "edit the file then regenerate the registry" self-attestation hole |
-| Lifecycle skills | Seven skills ship in `.workspace/skills/`: `template-update` (sync from any ref), `workspace-repo-sync` (cross-device repo sync), `workspace-init` (adopt / first landing), `git-init` (create repo), `delivery-closure` (finish check), `docs-retrieval-maintenance` (docs index & aliases), `legacy-workspace-upgrade` (bootstrap an old workspace). Each must satisfy the 8-dimension contract, enforced by `skill_audit.py` |
+| Lifecycle skills | Eight skills ship in `.workspace/skills/`: `template-update` (sync from any ref), `workspace-repo-sync` (cross-device repo sync), `workspace-init` (adopt / first landing), `git-init` (create repo), `delivery-closure` (finish check), `docs-retrieval-maintenance` (docs index & aliases), `legacy-workspace-upgrade` (bootstrap an old workspace). Each must satisfy the 8-dimension contract, enforced by `skill_audit.py` |
 | First-init protocol | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) persists `python.mode` (**mandatory**: `uv` / `local-venv` / `mcp`, uv by default) and `git.status` (**optional**: initialized / declined); a configured mode is never rewritten by template upgrades |
 | Business-agnostic foundation | [`WORKSPACE.md`](WORKSPACE.md) starts undefined and is shaped by the user's stable goals, scope, and acceptance criteria |
 | One-path skills onboarding | The user provides a root directory; the Agent discovers entries, records fingerprints, and resolves duplicate names |
@@ -201,7 +201,7 @@ Boundary that must be stated alongside: **Claude Code Bash writes are neither su
 
 ## Workspace Lifecycle Skills
 
-Seven skills ship with the template in `.workspace/skills/` (workspace-skills namespace) and are registered in `skills/REGISTRY.md` and `TOOLS.md`; each must satisfy the 8-dimension contract checked by `skill_audit.py`:
+Eight skills ship with the template in `.workspace/skills/` (workspace-skills namespace) and are registered in `skills/REGISTRY.md` and `TOOLS.md`; each must satisfy the 8-dimension contract checked by `skill_audit.py`:
 
 | Skill | Version | Trigger | What it does |
 |---|---|---|---|
