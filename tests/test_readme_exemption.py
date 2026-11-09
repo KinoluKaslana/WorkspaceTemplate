@@ -93,7 +93,8 @@ class ReadmeExemption(unittest.TestCase):
         home = self.base / "home"
         home.mkdir()
         shutil.move(str(self.tpl), str(home / "tpl"))   # 已是 git 仓库，移动即可
-        env = dict(os.environ, HOME=str(home))
+        # `~` 的展开源随平台不同：POSIX 用 HOME，Windows 的 ntpath 用 USERPROFILE
+        env = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
         rc, data = run(self.ws, "~/tpl", env=env)
         self.assertNotIn("error", data, data)
         self.assertTrue(data.get("clean"), data)
