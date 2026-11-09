@@ -276,7 +276,7 @@ def sync_registry(rows: list[dict], local: list[dict]) -> int:
     for r in sorted(entries, key=lambda x: x["skill"]):
         text = r["path"].read_text(encoding="utf-8")
         d = frontmatter(text).get("description", "").strip().strip('"').replace("|", chr(92) + "|")
-        lt.append(f"| {r['skill']} | {r['state']} | {d} | `.workspace/skills-local/{r['skill']}/SKILL.md` |")
+        lt.append(f"| {r['skill']} | {r['state'] or 'unknown'} | {d} | `.workspace/skills-local/{r['skill']}/SKILL.md` |")
     lsection = "## 本地层入口\n\n> 由 `skill_audit.py --sync-registry` 生成；只有 `approved` 可作路由依据。\n\n" + "\n".join(lt) + "\n"
     m = re.search(r"## 本地层入口\n(?:.*\n)*?(?=\n## |\Z)", reg)
     reg = (reg[:m.start()] + lsection + reg[m.end():]) if m else (reg.rstrip() + "\n\n" + lsection)

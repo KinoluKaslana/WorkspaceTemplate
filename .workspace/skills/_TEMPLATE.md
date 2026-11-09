@@ -2,6 +2,8 @@
 name: <目录名，与 .workspace/skills/<dir>/ 同名>
 description: "Use when <触发状态或用户话术>；不用于 <相邻职责>。<中文触发语>。"
 version: 0.1.0
+# 本地层（.workspace/skills-local/）必须有 status：draft|approved|deprecated|removed；模板层不需要
+# status: draft
 ---
 
 # <名称> — <一句话职责>
