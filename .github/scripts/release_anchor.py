@@ -121,16 +121,20 @@ def self_test() -> int:
 
 
 def tag_identity(root: Path) -> tuple[bool, dict]:
-    """同一版本号只能对应一棵树：tag `v<policy>` 存在时，其 tree 必须等于 HEAD 的 tree。
+    """同一版本号不得对应两套**分发内容**：tag `v<policy>` 存在时，其 TEMPLATE_FILES
+    的 blob 必须与 HEAD 的完全相同。
 
-    为什么要这条：`version_check` 只比「政策 / CHANGELOG / bootstrap」三个字符串，
-    脚本内容改了但版本号没升，它照样绿；而工作区以 tag 为同步锚，于是「同名两套内容」
-    会让所有已同步的工作区对 dev 永久 TAMPERED（3.5.10 → 3.5.11 的真实事故）。
-    只在发布分支（main）上跑：dev 天然领先 tag，不应因此变红。
+    为什么要这条：`version_check` 只比「政策 / CHANGELOG / bootstrap」三个字符串；
+    脚本内容改了但版本号没升，它照样绿，而工作区以 tag 为同步锚 → 已同步的工作区对 dev
+    永久 TAMPERED（3.5.10/3.5.11 的真实事故）。
+
+    只比 TEMPLATE_FILES，不比整棵树：`.github/`、CI 配置这类不下发的东西改了不需要升版本。
+    tag 还不存在时给 warning（发布流程里 main 先推、tag 后打，属正常顺序）。
     """
-    head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
-                          capture_output=True, text=True)
-    if head.returncode != 0:
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+
+    if git("rev-parse", "HEAD").returncode != 0:
         return False, {"error": "not a git repo"}
     ver = None
     for line in (root / "AGENT_RULES.md").read_text(encoding="utf-8").splitlines()[:6]:
@@ -141,19 +145,31 @@ def tag_identity(root: Path) -> tuple[bool, dict]:
     if not ver:
         return False, {"error": "policy version not found"}
     tag = f"v{ver}"
-    t = subprocess.run(["git", "-C", str(root), "rev-parse", f"refs/tags/{tag}^{{commit}}"],
-                       capture_output=True, text=True)
-    if t.returncode != 0:
-        return False, {"version": ver, "tag": tag, "verdict": "tag-missing",
-                       "hint": f"发布必须先打 {tag} 指向当前 HEAD"}
-    tag_tree = subprocess.run(["git", "-C", str(root), "rev-parse", f"{tag}^{{tree}}"],
-                              capture_output=True, text=True).stdout.strip()
-    head_tree = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD^{tree}"],
-                               capture_output=True, text=True).stdout.strip()
-    ok = tag_tree == head_tree
-    return ok, {"version": ver, "tag": tag, "tag_tree": tag_tree[:12],
-                "head_tree": head_tree[:12], "verdict": "pass" if ok else "tree-mismatch",
-                "hint": "" if ok else "同名 tag 指向的树与 HEAD 不同：改内容必须升版本，不要复用已发布的版本号"}
+    if git("rev-parse", f"refs/tags/{tag}^{{commit}}").returncode != 0:
+        return True, {"version": ver, "tag": tag, "verdict": "tag-missing",
+                      "hint": f"{tag} 尚未创建（main 先推、tag 后打属正常）；发布完成前不要同步实例"}
+
+    verify_src = (root / "scripts" / "verify_rules.py").read_text(encoding="utf-8")
+    st = verify_src.index("TEMPLATE_FILES")
+    en = verify_src.index("]", verify_src.index("[", st)) + 1
+    ns: dict = {}
+    exec(compile(verify_src[st:en], "<tf>", "exec"), ns)          # noqa: S102 - 只取常量清单
+    files = ns["TEMPLATE_FILES"]
+
+    def blobs(rev: str) -> dict[str, str]:
+        out = git("ls-tree", "-r", rev).stdout
+        m = {}
+        for line in out.splitlines():
+            meta, _, path = line.partition("\t")
+            m[path] = meta.split()[2]
+        return m
+
+    head_b, tag_b = blobs("HEAD"), blobs(f"refs/tags/{tag}")
+    diffs = [f for f in files if head_b.get(f) != tag_b.get(f)]
+    ok = not diffs
+    return ok, {"version": ver, "tag": tag, "checked_files": len(files),
+                "differing": diffs[:8], "verdict": "pass" if ok else "content-mismatch",
+                "hint": "" if ok else "分发内容与同名 tag 不同：改了模板层文件就必须升版本，不要复用已发布版本号"}
 
 
 def main(argv: list[str]) -> int:
