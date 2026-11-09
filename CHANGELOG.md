@@ -2,11 +2,35 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.5.12（2026-11-10）
+
+本地层 skill 的机械加固：列席两席独立复核 3.5.11 的 `skill_audit` / `template_sync`，共修 10 处（每条都有回归用例）。
+
+### 修掉的缺陷
+
+| # | 缺陷 | 修法 |
+|---|---|---|
+| H1 | 受管小节标题精确匹配（`## 本地层入口\n`）→ 旧写法带后缀时解析不到，sync 还会**追加重复节**留死内容 | 标题行允许尾部文本；重复节直接报 finding |
+| H2 | 退役项从 `contract_findings` **整体**豁免（连 name/version 都不查） | 改为 `minimal=True`：只豁免 8 维契约与触发语 |
+| H3 | 退役项登记路径写成扁平 `skills-local/<name>/`（文件实际在 `_retired/`）→ 表格链接指向不存在的路径 | 按 `area` 写 `_retired/` 前缀；解析端两种都认 |
+| H4 | 活跃区 `status` 缺失被**默认成 draft**；`deprecated` 留在活跃区只报「不能放 draft」 | 不再默认；活跃区只允许 `approved` |
+| H5 | 审批哈希读 `text`（通用换行归一化）→ CRLF 的 SKILL.md 永远对不上 | 按字节 `read_bytes()` |
+| H6 | `review_artifact` 未做包含性校验：绝对路径让 `ROOT / art` 直接丢弃 ROOT（`/etc/hosts` 可过） | 必须是工作区内相对路径且存在 |
+| H7 | 计数不变量靠正则命中文案，措辞一变就**静默跳过** | 计数缺失即报 finding；行数从已解析表格推 |
+| H8 | `--sync-registry` 在 `.workspace/skills-local/` 不存在/空时**静默清空**已有本地登记表 | 拒绝清空并退出 4；确认后可用 `--force-prune-local` |
+| H9 | 入口路径解析用 ASCII 字符类（比发现器 `*/SKILL.md` 窄）→ 非 ASCII 目录名永久 exit 1 | 结构化取路径段，不再限制字符集 |
+| H10 | TOOLS 登记可被模板层同名行「顶替」；三处登记只写了两处 | `TOOLS.md` 用受管块（`local-skills:begin/end`）由脚本生成；`bootstrap.skills.registered_roots` 同步补登，`--strict` 校验 |
+
+### 新增机械门
+
+- `tests/test_skill_audit_hardening.py`（12 例）、`tests/test_release_anchor_tag_identity.py`（4 例，tag 身份门首次有负向自测）。
+- `.github/workflows/tag-gate.yml`：`push: tags: v*` 时重跑全门禁——「打 tag 前最后一次写盘之后必须重跑门禁」从此不再是纪律，而是拦截。
+
 ## 3.5.11（2026-11-10）：工作区级（本地）skill —— 模板级能力
 
 在 3.5.10 的基线上一次性落盘，对应老大三条裁决：① 模板内置创建本地 skill 的 skill；② 目录名 lowercase-kebab 由该 skill 强制；
 ③ 同名**本地优先**，且是模板级规则、**不需要** custom 覆写。
-（此前 3.5.11–3.5.13 的三次中间发布已撤回：内容并入本版，版本号不重复使用。）
+（此前 3.5.11–3.5.13 的三次中间发布已撤回：内容并入本版。**号码复用说明**：3.5.11 这个号曾短暂指向撤回谱系，其 tag 已删除并重打；持有旧 clone 的需 `git tag -d v3.5.11 && git fetch --tags --force`，否则 `--ref v3.5.11` 会解析到旧提交。）
 
 ### 政策（§17，R128–R134）
 

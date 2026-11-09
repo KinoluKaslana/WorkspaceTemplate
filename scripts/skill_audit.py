@@ -26,13 +26,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
+FORCE_PRUNE = False
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / ".workspace" / "skills"
 SKILLS_LOCAL = ROOT / ".workspace" / "skills-local"
+BOOTSTRAP = ROOT / ".workspace" / "bootstrap.json"
 REGISTRY = ROOT / "skills" / "REGISTRY.md"
 TOOLS = ROOT / "TOOLS.md"
 CLAUSES = ROOT / ".workspace" / "rule-clauses.json"
@@ -80,11 +83,49 @@ def _cells(line: str) -> list[str]:
 
 
 def _section(registry: str, title: str) -> str:
-    m = re.search(rf"## {re.escape(title)}\n(?:.*\n)*?(?=\n## |\Z)", registry)
+    """取受管小节。标题行允许尾部文本（如历史写法 `## 本地层入口（workspace-skills-local）`）。"""
+    m = re.search(rf"## {re.escape(title)}[^\n]*\n(?:.*\n)*?(?=\n## |\Z)", registry)
     return m.group(0) if m else ""
 
 
-def contract_findings(name: str, text: str, fm: dict, ids: set[str], require_io: bool = False) -> list[str]:
+def _section_count(registry: str, title: str) -> int:
+    return len(re.findall(rf"^## {re.escape(title)}[^\n]*$", registry, re.M))
+
+
+def _path_name(cell: str, *prefixes: str) -> str | None:
+    """从入口列取目录名：不靠字符类（发现器是 `*/SKILL.md`，正则不能比它窄）。"""
+    for pre in prefixes:
+        m = re.search(rf"{re.escape(pre)}([^/`\s]+)/SKILL\.md", cell)
+        if m:
+            return m.group(1)
+    return None
+
+
+TOOLS_BEGIN = "<!-- local-skills:begin -->"
+TOOLS_END = "<!-- local-skills:end -->"
+
+
+def _in_tools_block(tools: str, name: str) -> bool:
+    m = re.search(rf"{re.escape(TOOLS_BEGIN)}(?:.*?){re.escape(TOOLS_END)}", tools, re.S)
+    if not m:
+        return False
+    return bool(re.search(rf"^\|[^\n]*\*\*{re.escape(name)}\*\*", m.group(0), re.M))
+
+
+def _artifact_ok(art: str) -> bool:
+    """评审产物必须是工作区内相对路径：绝对路径会让 `ROOT / art` 直接丢弃 ROOT。"""
+    if not art or os.path.isabs(art):
+        return False
+    target = (ROOT / art).resolve()
+    try:
+        target.relative_to(ROOT.resolve())
+    except ValueError:
+        return False
+    return target.is_file()
+
+
+def contract_findings(name: str, text: str, fm: dict, ids: set[str], require_io: bool = False,
+                     minimal: bool = False) -> list[str]:
     """两层共用的契约检查。"""
     f: list[str] = []
     for key in ("name", "description", "version"):
@@ -92,11 +133,12 @@ def contract_findings(name: str, text: str, fm: dict, ids: set[str], require_io:
             f.append(f"frontmatter 缺 {key}")
     if fm.get("name") and fm["name"] != name:
         f.append(f"name({fm['name']}) 与目录({name}) 不一致")
-    desc = fm.get("description", "")
-    if desc and not re.match(r"^(Use (when|before|after|if)|当|用于|在)", desc):
-        f.append("description 未以触发语开头（Use when/当/用于/在）")
-    if len(desc) > 300:
-        f.append(f"description 过长（{len(desc)} 字符）")
+    if not minimal:
+        desc = fm.get("description", "")
+        if desc and not re.match(r"^(Use (when|before|after|if)|当|用于|在)", desc):
+            f.append("description 未以触发语开头（Use when/当/用于/在）")
+        if len(desc) > 300:
+            f.append(f"description 过长（{len(desc)} 字符）")
     if fm.get("version") and not re.fullmatch(r"\d+\.\d+\.\d+", fm["version"]):
         f.append(f"version 非 semver：{fm['version']}")
     missing_ids = sorted(set(re.findall(r"\bR\d{1,3}\b", text)) - ids)
@@ -109,6 +151,8 @@ def contract_findings(name: str, text: str, fm: dict, ids: set[str], require_io:
         and not (ROOT / p).exists() and "$(" not in p and "<" not in p})
     if missing_paths:
         f.append(f"引用不存在的路径：{','.join(missing_paths[:4])}")
+    if minimal:
+        return f
     required = {"触发": r"触发|Use when", "前置": r"前置", "步骤": r"步骤|流程",
                 "边界": r"边界|不负责|不归", "失败": r"失败|陷阱|已知坑",
                 "验收": r"验收|验证", "维护": r"维护"}
@@ -139,7 +183,7 @@ def local_records() -> list[dict]:
             text = md.read_text(encoding="utf-8")
             state = (frontmatter(text).get("status") or "").strip()
             out.append({"skill": md.parent.name, "path": md, "layer": "local",
-                        "state": state or ("draft" if area == "draft" else ""),
+                        "state": state,
                         "area": area, "routable": area == "active" and state in ROUTABLE_STATES})
     return out
 
@@ -153,6 +197,8 @@ def audit_local_extra(rec: dict, fm: dict, text: str) -> list[str]:
         f.append(f"`_drafts/` 里只能是 draft，实际 {state!r}")
     elif area == "active" and state == "draft":
         f.append("可路由目录里不能放 draft（未批准不得路由）")
+    elif area == "active" and state != "approved":
+        f.append(f"可路由目录里只能是 approved，实际 {state!r}")
     elif area == "retired" and state not in ("deprecated", "removed"):
         f.append(f"`_retired/` 里只能是 deprecated/removed，实际 {state!r}")
     if state == "approved":
@@ -171,11 +217,11 @@ def audit_local_extra(rec: dict, fm: dict, text: str) -> list[str]:
                     f.append(f"APPROVAL.json 缺 {key}")
             want = ev.get("approved_skill_sha256")
             if want:
-                actual = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                actual = hashlib.sha256(rec["path"].read_bytes()).hexdigest()
                 if want != actual:
                     f.append("approved_skill_sha256 与当前 SKILL.md 字节不符（内容已变，需重审）")
             art = ev.get("review_artifact")
-            if not ev.get("approved_directive") and not (art and (ROOT / art).is_file()):
+            if not ev.get("approved_directive") and not (art and _artifact_ok(art)):
                 f.append("APPROVAL.json 需 `approved_directive`（用户原话）或存在的 `review_artifact`")
     return f
 
@@ -187,12 +233,12 @@ def _local_table(registry: str) -> dict[str, str]:
         cells = _cells(line)
         if len(cells) < 4:
             continue
-        m = re.search(rf"\.workspace/skills-local/({NAME_CHARS})/SKILL\.md", cells[3])
-        if not m:
+        found = _path_name(cells[3], ".workspace/skills-local/_retired/", ".workspace/skills-local/")
+        if not found:
             continue
         name = cells[0].strip("`").strip()
-        if name != m.group(1):
-            out[f"!mismatch:{name}"] = m.group(1)
+        if name != found:
+            out[f"!mismatch:{name}"] = found
             continue
         out[name] = cells[1].strip("`").strip()
     return out
@@ -209,19 +255,22 @@ def registry_invariants(rows: list[dict], registry: str) -> list[str]:
         if len(cells) < 3:
             continue
         name = cells[0].strip("`").strip()
-        m = re.search(rf"\.workspace/skills/({NAME_CHARS})/SKILL\.md", cells[2])
-        if not m:
+        found = _path_name(cells[2], ".workspace/skills/")
+        if not found:
             continue
-        if m.group(1) != name:
-            problems.append(f"入口行名称与路径不一致：首列 {name!r} / 路径 {m.group(1)!r}")
+        if found != name:
+            problems.append(f"入口行名称与路径不一致：首列 {name!r} / 路径 {found!r}")
         reg_names.add(name)
     if disk_names != reg_names:
         problems.append(f"REGISTRY 名称集合与目录不一致：缺 {sorted(disk_names - reg_names)}，多 {sorted(reg_names - disk_names)}")
+    if _section_count(registry, "Skill 入口") > 1:
+        problems.append("REGISTRY 出现多个 `## Skill 入口` 节（旧节会成为死内容）")
     m = re.search(r"已登记（(\d+)\s*入口", registry)
-    declared = int(m.group(1)) if m else None
-    listed = len([ln for ln in section.splitlines() if re.search(rf"\.workspace/skills/{NAME_CHARS}/SKILL\.md", ln)])
-    if declared is not None and declared != listed:
-        problems.append(f"REGISTRY 声明 {declared} 入口，实际列出 {listed} 行")
+    listed = len([ln for ln in section.splitlines() if _path_name(ln, ".workspace/skills/")])
+    if m is None:
+        problems.append("REGISTRY 缺『已登记（N 入口…）』计数行")
+    elif int(m.group(1)) != listed:
+        problems.append(f"REGISTRY 声明 {m.group(1)} 入口，实际列出 {listed} 行")
     return problems
 
 
@@ -239,8 +288,12 @@ def local_registry_invariants(local: list[dict], registry: str) -> list[str]:
     for name in sorted(set(expected) & set(table)):
         if expected[name] != table[name]:
             problems.append(f"本地层状态不一致：{name} 目录={expected[name]!r} 登记={table[name]!r}")
+    if _section_count(registry, "本地层入口") > 1:
+        problems.append("REGISTRY 出现多个 `## 本地层入口` 节（旧节会成为死内容）")
     m = re.search(r"已登记（(\d+)\s*个本地\s*skill", registry)
-    if m and int(m.group(1)) != len(table):
+    if expected and m is None:
+        problems.append("REGISTRY 缺本地层计数行（`已登记（N 个本地 skill）`）")
+    elif m and int(m.group(1)) != len(table):
         problems.append(f"本地层声明 {m.group(1)} 个，表格实际 {len(table)} 行")
     return problems
 
@@ -259,6 +312,13 @@ def sync_registry(rows: list[dict], local: list[dict]) -> int:
             f"| 已登记（{len(names)} 入口：{' / '.join(names)}） | `TOOLS.md` |\n\n"
             "## Skill 入口\n\n", encoding="utf-8")
     reg = REGISTRY.read_text(encoding="utf-8")
+    old_local = {k for k in _local_table(reg) if not k.startswith("!mismatch:")}
+    keep_local = [r for r in local if r["area"] in ("active", "retired")]
+    if old_local and not keep_local and not FORCE_PRUNE:
+        print("拒绝清空：本地层登记表非空（" + ", ".join(sorted(old_local)) +
+              "），但 `.workspace/skills-local/` 下找不到对应文件。"
+              "先恢复目录，或确认后用 --force-prune-local。", file=sys.stderr)
+        return 4
 
     desc = {n: frontmatter((SKILLS / n / "SKILL.md").read_text(encoding="utf-8")).get("description", "").strip().strip('"')
             for n in names}
@@ -266,7 +326,7 @@ def sync_registry(rows: list[dict], local: list[dict]) -> int:
     for name in names:
         table.append(f"| {name} | {desc[name].replace('|', chr(92) + '|')} | `.workspace/skills/{name}/SKILL.md` | workspace-skills |")
     section = "## Skill 入口\n\n" + "\n".join(table) + "\n"
-    m = re.search(r"## Skill 入口\n(?:.*\n)*?(?=\n## |\Z)", reg)
+    m = re.search(r"## Skill 入口[^\n]*\n(?:.*\n)*?(?=\n## |\Z)", reg)
     reg = (reg[:m.start()] + section + reg[m.end():]) if m else (reg.rstrip() + "\n\n" + section)
     reg = re.sub(r"已登记（\d+\s*入口[^）]*）",
                  f"已登记（{len(names)} 入口：{' / '.join(names)}）", reg, count=1)
@@ -276,9 +336,10 @@ def sync_registry(rows: list[dict], local: list[dict]) -> int:
     for r in sorted(entries, key=lambda x: x["skill"]):
         text = r["path"].read_text(encoding="utf-8")
         d = frontmatter(text).get("description", "").strip().strip('"').replace("|", chr(92) + "|")
-        lt.append(f"| {r['skill']} | {r['state'] or 'unknown'} | {d} | `.workspace/skills-local/{r['skill']}/SKILL.md` |")
+        sub = "_retired/" if r["area"] == "retired" else ""
+        lt.append(f"| {r['skill']} | {r['state'] or 'unknown'} | {d} | `.workspace/skills-local/{sub}{r['skill']}/SKILL.md` |")
     lsection = "## 本地层入口\n\n> 由 `skill_audit.py --sync-registry` 生成；只有 `approved` 可作路由依据。\n\n" + "\n".join(lt) + "\n"
-    m = re.search(r"## 本地层入口\n(?:.*\n)*?(?=\n## |\Z)", reg)
+    m = re.search(r"## 本地层入口[^\n]*\n(?:.*\n)*?(?=\n## |\Z)", reg)
     reg = (reg[:m.start()] + lsection + reg[m.end():]) if m else (reg.rstrip() + "\n\n" + lsection)
 
     # 根表里补一行本地命名空间（只补一次）
@@ -292,7 +353,52 @@ def sync_registry(rows: list[dict], local: list[dict]) -> int:
             reg = reg.rstrip() + "\n" + row
     reg = re.sub(r"已登记（\d+\s*个本地\s*skill[^）]*）", f"已登记（{len(entries)} 个本地 skill）", reg, count=1)
     REGISTRY.write_text(reg, encoding="utf-8")
+    sync_tools_block(entries)
+    sync_bootstrap_roots(bool(entries))
     return 0
+
+
+def sync_tools_block(entries: list[dict]) -> None:
+    """TOOLS.md 的本地层块：与 REGISTRY 同源生成，避免「同名模板行顶替」的假登记。"""
+    if not TOOLS.is_file():
+        return
+    tools = TOOLS.read_text(encoding="utf-8")
+    if not entries and TOOLS_BEGIN not in tools:
+        return                                   # 空本地层且没有块：不往模板文档里塞噪声
+    lines = [TOOLS_BEGIN, ""]
+    if entries:
+        lines += ["| Skill | 入口 |", "|---|---|"]
+        for r in sorted(entries, key=lambda x: x["skill"]):
+            sub = "_retired/" if r["area"] == "retired" else ""
+            lines.append(f"| **{r['skill']}** | `.workspace/skills-local/{sub}{r['skill']}/SKILL.md`（{r['state'] or 'unknown'}） |")
+        lines.append("")
+    lines.append(TOOLS_END)
+    block = "\n".join(lines)
+    m = re.search(rf"{re.escape(TOOLS_BEGIN)}.*?{re.escape(TOOLS_END)}", tools, re.S)
+    if m:
+        tools = tools[:m.start()] + block + tools[m.end():]
+    else:
+        tools = tools.rstrip() + "\n\n## 本地层 skill 入口（自动生成，勿手改）\n\n" + block + "\n"
+    TOOLS.write_text(tools, encoding="utf-8")
+
+
+def sync_bootstrap_roots(has_local: bool) -> None:
+    """bootstrap.skills.registered_roots 与磁盘一致：有本地层就登记 root。"""
+    if not BOOTSTRAP.is_file():
+        return
+    try:
+        data = json.loads(BOOTSTRAP.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return
+    roots = data.setdefault("skills", {}).setdefault("registered_roots", [])
+    before = list(roots)
+    if has_local and "workspace-skills-local" not in roots:
+        roots.append("workspace-skills-local")
+    if not has_local and "workspace-skills-local" in roots:
+        roots.remove("workspace-skills-local")
+    if roots == before:
+        return                                    # 未变不重写，避免无意义 diff
+    BOOTSTRAP.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def main(argv: list[str]) -> int:
@@ -303,7 +409,11 @@ def main(argv: list[str]) -> int:
                     help="打印缺失的 TOOLS.md 登记行（不写文件）")
     ap.add_argument("--sync-registry", action="store_true",
                     help="按磁盘重写 REGISTRY 的模板节 / 本地节与计数（不加则不写）")
+    ap.add_argument("--force-prune-local", action="store_true",
+                    help="本地目录确已清空时，允许把本地层登记表重写为空")
     a = ap.parse_args(argv)
+    global FORCE_PRUNE
+    FORCE_PRUNE = a.force_prune_local
 
     ids = clause_ids()
     registry = REGISTRY.read_text(encoding="utf-8") if REGISTRY.is_file() else ""
@@ -316,29 +426,34 @@ def main(argv: list[str]) -> int:
         name, text = rec["skill"], rec["path"].read_text(encoding="utf-8")
         fm = frontmatter(text)
         f: list[str] = []
-        if rec["area"] != "retired":                        # 退役项只查 frontmatter 与状态
-            f += contract_findings(name, text, fm, ids, require_io=(rec["layer"] == "local"))
+        # 退役项：保留 frontmatter / name==目录 / version 校验，只豁免 8 维契约与触发语
+        f += contract_findings(name, text, fm, ids, require_io=(rec["layer"] == "local"),
+                               minimal=(rec["area"] == "retired"))
         if rec["layer"] == "local":
             f += audit_local_extra(rec, fm, text)
-            if rec["area"] in ("active", "retired") and f".workspace/skills-local/{name}/SKILL.md" not in registry:
+            sub = "_retired/" if rec["area"] == "retired" else ""
+            if rec["area"] in ("active", "retired") and f".workspace/skills-local/{sub}{name}/SKILL.md" not in registry:
                 f.append("未登记于 skills/REGISTRY.md（本地层入口）")
+            if rec["area"] in ("active", "retired") and not _in_tools_block(tools, name):
+                f.append("未登记于 TOOLS.md 本地层块（`--sync-registry` 会生成）")
         else:
             if f".workspace/skills/{name}/SKILL.md" not in registry:
                 f.append("未登记于 skills/REGISTRY.md")
-        if rec["area"] != "retired" and not re.search(rf"^\|[^\n]*\*\*{re.escape(name)}(?=[\s*])", tools, re.M):
-            f.append("未登记于 TOOLS.md")
+            if not re.search(rf"^\|[^\n]*\*\*{re.escape(name)}(?=[\s*])", tools, re.M):
+                f.append("未登记于 TOOLS.md")
         bad += bool(f)
         rows.append({"skill": name, "version": fm.get("version"), "ok": not f, "findings": f,
                      "layer": rec["layer"], "state": rec["state"], "area": rec["area"]})
 
     if a.tools_snippet:
-        missing = [r for r in rows if "未登记于 TOOLS.md" in r["findings"]]
+        missing = [r for r in rows if any(x.startswith("未登记于 TOOLS.md") for x in r["findings"])]
         for r in missing:
             base = "`.workspace/skills-local" if r["layer"] == "local" else "`.workspace/skills"
-            print(f"| **{r['skill']}** | 入口 {base}/{r['skill']}/SKILL.md`（v{r['version']}）。触发见其 frontmatter description |")
+            sub = "_retired/" if r.get("area") == "retired" else ""
+            print(f"| **{r['skill']}** | 入口 {base}/{sub}{r['skill']}/SKILL.md`（v{r['version']}）。触发见其 frontmatter description |")
         if not missing:
             print("(none: TOOLS.md 已覆盖全部 skill)")
-        other = [f for r in rows for f in r["findings"] if "未登记于 TOOLS.md" not in f]
+        other = [f for r in rows for f in r["findings"] if not f.startswith("未登记于 TOOLS.md")]
         if other:
             print(f"# 另有 {len(other)} 条非 TOOLS 的 findings（跑 --strict 逐条看）：")
             for x in other[:5]:
@@ -354,11 +469,22 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"sync_registry": "ok" if ok else "failed",
                           "registry_problems": problems,
                           "other_findings": other}, ensure_ascii=False))
+        if rc != 0:
+            return rc                                  # 4 = 拒绝清空用户登记，不能被压成 1
         return 0 if ok else 1
 
     # 命名约定：模板层与本地层都按 lowercase-kebab；本地层是硬要求（由 authoring skill 生成即合规），
     # 模板层历史遗留只提示。仅在 --strict 下判失败。
+    boot_problem: str | None = None
     if a.strict:
+        entries = [r for r in local if r["area"] in ("active", "retired")]
+        if entries and BOOTSTRAP.is_file():
+            try:
+                roots = json.loads(BOOTSTRAP.read_text(encoding="utf-8-sig")).get("skills", {}).get("registered_roots", [])
+            except Exception:
+                roots = []
+            if "workspace-skills-local" not in roots:
+                boot_problem = "本地层存在但 bootstrap.skills.registered_roots 未登记 workspace-skills-local"
         for r in rows:
             if not KEBAB_RE.match(r["skill"]):
                 r["findings"].append(f"目录名 {r['skill']!r} 不符 lowercase-kebab 约定（建议改名）")
@@ -366,7 +492,10 @@ def main(argv: list[str]) -> int:
                     r["ok"] = False
                     bad += 1
 
-    for p in registry_invariants(rows, registry) + local_registry_invariants(local, registry):
+    problems = registry_invariants(rows, registry) + local_registry_invariants(local, registry)
+    if boot_problem:
+        problems.append(boot_problem)
+    for p in problems:
         rows.append({"skill": "(registry)", "version": "—", "ok": False, "findings": [p]})
         bad += 1
 

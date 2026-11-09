@@ -136,7 +136,7 @@
       "R133": "5. 本地 skill 的登记**必须**由 `scripts/skill_audit.py --sync-registry` 从磁盘派生后写入三处：`skills/REGISTRY.md` 的「## 本地层入口」表、`TOOLS.md` 的本地登记行、`.workspace/bootstrap.json` 的 `skills.registered_roots`；草稿不登记，退役项保留墓碑行。",
       "R134": "6. `approved` 项的审批证据**必须**写在同目录 `APPROVAL.json`（`approved_by` 角色标识、`approved_at`、`approved_skill_sha256` = 当前 `SKILL.md` 字节的 sha256，外加 `approved_directive` 用户原话或存在的 `review_artifact`）；内容变化后**必须**重新批准，删除该文件即撤销批准。"
     },
-    "file_sha256": "52c4012d8f6f2fa87c315b585a465b243618e3a18d40ecd5df911c3f2651d671",
+    "file_sha256": "07b69b553c456b53e31548fb56a631c866072ad1f7d70a0b409c7d9ced21f602",
     "marked": 134
   },
   "LICENSE": {
@@ -171,7 +171,7 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "52eb7c33e782409bcaad701ae4d16009e0aec5bfdcb74600eaf66a91935b0a45",
+    "file_sha256": "3fbf2e06face0241b4de904a72cf544ce872b03a8717304a37738038b3ec6c21",
     "marked": 0
   },
   "README_EN.md": {
@@ -251,12 +251,12 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "01e5dbbced0795b7c0d006993056c9351fb0e0c2668ceef379a726077f387ade",
+    "file_sha256": "8941cc2651bff6693b047c49d623b7fc17247e4ab6b36fc796e655bbb54eb6c2",
     "marked": 0
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "b51bad14cb8d230dbfb5c5f8953ad6f7bd4199681f640e2d4eaa2a4e9166823e",
+    "file_sha256": "299e036b3515b49080c63d65f467e44b0a83afbd3233e81b5a14dc12cb53b5a0",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {

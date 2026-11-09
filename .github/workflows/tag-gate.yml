@@ -1,0 +1,35 @@
+name: tag-gate
+
+# 打 tag 就等于宣称「这个提交可发布」：在这里再跑一遍全门禁，拦掉
+# 「最后一次写盘后没重跑 mark_rules registry」这类事故（3.5.12 的真实成因——
+# tag 里的 rule-clauses.json 与文件字节不一致，所有从 tag 同步的实例永久 TAMPERED）。
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 条款标记
+        run: python3 scripts/mark_rules.py check AGENT_RULES.md
+      - name: 文件与条款哈希
+        run: python3 scripts/verify_rules.py --workspace .
+      - name: 条款元数据
+        run: python3 scripts/clause_lint.py
+      - name: skill 审计（含本地层）
+        run: python3 scripts/skill_audit.py --strict
+      - name: 文档索引
+        run: python3 scripts/docs_index.py build
+      - name: tag 身份（tag 的分发内容必须等于 HEAD）
+        run: python3 .github/scripts/release_anchor.py --assert-tag-identity
+      - name: unittest
+        run: |
+          python -m unittest discover -s tests -p 'test_*.py' -q
+          python -m unittest discover -s hooks-tests -p 'test_*.py' -q
