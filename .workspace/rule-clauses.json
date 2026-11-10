@@ -173,7 +173,7 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "d1f01db593d528e73b29d3d422d1c28571b7503f971b0ef82df7c70c5a13bb75",
+    "file_sha256": "b09dd08a492cd42bd84240beae3fb9756b57d24db457c33bb7fc96f4c0c45188",
     "marked": 0
   },
   "README_EN.md": {
@@ -203,7 +203,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "d8402e3301367c681accba076890b89beda9b98f998dbb045c21f1ea9ed6e696",
+    "file_sha256": "4619cf7b33ada9dd14b35c0e45d67dc049e6674bce7d8bdd857a9ac81e61de1d",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -298,12 +298,12 @@
   },
   "docs/README.md": {
     "clauses": {},
-    "file_sha256": "ec3c408ac0424a7f4b8cfea0ca411b87983b0cebefee8af47070fae038f67499",
+    "file_sha256": "c1f2ec79addb6252fcbd1e9ad8b62f73c30e5900e9289460f05e7c97ac545692",
     "marked": 0
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "71b4b2fd4dc84c445b989a0ced86d0fc19c92a572cfadc26173f9708df1e1dbc",
+    "file_sha256": "d85e2728453ed079ea70de869973cd5294c0578ac71cb6f0b05106da1d155def",
     "marked": 0
   },
   "docs/skills.md": {
@@ -313,7 +313,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "daa873a0f4ba53dce2529932008c6059b3df3d519a4088e13cedcd3b841407e9",
+    "file_sha256": "fe26ab5a3b7a49e22c29d9ad40e4b5cb44aaf01903a3447871c6508441a6caaa",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -359,6 +359,11 @@
   "tests/test_check_scripts.py": {
     "clauses": {},
     "file_sha256": "111c1af4bf1679f577040b865e1c60743f6808e6bc1b706e9e63f1906a80cf42",
+    "marked": 0
+  },
+  "scripts/local_state.py": {
+    "clauses": {},
+    "file_sha256": "330cdda7bae010c1e159a13f08349f85cb32d264314f7af2b92aac7de149286c",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -534,6 +539,11 @@
   "tests/test_git_bin.py": {
     "clauses": {},
     "file_sha256": "b30deebf091ec2941c12625be2c5757d000ff1efd22312dbeef418818571df6f",
+    "marked": 0
+  },
+  "tests/test_local_state.py": {
+    "clauses": {},
+    "file_sha256": "55568480bb1008dba90508a501a1b4c109d35a1795b6d02445eba279cda13629",
     "marked": 0
   }
 }

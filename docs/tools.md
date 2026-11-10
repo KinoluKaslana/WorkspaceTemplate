@@ -1,4 +1,4 @@
-# 工具（scripts/，15 个）
+# 工具（scripts/，16 个）
 
 > 实现说明，不构成政策。所有脚本只依赖标准库，要求 Python ≥ 3.10。**`--json` 语义各脚本不同**：`verify_rules.py` 的 `--json` 是**输出文件路径**，`skill_audit.py`/`workspace_preflight.py`/`docs_*.py`/`template_sync.py`/`pyenv_init.py` 的 `--json` 是「打印 JSON 到 stdout」，`mark_rules.py` 无此参数——以各条示例与 `--help` 为准。
 
@@ -22,6 +22,7 @@
 | `workspace_preflight.py` | 跨设备预检：11 项「登记 vs 本机实际」；`--layout-only` 只读诊断 venv 布局 | `[--workspace .] [--json] [--strict] [--harness …] [--layout-only]` | 0 无 mismatch / 1 有 mismatch / `--layout-only`：0 找到解释器 / 0 mcp（`layout=n/a`，不探测）/ 3 没有、未配置或缺 identifier |
 | `pyenv_init.py` | Python 运行时初始化：uv / 手动 venv / MCP | `--mode uv\|venv\|mcp [--apply] [--json]` | 0 / 1 / 2 参数 / 3 需装 uv / 4 校验失败 / 5 已配置拒绝 |
 | `gate_status.py` | harness 接线自检：各客户端有没有**运行期** gate 证据 | `[--require cc,codex,hermes,dsh] [--ttl-minutes N] [--json]` | 0 有证据 / 1 `--require` 缺证据 |
+| `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_status` / `bind` / `resolve_identity` / `context_dir` | `import local_state` | 库：不变量失败抛 `ValueError`；判读结果在返回字典的 `status`/`reason` |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 
@@ -128,6 +129,29 @@ dsh 没有项目级自动发现，不带 `--patch` 启动就完全没有 gate；
 
 **与预检的失败姿态**：`workspace_preflight` 的 `gate` 项判 `mismatch` 表示「不能进入受管写入/同步」，
 不表示只读也被禁止（R118）。预检复核 TTL 固定按 ≤30 分钟算，不会因为 bootstrap 里填了更大的值而放宽。
+
+## 5.6 本机状态分片：`local_state.py`
+
+本机状态（`python.mode`、venv、运行时版本、gate 结论）按**执行上下文**分片存放，不再写进随仓库分发的 `bootstrap.json`：
+
+```
+<workspace>/.workspace/.local/v1/<context_id>/runtime.json
+context_id = HMAC-SHA256(machine_material, f"{workspace_id}|{realm}|{principal}")
+root_binding = HMAC-SHA256(context_id, realpath(workspace))
+```
+
+- `machine_material`：Linux `/etc/machine-id`、Windows `MachineGuid`、macOS `IOPlatformUUID`；CI 用 `WORKSPACE_CONTEXT_SEED` 显式给定。
+- `principal`：POSIX `uid` / Windows `SID`（不用用户名）；`realm`：`linux|windows|macos|wsl|container:<rt>|ci:<provider>`。
+- 只读判定不创建、不修复；别人的 context 目录与同步冲突副本（`runtime (conflicted copy).json` 等）一律不采信。
+- 状态文件不存明文绝对路径：`root_binding` 是 HMAC，venv 用相对路径；工作区一移动，绑定自动失效（`UNBOUND` + `root-mismatch`）。
+- 首次绑定把内容写进同级临时目录再整体 rename，读者不会看到「目录在、`runtime.json` 不在」的中间态；写入用 `mkstemp + fsync + os.replace`。
+- 写锁在 OS 临时目录（`workspace-template-locks/<context_id>.lock`），不落在状态树里，不会被同步到别的机器。
+- 路径链上任何一段是 symlink 都拒绝写入，`runtime.json` 用 `O_NOFOLLOW` 打开。
+- `ephemeral` 是调用方显式参数（CI 用），对应目录名带 `-eph` 后缀；没有默认值，避免忘记传参时静默复用持久状态。
+
+判读结果：`BOUND` / `UNBOUND`（`no-local-state` / `no-self-state` / `root-mismatch`）/ `CORRUPT`（`bad-json` / `unknown-schema` / `missing-fields` / `missing-runtime` / `workspace-mismatch` / `context-mismatch` / `realm-mismatch` / `invalid-fields` / `unsafe-path`）/ `IDENTITY_UNAVAILABLE`。
+
+契约测试：`tests/test_local_state.py`（20 例，含并发读、首次绑定原子发布、symlink 逃逸）。
 
 ## 6. Python 运行时：`pyenv_init.py`
 

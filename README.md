@@ -342,7 +342,7 @@ Agent 将自动完成：
 │   ├── architecture.md     # 四层模型 / 写路径 / 读证据 / 失败姿态 / 跨设备
 │   ├── policy-language.md  # 政策双轨：受控词表 + 条款属性 + clause_lint
 │   ├── skills.md           # 8 个 skill 的触发、边界、组合流程、8 维契约
-│   ├── tools.md            # 15 个脚本的用法与退出码
+│   ├── tools.md            # 16 个脚本的用法与退出码
 │   ├── hooks-guide.md      # 三 harness hook 技术详解（原理 + 作用 + 排查）
 │   ├── hooks-catalog.md    # 事件清单 + 新 harness 接入 7 步 + 验收断言
 │   └── docs-retrieval.md   # docs 检索工具与实测结论（省账单不省 token）
