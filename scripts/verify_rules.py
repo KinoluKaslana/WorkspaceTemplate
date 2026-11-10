@@ -122,6 +122,7 @@ TEMPLATE_FILES = [
     "tests/test_gate_status.py",
     "tests/no_git_runner.py",
     "tests/test_readme_exemption.py",
+    "tests/test_git_bin.py",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.
@@ -242,7 +243,7 @@ def verify_custom_refs(ws_root: Path, registry: dict, custom_glob: str) -> list[
     return findings
 
 
-def verify_vs_template(ws: Path, tpl: Path) -> tuple[list[str], list[str], dict]:
+def verify_vs_template(ws: Path, tpl: Path, trust: bool = True) -> tuple[list[str], list[str], dict]:
     """Authoritative comparison: workspace template-layer files must be
     byte-identical to the template clone. Trust anchors the clone itself
     via git (status clean + HEAD sha) before trusting the comparison.
@@ -253,21 +254,32 @@ def verify_vs_template(ws: Path, tpl: Path) -> tuple[list[str], list[str], dict]
     findings: list[str] = []
     info: list[str] = []
     meta: dict = {}
+    # anchor 0：显式降级 —— 仍做逐文件字节比对，但结果**恒不 clean**（不可声明可信）
+    if not trust:
+        info.append("[trust] UNANCHORED (--trust=none)：跳过 git 锚，下面只是字节比对结果，不可作为同步验收")
     # anchor 1: clone must be a git repo
-    if not (tpl / ".git").exists():
+    if trust and not (tpl / ".git").exists():
         findings.append("[trust] template clone has no .git — cannot anchor trust")
         return findings, info, meta
     # anchor 2: clone must be clean (no local edits to the reference itself)
     import subprocess
 
+    if not trust:
+        return _byte_compare(ws, tpl, findings, info, meta, unanchored=True)
+
+    git_bin = os.environ.get("GIT_BIN") or "git"
     try:
-        st = subprocess.run(["git", "-C", str(tpl), "status", "--porcelain"], capture_output=True, text=True, timeout=30)
-        head = subprocess.run(["git", "-C", str(tpl), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=30)
+        st = subprocess.run([git_bin, "-C", str(tpl), "status", "--porcelain"],
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        head = subprocess.run([git_bin, "-C", str(tpl), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        findings.append(f"[trust] git check failed on template clone: {exc}")
+        findings.append(f"[trust] git check failed on template clone: {exc}（可设置 GIT_BIN 指向 git 绝对路径）")
         return findings, info, meta
     if st.returncode != 0 or head.returncode != 0:
-        findings.append("[trust] git command failed on template clone")
+        detail = (st.stderr or head.stderr or "").strip()
+        findings.append(f"[trust] git command failed on template clone: {detail[:200]}"
+                        "（可设置 GIT_BIN 指向 git 绝对路径；信任锚不可用时不可声明 clean）")
         return findings, info, meta
     meta["template_head"] = head.stdout.strip()
     meta["template_clean"] = not st.stdout.strip()
@@ -277,7 +289,14 @@ def verify_vs_template(ws: Path, tpl: Path) -> tuple[list[str], list[str], dict]
         relevant = [d for d in dirty if any(f in d for f in TEMPLATE_FILES)]
         if relevant:
             findings.append(f"[trust] template clone dirty on compared files: {relevant[:3]}")
-    # byte comparison per file
+    return _byte_compare(ws, tpl, findings, info, meta)
+
+
+def _byte_compare(ws: Path, tpl: Path, findings: list[str], info: list[str],
+                  meta: dict, unanchored: bool = False) -> tuple[list[str], list[str], dict]:
+    """逐文件字节比对（不含 git 锚）。unanchored=True 时结论恒为不 clean。"""
+    if unanchored:
+        findings.append("[trust] UNANCHORED：git 锚不可用/已跳过，字节一致也不构成 clean")
     for rel in TEMPLATE_FILES:
         t, w = tpl / rel, ws / rel
         if not t.is_file():
@@ -302,6 +321,8 @@ def main() -> int:
     ap.add_argument("--custom-glob", default="*.custom.md", help="glob for custom rule files")
     ap.add_argument("--vs-template", dest="vs_template", default=None, help="template clone dir: authoritative byte-compare + git trust anchor")
     ap.add_argument("--json", help="optional findings JSON output path")
+    ap.add_argument("--trust", dest="trust", default="git", choices=["git", "none"],
+                    help="git：用克隆的 git 锚（默认，fail-closed）；none：跳过锚但仍做逐文件字节比对，结果恒不 clean")
     args = ap.parse_args()
 
     ws = Path(args.workspace).resolve()
@@ -320,7 +341,7 @@ def main() -> int:
         if not tpl.is_dir():
             print(json.dumps({"error": f"--vs-template dir not found: {tpl}"}))
             return 2
-        vs_findings, vs_info, template_meta = verify_vs_template(ws, tpl)
+        vs_findings, vs_info, template_meta = verify_vs_template(ws, tpl, trust=(args.trust == "git"))
         findings += vs_findings
         info += vs_info
     ff, fi = verify_file_level(ws, registry)

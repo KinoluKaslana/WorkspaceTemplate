@@ -453,10 +453,11 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         # 否则「读到最后一行」会被判成不完整（gate_core 会在 end==total-1 时自动升格）。
         physical = total - 1 if (total > 1 and Path(target).read_bytes().endswith(b"\n")) else total
         end = physical if lim is None else min(physical, off + lim - 1)
-        if end < total and not body.endswith("\n"):
-            body += "\n"          # gate_core 对 end<total 的期望片段以 LF 结尾
-        if end < total and not body.endswith("\n"):
-            body += "\n"          # 与 cc/codex 分支一致：非 EOF 的期望片段以 LF 结尾
+        # 非 EOF 区间恒补自身行终止符：gate_core 的 expected 对这个区间**无条件**补 LF。
+        # 只在 body 不以 LF 结尾时补，会让「区间末行是空行」的读永远对不上（真实事故：
+        # 分次读 1..130 + 131..EOF 永远累加不上，违反 R98「分次可累加」）。
+        if end < total:
+            body += "\n"
         read_info = {"read_ok": True, "path": target, "offset": off,
                      "limit": end - off + 1, "total_lines": total,
                      "tool_response": body}
@@ -728,8 +729,9 @@ def handle(event: str, data: dict) -> None:
                           code=("no-read" if client == "dsh" else ""))
             elif is_pwsh and res["kind"] == "unresolved":
                 # PowerShell 是解释器：写意图存在但目标不可静态确定 → fail-closed
-                _deny("PowerShell 写目标无法静态确定（命令含写意图但解析不出目标）；"
-                      "请把目标写成字面路径重试。",
+                _deny("PowerShell 写目标无法静态确定（命令含写意图但解析不出目标）。"
+                      "请把赋值与操作写进同一条命令（`$d = 'C:\\path'; Remove-Item $d`），"
+                      "或直接用绝对路径；命令内改写过 $env:* 时同样无法静态判定。",
                       ws=ws, client=client, sid=sid, tool="pwsh",
                       tool_use_id=data.get("tool_use_id") or "",
                       code=("unresolved" if client == "dsh" else ""))

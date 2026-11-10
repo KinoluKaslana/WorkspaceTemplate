@@ -39,10 +39,36 @@ import tempfile
 from pathlib import Path
 
 
+GIT_BIN = os.environ.get("GIT_BIN") or "git"
+
+
+def _run(args: list[str], **kw):
+    """唯一 git 入口：GIT_BIN 解析 + 可执行缺失/受限会话的统一错误。"""
+    kw.setdefault("capture_output", True)
+    kw.setdefault("text", True)
+    kw.setdefault("encoding", "utf-8")
+    kw.setdefault("errors", "replace")
+    try:
+        return subprocess.run([GIT_BIN, *args], **kw)
+    except OSError as exc:
+        raise RuntimeError(f"git 无法执行（GIT_BIN={GIT_BIN}）：{exc}{_GIT_HINT}") from exc
+
+_GIT_HINT = ("（提示：Python 子进程可能无法启动该 git —— Windows 上 msys git 在受限会话里会以 "
+             "0xC0000022 失败。设置环境变量 GIT_BIN 指向可执行的 git 绝对路径，"
+             "例如 GIT_BIN='C:\\Program Files\\Git\\cmd\\git.exe'。）")
+
+
+def _git_failure(stderr: str) -> RuntimeError:
+    low = (stderr or "").lower()
+    if "c0000022" in low or "winerror" in low or "fatal error" in low or "no such file" in low:
+        return RuntimeError(f"{stderr.strip()}{_GIT_HINT}")
+    return RuntimeError(stderr.strip())
+
+
 def git(repo: Path, *args: str, check: bool = True) -> str:
-    p = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    p = _run(["-C", str(repo), *args])
     if check and p.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed: {p.stderr.strip()}")
+        raise _git_failure(f"git {' '.join(args)} failed: {p.stderr}")
     return p.stdout.strip()
 
 
@@ -63,7 +89,7 @@ def previous_template_files(tpl: Path, prev_commit: str | None) -> list[str]:
     """读取上次同步点记录的 TEMPLATE_FILES，用于识别上游已删除的文件。"""
     if not prev_commit:
         return []
-    blob = subprocess.run(["git", "-C", str(tpl), "show", f"{prev_commit}:scripts/verify_rules.py"],
+    blob = _run(["-C", str(tpl), "show", f"{prev_commit}:scripts/verify_rules.py"],
                           capture_output=True, text=True)
     if blob.returncode != 0:
         return []
@@ -227,6 +253,8 @@ def main(argv: list[str]) -> int:
                     help="删除「上次同步有、本次模板已移除」的模板层文件（先备份）")
     ap.add_argument("--purge-generated", action="store_true",
                     help="回滚时一并删除升级前不存在的生成文件（REGISTRY/notes 索引/docs 索引）")
+    ap.add_argument("--git", dest="git_bin", default=None,
+                    help="git 可执行文件绝对路径（优先级：--git > GIT_BIN > PATH）")
     ap.add_argument("--rollback", default=None, metavar="BACKUP_DIR",
                     help="按备份目录的 MANIFEST.txt 回滚（放回 replaced、删除 added）")
     ap.add_argument("--verify", action="store_true")
@@ -234,6 +262,9 @@ def main(argv: list[str]) -> int:
                     help="verify 未通过时保留已写入的结果（默认自动回滚到同步前）")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
+    if getattr(a, "git_bin", None):
+        global GIT_BIN
+        GIT_BIN = a.git_bin
 
     ws = Path(a.workspace).expanduser().resolve()
     boot_path = ws / ".workspace" / "bootstrap.json"
@@ -260,7 +291,7 @@ def main(argv: list[str]) -> int:
         # 交给 MSYS 路径转换，结果 dest 变成 `/d/wt/ws` 而失败（CI Windows 上就是这么红的）。
         if os.path.isdir(os.path.expanduser(url)):
             url = Path(url).expanduser().resolve().as_uri()
-        p = subprocess.run(["git", "clone", "--quiet", url, str(tpl)], capture_output=True, text=True)
+        p = _run(["clone", "--quiet", url, str(tpl)], capture_output=True, text=True)
         if p.returncode != 0:
             print(json.dumps({"error": "clone-failed", "url": url, "stderr": p.stderr.strip()[:300]},
                              ensure_ascii=False))
@@ -285,7 +316,7 @@ def main(argv: list[str]) -> int:
     candidates = [f"{a.remote}/{wanted}", wanted]
     resolved = None
     for c in candidates:
-        if subprocess.run(["git", "-C", str(tpl), "rev-parse", "--verify", "{}^0".format(c)],
+        if _run(["-C", str(tpl), "rev-parse", "--verify", "{}^0".format(c)],
                           capture_output=True).returncode == 0:
             resolved = c
             break
@@ -310,13 +341,13 @@ def main(argv: list[str]) -> int:
         # README 处置：显式 --keep-readme 恒保留；否则「工作区 README 与上次同步点不同」视为用户首页，保留
         prev_commit = (boot.get("template") or {}).get("last_synced_commit")
         readme_is_local = False
-        if prev_commit and subprocess.run(["git", "-C", str(tpl), "cat-file", "-e", f"{prev_commit}^{{commit}}"],
+        if prev_commit and _run(["-C", str(tpl), "cat-file", "-e", f"{prev_commit}^{{commit}}"],
                                           capture_output=True).returncode == 0:
             for name in ("README.md", "README_EN.md"):
                 cur = ws / name
                 if not cur.is_file():
                     continue
-                blob = subprocess.run(["git", "-C", str(tpl), "show", f"{prev_commit}:{name}"],
+                blob = _run(["-C", str(tpl), "show", f"{prev_commit}:{name}"],
                                       capture_output=True)
                 if blob.returncode == 0 and blob.stdout and blob.stdout != cur.read_bytes():
                     readme_is_local = True
@@ -527,7 +558,7 @@ def main(argv: list[str]) -> int:
                 print("verify clean:", (verify or {}).get("clean"))
         return 0 if (not a.verify or (verify or {}).get("clean")) else 2
     finally:
-        subprocess.run(["git", "-C", str(tpl), "worktree", "remove", "--force", str(wt)],
+        _run(["-C", str(tpl), "worktree", "remove", "--force", str(wt)],
                        capture_output=True)
         shutil.rmtree(tmp, ignore_errors=True)
 

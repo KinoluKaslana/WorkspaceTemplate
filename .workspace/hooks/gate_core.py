@@ -814,6 +814,39 @@ def _revocation(state: dict, gate_rel: str, reason: str) -> None:
         })
 
 
+def workspace_is_taken_over(ws_root: str) -> bool:
+    """工作区是否「已接管」：模板仓自身与未初始化的克隆不算受管工作区。
+
+    真实反馈：模板仓自带 `.workspace/bootstrap.json`，于是任何临时克隆都被 find_workspace()
+    当成一个工作区 —— 删它要先读它的 AGENT_RULES.md（而它在 %TEMP% 里，根本不是用户工作区）。
+    判定只读 bootstrap 的两个状态字段，读不出时保守当受管（fail-closed）。
+    """
+    try:
+        data = json.loads((Path(ws_root) / BOOTSTRAP_REL).read_text(encoding="utf-8-sig"))
+    except Exception:
+        return True
+    if not isinstance(data, dict):
+        return True
+    status = str(data.get("workspace_status") or "").strip()
+    py_mode = str(((data.get("python") or {}) if isinstance(data.get("python"), dict) else {}).get("mode") or "").strip()
+    return not (status == "template" and py_mode in ("", "unconfigured"))
+
+
+def _is_within(path: str, root: str) -> bool:
+    """词法 + 解析后双判定：区外软链指回区内必须仍算区内（反向逃逸）。"""
+    def one(a: str, b: str) -> bool:
+        try:
+            return os.path.commonpath([os.path.normpath(a), os.path.normpath(b)]) == os.path.normpath(b)
+        except ValueError:             # 不同盘符
+            return False
+    if one(path, root):
+        return True
+    try:
+        return one(str(Path(path).resolve()), str(Path(root).resolve()))
+    except OSError:
+        return False
+
+
 def evaluate_pre_write(ws_root: str, client: str, session_id: str, targets: list[str],
                        conf: dict | None = None) -> dict:
     """Route each absolute target to its own workspace; never use process cwd.
@@ -828,9 +861,17 @@ def evaluate_pre_write(ws_root: str, client: str, session_id: str, targets: list
         # No shared unknown session, even for disabled workspaces.
         _state_path(ws_root, client, session_id)
         grouped = {}
+        # 会话锚定工作区 = find_workspace(cwd)，不是工具瞬时 cwd：
+        # 从工作区子目录写兄弟路径时，raw cwd 会把锚定缩到子目录（假 deny + 逃逸）。
+        anchor = (find_workspace(ws_root) or os.path.normpath(ws_root)) if ws_root else None
         for target in targets:
+            # ① 锚定工作区内 → 一律按本工作区判定（嵌套克隆也逃不掉）
+            if anchor and _is_within(target, anchor):
+                grouped.setdefault(anchor, []).append(target)
+                continue
+            # ② 区外目标：只有「已接管」的工作区才受管（模板仓/临时克隆不算）
             owner = find_workspace(target)
-            if owner:
+            if owner and workspace_is_taken_over(owner):
                 grouped.setdefault(owner, []).append(target)
         for owner, paths in grouped.items():
             local_conf = conf if owner == os.path.normpath(ws_root) else None

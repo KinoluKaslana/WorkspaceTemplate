@@ -102,7 +102,7 @@
       "R99": "2. **分工与边界**：hook 只保证机械动作不被绕过，不代替 Agent 理解并遵守规则。hook 未启用、被绕过、或在无法归属会话的状态下被拦截/放行时，§2/§9/§11 的义务**不变**——不得以「hook 没拦」为由免除任何规则义务。",
       "R100": "3. **调参与信任边界**：调参写 `.hermes/plugins/workspace-gate/plugin.custom.json`（`enabled`/`gate_files`/`write_tools`）；**不得直接改锁定脚本**（哈希校验报漂移、同步时被覆盖）。守门防「无意识跳过」，不防「主动绕过」：`terminal`/`execute_code` 可绕行，属沙箱/权限层。实现文档（`docs/…`）只陈述机械事实，不得出现义务句；授权、禁止、例外与判定口径的权威表述只在本文件，冲突以本文件为准。",
       "R101": "## 13. 客户端治理 hook（Claude Code / Codex）",
-      "R102": "1. **适用与身份**：只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份由 `bootstrap.json` 存在性承担；脚本在 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定。**身份粒度**：状态键 `session_id`，子 agent 再拼 `.agent_id`（CC 主子共用 `session_id`，实测；Codex 子 agent payload 带 `agent_id`），**账本不继承父读证据；仅经 R98 的有效委托引用父证据**；`SubagentStart`/`SubagentStop` 落 `agent-start`/`agent-stop`。",
+      "R102": "1. **适用与身份**：只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份由 `bootstrap.json` 存在性承担，但 `workspace_status` 为 `template` 且 `python.mode` 为空或 `unconfigured` 的目录**不得**视为受管工作区（其写/删除/移动目标的判定见 R135）；脚本在 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定。**身份粒度**：状态键 `session_id`，子 agent 再拼 `.agent_id`（CC 主子共用 `session_id`，实测；Codex 子 agent payload 带 `agent_id`），**账本不继承父读证据；仅经 R98 的有效委托引用父证据**；`SubagentStart`/`SubagentStop` 落 `agent-start`/`agent-stop`。",
       "R103": "2. **守门判据**：Codex `apply_patch` 与 Bash 静态可判写（清单见 catalog §2.6）在目标属本工作区且未完整读 gate 当前修订时 deny；解释器/包装类未读即 deny；其余不可判形态只审计不拦（`unresolved-command`）。",
       "R104": "3. **客户端差异（必须明说）**：CC 仅 `Write`/`Edit` 受管，**Bash 写不订阅、不拦截**；`Stop`/`SessionEnd` 的差集与指纹锚只到文件/目录级，但**可经转录回放做事后归因**（子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放，作用域含 `.agent_id`）。**事后归因不等于拦截**，`would_deny=true` 不表示写入被阻止；转录可被同 uid 删改，不得据此推断整仓受管。命令原文默认不落盘（只记 digest），需 `audit_command_text=true` 显式开启。回放与归因细则见 catalog §2.7。",
       "R105": "4. **证据与审计**：读证据绑指纹 `c<size>:<sha256>` 与覆盖 `1..total`；审计十三型（清单见 catalog §2.6）。`gate-deny` 记拒绝本身，作用域含 `.agent_id`，可在 `audit-<client>.jsonl` 独立核验。写前 `gate-intent` → 写后 `gate-commit` 对账，缺失一侧记 `unobserved-write`（**不表示通过**）。只记路径/哈希/会话/动作，不落正文。`unresolved-command` 只含 `tool_use_id`/`client`/`digest`/`class`，不落原文、不可直读归因；`worktree-change` 粒度受 git 限制，文件级归因须由 `completion-gate` 补证。账本轮转与压缩规则见 catalog §2.7。",
@@ -134,10 +134,11 @@
       "R131": "3. 只有 `status` 为 `approved` 的本地 skill **必须**被当作可路由项；`draft` / `deprecated` / `removed` **必须**视为不可路由，且 `status` 与所在目录不一致即为缺陷。",
       "R132": "4. 本地层 `approved` 项与模板层同名时，**必须**以本地层为准（这是模板级规则，**不需要** custom 覆写）；模板层同名项**必须**仍可用显式限定名 `workspace-skills:<name>` 引用。",
       "R133": "5. 本地 skill 的登记**必须**由 `scripts/skill_audit.py --sync-registry` 从磁盘派生后写入三处：`skills/REGISTRY.md` 的「## 本地层入口」表、`TOOLS.md` 的本地登记行、`.workspace/bootstrap.json` 的 `skills.registered_roots`；草稿不登记，退役项保留墓碑行。",
-      "R134": "6. `approved` 项的审批证据**必须**写在同目录 `APPROVAL.json`（`approved_by` 角色标识、`approved_at`、`approved_skill_sha256` = 当前 `SKILL.md` 字节的 sha256，外加 `approved_directive` 用户原话或存在的 `review_artifact`）；内容变化后**必须**重新批准，删除该文件即撤销批准。"
+      "R134": "6. `approved` 项的审批证据**必须**写在同目录 `APPROVAL.json`（`approved_by` 角色标识、`approved_at`、`approved_skill_sha256` = 当前 `SKILL.md` 字节的 sha256，外加 `approved_directive` 用户原话或存在的 `review_artifact`）；内容变化后**必须**重新批准，删除该文件即撤销批准。",
+      "R135": "8. **破坏性目录操作的目标归属（dsh / pwsh 变量目标）**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且 `python.mode` 缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
     },
-    "file_sha256": "7e051857be8ae65eb001dbb8b39cf4ece0fcb04171766ba8413dadc3925eae55",
-    "marked": 134
+    "file_sha256": "49c64c81e3f1abd71a8075a19b04787e0e19da8d72271613ec11084e424e7b5e",
+    "marked": 135
   },
   "LICENSE": {
     "clauses": {},
@@ -171,12 +172,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "907328a3a7114254cef45eb35aaffa0892deb2a434ab5d2c23e711f6d25a065a",
+    "file_sha256": "0616088527ca675606127ed217b42dd4ee25cb3c31771bee53bfb3cc46d73143",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "52044fe3e3931741672c35486def26d66420db7c0de77a94437d7808274b59ce",
+    "file_sha256": "be8174cbf3314347f55768da74302039eefd02183cccc171ddb1dc9876869a07",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -201,7 +202,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "9e2018d6d29950028b3ee2909ec0511093713f758d55336c35028920e5b2467a",
+    "file_sha256": "d8402e3301367c681accba076890b89beda9b98f998dbb045c21f1ea9ed6e696",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -251,7 +252,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "8941cc2651bff6693b047c49d623b7fc17247e4ab6b36fc796e655bbb54eb6c2",
+    "file_sha256": "518b046cbe87ee974975e87734c3fe3215535e94beeafeff809780e457873a47",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -301,7 +302,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "c188656ad804ae3eb6de42655a98dd8b07a09fe0b7f84eb9174ba1005f947abd",
+    "file_sha256": "6faf3669a0a7a5413eac56c62059af68fba5c91eff6481629de58458ac3c7ae3",
     "marked": 0
   },
   "docs/skills.md": {
@@ -416,7 +417,7 @@
   },
   ".workspace/clauses.meta.json": {
     "clauses": {},
-    "file_sha256": "af85c1484d2b47382a434dfa5e903c84153c0ed4e215d56010c4d8a63d1aa250",
+    "file_sha256": "5006cdceec640d9f966d1122cc3ee618cbf1daab6289edf8ca61dd9861bf2772",
     "marked": 0
   },
   "docs/harness-onboarding.md": {
@@ -466,17 +467,17 @@
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "ed65b7aa00655dab1d8c5087917721765e33aa5e41906dda10106e3484ca97a7",
+    "file_sha256": "750bdc05bc8317eb7f20e4fada0005a1ca43db3e9affc5306d240faa1016581b",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "99486673d0e45c9d47981e2094c2239993f0728f80d8e927ab6d3dbe5ddd2504",
+    "file_sha256": "71d7c395eb79456e26e2de317a0ea514827848bd37f4c3f54bb4e0638bbcfca2",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
     "clauses": {},
-    "file_sha256": "83241a8aa2837b9c689fdd0d29117bf2bfe37928d5bce72b83f873079f6e7a48",
+    "file_sha256": "5dc87f762c08cb37546f2348056285f1908cf0d49174823274748305eec40b95",
     "marked": 0
   },
   ".workspace/hooks/authz.py": {
@@ -527,6 +528,11 @@
   "tests/test_readme_exemption.py": {
     "clauses": {},
     "file_sha256": "40368bd85eb350262e981ab47d5485a0a1964b8add598097a2bdfa48ca3f02cc",
+    "marked": 0
+  },
+  "tests/test_git_bin.py": {
+    "clauses": {},
+    "file_sha256": "b30deebf091ec2941c12625be2c5757d000ff1efd22312dbeef418818571df6f",
     "marked": 0
   }
 }
