@@ -22,7 +22,7 @@
 | `workspace_preflight.py` | 跨设备预检：11 项「登记 vs 本机实际」；`--layout-only` 只读诊断 venv 布局 | `[--workspace .] [--json] [--strict] [--harness …] [--layout-only]` | 0 无 mismatch / 1 有 mismatch / `--layout-only`：0 找到解释器 / 0 mcp（`layout=n/a`，不探测）/ 3 没有、未配置或缺 identifier |
 | `pyenv_init.py` | Python 运行时初始化：uv / 手动 venv / MCP | `--mode uv\|venv\|mcp [--apply] [--json]` | 0 / 1 / 2 参数 / 3 需装 uv / 4 校验失败 / 5 已配置拒绝 |
 | `gate_status.py` | harness 接线自检：各客户端有没有**运行期** gate 证据 | `[--require cc,codex,hermes,dsh] [--ttl-minutes N] [--json]` | 0 有证据 / 1 `--require` 缺证据 |
-| `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_status` / `bind` / `resolve_identity` / `context_dir` | `import local_state` | 库：不变量失败抛 `ValueError`；判读结果在返回字典的 `status`/`reason` |
+| `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_state` / `read_status` / `bind` / `resolve_identity` / `detect_platform_info` | `import local_state` | 库：不变量失败抛 `ValueError`/`TypeError`；判读结果在返回字典的 `status`/`reason` |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 
@@ -132,26 +132,31 @@ dsh 没有项目级自动发现，不带 `--patch` 启动就完全没有 gate；
 
 ## 5.6 本机状态分片：`local_state.py`
 
-本机状态（`python.mode`、venv、运行时版本、gate 结论）按**执行上下文**分片存放，不再写进随仓库分发的 `bootstrap.json`：
+本机状态（运行时模式、venv、版本、后续的 gate 结论）按**执行上下文**分片存放，不写进随仓库分发的 `bootstrap.json`：
 
 ```
 <workspace>/.workspace/.local/v1/<context_id>/runtime.json
-context_id = HMAC-SHA256(machine_material, f"{workspace_id}|{realm}|{principal}")
+context_id   = HMAC-SHA256(machine_material, f"{workspace_id}|{realm}|{principal}")
 root_binding = HMAC-SHA256(context_id, realpath(workspace))
 ```
 
-- `machine_material`：Linux `/etc/machine-id`、Windows `MachineGuid`、macOS `IOPlatformUUID`；CI 用 `WORKSPACE_CONTEXT_SEED` 显式给定。
-- `principal`：POSIX `uid` / Windows `SID`（不用用户名）；`realm`：`linux|windows|macos|wsl|container:<rt>|ci:<provider>`。
-- 只读判定不创建、不修复；别人的 context 目录与同步冲突副本（`runtime (conflicted copy).json` 等）一律不采信。
-- 状态文件不存明文绝对路径：`root_binding` 是 HMAC，venv 用相对路径；工作区一移动，绑定自动失效（`UNBOUND` + `root-mismatch`）。
-- 首次绑定把内容写进同级临时目录再整体 rename，读者不会看到「目录在、`runtime.json` 不在」的中间态；写入用 `mkstemp + fsync + os.replace`。
-- 写锁在 OS 临时目录（`workspace-template-locks/<context_id>.lock`），不落在状态树里，不会被同步到别的机器。
-- 路径链上任何一段是 symlink 都拒绝写入，`runtime.json` 用 `O_NOFOLLOW` 打开。
-- `ephemeral` 是调用方显式参数（CI 用），对应目录名带 `-eph` 后缀；没有默认值，避免忘记传参时静默复用持久状态。
+- `machine_material`：Linux `/etc/machine-id`（回退 `/var/lib/dbus/machine-id`）、Windows `MachineGuid`、macOS `IOPlatformUUID`；CI 用 `WORKSPACE_CONTEXT_SEED` 显式给定。采集入口 `detect_platform_info()`（只读、best-effort）。
+- `principal`：POSIX `uid` / Windows `SID`（不用用户名）；`realm`：`linux|windows|macos|wsl|container:<rt>|ci:<provider>`（可用 `WORKSPACE_REALM` 覆盖）。
+- `mode` 的持久值与 `bootstrap.python.mode` 一致：`uv` / `local-venv` / `mcp`（`pyenv_init --mode venv` 只是 CLI 别名）。
+- 只读判定（`read_state` / `read_status`）不创建、不修复；只认精确的 `runtime.json`，同步冲突副本与别人的 context 目录一律不采信。
+- 状态文件不存明文绝对路径：`root_binding` 是 HMAC，venv 用工作区相对路径；工作区一移动，绑定自动失效（`UNBOUND` + `root-mismatch`）。`venv_relpath` 必须无 drive、无 root、无 `..`、非空。
+- 首次绑定把内容写进同级临时目录（`mkdtemp`）→ 文件 `fsync` → 整体 `rename` → 父目录 `fsync`，读者看不到「目录在、`runtime.json` 不在」的中间态；更新已有 context 用 `mkstemp + fsync + os.replace`。
+- 写锁在 OS 临时目录（`workspace-template-locks-<uid>/<context_id>.lock`，`0700`），不落在状态树里，不会被同步到别的机器；同 context 的并发写串行化。
+- 工作区之下的路径链上任何一段是 symlink 都拒绝写入；`runtime.json` 用 `O_NOFOLLOW` 打开。工作区自身是 symlink 时按 `realpath` 锚定（状态仍落在工作区实体内）。
+- `ephemeral` 是调用方显式传入的 `bool`（CI 用），对应目录名带 `-eph` 后缀；传非 `bool` 抛 `TypeError`，避免字符串 `"false"` 被当成真值。
 
-判读结果：`BOUND` / `UNBOUND`（`no-local-state` / `no-self-state` / `root-mismatch`）/ `CORRUPT`（`bad-json` / `unknown-schema` / `missing-fields` / `missing-runtime` / `workspace-mismatch` / `context-mismatch` / `realm-mismatch` / `invalid-fields` / `unsafe-path`）/ `IDENTITY_UNAVAILABLE`。
+接口：`read_state()` 返回 `{status, reason, context_id, data}`，`BOUND` 时 `data` 是经校验的 payload；`read_status()` 是只含前三键的兼容视图；`bind()` 返回 `read_state()` 的结果。
 
-契约测试：`tests/test_local_state.py`（21 例，含并发读、首次绑定原子发布、symlink 逃逸）。
+判读结果：`BOUND`（`ok`）/ `UNBOUND`（`no-local-state` / `no-self-state` / `root-mismatch`）/ `CORRUPT`（`bad-json` / `unknown-schema` / `missing-fields` / `missing-runtime` / `workspace-mismatch` / `context-mismatch` / `realm-mismatch` / `invalid-fields` / `unsafe-path`）/ `IDENTITY_UNAVAILABLE`（`identity-unavailable`）。
+
+契约测试：`tests/test_local_state.py`（26 例：含并发读、首次绑定原子发布、symlink 逃逸、HMAC 固定向量、首次绑定 fsync、多进程写、工作区别名）。
+
+**存量实例注意**：`.gitignore` 不在 `TEMPLATE_FILES`，同步不会带来 `.workspace/.local/` 这一行，需按 `.workspace/skills/template-update/` 的「同步后检查」手工补一行。
 
 ## 6. Python 运行时：`pyenv_init.py`
 

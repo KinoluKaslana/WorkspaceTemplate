@@ -147,7 +147,8 @@ def contract_findings(name: str, text: str, fm: dict, ids: set[str], require_io:
     SKIP = re.compile(r"(backup-|\.bak|miss-log|template-base|\.index\.json|\.aliases\.json|x\.md$)")
     missing_paths = sorted({
         p for p in (x.rstrip("/.-") for x in PATH_RE.findall(text))
-        if re.search(r"\.[A-Za-z0-9]{1,8}$", p) and not SKIP.search(p)
+        # 只把 `name.ext` 当文件；`.local` 这类点目录的 basename 以点开头，不是扩展名
+        if re.search(r"[^/\\.]\.[A-Za-z0-9]{1,8}$", p) and not SKIP.search(p)
         and not (ROOT / p).exists() and "$(" not in p and "<" not in p})
     if missing_paths:
         f.append(f"引用不存在的路径：{','.join(missing_paths[:4])}")

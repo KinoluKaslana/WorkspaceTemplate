@@ -208,7 +208,7 @@
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "b28e029c65a184018b1a0eed4c023775b0e5e94aeb0fb2231ec9189b4c547b41",
+    "file_sha256": "c78f0a9114d1d09443977ac796ed421e4249e1f456657d81a851fbdf2bba1694",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -258,7 +258,7 @@
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "299e036b3515b49080c63d65f467e44b0a83afbd3233e81b5a14dc12cb53b5a0",
+    "file_sha256": "d8f36e2ad6749cc2fa1aba2a1ed2b0532ead697b830a7936c56c23215529d247",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
@@ -303,7 +303,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "d85e2728453ed079ea70de869973cd5294c0578ac71cb6f0b05106da1d155def",
+    "file_sha256": "88167e33b2996804cf1cb336744f2c4a6d1f77bc1ffd866e54ddd57aa1f5475e",
     "marked": 0
   },
   "docs/skills.md": {
@@ -313,7 +313,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "fe26ab5a3b7a49e22c29d9ad40e4b5cb44aaf01903a3447871c6508441a6caaa",
+    "file_sha256": "e072e0d1bebc0b548cca1309ac7244ec9689af0a118c6b30bb1afc918ca6acea",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -363,7 +363,7 @@
   },
   "scripts/local_state.py": {
     "clauses": {},
-    "file_sha256": "2624d561a737aaa3d0e7d50bdd0b07f4f7f5a5fa1299bac41f0eb41801cec944",
+    "file_sha256": "7193142b598f01e482016f400b6f27859df1c8091c327240d49bb59408c6ddef",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -543,7 +543,7 @@
   },
   "tests/test_local_state.py": {
     "clauses": {},
-    "file_sha256": "653d671f770d6119120b25f7338ed50e058c7a79bbc833e821f6544723d937aa",
+    "file_sha256": "aa1425fd8c3a8b772c958f6cdfe165c15cb1d754b6dc78f95a0b915c3ceb892a",
     "marked": 0
   }
 }

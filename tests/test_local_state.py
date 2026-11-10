@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """树内按 context 分片的本机状态（`scripts/local_state.py`）契约测试。
 
-19 例覆盖：未绑定 / 别人的 context / 绑定与判读 / 根漂移 / 字段篡改 / 损坏 JSON /
-身份不可得 / 绝对路径拒绝 / 不落明文路径 / 并发读不撕裂 / 冲突副本不采信 /
-ephemeral 开关 / seed 覆盖 / 首次绑定原子发布 / symlink 逃逸拒绝 / principal 按 realm /
-空 seed 非法 / venv_relpath 类型 / context 目录无多余文件。
+覆盖：未绑定 / 别人的 context / 绑定与判读 / 根漂移 / 字段篡改 / 损坏 JSON / 身份不可得 /
+venv 路径契约 / 不落明文路径 / 并发读不撕裂 / 冲突副本不采信 / ephemeral 开关 /
+seed 覆盖 / 首次绑定原子发布 / symlink 逃逸拒绝 / principal 按 realm / 空 seed 非法 /
+context 目录无多余文件 / mode 词表 / HMAC 固定向量 / 首次绑定 fsync / 多进程写 / 工作区别名。
 
 运行：python3 -B tests/test_local_state.py
 """
 import json
+import multiprocessing
 import os
 import shutil
 import sys
@@ -30,6 +31,12 @@ def ident(material=b"machine-A", principal="1000", realm="linux") -> "ls.Identit
     return ls.Identity(machine_material=material, principal=principal, realm=realm)
 
 
+def _bind_worker(ws: str, version: str) -> None:
+    import local_state as _ls
+    _ls.bind(Path(ws), WSID, _ls.Identity(b"machine-A", "1000", "linux"),
+             "local-venv", ".venv-312", version, ephemeral=False)
+
+
 class LocalStateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="ls-test-"))
@@ -47,8 +54,8 @@ class LocalStateTest(unittest.TestCase):
 
     def test_02_other_context_is_not_mine(self):
         a, b, c = (ident(material=f"machine-{x}".encode()) for x in ("A", "B", "C"))
-        ls.bind(self.ws, WSID, a, "venv", ".venv-312", "3.12.7", ephemeral=False)
-        ls.bind(self.ws, WSID, b, "venv", ".venv-312", "3.12.7", ephemeral=False)
+        ls.bind(self.ws, WSID, a, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
+        ls.bind(self.ws, WSID, b, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         root = ls.state_root(self.ws)
 
         def snapshot():
@@ -62,14 +69,18 @@ class LocalStateTest(unittest.TestCase):
         self.assertEqual((res["status"], res["reason"]), ("UNBOUND", "no-self-state"))
         self.assertEqual(snapshot(), before, "读别人的状态不得修改对方文件")
 
-    def test_03_bind_then_bound(self):
+    def test_03_bind_then_bound_and_payload(self):
         i = ident()
-        ls.bind(self.ws, WSID, i, "uv", ".venv-314", "3.14.7", ephemeral=False)
+        res = ls.bind(self.ws, WSID, i, "uv", ".venv-314", "3.14.7", ephemeral=False)
+        self.assertEqual(res["status"], "BOUND")
+        self.assertEqual(res["data"]["mode"], "uv")
+        self.assertEqual(res["data"]["venv_relpath"], ".venv-314")
+        self.assertEqual(res["data"]["version"], "3.14.7")
         self.assertEqual(ls.read_status(self.ws, WSID, i, ephemeral=False)["status"], "BOUND")
 
     def test_04_root_mismatch_after_move(self):
         i = ident()
-        ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+        ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         moved = self.tmp / "ws-moved"
         shutil.move(str(self.ws), str(moved))
         res = ls.read_status(moved, WSID, i, ephemeral=False)
@@ -78,7 +89,7 @@ class LocalStateTest(unittest.TestCase):
     # ---- 损坏与篡改 -----------------------------------------------------
     def test_05_workspace_mismatch(self):
         i = ident()
-        ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+        ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         f = ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json"
         data = json.loads(f.read_text(encoding="utf-8"))
         data["workspace_id"] = "deadbeef-dead-dead-dead-deaddeadbeef"
@@ -89,7 +100,7 @@ class LocalStateTest(unittest.TestCase):
 
     def test_06_corrupt_json(self):
         i = ident()
-        ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+        ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         (ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json").write_text(
             "{not json", encoding="utf-8")
         self.assertEqual(ls.read_status(self.ws, WSID, i, ephemeral=False)["status"], "CORRUPT")
@@ -100,19 +111,31 @@ class LocalStateTest(unittest.TestCase):
         self.assertFalse((self.ws / ".workspace" / ".local").exists())
 
     # ---- 输入校验 -------------------------------------------------------
-    def test_08_absolute_venv_rejected(self):
-        for bad in ("/abs/.venv-312", "C:\\abs\\.venv-312"):
-            with self.assertRaises(ValueError, msg=bad):
-                ls.bind(self.ws, WSID, ident(), "venv", bad, "3.12.7", ephemeral=False)
+    def test_08_venv_path_contract(self):
+        bad = ["/abs/.venv-312", "C:\\abs\\.venv-312", "\\rooted", "C:drive-relative",
+               "../outside", "a/../../b", "", " .venv-312"]
+        for value in bad:
+            with self.assertRaises(ValueError, msg=value):
+                ls.bind(self.ws, WSID, ident(), "local-venv", value, "3.12.7", ephemeral=False)
+        self.assertFalse((self.ws / ".workspace" / ".local").exists())
 
     def test_18_venv_relpath_type_rejected_before_mkdir(self):
         with self.assertRaises(ValueError):
-            ls.bind(self.ws, WSID, ident(), "venv", Path(".venv-312"), "3.12.7", ephemeral=False)
+            ls.bind(self.ws, WSID, ident(), "local-venv", Path(".venv-312"), "3.12.7",
+                    ephemeral=False)
         self.assertFalse((self.ws / ".workspace" / ".local").exists(), "类型错误不得留下目录")
+
+    def test_22_mode_vocabulary(self):
+        with self.assertRaises(ValueError):
+            ls.bind(self.ws, WSID, ident(), "venv", ".venv-312", "3.12.7", ephemeral=False)
+        for mode in ("uv", "local-venv", "mcp"):
+            self.assertEqual(
+                ls.bind(self.ws, WSID, ident(), mode, ".venv-312", "3.12.7",
+                        ephemeral=False)["data"]["mode"], mode)
 
     def test_09_no_plaintext_paths(self):
         i = ident()
-        ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+        ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         text = (ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json").read_text(
             encoding="utf-8")
         for bad in (str(self.ws), str(self.ws.resolve()), str(Path.home())):
@@ -123,6 +146,7 @@ class LocalStateTest(unittest.TestCase):
         i = ident()
         stop = threading.Event()
         errors = []
+        reads = [0]
 
         def reader():
             f = ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json"
@@ -130,6 +154,7 @@ class LocalStateTest(unittest.TestCase):
                 if f.exists():
                     try:
                         json.loads(f.read_text(encoding="utf-8"))
+                        reads[0] += 1
                     except Exception as exc:      # noqa: BLE001
                         errors.append(f"{type(exc).__name__}: {exc}")
 
@@ -137,12 +162,14 @@ class LocalStateTest(unittest.TestCase):
         t.start()
         try:
             for n in range(20):
-                ls.bind(self.ws, WSID, i, "venv", f".venv-3{n % 3}12", "3.12.7", ephemeral=False)
+                ls.bind(self.ws, WSID, i, "local-venv", f".venv-3{n % 3}12", "3.12.7",
+                        ephemeral=False)
                 time.sleep(0.002)
         finally:
             stop.set()
             t.join(timeout=2)
         self.assertFalse(errors, f"并发读到半截 JSON：{errors[:3]}")
+        self.assertGreater(reads[0], 0, "读线程一次都没读到，用例无效")
 
     def test_14_first_bind_never_exposes_empty_context(self):
         for round_no in range(5):
@@ -152,27 +179,59 @@ class LocalStateTest(unittest.TestCase):
             cid = ls.context_id(WSID, i)
             stop = threading.Event()
             bad = []
+            seen = [0]
 
             def reader():
                 d = ls.state_root(ws) / cid
                 while not stop.is_set():
-                    if d.is_dir() and not (d / "runtime.json").is_file():
-                        bad.append("empty-context-visible")
+                    if d.is_dir():
+                        seen[0] += 1
+                        if not (d / "runtime.json").is_file():
+                            bad.append("empty-context-visible")
 
             t = threading.Thread(target=reader, daemon=True)
             t.start()
             try:
                 time.sleep(0.001)
-                ls.bind(ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+                ls.bind(ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
                 time.sleep(0.001)
             finally:
                 stop.set()
                 t.join(timeout=2)
             self.assertFalse(bad, f"首次绑定暴露了空 context 目录：{bad[:3]}")
+            self.assertGreater(seen[0], 0, "探针没观察到发布后的目录，用例无效")
+
+    def test_24_first_bind_fsyncs(self):
+        calls = [0]
+        real_fsync = os.fsync
+
+        def counting(fd):
+            calls[0] += 1
+            return real_fsync(fd)
+
+        os.fsync = counting
+        try:
+            ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7", ephemeral=False)
+        finally:
+            os.fsync = real_fsync
+        self.assertGreaterEqual(calls[0], 1, "首次发布必须 fsync 文件")
+
+    def test_25_multiprocess_writers_leave_valid_state(self):
+        ctx = multiprocessing.get_context("spawn")
+        procs = [ctx.Process(target=_bind_worker, args=(str(self.ws), f"3.12.{n}"))
+                 for n in range(3)]
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join(timeout=30)
+            self.assertEqual(p.exitcode, 0)
+        res = ls.read_state(self.ws, WSID, ident(), ephemeral=False)
+        self.assertEqual(res["status"], "BOUND")
+        self.assertIn(res["data"]["version"], {"3.12.0", "3.12.1", "3.12.2"})
 
     def test_11_conflict_copies_ignored(self):
         i = ident()
-        ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+        ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         d = ls.context_dir(self.ws, WSID, i, ephemeral=False)
         bad = {"schema": "v1", "workspace_id": "other", "context_id": "zzz"}
         (d / "runtime (conflicted copy).json").write_text(json.dumps(bad), encoding="utf-8")
@@ -181,7 +240,7 @@ class LocalStateTest(unittest.TestCase):
 
     def test_19_context_dir_has_no_extra_files(self):
         i = ident()
-        ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+        ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         d = ls.context_dir(self.ws, WSID, i, ephemeral=False)
         self.assertEqual(sorted(p.name for p in d.iterdir()), ["runtime.json"],
                          "锁与临时文件不得留在 context 目录")
@@ -195,6 +254,8 @@ class LocalStateTest(unittest.TestCase):
         a = ls.context_dir(self.ws, WSID, i, ephemeral=False)
         b = ls.context_dir(self.ws, WSID, i, ephemeral=True)
         self.assertEqual(b.name, a.name + "-eph")
+        with self.assertRaises(TypeError):
+            ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral="false")
 
     def test_13_seed_override(self):
         info = {"machine_id": b"machine-A", "uid": "1000", "realm": "linux"}
@@ -218,13 +279,26 @@ class LocalStateTest(unittest.TestCase):
         info = {"machine_id": b"m", "uid": "1000", "realm": "linux"}
         self.assertIsNone(ls.resolve_identity({"WORKSPACE_CONTEXT_SEED": ""}, info))
 
+    def test_23_hmac_fixed_vectors(self):
+        i = ident()
+        self.assertEqual(ls.context_id(WSID, i),
+                         "0f60a5ad61a652706f636371a446785f2d3960f5e63186f1c6f335365a220a59")
+        self.assertEqual(
+            ls._root_binding(Path("/tmp/fixed-ws"), ls.context_id(WSID, i)),
+            "b0a4543e93ee16c8a22102b5876ee5da743eecd98ad052a0c1c2002cd31f473a")
+        # realm 是公式的一部分：同 material/principal、不同 realm 必须得到不同 context_id
+        win = ident(realm="windows")
+        self.assertNotEqual(ls.context_id(WSID, i), ls.context_id(WSID, win))
+        self.assertEqual(ls.context_id(WSID, win),
+                         "393e753d11f05c8c9b9fc05f3de769076aee8146aaf3476f5b0d18f9896b3d7a")
+
     # ---- 路径安全 -------------------------------------------------------
     def test_15_symlink_escape_refused(self):
         outside = self.tmp / "outside"
         outside.mkdir()
         (self.ws / ".workspace" / ".local").symlink_to(outside, target_is_directory=True)
         with self.assertRaises(ValueError):
-            ls.bind(self.ws, WSID, ident(), "venv", ".venv-312", "3.12.7", ephemeral=False)
+            ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         self.assertEqual(list(outside.iterdir()), [], "不得通过 symlink 写工作区外")
 
     @unittest.skipIf(os.name == "nt", "POSIX 权限模型下才有的 symlink 语义")
@@ -236,13 +310,13 @@ class LocalStateTest(unittest.TestCase):
         i = ident()
         (root / ls.context_id(WSID, i)).symlink_to(outside, target_is_directory=True)
         with self.assertRaises(ValueError):
-            ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+            ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         self.assertEqual(list(outside.iterdir()), [], "不得借 context 目录 symlink 写出工作区")
 
     @unittest.skipIf(os.name == "nt", "POSIX 权限模型下才有的 symlink 语义")
     def test_20_symlinked_runtime_file_not_followed(self):
         i = ident()
-        ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+        ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         d = ls.context_dir(self.ws, WSID, i, ephemeral=False)
         outside_file = self.tmp / "outside.json"
         outside_file.write_text(json.dumps({"schema": "v1"}), encoding="utf-8")
@@ -250,6 +324,19 @@ class LocalStateTest(unittest.TestCase):
         (d / "runtime.json").symlink_to(outside_file)
         res = ls.read_status(self.ws, WSID, i, ephemeral=False)
         self.assertEqual((res["status"], res["reason"]), ("CORRUPT", "unsafe-path"))
+
+    @unittest.skipIf(os.name == "nt", "POSIX 权限模型下才有的 symlink 语义")
+    def test_26_workspace_alias_binds_inside_real_workspace(self):
+        real = self.ws
+        ls.bind(real, WSID, ident(), "local-venv", ".venv-312", "3.12.7", ephemeral=False)
+        alias = self.tmp / "alias"
+        alias.symlink_to(real, target_is_directory=True)
+        res = ls.read_status(alias, WSID, ident(), ephemeral=False)
+        self.assertEqual(res["status"], "BOUND")
+        written = (real / ".workspace" / ".local" / ls.STATE_VERSION
+                   / ls.context_id(WSID, ident()) / "runtime.json")
+        self.assertTrue(written.is_file(), "状态必须落在工作区实体内")
+        self.assertFalse((self.tmp / ".workspace").exists())
 
 
 if __name__ == "__main__":

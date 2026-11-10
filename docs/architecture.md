@@ -94,7 +94,7 @@ Agent 决定写 X
 - 同步**不改** `bootstrap.python`（`python_mode_preserved=true` 是硬条件）；
 - **`.github/` 不下发**：CI 工作流与 `.github/scripts/release_anchor.py` 属模板仓自己的基础设施，不进
   `TEMPLATE_FILES`、不随 `template_sync` 同步到实例；实例不需要它们也能跑全部治理脚本（`tests/test_docs_consistency.py` 的 D9 断言此边界）。
-- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 79 项；**新增/删除模板层文件时，本页与 `docs/README.md` 的数字必须同步**，`tests/test_docs_consistency.py` 会拦）。
+- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（当前 83 项；**新增/删除模板层文件时，本页与 `docs/README.md` 的数字必须同步**，`tests/test_docs_consistency.py` 会拦）。
 
 ## 7. 扩展点
 

@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""local_state.py v2 — 按两席签字条件修订。
+"""本机状态按执行上下文分片（树内，不随仓库分发）。
 
-v1 → v2 的改动（全部来自签字轮）：
-1. 锁文件移出 context 目录，放 OS 临时目录（按 context_id 命名）——状态树里不再有多余文件；
-2. 首次绑定**原子发布整个 context 目录**：先在同级临时目录写好 runtime.json，再 rename，
-   消除"目录已存在但 runtime.json 还没写"的窗口（SOL 探针实测的 CORRUPT 误报）；
-3. symlink 防护覆盖每个路径组件，并用 O_NOFOLLOW 打开 runtime.json（SOL 探针实测的逃逸写）；
-4. `resolve_identity`：principal 按 realm 选（windows→sid，其他→uid）；空 seed 视为非法 → None；
-5. `venv_relpath` 先做类型校验再建目录；`mode` 同样先校验；
-6. `.local` 存在但版本根缺失 → `no-self-state`（契约明确，不再由实现偶然决定）。
+状态根：`<workspace>/.workspace/.local/v1/<context_id>/runtime.json`
+  context_id   = HMAC-SHA256(machine_material, "<workspace_id>|<realm>|<principal>")
+  root_binding = HMAC-SHA256(context_id, realpath(workspace))
+
+不变式：
+- 只读判定（`read_status` / `read_state`）不创建、不修复任何文件；
+- 只认精确的 `runtime.json`，同步冲突副本与别人的 context 目录一律不采信；
+- 状态文件不含明文绝对路径；工作区移动 → `UNBOUND/root-mismatch`；
+- 写入：新 context 写临时目录后整体 rename（读者看不到空目录），
+  已有 context 写 `mkstemp + fsync + os.replace`，两者都 fsync 文件，父目录尽力 fsync；
+- 锁在 OS 临时目录按 uid 分片，不进状态树（不会被同步到别的机器）；
+- 路径链上任何一段是 symlink 都拒绝；`runtime.json` 用 O_NOFOLLOW 打开。
+
+`mode` 的持久值与 `bootstrap.python.mode` 一致：`uv` / `local-venv` / `mcp`。
 """
 from __future__ import annotations
 
@@ -16,18 +22,20 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
-from typing import Iterator, Mapping
+from typing import Any, Iterator, Mapping
 
 STATE_VERSION = "v1"
 _RUNTIME_FILE = "runtime.json"
 _REQUIRED_FIELDS = ("schema", "workspace_id", "context_id", "realm", "root_binding",
                     "mode", "venv_relpath", "version", "bound_at")
-_VALID_MODES = frozenset({"uv", "venv", "mcp"})
+_VALID_MODES = frozenset({"uv", "local-venv", "mcp"})
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 R_NO_LOCAL = "no-local-state"
 R_NO_SELF = "no-self-state"
@@ -52,8 +60,8 @@ class Identity:
     realm: str                    # linux | windows | macos | wsl | container:<rt> | ci:<provider>
 
 
-def _result(status: str, reason: str, cid: str = "") -> dict:
-    return {"status": status, "reason": reason, "context_id": cid}
+def _result(status: str, reason: str, cid: str = "", data: dict | None = None) -> dict:
+    return {"status": status, "reason": reason, "context_id": cid, "data": data}
 
 
 def context_id(workspace_id: str, ident: Identity) -> str:
@@ -67,8 +75,14 @@ def state_root(workspace: Path) -> Path:
 
 def context_dir(workspace: Path, workspace_id: str, ident: Identity, *,
                 ephemeral: bool) -> Path:
+    _require_bool(ephemeral, "ephemeral")
     suffix = "-eph" if ephemeral else ""
     return state_root(workspace) / f"{context_id(workspace_id, ident)}{suffix}"
+
+
+def _require_bool(value: object, name: str) -> None:
+    if not isinstance(value, bool):
+        raise TypeError(f"{name} must be bool, got {type(value).__name__}")
 
 
 def _root_binding(workspace: Path, cid: str) -> str:
@@ -76,52 +90,94 @@ def _root_binding(workspace: Path, cid: str) -> str:
     return hmac.new(cid.encode("ascii"), real, hashlib.sha256).hexdigest()
 
 
-def _is_absolute_path(value: str) -> bool:
-    return Path(value).is_absolute() or PureWindowsPath(value).is_absolute()
+def _venv_relpath_problem(value: str) -> str | None:
+    """返回拒绝理由；None 表示合法（无 drive、无 root、无 ..、非空）。"""
+    if not isinstance(value, str):
+        return "not-a-string"
+    if not value or value != value.strip():
+        return "empty-or-padded"
+    if value in (".", ".."):
+        return "dot"
+    if ".." in Path(value).parts or ".." in PureWindowsPath(value).parts:
+        return "parent-traversal"
+    if Path(value).is_absolute() or PureWindowsPath(value).is_absolute():
+        return "absolute"
+    win = PureWindowsPath(value)
+    if win.drive or win.root:
+        return "windows-rooted"
+    if value.startswith(("/", "\\")):
+        return "rooted"
+    return None
+
+
+def _is_symlink(path: Path) -> bool:
+    try:
+        return path.is_symlink()
+    except OSError:
+        return True
 
 
 def _chain_is_safe(workspace: Path, target: Path) -> bool:
-    """从 workspace 到 target（含）之间任何一段都不能是 symlink。"""
+    """workspace 之下的每一段都不能是 symlink；解析后仍须落在 workspace 实体内。
+
+    工作区自身（或其祖先）是 symlink 时按 realpath 锚定：只要状态落在工作区实体内即接受。
+    """
     try:
-        ws = Path(workspace).resolve()
         rel = Path(target).relative_to(Path(workspace))
     except (ValueError, OSError):
         return False
     cur = Path(workspace)
     for part in rel.parts:
         cur = cur / part
-        try:
-            if cur.is_symlink():
-                return False
-        except OSError:
+        if _is_symlink(cur):
             return False
-    # target 本身可能是新建的：不存在也算安全
     try:
-        target.resolve().relative_to(ws)
+        Path(target).resolve().relative_to(Path(workspace).resolve())
     except (ValueError, OSError):
         return False
     return True
 
 
 def _read_json_no_follow(path: Path) -> dict:
-    flags = os.O_RDONLY | (getattr(os, "O_NOFOLLOW", 0))
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags)
+    with os.fdopen(fd, "r", encoding="utf-8") as fh:
+        return json.loads(fh.read())
+
+
+def _fsync_dir(path: Path) -> None:
+    """父目录 fsync：POSIX 上让 rename 落盘；Windows 不支持目录句柄，忽略。"""
+    if os.name == "nt":                                   # pragma: no cover - Windows
+        return
     try:
-        with os.fdopen(fd, "r", encoding="utf-8") as fh:
-            return json.loads(fh.read())
-    finally:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
         pass
+    finally:
+        os.close(fd)
+
+
+def _write_fd_synced(target: Path, payload: str) -> None:
+    fd = os.open(target, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(payload)
+        fh.flush()
+        os.fsync(fh.fileno())
 
 
 @contextmanager
 def _locked(cid: str) -> Iterator[None]:
-    """锁放在 OS 临时目录：它不是工作区状态，不能被同步。"""
-    lock_dir = Path(tempfile.gettempdir()) / "workspace-template-locks"
-    lock_dir.mkdir(parents=True, exist_ok=True)
+    uid = getattr(os, "getuid", lambda: 0)()
+    lock_dir = Path(tempfile.gettempdir()) / f"workspace-template-locks-{uid}"
+    lock_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock_path = lock_dir / f"{cid}.lock"
     handle = open(lock_path, "a+b")
     try:
-        if os.name == "nt":                                    # pragma: no cover - Windows
+        if os.name == "nt":                                # pragma: no cover - Windows
             import msvcrt
             handle.seek(0)
             msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
@@ -131,7 +187,7 @@ def _locked(cid: str) -> Iterator[None]:
         yield
     finally:
         try:
-            if os.name == "nt":                                # pragma: no cover - Windows
+            if os.name == "nt":                            # pragma: no cover - Windows
                 import msvcrt
                 handle.seek(0)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
@@ -143,9 +199,10 @@ def _locked(cid: str) -> Iterator[None]:
         handle.close()
 
 
-def read_status(workspace: Path, workspace_id: str, ident: Identity | None, *,
-                ephemeral: bool) -> dict:
-    """只读：绝不创建、绝不修复。"""
+def read_state(workspace: Path, workspace_id: str, ident: Identity | None, *,
+               ephemeral: bool) -> dict:
+    """只读判定，成功时 `data` 带经校验的 payload；绝不写盘。"""
+    _require_bool(ephemeral, "ephemeral")
     if ident is None:
         return _result("IDENTITY_UNAVAILABLE", R_IDENTITY_UNAVAILABLE)
 
@@ -154,7 +211,6 @@ def read_status(workspace: Path, workspace_id: str, ident: Identity | None, *,
     if not local_root.exists():
         return _result("UNBOUND", R_NO_LOCAL, cid)
     if not state_root(workspace).exists():
-        # .local 在、版本根不在：半初始化，按契约判 no-self-state
         return _result("UNBOUND", R_NO_SELF, cid)
 
     d = context_dir(workspace, workspace_id, ident, ephemeral=ephemeral)
@@ -166,7 +222,7 @@ def read_status(workspace: Path, workspace_id: str, ident: Identity | None, *,
     runtime = d / _RUNTIME_FILE
     if not runtime.is_file():
         return _result("CORRUPT", R_MISSING_RUNTIME, cid)
-    if runtime.is_symlink():
+    if _is_symlink(runtime):
         return _result("CORRUPT", R_UNSAFE_PATH, cid)
     try:
         data = _read_json_no_follow(runtime)
@@ -186,32 +242,40 @@ def read_status(workspace: Path, workspace_id: str, ident: Identity | None, *,
         return _result("CORRUPT", R_REALM_MISMATCH, cid)
 
     binding = data["root_binding"]
-    if not (isinstance(binding, str) and len(binding) == 64
-            and all(c in "0123456789abcdef" for c in binding)):
+    if not (isinstance(binding, str) and _HEX64.match(binding)):
         return _result("CORRUPT", R_INVALID_FIELDS, cid)
     if not hmac.compare_digest(binding, _root_binding(workspace, cid)):
         return _result("UNBOUND", R_ROOT_MISMATCH, cid)
 
     venv = data["venv_relpath"]
     if not (isinstance(data["mode"], str) and data["mode"] in _VALID_MODES
-            and (venv is None or (isinstance(venv, str) and not _is_absolute_path(venv)))
             and isinstance(data["version"], str) and isinstance(data["bound_at"], str)):
         return _result("CORRUPT", R_INVALID_FIELDS, cid)
+    if venv is not None and _venv_relpath_problem(venv) is not None:
+        return _result("CORRUPT", R_INVALID_FIELDS, cid)
 
-    return _result("BOUND", R_BOUND, cid)
+    return _result("BOUND", R_BOUND, cid, data)
+
+
+def read_status(workspace: Path, workspace_id: str, ident: Identity | None, *,
+                ephemeral: bool) -> dict:
+    """兼容视图：只留 status / reason / context_id。"""
+    res = read_state(workspace, workspace_id, ident, ephemeral=ephemeral)
+    return {k: res[k] for k in ("status", "reason", "context_id")}
 
 
 def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
          venv_relpath: str | None, version: str, *, ephemeral: bool) -> dict:
+    _require_bool(ephemeral, "ephemeral")
     if ident is None:
         return _result("IDENTITY_UNAVAILABLE", R_IDENTITY_UNAVAILABLE)
-    if venv_relpath is not None:
-        if not isinstance(venv_relpath, str):
-            raise ValueError(f"venv_relpath must be str|None, got {type(venv_relpath).__name__}")
-        if _is_absolute_path(venv_relpath):
-            raise ValueError(f"venv_relpath must be relative, got {venv_relpath!r}")
     if not isinstance(mode, str) or mode not in _VALID_MODES:
         raise ValueError(f"mode must be one of {sorted(_VALID_MODES)}, got {mode!r}")
+    if venv_relpath is not None:
+        problem = _venv_relpath_problem(venv_relpath)
+        if problem is not None:
+            raise ValueError(f"venv_relpath must be a workspace-relative path, "
+                             f"got {venv_relpath!r} ({problem})")
 
     cid = context_id(workspace_id, ident)
     d = context_dir(workspace, workspace_id, ident, ephemeral=ephemeral)
@@ -222,6 +286,8 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
     parent.mkdir(parents=True, exist_ok=True)
     if not _chain_is_safe(workspace, parent):
         raise ValueError(f"refusing to write through symlink: {parent}")
+    if _is_symlink(d) or (d.exists() and not _chain_is_safe(workspace, d)):
+        raise ValueError(f"refusing to write through symlink: {d}")
 
     data = {
         "schema": STATE_VERSION,
@@ -236,16 +302,15 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
     }
     payload = json.dumps(data, sort_keys=True)
 
-    if d.is_symlink() or (d.exists() and not _chain_is_safe(workspace, d)):
-        raise ValueError(f"refusing to write through symlink: {d}")
-
     with _locked(cid):
         if not d.exists():
-            # 原子发布：先在同级临时目录写完，再整体 rename，读者永远看不到"空 context 目录"
+            # 原子发布：同级临时目录写完 + fsync，再整体 rename
             tmp_dir = Path(tempfile.mkdtemp(dir=str(parent), prefix=".publish-"))
             try:
-                (tmp_dir / _RUNTIME_FILE).write_text(payload, encoding="utf-8")
+                _write_fd_synced(tmp_dir / _RUNTIME_FILE, payload)
+                _fsync_dir(tmp_dir)
                 os.replace(tmp_dir, d)
+                _fsync_dir(parent)
             except BaseException:
                 for child in tmp_dir.glob("*"):
                     try:
@@ -265,6 +330,7 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
                     fh.flush()
                     os.fsync(fh.fileno())
                 os.replace(tmp_path, d / _RUNTIME_FILE)
+                _fsync_dir(d)
             except BaseException:
                 try:
                     os.unlink(tmp_path)
@@ -272,15 +338,68 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
                     pass
                 raise
 
-    return read_status(workspace, workspace_id, ident, ephemeral=ephemeral)
+    return read_state(workspace, workspace_id, ident, ephemeral=ephemeral)
+
+
+def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
+    """采集本机身份原料（只读、best-effort，不抛异常）。调用方决定缺项时怎么处理。"""
+    env = os.environ if env is None else env
+    info: dict[str, Any] = {"machine_id": None, "uid": None, "sid": None, "realm": None}
+
+    import platform as _platform
+    system = _platform.system().lower()
+    if os.name == "nt":                                    # pragma: no cover - Windows
+        info["realm"] = "windows"
+        info["uid"] = str(os.environ.get("USERNAME") or "") or None
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                r"SOFTWARE\Microsoft\Cryptography") as key:
+                guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+                info["machine_id"] = str(guid).encode("utf-8")
+        except OSError:
+            info["machine_id"] = None
+    else:
+        try:
+            info["uid"] = str(os.getuid())
+        except AttributeError:                              # pragma: no cover
+            info["uid"] = None
+        if system == "darwin":                              # pragma: no cover - macOS
+            info["realm"] = "macos"
+        else:
+            info["realm"] = "wsl" if "microsoft" in _platform.release().lower() else "linux"
+        for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+            try:
+                text = Path(candidate).read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if text:
+                info["machine_id"] = text.encode("utf-8")
+                break
+        if info["machine_id"] is None:                      # pragma: no cover - macOS
+            try:
+                import subprocess
+                out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                     capture_output=True, text=True, timeout=5).stdout
+                match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
+                if match:
+                    info["machine_id"] = match.group(1).encode("utf-8")
+            except (OSError, ValueError):
+                pass
+
+    if env.get("WORKSPACE_CONTEXT_SEED"):
+        info["machine_id"] = env["WORKSPACE_CONTEXT_SEED"].encode("utf-8")
+    if env.get("WORKSPACE_REALM"):
+        info["realm"] = env["WORKSPACE_REALM"]
+    return info
 
 
 def resolve_identity(env: Mapping[str, str],
-                     platform_info: Mapping[str, str]) -> Identity | None:
+                     platform_info: Mapping[str, Any]) -> Identity | None:
     """纯函数：显式 seed 优先；空 seed 视为配置错误（返回 None），不静默回退。"""
     if "WORKSPACE_CONTEXT_SEED" in env:
         seed = env.get("WORKSPACE_CONTEXT_SEED") or ""
-        if not seed:
+        if not seed.strip():
             return None
         material = seed.encode("utf-8")
     else:
@@ -293,7 +412,6 @@ def resolve_identity(env: Mapping[str, str],
     if not realm:
         return None
     realm = str(realm)
-    # principal 按 realm 选：Windows 用 SID，其余用 uid
     if realm == "windows":
         principal = platform_info.get("sid") or platform_info.get("uid")
     else:
