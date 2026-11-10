@@ -313,7 +313,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "e072e0d1bebc0b548cca1309ac7244ec9689af0a118c6b30bb1afc918ca6acea",
+    "file_sha256": "da6d3538397a9fbbdac4503cc1241d4d560a6a93d8d1172cffa4d6ee835d80de",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -363,7 +363,7 @@
   },
   "scripts/local_state.py": {
     "clauses": {},
-    "file_sha256": "7193142b598f01e482016f400b6f27859df1c8091c327240d49bb59408c6ddef",
+    "file_sha256": "c431de1a57d932386756027df024705657695c0935fc1aeb4329b040b4d7b060",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -543,7 +543,7 @@
   },
   "tests/test_local_state.py": {
     "clauses": {},
-    "file_sha256": "aa1425fd8c3a8b772c958f6cdfe165c15cb1d754b6dc78f95a0b915c3ceb892a",
+    "file_sha256": "063c7e4006071007cfed81b05eb99bf0bd84aff4acacdec00e295ec4c80a4ec3",
     "marked": 0
   }
 }

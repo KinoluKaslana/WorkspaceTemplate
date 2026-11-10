@@ -201,20 +201,32 @@ class LocalStateTest(unittest.TestCase):
             self.assertFalse(bad, f"首次绑定暴露了空 context 目录：{bad[:3]}")
             self.assertGreater(seen[0], 0, "探针没观察到发布后的目录，用例无效")
 
-    def test_24_first_bind_fsyncs(self):
+    def test_24_first_bind_fsyncs_file_and_dirs(self):
         calls = [0]
+        dirs: list[str] = []
         real_fsync = os.fsync
+        real_dir = ls._fsync_dir
 
         def counting(fd):
             calls[0] += 1
             return real_fsync(fd)
 
+        def recording(path):
+            dirs.append(str(path))
+            return real_dir(path)
+
         os.fsync = counting
+        ls._fsync_dir = recording
         try:
             ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         finally:
             os.fsync = real_fsync
+            ls._fsync_dir = real_dir
         self.assertGreaterEqual(calls[0], 1, "首次发布必须 fsync 文件")
+        self.assertGreaterEqual(len(dirs), 2, f"首次发布必须 fsync 临时目录与父目录：{dirs}")
+        cid = ls.context_id(WSID, ident())
+        self.assertTrue(any(cid not in d for d in dirs), "必须有对发布父目录的 fsync")
+        self.assertTrue(any(".publish-" in d for d in dirs), "必须有对临时目录的 fsync")
 
     def test_25_multiprocess_writers_leave_valid_state(self):
         ctx = multiprocessing.get_context("spawn")
@@ -275,6 +287,19 @@ class LocalStateTest(unittest.TestCase):
         self.assertIsNotNone(i2)
         self.assertEqual(i2.principal, "1000")
 
+    def test_28_windows_sid_parsed_not_username(self):
+        class Fake:
+            stdout = ("USER INFORMATION\n------------\n\n"
+                      "User Name   SID\nkinolu      S-1-5-21-1111-2222-3333-1001\n")
+
+        self.assertEqual(ls._windows_sid(lambda: Fake()),
+                         "S-1-5-21-1111-2222-3333-1001")
+        class Bad:
+            stdout = "whoami: no user information"
+
+        self.assertIsNone(ls._windows_sid(lambda: Bad()))
+        self.assertIsNone(ls._windows_sid(lambda: (_ for _ in ()).throw(OSError("nope"))))
+
     def test_17_empty_seed_is_invalid(self):
         info = {"machine_id": b"m", "uid": "1000", "realm": "linux"}
         self.assertIsNone(ls.resolve_identity({"WORKSPACE_CONTEXT_SEED": ""}, info))
@@ -324,6 +349,17 @@ class LocalStateTest(unittest.TestCase):
         (d / "runtime.json").symlink_to(outside_file)
         res = ls.read_status(self.ws, WSID, i, ephemeral=False)
         self.assertEqual((res["status"], res["reason"]), ("CORRUPT", "unsafe-path"))
+
+    @unittest.skipIf(os.name == "nt", "POSIX 权限模型下才有的 symlink 语义")
+    def test_27_bind_through_alias_writes_inside_real_workspace(self):
+        real = self.ws
+        alias = self.tmp / "alias-bind"
+        alias.symlink_to(real, target_is_directory=True)
+        res = ls.bind(alias, WSID, ident(), "local-venv", ".venv-312", "3.12.7", ephemeral=False)
+        self.assertEqual(res["status"], "BOUND")
+        written = (real / ".workspace" / ".local" / ls.STATE_VERSION
+                   / ls.context_id(WSID, ident()) / "runtime.json")
+        self.assertTrue(written.is_file(), "经别名 bind 也必须落在工作区实体内")
 
     @unittest.skipIf(os.name == "nt", "POSIX 权限模型下才有的 symlink 语义")
     def test_26_workspace_alias_binds_inside_real_workspace(self):

@@ -341,6 +341,24 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
     return read_state(workspace, workspace_id, ident, ephemeral=ephemeral)
 
 
+_SID_RE = re.compile(r"\bS-\d+(?:-\d+){1,15}\b")
+
+
+def _windows_sid(runner=None) -> str | None:
+    """取当前用户的 SID（Windows）。取不到返回 None，绝不回退成用户名。"""
+    import subprocess
+    run = runner or (lambda: subprocess.run(["whoami", "/user"], capture_output=True,
+                                            text=True, encoding="utf-8",
+                                            errors="replace", timeout=5))
+    try:
+        proc = run()
+    except Exception:                                  # noqa: BLE001 - 采集失败不抛
+        return None
+    out = getattr(proc, "stdout", "") or ""
+    match = _SID_RE.search(out)
+    return match.group(0) if match else None
+
+
 def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
     """采集本机身份原料（只读、best-effort，不抛异常）。调用方决定缺项时怎么处理。"""
     env = os.environ if env is None else env
@@ -350,7 +368,8 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
     system = _platform.system().lower()
     if os.name == "nt":                                    # pragma: no cover - Windows
         info["realm"] = "windows"
-        info["uid"] = str(os.environ.get("USERNAME") or "") or None
+        # 身份用 SID，不用用户名：用户名可改、可重名，SID 才稳定
+        info["sid"] = _windows_sid()
         try:
             import winreg
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,

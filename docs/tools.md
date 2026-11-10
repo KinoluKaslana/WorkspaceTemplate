@@ -141,7 +141,7 @@ root_binding = HMAC-SHA256(context_id, realpath(workspace))
 ```
 
 - `machine_material`：Linux `/etc/machine-id`（回退 `/var/lib/dbus/machine-id`）、Windows `MachineGuid`、macOS `IOPlatformUUID`；CI 用 `WORKSPACE_CONTEXT_SEED` 显式给定。采集入口 `detect_platform_info()`（只读、best-effort）。
-- `principal`：POSIX `uid` / Windows `SID`（不用用户名）；`realm`：`linux|windows|macos|wsl|container:<rt>|ci:<provider>`（可用 `WORKSPACE_REALM` 覆盖）。
+- `principal`：POSIX `uid` / Windows `SID`（`whoami /user` 解析；取不到返回 `None`，**不回退用户名**）；`realm`：`linux|windows|macos|wsl|container:<rt>|ci:<provider>`（可用 `WORKSPACE_REALM` 覆盖）。
 - `mode` 的持久值与 `bootstrap.python.mode` 一致：`uv` / `local-venv` / `mcp`（`pyenv_init --mode venv` 只是 CLI 别名）。
 - 只读判定（`read_state` / `read_status`）不创建、不修复；只认精确的 `runtime.json`，同步冲突副本与别人的 context 目录一律不采信。
 - 状态文件不存明文绝对路径：`root_binding` 是 HMAC，venv 用工作区相对路径；工作区一移动，绑定自动失效（`UNBOUND` + `root-mismatch`）。`venv_relpath` 必须无 drive、无 root、无 `..`、非空。
@@ -154,7 +154,7 @@ root_binding = HMAC-SHA256(context_id, realpath(workspace))
 
 判读结果：`BOUND`（`ok`）/ `UNBOUND`（`no-local-state` / `no-self-state` / `root-mismatch`）/ `CORRUPT`（`bad-json` / `unknown-schema` / `missing-fields` / `missing-runtime` / `workspace-mismatch` / `context-mismatch` / `realm-mismatch` / `invalid-fields` / `unsafe-path`）/ `IDENTITY_UNAVAILABLE`（`identity-unavailable`）。
 
-契约测试：`tests/test_local_state.py`（26 例：含并发读、首次绑定原子发布、symlink 逃逸、HMAC 固定向量、首次绑定 fsync、多进程写、工作区别名）。
+契约测试：`tests/test_local_state.py`（28 例：含并发读、首次绑定原子发布、symlink 逃逸、HMAC 固定向量、首绑文件+目录 fsync、多进程写、工作区别名、SID 解析）。
 
 **存量实例注意**：`.gitignore` 不在 `TEMPLATE_FILES`，同步不会带来 `.workspace/.local/` 这一行，需按 `.workspace/skills/template-update/` 的「同步后检查」手工补一行。
 
