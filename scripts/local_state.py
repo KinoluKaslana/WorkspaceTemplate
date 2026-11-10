@@ -383,19 +383,9 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
             info["uid"] = str(os.getuid())
         except AttributeError:                              # pragma: no cover
             info["uid"] = None
-        if system == "darwin":                              # pragma: no cover - macOS
+        if system == "darwin":                                  # pragma: no cover - macOS
             info["realm"] = "macos"
-        else:
-            info["realm"] = "wsl" if "microsoft" in _platform.release().lower() else "linux"
-        for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
-            try:
-                text = Path(candidate).read_text(encoding="utf-8").strip()
-            except OSError:
-                continue
-            if text:
-                info["machine_id"] = text.encode("utf-8")
-                break
-        if info["machine_id"] is None:                      # pragma: no cover - macOS
+            # macOS 的身份原料就是 IOPlatformUUID，不走 Linux 的 machine-id 文件
             try:
                 import subprocess
                 out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
@@ -405,6 +395,16 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
                     info["machine_id"] = match.group(1).encode("utf-8")
             except (OSError, ValueError):
                 pass
+        else:
+            info["realm"] = "wsl" if "microsoft" in _platform.release().lower() else "linux"
+            for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                try:
+                    text = Path(candidate).read_text(encoding="utf-8").strip()
+                except OSError:
+                    continue
+                if text:
+                    info["machine_id"] = text.encode("utf-8")
+                    break
 
     if env.get("WORKSPACE_CONTEXT_SEED"):
         info["machine_id"] = env["WORKSPACE_CONTEXT_SEED"].encode("utf-8")

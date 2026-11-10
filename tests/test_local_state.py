@@ -37,6 +37,17 @@ def _bind_worker(ws: str, version: str) -> None:
              "local-venv", ".venv-312", version, ephemeral=False)
 
 
+def _snapshot(root: Path) -> dict:
+    """目录树快照（相对路径 → (是否目录, 大小, mtime_ns)），用于证明只读路径不写盘。"""
+    out = {}
+    if not root.exists():
+        return out
+    for p in sorted(root.rglob("*")):
+        st = p.stat()
+        out[str(p.relative_to(root))] = (p.is_dir(), st.st_size, st.st_mtime_ns)
+    return out
+
+
 class LocalStateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="ls-test-"))
@@ -256,6 +267,88 @@ class LocalStateTest(unittest.TestCase):
         d = ls.context_dir(self.ws, WSID, i, ephemeral=False)
         self.assertEqual(sorted(p.name for p in d.iterdir()), ["runtime.json"],
                          "锁与临时文件不得留在 context 目录")
+
+    def test_29_read_only_never_writes_any_branch(self):
+        """所有判读分支（含全部 CORRUPT/UNBOUND）都必须一个字节都不写。"""
+        i = ident()
+        cid = ls.context_id(WSID, i)
+        d = ls.state_root(self.ws) / cid
+
+        def prepare_bad(kind: str) -> Path:
+            ws = Path(tempfile.mkdtemp(dir=str(self.tmp))) / "ws"
+            (ws / ".workspace").mkdir(parents=True)
+            ls.bind(ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
+            f = ls.state_root(ws) / cid / "runtime.json"
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if kind == "bad-json":
+                f.write_text("{not json", encoding="utf-8")
+            elif kind == "unknown-schema":
+                data["schema"] = "v2"
+                f.write_text(json.dumps(data), encoding="utf-8")
+            elif kind == "missing-fields":
+                data.pop("version")
+                f.write_text(json.dumps(data), encoding="utf-8")
+            elif kind == "invalid-fields":
+                data["mode"] = "bogus"
+                f.write_text(json.dumps(data), encoding="utf-8")
+            elif kind == "workspace-mismatch":
+                data["workspace_id"] = "deadbeef-dead-dead-dead-deaddeadbeef"
+                f.write_text(json.dumps(data), encoding="utf-8")
+            elif kind == "context-mismatch":
+                data["context_id"] = "0" * 64
+                f.write_text(json.dumps(data), encoding="utf-8")
+            elif kind == "realm-mismatch":
+                data["realm"] = "windows"
+                f.write_text(json.dumps(data), encoding="utf-8")
+            elif kind == "missing-runtime":
+                f.unlink()
+            return ws
+
+        expectations = {
+            "bad-json": "bad-json",
+            "unknown-schema": "unknown-schema",
+            "missing-fields": "missing-fields",
+            "invalid-fields": "invalid-fields",
+            "workspace-mismatch": "workspace-mismatch",
+            "context-mismatch": "context-mismatch",
+            "realm-mismatch": "realm-mismatch",
+            "missing-runtime": "missing-runtime",
+        }
+        for kind, reason in expectations.items():
+            with self.subTest(kind=kind):
+                ws = prepare_bad(kind)
+                before = _snapshot(ws / ".workspace")
+                res = ls.read_state(ws, WSID, i, ephemeral=False)
+                ls.read_status(ws, WSID, i, ephemeral=False)
+                after = _snapshot(ws / ".workspace")
+                self.assertEqual(res["status"], "CORRUPT", kind)
+                self.assertEqual(res["reason"], reason, kind)
+                self.assertEqual(before, after, f"{kind}：只读判定写了盘")
+
+        # UNBOUND：完全未绑定
+        ws0 = Path(tempfile.mkdtemp(dir=str(self.tmp))) / "ws0"
+        (ws0 / ".workspace").mkdir(parents=True)
+        before = _snapshot(ws0 / ".workspace")
+        self.assertEqual(ls.read_status(ws0, WSID, i, ephemeral=False)["reason"],
+                         "no-local-state")
+        self.assertEqual(before, _snapshot(ws0 / ".workspace"), "no-local-state 写了盘")
+
+        # UNBOUND：别人的 context（先为自己的 context 绑定，才可能是 no-self-state）
+        ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
+        other = ident(material=b"machine-Z")
+        before = _snapshot(self.ws / ".workspace")
+        res = ls.read_status(self.ws, WSID, other, ephemeral=False)
+        self.assertEqual(res["reason"], "no-self-state")
+        self.assertEqual(before, _snapshot(self.ws / ".workspace"), "no-self-state 写了盘")
+
+        # UNBOUND：工作区被移动
+        ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
+        moved = self.tmp / "moved-ws"
+        shutil.move(str(self.ws), str(moved))
+        before = _snapshot(moved / ".workspace")
+        res = ls.read_status(moved, WSID, i, ephemeral=False)
+        self.assertEqual(res["reason"], "root-mismatch")
+        self.assertEqual(before, _snapshot(moved / ".workspace"), "root-mismatch 写了盘")
 
     # ---- 身份 -----------------------------------------------------------
     def test_12_ephemeral_flag(self):
