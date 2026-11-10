@@ -236,6 +236,9 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
     }
     payload = json.dumps(data, sort_keys=True)
 
+    if d.is_symlink() or (d.exists() and not _chain_is_safe(workspace, d)):
+        raise ValueError(f"refusing to write through symlink: {d}")
+
     with _locked(cid):
         if not d.exists():
             # 原子发布：先在同级临时目录写完，再整体 rename，读者永远看不到"空 context 目录"

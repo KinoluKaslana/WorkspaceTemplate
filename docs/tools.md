@@ -151,7 +151,7 @@ root_binding = HMAC-SHA256(context_id, realpath(workspace))
 
 判读结果：`BOUND` / `UNBOUND`（`no-local-state` / `no-self-state` / `root-mismatch`）/ `CORRUPT`（`bad-json` / `unknown-schema` / `missing-fields` / `missing-runtime` / `workspace-mismatch` / `context-mismatch` / `realm-mismatch` / `invalid-fields` / `unsafe-path`）/ `IDENTITY_UNAVAILABLE`。
 
-契约测试：`tests/test_local_state.py`（20 例，含并发读、首次绑定原子发布、symlink 逃逸）。
+契约测试：`tests/test_local_state.py`（21 例，含并发读、首次绑定原子发布、symlink 逃逸）。
 
 ## 6. Python 运行时：`pyenv_init.py`
 

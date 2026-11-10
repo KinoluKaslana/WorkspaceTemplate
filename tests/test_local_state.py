@@ -228,6 +228,18 @@ class LocalStateTest(unittest.TestCase):
         self.assertEqual(list(outside.iterdir()), [], "不得通过 symlink 写工作区外")
 
     @unittest.skipIf(os.name == "nt", "POSIX 权限模型下才有的 symlink 语义")
+    def test_21_symlinked_context_dir_refused(self):
+        outside = self.tmp / "outside-ctx"
+        outside.mkdir()
+        root = ls.state_root(self.ws)
+        root.mkdir(parents=True, exist_ok=True)
+        i = ident()
+        (root / ls.context_id(WSID, i)).symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
+        self.assertEqual(list(outside.iterdir()), [], "不得借 context 目录 symlink 写出工作区")
+
+    @unittest.skipIf(os.name == "nt", "POSIX 权限模型下才有的 symlink 语义")
     def test_20_symlinked_runtime_file_not_followed(self):
         i = ident()
         ls.bind(self.ws, WSID, i, "venv", ".venv-312", "3.12.7", ephemeral=False)
