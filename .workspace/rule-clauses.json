@@ -135,10 +135,11 @@
       "R132": "4. 本地层 `approved` 项与模板层同名时，**必须**以本地层为准（这是模板级规则，**不需要** custom 覆写）；模板层同名项**必须**仍可用显式限定名 `workspace-skills:<name>` 引用。",
       "R133": "5. 本地 skill 的登记**必须**由 `scripts/skill_audit.py --sync-registry` 从磁盘派生后写入三处：`skills/REGISTRY.md` 的「## 本地层入口」表、`TOOLS.md` 的本地登记行、`.workspace/bootstrap.json` 的 `skills.registered_roots`；草稿不登记，退役项保留墓碑行。",
       "R134": "6. `approved` 项的审批证据**必须**写在同目录 `APPROVAL.json`（`approved_by` 角色标识、`approved_at`、`approved_skill_sha256` = 当前 `SKILL.md` 字节的 sha256，外加 `approved_directive` 用户原话或存在的 `review_artifact`）；内容变化后**必须**重新批准，删除该文件即撤销批准。",
-      "R135": "8. **破坏性目录操作的目标归属（dsh / pwsh 变量目标）**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且 `python.mode` 缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
+      "R135": "## 18. 破坏性目录操作的目标归属（§13 的补充）",
+      "R136": "1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且 `python.mode` 缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
     },
-    "file_sha256": "49c64c81e3f1abd71a8075a19b04787e0e19da8d72271613ec11084e424e7b5e",
-    "marked": 135
+    "file_sha256": "c6a27dfdcbc4b75a177319d56255fd74aa3717431d8fce05f8ffef4b40e7ed13",
+    "marked": 136
   },
   "LICENSE": {
     "clauses": {},
@@ -172,12 +173,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "0616088527ca675606127ed217b42dd4ee25cb3c31771bee53bfb3cc46d73143",
+    "file_sha256": "d1f01db593d528e73b29d3d422d1c28571b7503f971b0ef82df7c70c5a13bb75",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "be8174cbf3314347f55768da74302039eefd02183cccc171ddb1dc9876869a07",
+    "file_sha256": "f57316dcc5aaf9f691ff2ffa0a9bd9136d1dd6cff229cfcf6bb6b42abcd37ca1",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -302,7 +303,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "6faf3669a0a7a5413eac56c62059af68fba5c91eff6481629de58458ac3c7ae3",
+    "file_sha256": "71b4b2fd4dc84c445b989a0ced86d0fc19c92a572cfadc26173f9708df1e1dbc",
     "marked": 0
   },
   "docs/skills.md": {
@@ -417,7 +418,7 @@
   },
   ".workspace/clauses.meta.json": {
     "clauses": {},
-    "file_sha256": "5006cdceec640d9f966d1122cc3ee618cbf1daab6289edf8ca61dd9861bf2772",
+    "file_sha256": "7da05978c9a33e60238df73c708b4dc4bea6d4d20f83afc9d352608c3246ec56",
     "marked": 0
   },
   "docs/harness-onboarding.md": {

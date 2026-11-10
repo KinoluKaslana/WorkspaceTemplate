@@ -8,7 +8,7 @@
 
 从一份干净、可审计的规则骨架开始，让 Agent 在真正工作前先确认 Python 运行时、业务边界、工具事实与 skills 来源。
 
-[![Policy](https://img.shields.io/badge/policy-v3.6.0%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.6.1%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -45,7 +45,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 - **只是偶尔问答**：`hook` 与 `preflight` 的收益来自「长期、反复、多会话」；一次性咨询用不上。
 - **需要强隔离或多租户**：守门防的是「无意识跳过」，**不防主动绕过**——同 uid 没有安全边界，恶意绕过要靠沙箱/OS 权限。
 - **不能接受客户端执行仓内 hook 代码**：Codex/Claude Code 的 hook 是随仓分发的可执行脚本，合规上不接受就别装。
-- **不想跟版本**：政策条款集（R1..R135）与模板同步链是配套的；长期停在旧版本会碰到条款演进与 `verify_rules` 漂移。
+- **不想跟版本**：政策条款集（R1..R136）与模板同步链是配套的；长期停在旧版本会碰到条款演进与 `verify_rules` 漂移。
 
 正向的适用范围见上面的「为什么需要它」与「核心能力」。
 

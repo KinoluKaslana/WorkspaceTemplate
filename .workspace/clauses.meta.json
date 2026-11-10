@@ -804,6 +804,12 @@
   "reviewed": true
  },
  "R135": {
+  "severity": "INFO",
+  "trigger": "gate-destructive-dir-op",
+  "check": "",
+  "reviewed": true
+ },
+ "R136": {
   "severity": "MUST",
   "trigger": "gate-destructive-dir-op",
   "check": "python3 hooks-tests/test_gate_targets.py",
