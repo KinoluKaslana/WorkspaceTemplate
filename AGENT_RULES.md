@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`3.5.13`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`3.6.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -189,7 +189,7 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 
 模板随仓库分发客户端写前守门 hook（`.workspace/hooks/` 七脚本 + `.codex/hooks.json` + `.claude/settings.json`，均随 `TEMPLATE_FILES` 哈希锁定）：在 Codex CLI / Claude Code 的 hook 层落地「先读再写」，是 §12 的客户端侧扩展；脚本清单、拒绝码、审计事件与静态可判写清单见 `docs/hooks-catalog.md` §2.6：
 
-1. **适用与身份**：只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份由 `bootstrap.json` 存在性承担；脚本在 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定。**身份粒度**：状态键 `session_id`，子 agent 再拼 `.agent_id`（CC 主子共用 `session_id`，实测；Codex 子 agent payload 带 `agent_id`），**账本不继承父读证据；仅经 R98 的有效委托引用父证据**；`SubagentStart`/`SubagentStop` 落 `agent-start`/`agent-stop`。 <!-- id:R102 -->
+1. **适用与身份**：只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份由 `bootstrap.json` 存在性承担，但 `workspace_status` 为 `template` 且 `python.mode` 为空或 `unconfigured` 的目录**不得**视为受管工作区（其写/删除/移动目标的判定见 R135）；脚本在 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定。**身份粒度**：状态键 `session_id`，子 agent 再拼 `.agent_id`（CC 主子共用 `session_id`，实测；Codex 子 agent payload 带 `agent_id`），**账本不继承父读证据；仅经 R98 的有效委托引用父证据**；`SubagentStart`/`SubagentStop` 落 `agent-start`/`agent-stop`。 <!-- id:R102 -->
 2. **守门判据**：Codex `apply_patch` 与 Bash 静态可判写（清单见 catalog §2.6）在目标属本工作区且未完整读 gate 当前修订时 deny；解释器/包装类未读即 deny；其余不可判形态只审计不拦（`unresolved-command`）。 <!-- id:R103 -->
 3. **客户端差异（必须明说）**：CC 仅 `Write`/`Edit` 受管，**Bash 写不订阅、不拦截**；`Stop`/`SessionEnd` 的差集与指纹锚只到文件/目录级，但**可经转录回放做事后归因**（子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放，作用域含 `.agent_id`）。**事后归因不等于拦截**，`would_deny=true` 不表示写入被阻止；转录可被同 uid 删改，不得据此推断整仓受管。命令原文默认不落盘（只记 digest），需 `audit_command_text=true` 显式开启。回放与归因细则见 catalog §2.7。 <!-- id:R104 -->
 4. **证据与审计**：读证据绑指纹 `c<size>:<sha256>` 与覆盖 `1..total`；审计十三型（清单见 catalog §2.6）。`gate-deny` 记拒绝本身，作用域含 `.agent_id`，可在 `audit-<client>.jsonl` 独立核验。写前 `gate-intent` → 写后 `gate-commit` 对账，缺失一侧记 `unobserved-write`（**不表示通过**）。只记路径/哈希/会话/动作，不落正文。`unresolved-command` 只含 `tool_use_id`/`client`/`digest`/`class`，不落原文、不可直读归因；`worktree-change` 粒度受 git 限制，文件级归因须由 `completion-gate` 补证。账本轮转与压缩规则见 catalog §2.7。 <!-- id:R105 -->
@@ -240,3 +240,5 @@ gate 是否在跑取决于 **harness 的启动方式**，不是工作区的属�
 4. 本地层 `approved` 项与模板层同名时，**必须**以本地层为准（这是模板级规则，**不需要** custom 覆写）；模板层同名项**必须**仍可用显式限定名 `workspace-skills:<name>` 引用。 <!-- id:R132 -->
 5. 本地 skill 的登记**必须**由 `scripts/skill_audit.py --sync-registry` 从磁盘派生后写入三处：`skills/REGISTRY.md` 的「## 本地层入口」表、`TOOLS.md` 的本地登记行、`.workspace/bootstrap.json` 的 `skills.registered_roots`；草稿不登记，退役项保留墓碑行。 <!-- id:R133 -->
 6. `approved` 项的审批证据**必须**写在同目录 `APPROVAL.json`（`approved_by` 角色标识、`approved_at`、`approved_skill_sha256` = 当前 `SKILL.md` 字节的 sha256，外加 `approved_directive` 用户原话或存在的 `review_artifact`）；内容变化后**必须**重新批准，删除该文件即撤销批准。 <!-- id:R134 -->
+
+8. **破坏性目录操作的目标归属（dsh / pwsh 变量目标）**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == "template"` 且 `python.mode` 缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。 <!-- id:R135 -->

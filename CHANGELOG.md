@@ -2,6 +2,34 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.6.0（2026-11-10）
+
+DSH 用户的真实门禁问题反馈（`dsh-template-sync-26-11-10/gate-issues-2026-11-10.md`），两席对抗评审后修复。**行为/适用范围变更 → MINOR**。
+
+### A（阻断）dsh 分次读永远累加不上
+
+`hook.py` 的 dsh 分支只在 `body` 不以 LF 结尾时补 LF，而 `gate_core.record_read` 对非 EOF 区间**恒补** LF。区间末行是空行时 body 已带 LF → 少一个 → sha256 不等 → `no-admissible-evidence` → 违反 R98「分次可累加」。
+修法：非 EOF 区间恒补自身行终止符（删掉重复 `if`）。回归 `hooks-tests/test_dsh_read_accum.py`（5 例，含表驱动：有/无末尾 LF × 空行位置 × 多种切法）。
+
+### B1 PowerShell 变量目标
+
+`$dest = Join-Path $env:TEMP 'x'; Remove-Item -Recurse -Force $dest` 以前一律 `unresolved → deny`。
+现在：同一条命令内的字面量赋值 / `Join-Path` / 白名单环境变量（`$env:TEMP` 等）可机械求出单一绝对路径；求不出、含通配符、或**命令内改写了 `$env:*`** 时仍 `unresolved`（fail-closed，不放行）。`Remove-Item` 的所有位置参数都是目标，`-Include/-Exclude/-Filter` 的取值不算；`Move-Item` 的**源**与目的地都判定。
+
+### B2 临时模板克隆被当成受管工作区
+
+`find_workspace()` 以「祖先有 `.workspace/bootstrap.json`」为身份，而模板仓自带该文件 → 任何克隆都成了工作区。
+现在受管 = 「目标落在**会话锚定工作区**（`find_workspace(cwd)`）内」∨「目标所属工作区已接管」；`workspace_status == "template"` 且 `python.mode` 为空/`unconfigured` 的目录不算已接管。词法 + 解析后双路径比较（区外软链指回区内仍受管）。政策同步改 R102 并新增 **R135**。
+
+### C Python 子进程拉不起 msys git
+
+`GIT_BIN` 环境变量 / `--git <绝对路径>`（CLI > env > PATH），所有 git 调用收口到一个 `_run`，失败给可操作文案（0xC0000022 场景）。
+`verify_rules --vs-template` 新增显式 `--trust none`：跳过 git 锚但**仍跑逐文件字节比对**，结果恒不 clean（`[trust] UNANCHORED`），不再整段跳过。
+
+### 计数
+
+条款 134 → **135**；`TEMPLATE_FILES` 80 → **81**（新增 `tests/test_git_bin.py`）。
+
 ## 3.5.13（2026-11-10）
 
 3.5.12 打 tag 后的 CI 红（两处），修正后重发。**这次是新的 tag 门禁自己抓到的**：

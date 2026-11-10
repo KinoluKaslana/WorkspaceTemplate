@@ -742,6 +742,8 @@ _PS_ALIASES = {
 }
 _PS_INTERP = {"invoke-expression", "iex", "start-process", "start-job", "invoke-command"}
 _PS_DEST_LAST = {"copy-item", "move-item", "rename-item"}
+# 删除类：位置参数**全部**是目标（`Remove-Item -Recurse -Force $dest`），不能只取最后一个
+_PS_REMOVE = {"remove-item", "clear-item", "rmdir", "del"}
 _PS_NULL = {"$null", "nul", "/dev/null", "null"}
 _PS_SEPARATORS = {";", "|", "||", "&", "&&", "(", ")", "{", "}", "\n", "\r"}
 _PS_REDIR_OPS = {">", ">>", "1>", "1>>", "*>", "*>>", "2>"}
@@ -854,6 +856,49 @@ def _ps_segments(tokens):
     return segs
 
 
+_PS_ENV_ALLOW = {"TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "HOME",
+                 "PWD", "SYSTEMROOT", "WINDIR", "PROGRAMDATA", "PROGRAMFILES"}
+_PS_ASSIGN_RE = re.compile(r"^\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$", re.M)
+_PS_ENV_RE = re.compile(r"\$env:([A-Za-z_][A-Za-z0-9_]*)", re.I)
+# 命令内改写环境变量：展开值不再可信（`$env:TEMP='<ws>\victim'; Remove-Item $env:TEMP`）
+_PS_ENV_MUTATE_RE = re.compile(r"\$env:([A-Za-z_][A-Za-z0-9_]*)\s*=[^=]", re.I)
+
+
+def _ps_env_expand(value: str, env: dict) -> str:
+    """只展开白名单环境变量（$env:TEMP 之类）。未知变量原样保留 → 仍判 unresolved。"""
+    def sub(m):
+        name = m.group(1)
+        for k in (name, name.upper(), name.lower()):
+            if k.upper() in _PS_ENV_ALLOW and env.get(k):
+                return env[k]
+        return m.group(0)
+    return _PS_ENV_RE.sub(sub, value)
+
+
+def _ps_prelude_vars(command: str, env: dict) -> dict:
+    """解析本次脚本里的简单赋值（`$dest = 'C:\\tmp\\x'` / `$d = Join-Path $env:TEMP 'x'`）。
+
+    只做字面量与环境变量白名单展开，不执行任何 PowerShell 表达式；解不出的变量不入表，
+    命令仍会走 unresolved（方向安全）。
+    """
+    out: dict = {}
+    for m in _PS_ASSIGN_RE.finditer(command):
+        name, raw = m.group(1), m.group(2).strip()
+        val = raw.strip("'\"")
+        jp = re.match(r"Join-Path\s+(.+?)\s+(.+)$", val, re.I)
+        if jp:
+            left = _ps_env_expand(jp.group(1).strip().strip("'\""), env)
+            right = jp.group(2).strip().strip("'\"")
+            if os.path.isabs(left) or re.match(r"^[A-Za-z]:[\\/]", left) or left.startswith("\\\\"):
+                val = os.path.join(left, right)
+            else:
+                continue
+        val = _ps_env_expand(val, env)
+        if "$" not in val and val:
+            out[name] = val
+    return out
+
+
 def classify_pwsh(command: str, cwd: str, gate_files: list[str],
                   shell: str = "pwsh") -> dict:
     """PowerShell 写目标识别：命中写形态则给目标；含写意图但目标不可解析 → unresolved。"""
@@ -943,6 +988,44 @@ def classify_pwsh(command: str, cwd: str, gate_files: list[str],
                 if token.lower() in params and i + 1 < len(words):
                     found = words[i + 1]
                     break
+            if base in _PS_REMOVE:
+                skip_next = {"-include", "-exclude", "-filter"}
+                pos, skip = [], False
+                for w in words[1:]:
+                    if skip:
+                        skip = False
+                        continue
+                    if w.lower() in skip_next:
+                        skip = True
+                        continue
+                    if w and not w.startswith("-"):
+                        pos.append(w)
+                for w in pos:
+                    targets.append(w)
+                    forms.append("ps-cmdlet:" + base)
+                if not pos:
+                    forms.append("ps-cmdlet-nopath:" + base)
+                continue
+            if base == "move-item":
+                # 源目录被移走同样具破坏性：源与目的地都要判定（显式 -Path 也要抓）
+                src = None
+                for i, w in enumerate(words[1:], 1):
+                    token = w.lstrip("-")
+                    if "=" in token:
+                        name, _, val = token.partition("=")
+                        if name.lower() in ("path", "literalpath") and val:
+                            src = val
+                            break
+                        continue
+                    if token.lower() in ("path", "literalpath") and i + 1 < len(words):
+                        src = words[i + 1]
+                        break
+                if src is None:
+                    pos0 = [w for w in words[1:] if not w.startswith("-")]
+                    src = pos0[0] if pos0 else None
+                if src:
+                    targets.append(src)
+                    forms.append("ps-cmdlet:move-item-source")
             if found is None and base in _PS_DEST_LAST:
                 positionals = [w for w in words[1:] if not w.startswith("-")]
                 if len(positionals) >= 2:
@@ -960,18 +1043,42 @@ def classify_pwsh(command: str, cwd: str, gate_files: list[str],
             else:
                 forms.append("ps-cmdlet-nopath:" + base)
 
+    env = dict(os.environ)
+    env_mutated = {m.group(1).upper() for m in _PS_ENV_MUTATE_RE.finditer(command)}
+    if env_mutated:
+        # 静态展开会与实际执行目标分叉 → 整条命令判 unresolved（fail-closed）
+        unresolved_hits.append("env-mutated:" + ",".join(sorted(env_mutated)))
+        script_vars: dict = {}
+    else:
+        script_vars = _ps_prelude_vars(command, env)
+
     def absolute(token: str) -> str:
-        v = os.path.expanduser(str(token).strip().strip("'\""))
+        v = str(token).strip().strip("'\"")
+        mv = re.fullmatch(r"\$([A-Za-z_][A-Za-z0-9_]*)", v)
+        if mv and mv.group(1) in script_vars:
+            v = script_vars[mv.group(1)]
+        v = _ps_env_expand(v, env)
+        v = os.path.expanduser(v)
         if re.match(r"^[A-Za-z]:[\\/]", v) or v.startswith("\\\\"):
             return os.path.normpath(v)
         return os.path.normpath(os.path.join(cwd, v))
 
     resolved, unresolved = [], []
     for token in targets:
-        if any(ch in token for ch in ("$", "*", "?")) or token.startswith("&"):
+        tok = str(token).strip().strip("'\"")
+        mv = re.fullmatch(r"\$([A-Za-z_][A-Za-z0-9_]*)", tok)
+        if mv and mv.group(1) in script_vars:
+            tok = script_vars[mv.group(1)]
+        tok = _ps_env_expand(tok, env)
+        if any(ch in tok for ch in ("$", "*", "?")) or tok.startswith("&"):
             unresolved.append(token)
         else:
-            resolved.append(absolute(token))
+            resolved.append(absolute(tok))
+
+    if env_mutated and (resolved or targets):
+        return {"kind": "unresolved", "targets": [], "gate_targets": [],
+                "forms": forms + unresolved_hits, "confidence": "opaque",
+                "reason": "env-mutated"}
 
     gate_abs = {os.path.normpath(os.path.expanduser(g)) for g in gate_files}
     if resolved:

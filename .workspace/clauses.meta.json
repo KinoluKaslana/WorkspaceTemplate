@@ -1,806 +1,812 @@
 {
-  "R1": {
-    "severity": "INFO",
-    "trigger": "policy-doc",
-    "check": "",
-    "reviewed": false
-  },
-  "R2": {
-    "severity": "MUST",
-    "trigger": "policy-version",
-    "check": "python3 scripts/version_check.py",
-    "reviewed": true
-  },
-  "R3": {
-    "severity": "MUST",
-    "trigger": "python-runtime",
-    "check": "manual:首次启动必须向用户询问运行时，属交互义务",
-    "reviewed": true
-  },
-  "R4": {
-    "severity": "INFO",
-    "trigger": "python-runtime",
-    "check": "",
-    "reviewed": false
-  },
-  "R5": {
-    "severity": "MUST_NOT",
-    "trigger": "python-runtime",
-    "check": "python3 scripts/mark_rules.py check AGENT_RULES.md",
-    "reviewed": true
-  },
-  "R6": {
-    "severity": "MUST_NOT",
-    "trigger": "python-runtime",
-    "check": "manual:初始化联网行为需观察，不在脚本可判范围",
-    "reviewed": true
-  },
-  "R7": {
-    "severity": "INFO",
-    "trigger": "python-runtime",
-    "check": "",
-    "reviewed": false
-  },
-  "R8": {
-    "severity": "MUST",
-    "trigger": "python-runtime",
-    "check": "python3 scripts/workspace_preflight.py",
-    "reviewed": true
-  },
-  "R9": {
-    "severity": "INFO",
-    "trigger": "python-runtime",
-    "check": "",
-    "reviewed": false
-  },
-  "R10": {
-    "severity": "MAY",
-    "trigger": "python-runtime",
-    "check": "",
-    "reviewed": false
-  },
-  "R11": {
-    "severity": "MUST_NOT",
-    "trigger": "python-runtime",
-    "check": "python3 scripts/workspace_preflight.py",
-    "reviewed": true
-  },
-  "R12": {
-    "severity": "INFO",
-    "trigger": "python-runtime",
-    "check": "",
-    "reviewed": false
-  },
-  "R13": {
-    "severity": "SHOULD",
-    "trigger": "python-runtime",
-    "check": "",
-    "reviewed": false
-  },
-  "R14": {
-    "severity": "MUST",
-    "trigger": "python-runtime",
-    "check": "python3 scripts/workspace_preflight.py",
-    "reviewed": true
-  },
-  "R15": {
-    "severity": "MUST",
-    "trigger": "python-runtime",
-    "check": "python3 scripts/mark_rules.py check AGENT_RULES.md",
-    "reviewed": true
-  },
-  "R16": {
-    "severity": "MAY",
-    "trigger": "python-runtime",
-    "check": "",
-    "reviewed": false
-  },
-  "R17": {
-    "severity": "INFO",
-    "trigger": "python-runtime",
-    "check": "",
-    "reviewed": false
-  },
-  "R18": {
-    "severity": "INFO",
-    "trigger": "python-runtime",
-    "check": "",
-    "reviewed": false
-  },
-  "R19": {
-    "severity": "INFO",
-    "trigger": "workspace-boot",
-    "check": "",
-    "reviewed": false
-  },
-  "R20": {
-    "severity": "MUST_NOT",
-    "trigger": "workspace-boot",
-    "check": "manual:只读/问答边界需按用户意图判定",
-    "reviewed": true
-  },
-  "R21": {
-    "severity": "INFO",
-    "trigger": "workspace-boot",
-    "check": "",
-    "reviewed": false
-  },
-  "R22": {
-    "severity": "MAY",
-    "trigger": "instruction-source",
-    "check": "",
-    "reviewed": false
-  },
-  "R23": {
-    "severity": "INFO",
-    "trigger": "instruction-source",
-    "check": "",
-    "reviewed": false
-  },
-  "R24": {
-    "severity": "MUST",
-    "trigger": "instruction-source",
-    "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
-    "reviewed": true
-  },
-  "R25": {
-    "severity": "MUST",
-    "trigger": "instruction-source",
-    "check": "python3 scripts/mark_rules.py check AGENT_RULES.md",
-    "reviewed": true
-  },
-  "R26": {
-    "severity": "MAY",
-    "trigger": "instruction-source",
-    "check": "",
-    "reviewed": false
-  },
-  "R27": {
-    "severity": "INFO",
-    "trigger": "instruction-source",
-    "check": "",
-    "reviewed": false
-  },
-  "R28": {
-    "severity": "MAY",
-    "trigger": "instruction-source",
-    "check": "",
-    "reviewed": false
-  },
-  "R29": {
-    "severity": "MAY",
-    "trigger": "instruction-source",
-    "check": "",
-    "reviewed": false
-  },
-  "R30": {
-    "severity": "INFO",
-    "trigger": "task-prep",
-    "check": "",
-    "reviewed": false
-  },
-  "R31": {
-    "severity": "INFO",
-    "trigger": "task-prep",
-    "check": "",
-    "reviewed": false
-  },
-  "R32": {
-    "severity": "MAY",
-    "trigger": "task-prep",
-    "check": "",
-    "reviewed": false
-  },
-  "R33": {
-    "severity": "INFO",
-    "trigger": "task-prep",
-    "check": "",
-    "reviewed": false
-  },
-  "R34": {
-    "severity": "MAY",
-    "trigger": "task-prep",
-    "check": "",
-    "reviewed": false
-  },
-  "R35": {
-    "severity": "INFO",
-    "trigger": "task-prep",
-    "check": "",
-    "reviewed": false
-  },
-  "R36": {
-    "severity": "INFO",
-    "trigger": "skills-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R37": {
-    "severity": "MAY",
-    "trigger": "skills-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R38": {
-    "severity": "INFO",
-    "trigger": "skills-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R39": {
-    "severity": "MAY",
-    "trigger": "skills-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R40": {
-    "severity": "INFO",
-    "trigger": "skills-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R41": {
-    "severity": "INFO",
-    "trigger": "skills-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R42": {
-    "severity": "INFO",
-    "trigger": "skills-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R43": {
-    "severity": "SHOULD",
-    "trigger": "skills-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R44": {
-    "severity": "INFO",
-    "trigger": "skills-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R45": {
-    "severity": "MAY",
-    "trigger": "tools-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R46": {
-    "severity": "INFO",
-    "trigger": "tools-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R47": {
-    "severity": "SHOULD",
-    "trigger": "tools-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R48": {
-    "severity": "MUST",
-    "trigger": "tools-registry",
-    "check": "python3 scripts/skill_audit.py --strict",
-    "reviewed": true
-  },
-  "R49": {
-    "severity": "INFO",
-    "trigger": "tools-registry",
-    "check": "",
-    "reviewed": false
-  },
-  "R50": {
-    "severity": "INFO",
-    "trigger": "execution",
-    "check": "",
-    "reviewed": false
-  },
-  "R51": {
-    "severity": "INFO",
-    "trigger": "execution",
-    "check": "",
-    "reviewed": false
-  },
-  "R52": {
-    "severity": "INFO",
-    "trigger": "execution",
-    "check": "",
-    "reviewed": false
-  },
-  "R53": {
-    "severity": "INFO",
-    "trigger": "execution",
-    "check": "",
-    "reviewed": false
-  },
-  "R54": {
-    "severity": "INFO",
-    "trigger": "execution",
-    "check": "",
-    "reviewed": false
-  },
-  "R55": {
-    "severity": "INFO",
-    "trigger": "execution",
-    "check": "",
-    "reviewed": false
-  },
-  "R56": {
-    "severity": "INFO",
-    "trigger": "security-scope",
-    "check": "",
-    "reviewed": false
-  },
-  "R57": {
-    "severity": "MUST",
-    "trigger": "security-scope",
-    "check": "manual:范围是否覆盖该资产需人判断",
-    "reviewed": true
-  },
-  "R58": {
-    "severity": "MUST_NOT",
-    "trigger": "security-scope",
-    "check": "manual:无关资产需按目标判断",
-    "reviewed": true
-  },
-  "R59": {
-    "severity": "MUST",
-    "trigger": "security-scope",
-    "check": "manual:破坏性动作前须确认目标与必要性",
-    "reviewed": true
-  },
-  "R60": {
-    "severity": "MUST",
-    "trigger": "security-scope",
-    "check": "manual:数据外发范围与敏感性需人确认",
-    "reviewed": true
-  },
-  "R61": {
-    "severity": "MUST",
-    "trigger": "security-scope",
-    "check": "python3 scripts/secret_scan.py",
-    "reviewed": true
-  },
-  "R62": {
-    "severity": "MUST",
-    "trigger": "security-scope",
-    "check": "manual:是否属未知代码需人判断",
-    "reviewed": true
-  },
-  "R63": {
-    "severity": "MUST_NOT",
-    "trigger": "security-scope",
-    "check": "manual:是否属用户当次明确要求需人判断",
-    "reviewed": true
-  },
-  "R64": {
-    "severity": "INFO",
-    "trigger": "delegation",
-    "check": "",
-    "reviewed": false
-  },
-  "R65": {
-    "severity": "INFO",
-    "trigger": "delegation",
-    "check": "",
-    "reviewed": false
-  },
-  "R66": {
-    "severity": "MUST",
-    "trigger": "delegation",
-    "check": "manual:任务书内容需人复核",
-    "reviewed": true
-  },
-  "R67": {
-    "severity": "MUST",
-    "trigger": "delegation",
-    "check": "manual:中央文件串行修改需按过程判断",
-    "reviewed": true
-  },
-  "R68": {
-    "severity": "MUST",
-    "trigger": "delegation",
-    "check": "manual:合并前检查需按过程判断",
-    "reviewed": true
-  },
-  "R69": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R70": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R71": {
-    "severity": "MUST",
-    "trigger": "delivery-notes",
-    "check": "manual:是否属可复用经验需人判断",
-    "reviewed": true
-  },
-  "R72": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R73": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R74": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R75": {
-    "severity": "MUST_NOT",
-    "trigger": "delivery-notes",
-    "check": "manual:写 memories 属客户端行为，脚本不可见",
-    "reviewed": true
-  },
-  "R76": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R77": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R78": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R79": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R80": {
-    "severity": "MUST_NOT",
-    "trigger": "delivery-notes",
-    "check": "python3 scripts/notes_index_check.py",
-    "reviewed": true
-  },
-  "R81": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R82": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R83": {
-    "severity": "MAY",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R84": {
-    "severity": "MUST",
-    "trigger": "delivery-notes",
-    "check": "manual:目标达成与验证强度需人判断",
-    "reviewed": true
-  },
-  "R85": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R86": {
-    "severity": "MUST",
-    "trigger": "skills-registry",
-    "check": "python3 scripts/skill_audit.py --strict",
-    "reviewed": true
-  },
-  "R87": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R88": {
-    "severity": "INFO",
-    "trigger": "delivery-notes",
-    "check": "",
-    "reviewed": false
-  },
-  "R89": {
-    "severity": "INFO",
-    "trigger": "rule-layering",
-    "check": "",
-    "reviewed": false
-  },
-  "R90": {
-    "severity": "MUST_NOT",
-    "trigger": "rule-layering",
-    "check": "python3 scripts/verify_rules.py --workspace .",
-    "reviewed": true
-  },
-  "R91": {
-    "severity": "MAY",
-    "trigger": "rule-layering",
-    "check": "",
-    "reviewed": false
-  },
-  "R92": {
-    "severity": "SHOULD",
-    "trigger": "rule-layering",
-    "check": "",
-    "reviewed": false
-  },
-  "R93": {
-    "severity": "MUST_NOT",
-    "trigger": "rule-layering",
-    "check": "python3 scripts/verify_rules.py --workspace .",
-    "reviewed": true
-  },
-  "R94": {
-    "severity": "MUST",
-    "trigger": "rule-layering",
-    "check": "python3 scripts/verify_rules.py --workspace .",
-    "reviewed": true
-  },
-  "R95": {
-    "severity": "INFO",
-    "trigger": "delivery-closure",
-    "check": "",
-    "reviewed": false
-  },
-  "R96": {
-    "severity": "MUST",
-    "trigger": "delivery-closure",
-    "check": "python3 scripts/skill_audit.py --strict",
-    "reviewed": true
-  },
-  "R97": {
-    "severity": "INFO",
-    "trigger": "gate-hermes",
-    "check": "",
-    "reviewed": false
-  },
-  "R98": {
-    "severity": "MUST",
-    "trigger": "gate-hermes",
-    "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
-    "reviewed": true
-  },
-  "R99": {
-    "severity": "MUST_NOT",
-    "trigger": "gate-hermes",
-    "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
-    "reviewed": true
-  },
-  "R100": {
-    "severity": "MUST_NOT",
-    "trigger": "gate-hermes",
-    "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
-    "reviewed": true
-  },
-  "R101": {
-    "severity": "INFO",
-    "trigger": "gate-clients",
-    "check": "",
-    "reviewed": false
-  },
-  "R102": {
-    "severity": "MAY",
-    "trigger": "gate-clients",
-    "check": "",
-    "reviewed": false
-  },
-  "R103": {
-    "severity": "MAY",
-    "trigger": "gate-clients",
-    "check": "",
-    "reviewed": false
-  },
-  "R104": {
-    "severity": "MUST",
-    "trigger": "gate-clients",
-    "check": "manual:客户端 hook 行为需在 CC/Codex 实机观测",
-    "reviewed": true
-  },
-  "R105": {
-    "severity": "MAY",
-    "trigger": "gate-clients",
-    "check": "",
-    "reviewed": false
-  },
-  "R106": {
-    "severity": "MUST_NOT",
-    "trigger": "gate-clients",
-    "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
-    "reviewed": true
-  },
-  "R107": {
-    "severity": "INFO",
-    "trigger": "gate-clients",
-    "check": "",
-    "reviewed": false
-  },
-  "R108": {
-    "severity": "MUST",
-    "trigger": "gate-clients",
-    "check": "python3 scripts/mark_rules.py check AGENT_RULES.md",
-    "reviewed": true
-  },
-  "R109": {
-    "severity": "INFO",
-    "trigger": "policy-language",
-    "check": "",
-    "reviewed": false
-  },
-  "R110": {
-    "severity": "MUST",
-    "trigger": "policy-language",
-    "check": "python3 scripts/clause_lint.py",
-    "reviewed": true
-  },
-  "R111": {
-    "severity": "MUST",
-    "trigger": "policy-language",
-    "check": "python3 scripts/clause_lint.py",
-    "reviewed": true
-  },
-  "R112": {
-    "severity": "MUST",
-    "trigger": "policy-language",
-    "check": "python3 scripts/clause_lint.py",
-    "reviewed": true
-  },
-  "R113": {
-    "severity": "INFO",
-    "trigger": "workspace-boot",
-    "check": "",
-    "reviewed": false
-  },
-  "R114": {
-    "severity": "MUST",
-    "trigger": "gate-wiring",
-    "check": "python3 -m unittest tests.test_gate_status",
-    "reviewed": true
-  },
-  "R115": {
-    "severity": "MUST",
-    "trigger": "gate-wiring",
-    "check": "manual:是否先接线由用户裁决，属交互义务",
-    "reviewed": true
-  },
-  "R116": {
-    "severity": "MUST",
-    "trigger": "gate-wiring",
-    "check": "python3 -m unittest tests.test_gate_status",
-    "reviewed": true
-  },
-  "R117": {
-    "severity": "MUST",
-    "trigger": "gate-wiring",
-    "check": "python3 -m unittest tests.test_gate_status",
-    "reviewed": true
-  },
-  "R118": {
-    "severity": "MUST",
-    "trigger": "gate-wiring",
-    "check": "manual:结论形式（接线或用户明确接受无 gate）需人判断",
-    "reviewed": true
-  },
-  "R119": {
-    "severity": "INFO",
-    "trigger": "readme-decision",
-    "check": "",
-    "reviewed": true
-  },
-  "R120": {
-    "severity": "MUST",
-    "trigger": "readme-decision",
-    "check": "manual:是否询问属交互义务；机械侧只能校记录（R126）",
-    "reviewed": true
-  },
-  "R121": {
-    "severity": "MUST",
-    "trigger": "readme-decision",
-    "check": "manual:二选一必须由用户明确表达，Agent 不得代选",
-    "reviewed": true
-  },
-  "R122": {
-    "severity": "MUST_NOT",
-    "trigger": "readme-decision",
-    "check": "manual:是否在用户选择前就动笔，属过程义务",
-    "reviewed": true
-  },
-  "R123": {
-    "severity": "MUST",
-    "trigger": "readme-decision",
-    "check": "manual:是否以工作区事实为准，需人读交付物",
-    "reviewed": true
-  },
-  "R124": {
-    "severity": "MUST_NOT",
-    "trigger": "readme-decision",
-    "check": "manual:是否编造不存在的功能/命令/目录，需人读交付物",
-    "reviewed": true
-  },
-  "R125": {
-    "severity": "MUST",
-    "trigger": "readme-decision",
-    "check": "manual:冲突是否在交付时点名，需人读交付说明",
-    "reviewed": true
-  },
-  "R126": {
-    "severity": "MUST",
-    "trigger": "readme-decision",
-    "check": "python3 scripts/workspace_preflight.py",
-    "reviewed": true
-  },
-  "R127": {
-    "severity": "MUST",
-    "trigger": "readme-decision",
-    "check": "manual:写盘前是否取得用户确认，属交互义务",
-    "reviewed": true
-  },
-  "R128": {
-    "severity": "INFO",
-    "trigger": "local-skill",
-    "check": "",
-    "reviewed": true
-  },
-  "R129": {
-    "severity": "MUST",
-    "trigger": "local-skill",
-    "check": "python3 scripts/skill_audit.py --strict",
-    "reviewed": true
-  },
-  "R130": {
-    "severity": "MUST",
-    "trigger": "local-skill",
-    "check": "manual:是否只在用户明确要求时创建，属交互义务",
-    "reviewed": true
-  },
-  "R131": {
-    "severity": "MUST",
-    "trigger": "local-skill",
-    "check": "python3 scripts/skill_audit.py --strict",
-    "reviewed": true
-  },
-  "R132": {
-    "severity": "MUST",
-    "trigger": "local-skill",
-    "check": "manual:同名时按裸名路由到哪一层，需读 REGISTRY 与任务上下文",
-    "reviewed": true
-  },
-  "R133": {
-    "severity": "MUST",
-    "trigger": "local-skill",
-    "check": "python3 scripts/skill_audit.py --strict",
-    "reviewed": true
-  },
-  "R134": {
-    "severity": "MUST",
-    "trigger": "local-skill",
-    "check": "python3 scripts/skill_audit.py --strict",
-    "reviewed": true
-  }
+ "R1": {
+  "severity": "INFO",
+  "trigger": "policy-doc",
+  "check": "",
+  "reviewed": false
+ },
+ "R2": {
+  "severity": "MUST",
+  "trigger": "policy-version",
+  "check": "python3 scripts/version_check.py",
+  "reviewed": true
+ },
+ "R3": {
+  "severity": "MUST",
+  "trigger": "python-runtime",
+  "check": "manual:首次启动必须向用户询问运行时，属交互义务",
+  "reviewed": true
+ },
+ "R4": {
+  "severity": "INFO",
+  "trigger": "python-runtime",
+  "check": "",
+  "reviewed": false
+ },
+ "R5": {
+  "severity": "MUST_NOT",
+  "trigger": "python-runtime",
+  "check": "python3 scripts/mark_rules.py check AGENT_RULES.md",
+  "reviewed": true
+ },
+ "R6": {
+  "severity": "MUST_NOT",
+  "trigger": "python-runtime",
+  "check": "manual:初始化联网行为需观察，不在脚本可判范围",
+  "reviewed": true
+ },
+ "R7": {
+  "severity": "INFO",
+  "trigger": "python-runtime",
+  "check": "",
+  "reviewed": false
+ },
+ "R8": {
+  "severity": "MUST",
+  "trigger": "python-runtime",
+  "check": "python3 scripts/workspace_preflight.py",
+  "reviewed": true
+ },
+ "R9": {
+  "severity": "INFO",
+  "trigger": "python-runtime",
+  "check": "",
+  "reviewed": false
+ },
+ "R10": {
+  "severity": "MAY",
+  "trigger": "python-runtime",
+  "check": "",
+  "reviewed": false
+ },
+ "R11": {
+  "severity": "MUST_NOT",
+  "trigger": "python-runtime",
+  "check": "python3 scripts/workspace_preflight.py",
+  "reviewed": true
+ },
+ "R12": {
+  "severity": "INFO",
+  "trigger": "python-runtime",
+  "check": "",
+  "reviewed": false
+ },
+ "R13": {
+  "severity": "SHOULD",
+  "trigger": "python-runtime",
+  "check": "",
+  "reviewed": false
+ },
+ "R14": {
+  "severity": "MUST",
+  "trigger": "python-runtime",
+  "check": "python3 scripts/workspace_preflight.py",
+  "reviewed": true
+ },
+ "R15": {
+  "severity": "MUST",
+  "trigger": "python-runtime",
+  "check": "python3 scripts/mark_rules.py check AGENT_RULES.md",
+  "reviewed": true
+ },
+ "R16": {
+  "severity": "MAY",
+  "trigger": "python-runtime",
+  "check": "",
+  "reviewed": false
+ },
+ "R17": {
+  "severity": "INFO",
+  "trigger": "python-runtime",
+  "check": "",
+  "reviewed": false
+ },
+ "R18": {
+  "severity": "INFO",
+  "trigger": "python-runtime",
+  "check": "",
+  "reviewed": false
+ },
+ "R19": {
+  "severity": "INFO",
+  "trigger": "workspace-boot",
+  "check": "",
+  "reviewed": false
+ },
+ "R20": {
+  "severity": "MUST_NOT",
+  "trigger": "workspace-boot",
+  "check": "manual:只读/问答边界需按用户意图判定",
+  "reviewed": true
+ },
+ "R21": {
+  "severity": "INFO",
+  "trigger": "workspace-boot",
+  "check": "",
+  "reviewed": false
+ },
+ "R22": {
+  "severity": "MAY",
+  "trigger": "instruction-source",
+  "check": "",
+  "reviewed": false
+ },
+ "R23": {
+  "severity": "INFO",
+  "trigger": "instruction-source",
+  "check": "",
+  "reviewed": false
+ },
+ "R24": {
+  "severity": "MUST",
+  "trigger": "instruction-source",
+  "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
+  "reviewed": true
+ },
+ "R25": {
+  "severity": "MUST",
+  "trigger": "instruction-source",
+  "check": "python3 scripts/mark_rules.py check AGENT_RULES.md",
+  "reviewed": true
+ },
+ "R26": {
+  "severity": "MAY",
+  "trigger": "instruction-source",
+  "check": "",
+  "reviewed": false
+ },
+ "R27": {
+  "severity": "INFO",
+  "trigger": "instruction-source",
+  "check": "",
+  "reviewed": false
+ },
+ "R28": {
+  "severity": "MAY",
+  "trigger": "instruction-source",
+  "check": "",
+  "reviewed": false
+ },
+ "R29": {
+  "severity": "MAY",
+  "trigger": "instruction-source",
+  "check": "",
+  "reviewed": false
+ },
+ "R30": {
+  "severity": "INFO",
+  "trigger": "task-prep",
+  "check": "",
+  "reviewed": false
+ },
+ "R31": {
+  "severity": "INFO",
+  "trigger": "task-prep",
+  "check": "",
+  "reviewed": false
+ },
+ "R32": {
+  "severity": "MAY",
+  "trigger": "task-prep",
+  "check": "",
+  "reviewed": false
+ },
+ "R33": {
+  "severity": "INFO",
+  "trigger": "task-prep",
+  "check": "",
+  "reviewed": false
+ },
+ "R34": {
+  "severity": "MAY",
+  "trigger": "task-prep",
+  "check": "",
+  "reviewed": false
+ },
+ "R35": {
+  "severity": "INFO",
+  "trigger": "task-prep",
+  "check": "",
+  "reviewed": false
+ },
+ "R36": {
+  "severity": "INFO",
+  "trigger": "skills-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R37": {
+  "severity": "MAY",
+  "trigger": "skills-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R38": {
+  "severity": "INFO",
+  "trigger": "skills-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R39": {
+  "severity": "MAY",
+  "trigger": "skills-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R40": {
+  "severity": "INFO",
+  "trigger": "skills-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R41": {
+  "severity": "INFO",
+  "trigger": "skills-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R42": {
+  "severity": "INFO",
+  "trigger": "skills-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R43": {
+  "severity": "SHOULD",
+  "trigger": "skills-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R44": {
+  "severity": "INFO",
+  "trigger": "skills-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R45": {
+  "severity": "MAY",
+  "trigger": "tools-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R46": {
+  "severity": "INFO",
+  "trigger": "tools-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R47": {
+  "severity": "SHOULD",
+  "trigger": "tools-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R48": {
+  "severity": "MUST",
+  "trigger": "tools-registry",
+  "check": "python3 scripts/skill_audit.py --strict",
+  "reviewed": true
+ },
+ "R49": {
+  "severity": "INFO",
+  "trigger": "tools-registry",
+  "check": "",
+  "reviewed": false
+ },
+ "R50": {
+  "severity": "INFO",
+  "trigger": "execution",
+  "check": "",
+  "reviewed": false
+ },
+ "R51": {
+  "severity": "INFO",
+  "trigger": "execution",
+  "check": "",
+  "reviewed": false
+ },
+ "R52": {
+  "severity": "INFO",
+  "trigger": "execution",
+  "check": "",
+  "reviewed": false
+ },
+ "R53": {
+  "severity": "INFO",
+  "trigger": "execution",
+  "check": "",
+  "reviewed": false
+ },
+ "R54": {
+  "severity": "INFO",
+  "trigger": "execution",
+  "check": "",
+  "reviewed": false
+ },
+ "R55": {
+  "severity": "INFO",
+  "trigger": "execution",
+  "check": "",
+  "reviewed": false
+ },
+ "R56": {
+  "severity": "INFO",
+  "trigger": "security-scope",
+  "check": "",
+  "reviewed": false
+ },
+ "R57": {
+  "severity": "MUST",
+  "trigger": "security-scope",
+  "check": "manual:范围是否覆盖该资产需人判断",
+  "reviewed": true
+ },
+ "R58": {
+  "severity": "MUST_NOT",
+  "trigger": "security-scope",
+  "check": "manual:无关资产需按目标判断",
+  "reviewed": true
+ },
+ "R59": {
+  "severity": "MUST",
+  "trigger": "security-scope",
+  "check": "manual:破坏性动作前须确认目标与必要性",
+  "reviewed": true
+ },
+ "R60": {
+  "severity": "MUST",
+  "trigger": "security-scope",
+  "check": "manual:数据外发范围与敏感性需人确认",
+  "reviewed": true
+ },
+ "R61": {
+  "severity": "MUST",
+  "trigger": "security-scope",
+  "check": "python3 scripts/secret_scan.py",
+  "reviewed": true
+ },
+ "R62": {
+  "severity": "MUST",
+  "trigger": "security-scope",
+  "check": "manual:是否属未知代码需人判断",
+  "reviewed": true
+ },
+ "R63": {
+  "severity": "MUST_NOT",
+  "trigger": "security-scope",
+  "check": "manual:是否属用户当次明确要求需人判断",
+  "reviewed": true
+ },
+ "R64": {
+  "severity": "INFO",
+  "trigger": "delegation",
+  "check": "",
+  "reviewed": false
+ },
+ "R65": {
+  "severity": "INFO",
+  "trigger": "delegation",
+  "check": "",
+  "reviewed": false
+ },
+ "R66": {
+  "severity": "MUST",
+  "trigger": "delegation",
+  "check": "manual:任务书内容需人复核",
+  "reviewed": true
+ },
+ "R67": {
+  "severity": "MUST",
+  "trigger": "delegation",
+  "check": "manual:中央文件串行修改需按过程判断",
+  "reviewed": true
+ },
+ "R68": {
+  "severity": "MUST",
+  "trigger": "delegation",
+  "check": "manual:合并前检查需按过程判断",
+  "reviewed": true
+ },
+ "R69": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R70": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R71": {
+  "severity": "MUST",
+  "trigger": "delivery-notes",
+  "check": "manual:是否属可复用经验需人判断",
+  "reviewed": true
+ },
+ "R72": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R73": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R74": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R75": {
+  "severity": "MUST_NOT",
+  "trigger": "delivery-notes",
+  "check": "manual:写 memories 属客户端行为，脚本不可见",
+  "reviewed": true
+ },
+ "R76": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R77": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R78": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R79": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R80": {
+  "severity": "MUST_NOT",
+  "trigger": "delivery-notes",
+  "check": "python3 scripts/notes_index_check.py",
+  "reviewed": true
+ },
+ "R81": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R82": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R83": {
+  "severity": "MAY",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R84": {
+  "severity": "MUST",
+  "trigger": "delivery-notes",
+  "check": "manual:目标达成与验证强度需人判断",
+  "reviewed": true
+ },
+ "R85": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R86": {
+  "severity": "MUST",
+  "trigger": "skills-registry",
+  "check": "python3 scripts/skill_audit.py --strict",
+  "reviewed": true
+ },
+ "R87": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R88": {
+  "severity": "INFO",
+  "trigger": "delivery-notes",
+  "check": "",
+  "reviewed": false
+ },
+ "R89": {
+  "severity": "INFO",
+  "trigger": "rule-layering",
+  "check": "",
+  "reviewed": false
+ },
+ "R90": {
+  "severity": "MUST_NOT",
+  "trigger": "rule-layering",
+  "check": "python3 scripts/verify_rules.py --workspace .",
+  "reviewed": true
+ },
+ "R91": {
+  "severity": "MAY",
+  "trigger": "rule-layering",
+  "check": "",
+  "reviewed": false
+ },
+ "R92": {
+  "severity": "SHOULD",
+  "trigger": "rule-layering",
+  "check": "",
+  "reviewed": false
+ },
+ "R93": {
+  "severity": "MUST_NOT",
+  "trigger": "rule-layering",
+  "check": "python3 scripts/verify_rules.py --workspace .",
+  "reviewed": true
+ },
+ "R94": {
+  "severity": "MUST",
+  "trigger": "rule-layering",
+  "check": "python3 scripts/verify_rules.py --workspace .",
+  "reviewed": true
+ },
+ "R95": {
+  "severity": "INFO",
+  "trigger": "delivery-closure",
+  "check": "",
+  "reviewed": false
+ },
+ "R96": {
+  "severity": "MUST",
+  "trigger": "delivery-closure",
+  "check": "python3 scripts/skill_audit.py --strict",
+  "reviewed": true
+ },
+ "R97": {
+  "severity": "INFO",
+  "trigger": "gate-hermes",
+  "check": "",
+  "reviewed": false
+ },
+ "R98": {
+  "severity": "MUST",
+  "trigger": "gate-hermes",
+  "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
+  "reviewed": true
+ },
+ "R99": {
+  "severity": "MUST_NOT",
+  "trigger": "gate-hermes",
+  "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
+  "reviewed": true
+ },
+ "R100": {
+  "severity": "MUST_NOT",
+  "trigger": "gate-hermes",
+  "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
+  "reviewed": true
+ },
+ "R101": {
+  "severity": "INFO",
+  "trigger": "gate-clients",
+  "check": "",
+  "reviewed": false
+ },
+ "R102": {
+  "severity": "MUST_NOT",
+  "trigger": "gate-clients",
+  "check": "python3 hooks-tests/test_gate_targets.py",
+  "reviewed": true
+ },
+ "R103": {
+  "severity": "MAY",
+  "trigger": "gate-clients",
+  "check": "",
+  "reviewed": false
+ },
+ "R104": {
+  "severity": "MUST",
+  "trigger": "gate-clients",
+  "check": "manual:客户端 hook 行为需在 CC/Codex 实机观测",
+  "reviewed": true
+ },
+ "R105": {
+  "severity": "MAY",
+  "trigger": "gate-clients",
+  "check": "",
+  "reviewed": false
+ },
+ "R106": {
+  "severity": "MUST_NOT",
+  "trigger": "gate-clients",
+  "check": "python3 .hermes/plugins/workspace-gate/selfcheck.py",
+  "reviewed": true
+ },
+ "R107": {
+  "severity": "INFO",
+  "trigger": "gate-clients",
+  "check": "",
+  "reviewed": false
+ },
+ "R108": {
+  "severity": "MUST",
+  "trigger": "gate-clients",
+  "check": "python3 scripts/mark_rules.py check AGENT_RULES.md",
+  "reviewed": true
+ },
+ "R109": {
+  "severity": "INFO",
+  "trigger": "policy-language",
+  "check": "",
+  "reviewed": false
+ },
+ "R110": {
+  "severity": "MUST",
+  "trigger": "policy-language",
+  "check": "python3 scripts/clause_lint.py",
+  "reviewed": true
+ },
+ "R111": {
+  "severity": "MUST",
+  "trigger": "policy-language",
+  "check": "python3 scripts/clause_lint.py",
+  "reviewed": true
+ },
+ "R112": {
+  "severity": "MUST",
+  "trigger": "policy-language",
+  "check": "python3 scripts/clause_lint.py",
+  "reviewed": true
+ },
+ "R113": {
+  "severity": "INFO",
+  "trigger": "workspace-boot",
+  "check": "",
+  "reviewed": false
+ },
+ "R114": {
+  "severity": "MUST",
+  "trigger": "gate-wiring",
+  "check": "python3 -m unittest tests.test_gate_status",
+  "reviewed": true
+ },
+ "R115": {
+  "severity": "MUST",
+  "trigger": "gate-wiring",
+  "check": "manual:是否先接线由用户裁决，属交互义务",
+  "reviewed": true
+ },
+ "R116": {
+  "severity": "MUST",
+  "trigger": "gate-wiring",
+  "check": "python3 -m unittest tests.test_gate_status",
+  "reviewed": true
+ },
+ "R117": {
+  "severity": "MUST",
+  "trigger": "gate-wiring",
+  "check": "python3 -m unittest tests.test_gate_status",
+  "reviewed": true
+ },
+ "R118": {
+  "severity": "MUST",
+  "trigger": "gate-wiring",
+  "check": "manual:结论形式（接线或用户明确接受无 gate）需人判断",
+  "reviewed": true
+ },
+ "R119": {
+  "severity": "INFO",
+  "trigger": "readme-decision",
+  "check": "",
+  "reviewed": true
+ },
+ "R120": {
+  "severity": "MUST",
+  "trigger": "readme-decision",
+  "check": "manual:是否询问属交互义务；机械侧只能校记录（R126）",
+  "reviewed": true
+ },
+ "R121": {
+  "severity": "MUST",
+  "trigger": "readme-decision",
+  "check": "manual:二选一必须由用户明确表达，Agent 不得代选",
+  "reviewed": true
+ },
+ "R122": {
+  "severity": "MUST_NOT",
+  "trigger": "readme-decision",
+  "check": "manual:是否在用户选择前就动笔，属过程义务",
+  "reviewed": true
+ },
+ "R123": {
+  "severity": "MUST",
+  "trigger": "readme-decision",
+  "check": "manual:是否以工作区事实为准，需人读交付物",
+  "reviewed": true
+ },
+ "R124": {
+  "severity": "MUST_NOT",
+  "trigger": "readme-decision",
+  "check": "manual:是否编造不存在的功能/命令/目录，需人读交付物",
+  "reviewed": true
+ },
+ "R125": {
+  "severity": "MUST",
+  "trigger": "readme-decision",
+  "check": "manual:冲突是否在交付时点名，需人读交付说明",
+  "reviewed": true
+ },
+ "R126": {
+  "severity": "MUST",
+  "trigger": "readme-decision",
+  "check": "python3 scripts/workspace_preflight.py",
+  "reviewed": true
+ },
+ "R127": {
+  "severity": "MUST",
+  "trigger": "readme-decision",
+  "check": "manual:写盘前是否取得用户确认，属交互义务",
+  "reviewed": true
+ },
+ "R128": {
+  "severity": "INFO",
+  "trigger": "local-skill",
+  "check": "",
+  "reviewed": true
+ },
+ "R129": {
+  "severity": "MUST",
+  "trigger": "local-skill",
+  "check": "python3 scripts/skill_audit.py --strict",
+  "reviewed": true
+ },
+ "R130": {
+  "severity": "MUST",
+  "trigger": "local-skill",
+  "check": "manual:是否只在用户明确要求时创建，属交互义务",
+  "reviewed": true
+ },
+ "R131": {
+  "severity": "MUST",
+  "trigger": "local-skill",
+  "check": "python3 scripts/skill_audit.py --strict",
+  "reviewed": true
+ },
+ "R132": {
+  "severity": "MUST",
+  "trigger": "local-skill",
+  "check": "manual:同名时按裸名路由到哪一层，需读 REGISTRY 与任务上下文",
+  "reviewed": true
+ },
+ "R133": {
+  "severity": "MUST",
+  "trigger": "local-skill",
+  "check": "python3 scripts/skill_audit.py --strict",
+  "reviewed": true
+ },
+ "R134": {
+  "severity": "MUST",
+  "trigger": "local-skill",
+  "check": "python3 scripts/skill_audit.py --strict",
+  "reviewed": true
+ },
+ "R135": {
+  "severity": "MUST",
+  "trigger": "gate-destructive-dir-op",
+  "check": "python3 hooks-tests/test_gate_targets.py",
+  "reviewed": true
+ }
 }
