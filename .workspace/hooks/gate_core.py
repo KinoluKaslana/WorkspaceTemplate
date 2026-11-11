@@ -396,8 +396,13 @@ HASH_BUDGET_BYTES = 32 << 20     # 每次哈希扫描最多读 32 MiB
 HASH_CAP = 2000                  # 最多记多少个文件的指纹
 
 
-def _hash_baseline_path(ws_root: str, client: str, session_id: str):
-    return _state_dir(ws_root) / ("hashes-%s-%s.json" % (client, session_id))
+def _hash_baseline_path(ws_root: str, client: str, session_id: str, *, read: bool = False):
+    p = _state_dir(ws_root) / ("hashes-%s-%s.json" % (client, session_id))
+    if read and not p.is_file():
+        legacy = _legacy_state_dir(ws_root) / ("hashes-%s-%s.json" % (client, session_id))
+        if legacy.is_file():
+            return legacy
+    return p
 
 
 def _scan_hashes(ws_root: str, budget: int = HASH_BUDGET_BYTES,
@@ -1167,7 +1172,7 @@ def evaluate_session_start(ws_root: str, client: str, session_id: str,
         state.setdefault("audit_watermark_ns", time.time_ns())
         if not _git_ok(ws_root):
             # 哈希兜底基线：`cp -p` / `tar -x` 这类保 mtime 的写只靠水位线会漏。
-            hp = _hash_baseline_path(ws_root, client, session_id)
+            hp = _hash_baseline_path(ws_root, client, session_id, read=True)
             if not hp.exists():
                 try:
                     hashes, _complete = _scan_hashes(ws_root)
@@ -1523,7 +1528,7 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
             changed = set(_recent_files(ws_root, watermark))
             # 哈希兜底：覆盖"保留原 mtime"的写（cp -p / tar -x / rsync -t）。
             try:
-                hp = _hash_baseline_path(ws_root, client, session_id)
+                hp = _hash_baseline_path(ws_root, client, session_id, read=True)
                 prev = json.loads(hp.read_text(encoding="utf-8")) if hp.is_file() else {}
                 cur, complete = _scan_hashes(ws_root)
                 if isinstance(prev, dict):

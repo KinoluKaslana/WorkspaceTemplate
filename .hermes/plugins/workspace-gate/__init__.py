@@ -1044,7 +1044,7 @@ def _append_commit_row(ws, session_id, target, new_sha, intent):
         "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     try:
-        d = Path(ws) / ".workspace" / ".hook-state"
+        d = _state_path(ws, session_id).parent        # 按机器分片，与 hooks 的 commits.jsonl 同目录
         d.mkdir(parents=True, exist_ok=True)
         with open(d / "commits.jsonl", "a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")

@@ -766,9 +766,18 @@ def offset_path(ws: str, session_id: str) -> str:
 
 
 def load_state(ws: str, session_id: str) -> dict:
-    """读 sidecar。旧 sidecar 无 `books` 时按空字典迁移（offset/pending 原样保留）。"""
+    """读 sidecar。旧 sidecar 无 `books` 时按空字典迁移（offset/pending 原样保留）。
+
+    分片目录里没有时回退升级前的旧根目录；写入永远落分片目录。
+    """
+    path = offset_path(ws, session_id)
+    if not os.path.isfile(path):
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id)[:64]
+        legacy = os.path.join(ws, ".workspace", ".hook-state", f"cc-transcript-{safe}.json")
+        if os.path.isfile(legacy):
+            path = legacy
     try:
-        with open(offset_path(ws, session_id), encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         if isinstance(data, dict):
             return {"offset": int(data.get("offset") or 0),

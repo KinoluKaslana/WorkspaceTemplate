@@ -10,10 +10,10 @@ dsh **没有项目级自动发现**——不带 `--patch .dsh/workspace-gate/cor
 
 | harness | 启用条件 | 证据 |
 |---|---|---|
-| cc | `.claude/settings.json`（项目受信后自动加载） | `.workspace/.hook-state/gate.log` 里 `client=cc` |
+| cc | `.claude/settings.json`（项目受信后自动加载） | `.workspace/.hook-state/<scope>/gate.log` 里 `client=cc` |
 | codex | `.codex/hooks.json` | 同上，`client=codex` |
 | hermes | `HERMES_ENABLE_PROJECT_PLUGINS=true` + config `plugins.enabled` | 同上，`client=hermes` |
-| dsh | **每次启动**都要 `--patch`（无自动发现） | `.workspace/.dsh-gate.log` 的 `apply` 事件 + `.hook-state/dsh-session-*.json` |
+| dsh | **每次启动**都要 `--patch`（无自动发现） | `.workspace/.dsh-gate.log` 的 `apply` 事件 + `.hook-state/<scope>/dsh-session-*.json` |
 
 退出码：0 = 满足要求（或没给 `--require`）；1 = `--require` 里的 harness 没证据。
 """
@@ -193,7 +193,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--ttl-minutes", type=float, default=30.0,
                     help="只把最近 N 分钟内出现的证据算作「当前活动」（政策 §15 用 30；必须为正）")
     ap.add_argument("--record", action="store_true",
-                    help="把结论写入 .workspace/bootstrap.json 的 gate 节（对应 AGENT_RULES §15）")
+                    help="把结论写入本机状态 .workspace/.hook-state/<scope>/gate.json（对应 AGENT_RULES §15）")
     ap.add_argument("--user-decision", default="",
                     help="记录用户决定来源（--record 用）；无证据时必填")
     ap.add_argument("--force", action="store_true",

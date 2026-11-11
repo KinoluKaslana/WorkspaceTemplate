@@ -124,6 +124,19 @@ def norm_url(u: str) -> str:
     return u[:-4] if u.endswith(".git") else u
 
 
+def _legacy_gate_note(ws: Path, boot: dict, record: dict) -> str:
+    """新 gate.json 与旧 bootstrap.gate 结论不一致时给一句提示（非阻断）。"""
+    legacy = boot.get("gate") or {}
+    if not isinstance(legacy, dict) or not legacy.get("status") or not record:
+        return ""
+    if (legacy.get("status") != record.get("status")
+            or sorted(legacy.get("harness") or []) != sorted(record.get("harness") or [])):
+        return (f"旧 bootstrap.gate={legacy.get('status')}/{(legacy.get('harness') or [])} "
+                f"与本机 gate.json={record.get('status')}/{(record.get('harness') or [])} 不一致；"
+                f"以 gate.json 为准（旧位置只读兼容）")
+    return ""
+
+
 def _gate_record(ws: Path, boot: dict) -> dict:
     """gate 结论：本机分片 `gate.json` 优先；`bootstrap.gate` 只作旧位置兼容。"""
     try:
@@ -268,6 +281,9 @@ def main(argv: list[str]) -> int:
 
     # 2b) Gate 接线（§15）：登记状态 vs 运行期证据
     gate = _gate_record(ws, boot)
+    _legacy_note = _legacy_gate_note(ws, boot, gate)
+    if _legacy_note:
+        rows.append(item("gate_legacy", "两处结论不一致", gate.get("status") or "", WARN, _legacy_note))
     g_status = gate.get("status")
     g_harness = [h for h in (gate.get("harness") or []) if h]
     want = [h.strip() for h in (getattr(a, "harness", "") or "").split(",") if h.strip()]

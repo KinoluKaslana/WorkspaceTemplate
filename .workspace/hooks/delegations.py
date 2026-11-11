@@ -7,7 +7,7 @@
   / issued_at / expires_at / status / user_scope_ref（审计用，不判真伪）/ revoked_at。
 - 子写判定（gate 侧）：目标精确命中未失效的委托 + 父会话对当前修订仍有完整读证据。
 - 失效：TTL / 父会话 finalize / 显式撤销 / gate 修订变化 / 子会话停止。
-- 存储：<ws>/.workspace/.hook-state/delegations.jsonl（已 gitignore）。
+- 存储：<ws>/.workspace/.hook-state/<scope>/delegations.jsonl（按机器分片，已 gitignore）。
 
 信任边界：与 authz/gate 相同——同 uid 可改账本，本模块防「无意识越权」，不防主动伪造。
 """
@@ -51,16 +51,28 @@ def gate_fingerprint(ws: str | Path, gate_rel: str = "AGENT_RULES.md") -> str | 
     return f"c{p.stat().st_size}:{data}"
 
 
-def _state_file(ws: str | Path, client: str, scope: str) -> Path:
-    """cc/codex 的账本带客户端前缀；Hermes 插件的账本直接用会话名。"""
+def _state_file(ws: str | Path, client: str, scope: str, *, read: bool = False) -> Path:
+    """cc/codex 的账本带客户端前缀；Hermes 插件的账本直接用会话名。
+
+    `read=True` 时若分片目录里没有，回退旧根目录（升级前的会话证据仍能用），
+    写入永远落分片目录。
+    """
     safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in scope)[:120]
     name = f"{client}-{safe}.json" if client in ("cc", "codex") else f"{safe}.json"
-    return _state_dir(ws) / name
+    p = _state_dir(ws) / name
+    if read and not p.is_file():
+        legacy = Path(ws) / ".workspace" / ".hook-state" / name
+        if legacy.is_file():
+            return legacy
+    return p
+
+def _legacy_state_dir(ws: str | Path) -> Path:
+    return Path(ws) / ".workspace" / ".hook-state"
 
 
 def read_evidence_ok(ws: str | Path, client: str, scope: str, gate_rel: str = "AGENT_RULES.md") -> bool:
     """父/子会话对 gate 当前修订是否有完整读证据。"""
-    p = _state_file(ws, client, scope)
+    p = _state_file(ws, client, scope, read=True)
     if not p.is_file():
         return False
     try:
@@ -80,6 +92,9 @@ def read_evidence_ok(ws: str | Path, client: str, scope: str, gate_rel: str = "A
 
 def _rows(ws: str | Path) -> list[dict]:
     p = _state_dir(ws) / LEDGER
+    if not p.is_file():
+        legacy = _legacy_state_dir(ws) / LEDGER
+        p = legacy if legacy.is_file() else p
     if not p.is_file():
         return []
     out = []

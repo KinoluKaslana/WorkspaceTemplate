@@ -382,16 +382,60 @@ def _machine_material() -> bytes | None:
         except OSError:
             material = None
     else:
-        for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+        import platform as _platform
+        if _platform.system().lower() == "darwin":      # pragma: no cover - macOS
             try:
-                text = Path(candidate).read_text(encoding="utf-8").strip()
-            except OSError:
-                continue
-            if text:
-                material = text.encode("utf-8")
-                break
+                import subprocess
+                out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                     capture_output=True, text=True, timeout=5).stdout
+                match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
+                if match:
+                    material = match.group(1).encode("utf-8")
+            except (OSError, ValueError):
+                material = None
+        else:
+            for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                try:
+                    text = Path(candidate).read_text(encoding="utf-8").strip()
+                except OSError:
+                    continue
+                if text:
+                    material = text.encode("utf-8")
+                    break
     _MATERIAL_CACHE = material
     return material
+
+
+def _local_scope_seed(env: Mapping[str, str] | None = None) -> bytes | None:
+    """身份原料取不到时的兜底：本机持久随机种子。
+
+    存放位置在用户状态目录（`$XDG_STATE_HOME` 或 `~/.local/state`），**不在工作区里**，
+    因此不会被同步盘带到别的机器。两台都取不到 machine-id 的机器各自得到不同 scope，
+    不会退化成同一个 `unknown` 桶。
+    """
+    env = os.environ if env is None else env
+    base = env.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    path = Path(base) / "workspace-template" / "scope-seed"
+    try:
+        if path.is_file():
+            data = path.read_bytes().strip()
+            return data or None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        seed = os.urandom(16).hex().encode("ascii")
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
+        except FileExistsError:
+            data = path.read_bytes().strip()
+            return data or None
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(seed)
+        return seed
+    except OSError:
+        try:
+            data = path.read_bytes().strip()
+            return data or None
+        except OSError:
+            return None
 
 
 def machine_scope(env: Mapping[str, str] | None = None) -> str:
@@ -403,9 +447,12 @@ def machine_scope(env: Mapping[str, str] | None = None) -> str:
     env = os.environ if env is None else env
     seed = env.get("WORKSPACE_CONTEXT_SEED")
     material = seed.encode("utf-8") if seed else _machine_material()
-    if not material:
-        return "unknown"
-    return hmac.new(material, b"hook-scope", hashlib.sha256).hexdigest()[:12]
+    if material:
+        return hmac.new(material, b"hook-scope", hashlib.sha256).hexdigest()[:12]
+    local = _local_scope_seed(env)
+    if local:
+        return hmac.new(local, b"hook-scope-local", hashlib.sha256).hexdigest()[:12]
+    return "unknown"
 
 
 def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:

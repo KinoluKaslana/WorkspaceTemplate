@@ -891,21 +891,27 @@ post(str(P13 / "AGENT_RULES.md"), sid13)
 tgt13 = str(P13 / "acc.txt")
 check("P13-1 读后写放行", False, pre("write_file", {"path": tgt13}, sid13))
 st13 = wg._load_state(P13, sid13)
-expect("P13-2 允许时落 intent", True, tgt13 in (st13.get("intents") or {}))
+expect("P13-2 允许时落 intent", tgt13 in (st13.get("intents") or {}),
+       f"({(st13.get('intents') or {}).keys()})")
 (P13 / "acc.txt").write_text("A", encoding="utf-8")
 wg._post_tool_call(tool_name="write_file", args={"path": tgt13}, session_id=sid13, status="ok")
 st13 = wg._load_state(P13, sid13)
-expect("P13-3 写后落 commit", True, any(c.get("target") == tgt13 for c in (st13.get("commits") or [])))
+expect("P13-3 写后落 commit",
+       any(c.get("target") == tgt13 for c in (st13.get("commits") or [])))
 led13 = wg._state_path(P13, "x").parent / "commits.jsonl"
 rows13 = [json.loads(l) for l in led13.read_text(encoding="utf-8").splitlines() if l.strip()] if led13.is_file() else []
-expect("P13-4 commits.jsonl 记 hermes 行", True,
-       any(r.get("client") == "hermes" and r.get("target") == tgt13 for r in rows13))
+expect("P13-4 commits.jsonl 记 hermes 行",
+       any(r.get("client") == "hermes" and r.get("target") == tgt13 for r in rows13),
+       f"(rows={len(rows13)})")
+expect("P13-4b 旧根不得再写 commits.jsonl",
+       not (P13 / ".workspace" / ".hook-state" / "commits.jsonl").is_file())
 tgt13b = str(P13 / "acc-unobs.txt")
 (P13 / "acc-unobs.txt").write_text("B", encoding="utf-8")
 wg._post_tool_call(tool_name="write_file", args={"path": tgt13b}, session_id=sid13, status="ok")
 st13 = wg._load_state(P13, sid13)
-expect("P13-5 无 intent 的写落 unobserved", True,
-       any(u.get("target") == tgt13b and u.get("reason") == "no-intent" for u in (st13.get("unobserved") or [])))
+expect("P13-5 无 intent 的写落 unobserved",
+       any(u.get("target") == tgt13b and u.get("reason") == "no-intent"
+           for u in (st13.get("unobserved") or [])))
 
 print()
 

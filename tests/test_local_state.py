@@ -410,6 +410,26 @@ class LocalStateTest(unittest.TestCase):
         self.assertEqual(ls.context_id(WSID, win),
                          "393e753d11f05c8c9b9fc05f3de769076aee8146aaf3476f5b0d18f9896b3d7a")
 
+    def test_30_machine_scope_falls_back_to_local_seed(self):
+        """取不到 machine-id 时用本机持久种子：两台机器（不同状态目录）必须得到不同 scope。"""
+        old = ls._MATERIAL_CACHE
+        ls._MATERIAL_CACHE = None
+        try:
+            env1 = {"XDG_STATE_HOME": str(self.tmp / "st1")}
+            a = ls.machine_scope(env1)
+            b = ls.machine_scope(env1)
+            env2 = {"XDG_STATE_HOME": str(self.tmp / "st2")}
+            c = ls.machine_scope(env2)
+        finally:
+            ls._MATERIAL_CACHE = old
+        self.assertNotEqual(a, "unknown")
+        self.assertEqual(a, b, "同一台机器的 scope 必须稳定")
+        self.assertNotEqual(a, c, "两台机器不得共用 same scope")
+        seed_file = self.tmp / "st1" / "workspace-template" / "scope-seed"
+        self.assertTrue(seed_file.is_file())
+        if os.name != "nt":
+            self.assertEqual(seed_file.stat().st_mode & 0o777, 0o600)
+
     # ---- 路径安全 -------------------------------------------------------
     def test_15_symlink_escape_refused(self):
         outside = self.tmp / "outside"
