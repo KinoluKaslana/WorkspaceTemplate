@@ -57,7 +57,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 规则分层 | 模板层文件**锁定只读**（同步=整文件替换）；本地规则全部外置到 `<file>.custom.md`，**custom 优先**（§10） |
 | 完整性校验 | 条款带稳定 ID（`<!-- id:Rn -->`）+ 注册表双级校验；`--vs-template` 对模板克隆做**字节级比对 + git 信任锚**，堵死"改文件再重生成注册表"的自我作证漏洞 |
 | 生命周期 skills | 8 个随模板分发到 `.workspace/skills/`：`template-update`（任意 ref 同步）、`workspace-repo-sync`（跨设备同步工作区仓库）、`workspace-init`（接管/首次落地）、`git-init`（建仓）、`delivery-closure`（交付闭环）、`docs-retrieval-maintenance`（文档检索维护）、`legacy-workspace-upgrade`（旧版本工作区自举）、`workspace-skill-authoring`（把用户要的能力落成**工作区级** skill）。每个 skill 必须满足 8 维契约，`skill_audit.py` 机械检查 |
-| 首次初始化协议 | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) 持久化 `python.mode`（**必须**：`uv` / `local-venv` / `mcp`，默认 uv）与 `git.status`（**可选**：initialized / declined）；**既有工作区一旦配置就不被模板演进改写** |
+| 首次初始化协议 | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) 持久化 `workspace_id` / `workspace_status` 与 `git.status`（**可选**：initialized / declined）；运行时模式 `uv` / `local-venv` / `mcp`（默认 uv）在**本机状态** `.workspace/.local/v1/<context_id>/runtime.json`；**既有工作区一旦配置就不被模板演进改写** |
 | 业务无关 | [`WORKSPACE.md`](WORKSPACE.md) 初始为空，由用户的稳定需求定义目标、范围与验收 |
 | Skills 单路径接入 | 用户只提供根目录，Agent 自动发现入口、记录指纹并处理同名冲突 |
 | 环境事实可追溯 | [`TOOLS.md`](TOOLS.md) 记录实测运行时、MCP、工具、来源和副作用，不承担授权职责 |
@@ -126,7 +126,7 @@ https://raw.githubusercontent.com/KinoluKaslana/WorkspaceTemplate/main/UPGRADE.m
    skill_audit --strict、workspace_preflight；
 6) 再跑一次 dry-run 证明幂等（应为「将替换 0 个文件」）。
 
-硬约束：不许改 python.mode；不许动业务文件/notes 正文/WORKSPACE.md 业务内容；
+硬约束：不许改本机运行时模式；不许动业务文件/notes 正文/WORKSPACE.md 业务内容；
 不许 commit/push；任何验收红就用 --rollback 回滚并如实说明。
 
 报告：版本前后 → 文件数 → 备份目录 → 四条验收真实输出 → warn 逐条解释 → 未做的事。
@@ -136,7 +136,7 @@ https://raw.githubusercontent.com/KinoluKaslana/WorkspaceTemplate/main/UPGRADE.m
 
 ## 第一次打开会发生什么
 
-模板不会替用户预选环境。当 `python.mode` 仍为 `unconfigured` 时，第一个 Agent 必须先询问：
+模板不会替用户预选环境。当本机 `mode` 仍为 `unconfigured` 时，第一个 Agent 必须先询问：
 
 > 本工作区的 Python 运行时用哪种？（**推荐默认：uv**）
 > 1. **uv 管理**（`uv venv`，默认）——机器上没有 uv 时我先提示安装方式，由你执行安装；
@@ -145,7 +145,7 @@ https://raw.githubusercontent.com/KinoluKaslana/WorkspaceTemplate/main/UPGRADE.m
 
 ```mermaid
 flowchart LR
-    A[Agent 打开 Workspace] --> B{python.mode}
+    A[Agent 打开 Workspace] --> B{本机 mode}
     B -->|unconfigured| C[询问用户：uv / 手动 venv / MCP]
     C -->|uv| D1[uv venv .venv-major-minor]
     C -->|手动 venv| D2[python -m venv .venv-major-minor]

@@ -884,6 +884,30 @@ def _revocation(state: dict, gate_rel: str, reason: str) -> None:
         })
 
 
+def _local_py_mode(ws_root: str) -> str | None:
+    """只读：本机状态里的 python.mode（`.local/v1/<context_id>/runtime.json`）。"""
+    try:
+        import sys as _sys
+        scripts = Path(ws_root) / "scripts"
+        if not (scripts / "local_state.py").is_file():
+            return None
+        if str(scripts) not in _sys.path:
+            _sys.path.insert(0, str(scripts))
+        import local_state as _ls
+        wid = _ls.workspace_id_of(Path(ws_root))
+        if not wid:
+            return None
+        ident = _ls.resolve_identity({}, _ls.detect_platform_info())
+        if ident is None:
+            return None
+        res = _ls.read_state(Path(ws_root), wid, ident, ephemeral=False)
+        if res.get("status") == "BOUND":
+            return (res.get("data") or {}).get("mode")
+    except Exception:
+        return None
+    return None
+
+
 def workspace_is_taken_over(ws_root: str) -> bool:
     """工作区是否「已接管」：模板仓自身与未初始化的克隆不算受管工作区。
 
@@ -899,6 +923,8 @@ def workspace_is_taken_over(ws_root: str) -> bool:
         return True
     status = str(data.get("workspace_status") or "").strip()
     py_mode = str(((data.get("python") or {}) if isinstance(data.get("python"), dict) else {}).get("mode") or "").strip()
+    if py_mode in ("", "unconfigured"):
+        py_mode = _local_py_mode(ws_root) or py_mode       # python.mode 已下沉到本机状态
     return not (status == "template" and py_mode in ("", "unconfigured"))
 
 

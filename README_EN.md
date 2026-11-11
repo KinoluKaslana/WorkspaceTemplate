@@ -56,7 +56,7 @@ See “Why It Exists” and “Core Capabilities” above for where it does fit.
 | Rule layering | Template-layer files are **locked read-only** (sync = whole-file replacement); local rules live in `<file>.custom.md` and **custom takes precedence** (§10) |
 | Integrity verification | Stable clause IDs (`<!-- id:Rn -->`) + registry-based two-level verification; `--vs-template` byte-compares against the template clone with a **git trust anchor**, closing the "edit the file then regenerate the registry" self-attestation hole |
 | Lifecycle skills | Eight skills ship in `.workspace/skills/`: `template-update` (sync from any ref), `workspace-repo-sync` (cross-device repo sync), `workspace-init` (adopt / first landing), `git-init` (create repo), `delivery-closure` (finish check), `docs-retrieval-maintenance` (docs index & aliases), `legacy-workspace-upgrade` (bootstrap an old workspace). Each must satisfy the 8-dimension contract, enforced by `skill_audit.py` |
-| First-init protocol | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) persists `python.mode` (**mandatory**: `uv` / `local-venv` / `mcp`, uv by default) and `git.status` (**optional**: initialized / declined); a configured mode is never rewritten by template upgrades |
+| First-init protocol | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) persists `workspace_id` / `workspace_status` and `git.status`; the runtime mode (`uv` / `local-venv` / `mcp`, uv by default) lives in **machine-local state** `.workspace/.local/v1/<context_id>/runtime.json` (**optional**: initialized / declined); a configured mode is never rewritten by template upgrades |
 | Business-agnostic foundation | [`WORKSPACE.md`](WORKSPACE.md) starts undefined and is shaped by the user's stable goals, scope, and acceptance criteria |
 | One-path skills onboarding | The user provides a root directory; the Agent discovers entries, records fingerprints, and resolves duplicate names |
 | Traceable environment facts | [`TOOLS.md`](TOOLS.md) records verified runtimes, MCP services, tools, sources, and side effects without granting authority |
@@ -91,7 +91,7 @@ Then open `my-workspace` with your Agent. Codex reads [`AGENTS.md`](AGENTS.md), 
 
 ## What Happens on First Open
 
-The template does not choose a Python environment for the user. While `python.mode` is `unconfigured`, the first Agent must ask:
+The template does not choose a Python environment for the user. While the machine-local `mode` is `unconfigured`, the first Agent must ask:
 
 > Which Python runtime should this Workspace use? (**default: uv**)
 > 1. **uv** (`uv venv`, default) — if uv is missing I show you how to install it and you run the install;
@@ -100,7 +100,7 @@ The template does not choose a Python environment for the user. While `python.mo
 
 ```mermaid
 flowchart LR
-    A[Agent opens Workspace] --> B{python.mode}
+    A[Agent opens Workspace] --> B{machine mode}
     B -->|unconfigured| C[Ask: uv / manual venv / MCP]
     C -->|uv| D1[uv venv .venv-major-minor]
     C -->|manual venv| D2[python -m venv .venv-major-minor]

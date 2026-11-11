@@ -4,7 +4,9 @@
 对应 `AGENT_RULES.md` §0：`python.mode=unconfigured` 时第一个 Agent 必须先问用户，再执行本脚本。
 
 设计约束：
-- 只写 `.workspace/bootstrap.json` 的 `python` 节与（可选）venv 目录；**不改 TOOLS.md**（工作区自有，输出待粘贴片段）；
+- 运行时模式写**本机状态** `.workspace/.local/v1/<context_id>/runtime.json`（`scripts/local_state.py`），
+  不再写 `bootstrap.json` 的 `python` 节；`bootstrap` 只翻转 `workspace_status` 与 `workspace_id`；
+- **不改 TOOLS.md**（工作区自有，输出待粘贴片段）；
 - 默认 dry-run，`--apply` 才真正创建 venv / 写 bootstrap；
 - uv 不存在时**不自动联网安装**：打印官方安装方式并 exit 3，需用户确认后加 `--allow-install`；
 - 三种模式互斥，已有 venv 目录时幂等跳过创建但仍做校验。
@@ -53,6 +55,69 @@ except ImportError:                       # 以 `scripts.pyenv_init` 形式被 i
         raise SystemExit(2)
 
 
+def _local_state():
+    try:
+        import local_state  # noqa: F401
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import local_state  # noqa: F401
+    import local_state as ls
+    return ls
+
+
+def read_mode(ws: Path) -> str | None:
+    """本机已配置的运行时模式；读不到返回 None（旧工作区回退 bootstrap.python.mode 由调用方决定）。"""
+    try:
+        ls = _local_state()
+        wid = ls.ensure_workspace_id(ws)
+        if not wid:
+            return None
+        ident = ls.resolve_identity({}, ls.detect_platform_info())
+        if ident is None:
+            return None
+        res = ls.read_state(ws, wid, ident, ephemeral=False)
+        if res.get("status") == "BOUND":
+            return (res.get("data") or {}).get("mode")
+    except Exception:
+        return None
+    return None
+
+
+def persist_mode(ws: Path, mode: str, venv_name: str | None, version: str | None,
+                 runtime: dict | None, capabilities: dict | None, source: str) -> dict:
+    """把运行时模式写进本机状态；返回 {"status": "BOUND", ...} 或 {"error": ...}。"""
+    ls = _local_state()
+    wid = ls.ensure_workspace_id(ws)
+    if not wid:
+        return {"error": "no-workspace-id", "hint": "工作区缺 .workspace/bootstrap.json 或不可写"}
+    ident = ls.resolve_identity({}, ls.detect_platform_info())
+    if ident is None:
+        return {"error": "identity-unavailable",
+                "hint": "取不到本机身份（machine-id / MachineGuid / 本机种子）；不静默降级，先修环境"}
+    try:
+        res = ls.bind(ws, wid, ident, mode, venv_name, version or "", ephemeral=False,
+                      runtime=runtime, capabilities=capabilities, decision_source=source)
+    except (ValueError, TypeError, OSError) as exc:
+        return {"error": "bind-failed", "detail": str(exc)}
+    if res.get("status") != "BOUND":
+        return {"error": "bind-failed", "detail": res}
+    return {"status": "BOUND", "context_id": res.get("context_id")}
+
+
+def _mark_active(boot_p: Path) -> None:
+    """bootstrap 只保留共享事实：翻转 workspace_status，删掉旧的 python 节（本机状态已接管）。
+
+    必须**重新读盘**再改：`persist_mode` 刚写入了 `workspace_id`，用函数开头那份旧内容
+    覆盖回去会把它抹掉。
+    """
+    boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
+    boot["workspace_status"] = "active"
+    boot.pop("python", None)
+    tmp = boot_p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, boot_p)
+
+
 def py_version(exe: str) -> str | None:
     rc, out = run([exe, "-c", "import sys;print(sys.version.split()[0])"])
     return out if rc == 0 else None
@@ -83,7 +148,7 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
     boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
-    cur_mode = ((boot.get("python") or {}).get("mode")) or "unconfigured"
+    cur_mode = read_mode(ws) or ((boot.get("python") or {}).get("mode")) or "unconfigured"
     out: dict = {"mode": a.mode, "apply": a.apply, "existing_mode": cur_mode}
     if a.apply and cur_mode not in ("unconfigured", None) and not a.force:
         print(json.dumps({
@@ -121,19 +186,16 @@ def main(argv: list[str]) -> int:
         out.update({"uv": uv, "uv_version": uv_ver, "python_version": ver,
                     "identifier": vdir.name})
         if a.apply:
-            pysec = boot.setdefault("python", {})
-            pysec.update({
-                "mode": "uv",
-                "runtime": {"identifier": vdir.name, "base_interpreter": target,
-                            "uv": uv, "mcp_server": None, "mcp_tool": None},
-                "version": ver or target,
-                "capabilities": {"workspace_file_access": True, "network_access": True,
-                                 "dependency_persistence": True},
-                "decision_source": "uv（用户选择，模板默认推荐）",
-                "configured_at": dt.date.today().isoformat(),
-            })
-            boot["workspace_status"] = "active"
-            boot_p.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            res = persist_mode(ws, "uv", vdir.name, ver or target,
+                               {"identifier": vdir.name, "uv_version": uv_ver},
+                               {"workspace_file_access": True, "network_access": True,
+                                "dependency_persistence": True},
+                               "uv（用户选择，模板默认推荐）")
+            if "error" in res:
+                print(json.dumps(res, ensure_ascii=False))
+                return 4
+            out["local_state"] = res
+            _mark_active(boot_p)
         out["tools_snippet"] = (f'| Python 运行时 | uv {uv_ver} → {vdir.name} '
                                 f'(Python {ver or target}) |')
 
@@ -154,19 +216,16 @@ def main(argv: list[str]) -> int:
         ver = py_version(str(py)) if py else None
         out.update({"python_version": ver, "identifier": vdir.name})
         if a.apply:
-            pysec = boot.setdefault("python", {})
-            pysec.update({
-                "mode": "local-venv",
-                "runtime": {"identifier": vdir.name, "base_interpreter": sys.executable,
-                            "mcp_server": None, "mcp_tool": None},
-                "version": ver or base,
-                "capabilities": {"workspace_file_access": True, "network_access": True,
-                                 "dependency_persistence": True},
-                "decision_source": "local-venv（用户选择）",
-                "configured_at": dt.date.today().isoformat(),
-            })
-            boot["workspace_status"] = "active"
-            boot_p.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            res = persist_mode(ws, "local-venv", vdir.name, ver or base,
+                               {"identifier": vdir.name},
+                               {"workspace_file_access": True, "network_access": True,
+                                "dependency_persistence": True},
+                               "local-venv（用户选择）")
+            if "error" in res:
+                print(json.dumps(res, ensure_ascii=False))
+                return 4
+            out["local_state"] = res
+            _mark_active(boot_p)
         out["tools_snippet"] = f"| Python 运行时 | {vdir.name} (Python {ver or base}) |"
 
     else:  # mcp
@@ -176,19 +235,16 @@ def main(argv: list[str]) -> int:
             return 2
         out.update({"mcp_server": a.mcp_server, "mcp_tool": a.mcp_tool})
         if a.apply:
-            pysec = boot.setdefault("python", {})
-            pysec.update({
-                "mode": "mcp",
-                "runtime": {"identifier": None, "base_interpreter": None,
-                            "mcp_server": a.mcp_server, "mcp_tool": a.mcp_tool},
-                "version": None,
-                "capabilities": {"workspace_file_access": None, "network_access": None,
-                                 "dependency_persistence": None},
-                "decision_source": "mcp（用户选择）",
-                "configured_at": dt.date.today().isoformat(),
-            })
-            boot["workspace_status"] = "active"
-            boot_p.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            res = persist_mode(ws, "mcp", None, None,
+                               {"mcp_server": a.mcp_server, "mcp_tool": a.mcp_tool},
+                               {"workspace_file_access": None, "network_access": None,
+                                "dependency_persistence": None},
+                               "mcp（用户选择）")
+            if "error" in res:
+                print(json.dumps(res, ensure_ascii=False))
+                return 4
+            out["local_state"] = res
+            _mark_active(boot_p)
         out["tools_snippet"] = f"| Python 运行时 | MCP {a.mcp_server}:{a.mcp_tool} |"
 
     if a.json:

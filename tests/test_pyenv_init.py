@@ -33,10 +33,22 @@ def mkws(tmp: Path) -> Path:
     shutil.copyfile(SRC / SCRIPT, ws / SCRIPT)
     # 布局口径在 workspace_preflight.py 里，两脚本必须一起分发（真实工作区里都是 TEMPLATE_FILES）
     shutil.copyfile(SRC / "scripts" / "workspace_preflight.py", ws / "scripts" / "workspace_preflight.py")
+    # 运行时模式写本机状态：local_state.py 必须一起分发
+    shutil.copyfile(SRC / "scripts" / "local_state.py", ws / "scripts" / "local_state.py")
     (ws / ".workspace" / "bootstrap.json").write_text(
         json.dumps({"schema_version": 1, "workspace_status": "template",
                     "python": {"mode": "unconfigured"}}, ensure_ascii=False), encoding="utf-8")
     return ws
+
+
+def local_runtime(ws: Path) -> dict:
+    """读本机状态里的 runtime.json（缺陷时可返回 {}）。"""
+    for p in (ws / ".workspace" / ".local").rglob("runtime.json"):
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except ValueError:
+            return {}
+    return {}
 
 
 def run(ws: Path, *args, env=None):
@@ -71,10 +83,14 @@ class PyenvInit(unittest.TestCase):
             self.skipTest("uv 未安装")
         rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply")
         self.assertEqual(rc, 0, d)
-        py = json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]
-        self.assertEqual(py["mode"], "uv")
+        rt = local_runtime(self.ws)
+        self.assertEqual(rt.get("mode"), "uv")
         self.assertTrue(Path(d["venv"]["path"]).exists())
-        self.assertIn("uv", py["runtime"])
+        self.assertEqual((rt.get("runtime") or {}).get("identifier"), Path(d["venv"]["path"]).name)
+        boot = json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))
+        self.assertNotIn("python", boot, "bootstrap 不得再存运行时模式")
+        self.assertEqual(boot.get("workspace_status"), "active")
+        self.assertRegex(boot.get("workspace_id", ""), r"^[0-9a-f-]{36}$")
 
     def test_t3_uv_missing(self):
         empty = Path(self.tmp.name) / "emptybin"
@@ -92,27 +108,25 @@ class PyenvInit(unittest.TestCase):
     def test_t5_venv_apply(self):
         rc, d = run(self.ws, "--mode", "venv", "--apply")
         self.assertEqual(rc, 0, d)
-        self.assertEqual(json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]["mode"], "local-venv")
+        self.assertEqual(local_runtime(self.ws).get("mode"), "local-venv")
 
 
     def test_t6_refuse_overwrite_configured(self):
-        boot = json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))
-        boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-312"}, "version": "3.12.1"}
-        self.boot.write_text(json.dumps(boot), encoding="utf-8")
+        rc0, d0 = run(self.ws, "--mode", "venv", "--apply")
+        self.assertEqual(rc0, 0, d0)
         rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply")
         self.assertEqual(rc, 5, d)
         self.assertEqual(d.get("error"), "already-configured")
-        self.assertEqual(json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]["mode"], "local-venv")
+        self.assertEqual(local_runtime(self.ws).get("mode"), "local-venv")
 
     def test_t7_force_switches(self):
-        boot = json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))
-        boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-312"}, "version": "3.12.1"}
-        self.boot.write_text(json.dumps(boot), encoding="utf-8")
+        rc0, d0 = run(self.ws, "--mode", "venv", "--apply")
+        self.assertEqual(rc0, 0, d0)
         if not HAS_UV:
             self.skipTest("uv 未安装")
         rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply", "--force")
         self.assertEqual(rc, 0, d)
-        self.assertEqual(json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]["mode"], "uv")
+        self.assertEqual(local_runtime(self.ws).get("mode"), "uv")
 
 
 if __name__ == "__main__":

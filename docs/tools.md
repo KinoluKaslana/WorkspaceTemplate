@@ -147,7 +147,7 @@ root_binding = HMAC-SHA256(context_id, realpath(workspace))
 
 - `machine_material`：Linux/WSL `/etc/machine-id`（回退 `/var/lib/dbus/machine-id`）、Windows `MachineGuid`、macOS `IOPlatformUUID`（Darwin 不走 Linux 的 machine-id 文件）；CI 用 `WORKSPACE_CONTEXT_SEED` 显式给定。采集入口 `detect_platform_info()`（只读、best-effort）。
 - `principal`：POSIX `uid` / Windows `SID`（`whoami /user` 解析；取不到返回 `None`，**不回退用户名**）；`realm`：`linux|windows|macos|wsl|container:<rt>|ci:<provider>`（可用 `WORKSPACE_REALM` 覆盖）。
-- `mode` 的持久值与 `bootstrap.python.mode` 一致：`uv` / `local-venv` / `mcp`（`pyenv_init --mode venv` 只是 CLI 别名）。
+- `mode` 的持久值与历史 `bootstrap.python.mode` 一致：`uv` / `local-venv` / `mcp`（`pyenv_init --mode venv` 只是 CLI 别名）；它现在存在本机状态里，`bootstrap` 不再保存。
 - 只读判定（`read_state` / `read_status`）不创建、不修复；只认精确的 `runtime.json`，同步冲突副本与别人的 context 目录一律不采信。
 - 状态文件不存明文绝对路径：`root_binding` 是 HMAC，venv 用工作区相对路径；工作区一移动，绑定自动失效（`UNBOUND` + `root-mismatch`）。`venv_relpath` 必须无 drive、无 root、无 `..`、非空。
 - 首次绑定把内容写进同级临时目录（`mkdtemp`）→ 文件 `fsync` → **临时目录 `fsync`** → 整体 `rename` → 父目录 `fsync`，读者看不到「目录在、`runtime.json` 不在」的中间态；更新已有 context 用 `mkstemp + fsync + os.replace + 目录 fsync`。
@@ -174,7 +174,7 @@ python3 scripts/pyenv_init.py --mode mcp --mcp-server s --mcp-tool t --apply
 
 - uv 缺失 → exit 3 + 安装方式；**默认不联网安装**，仅当用户明确要求时才由用户执行安装（或用户自己加 `--allow-install` 跑官方脚本）；
 - 已配置的工作区 → exit 5 `already-configured`（保护既有选择；`--force` 才切换）；
-- 写 `bootstrap.python`（mode/runtime/version/configured_at），输出一段 `TOOLS.md` 待粘贴行。
+- 写**本机状态** `.workspace/.local/v1/<context_id>/runtime.json`（mode / venv 目录名 / 版本 / runtime 标识 / 能力声明），并翻转 `bootstrap.workspace_status=active`、写入 `workspace_id`、删掉旧的 `python` 节；输出一段 `TOOLS.md` 待粘贴行。
 
 ## 7. 退出码约定
 

@@ -47,7 +47,7 @@ python3 scripts/template_sync.py --workspace . --ref alpha --apply --verify --js
 - `--ref` 接受分支 / 标签 / commit；缺省按 `bootstrap.template.last_synced_ref/branch` → `main`。
 - `--prune` 删除"上游已移除"的模板层文件（先备份；默认只报告）。
 - 备份含 `MANIFEST.txt`；**回滚 = 放回旧文件 + 删除本次新增**。
-- 铁律：只改 `bootstrap.template.*`，**不动** `bootstrap.python`（`python_mode_preserved=true`）。
+- 铁律：只改 `bootstrap.template.*`，**不动** `bootstrap` 的既有 `python`/`gate` 旧节（`python_mode_preserved` / `gate_preserved`）；运行时模式与 gate 结论在本机状态里，本来就不该同步。
 
 ### 2.2 `workspace-repo-sync`
 

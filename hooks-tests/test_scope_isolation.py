@@ -175,6 +175,28 @@ class ScopeIsolation(unittest.TestCase):
         self.assertEqual(legacy.read_bytes(), before, "worktree_audit 改写了旧根基线")
         self.assertTrue((root / scope / "hashes-cc-s1.json").is_file())
 
+    # S9 -----------------------------------------------------------------
+    def test_s9_template_workspace_with_local_mode_is_taken_over(self):
+        """模板态目录里只要本机状态配了 mode，就按「已接管」守门（python.mode 已下沉）。"""
+        os.environ["WORKSPACE_CONTEXT_SEED"] = "machine-A"
+        core._SCOPE_CACHE.clear()
+        boot = self.ws / ".workspace" / "bootstrap.json"
+        boot.write_text(json.dumps({"workspace_status": "template"}), encoding="utf-8")
+        self.assertFalse(core.workspace_is_taken_over(str(self.ws)),
+                         "模板态 + 本机无 mode 应判未接管")
+        # 走真实链路：用工作区里那份 local_state 写 id + mode
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ls_scope_bind", self.ws / "scripts" / "local_state.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["ls_scope_bind"] = mod
+        spec.loader.exec_module(mod)
+        _wid = mod.ensure_workspace_id(self.ws)
+        ident = mod.resolve_identity({}, mod.detect_platform_info())
+        mod.bind(self.ws, _wid, ident, "mcp", None, "", ephemeral=False)
+        self.assertTrue(core.workspace_is_taken_over(str(self.ws)),
+                        "本机已配 mode 的模板态目录必须按已接管守门")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

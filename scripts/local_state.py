@@ -25,6 +25,7 @@ import os
 import re
 import tempfile
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ _REQUIRED_FIELDS = ("schema", "workspace_id", "context_id", "realm", "root_bindi
                     "mode", "venv_relpath", "version", "bound_at")
 _VALID_MODES = frozenset({"uv", "local-venv", "mcp"})
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 R_NO_LOCAL = "no-local-state"
 R_NO_SELF = "no-self-state"
@@ -84,6 +86,57 @@ def context_dir(workspace: Path, workspace_id: str, ident: Identity, *,
 def _require_bool(value: object, name: str) -> None:
     if not isinstance(value, bool):
         raise TypeError(f"{name} must be bool, got {type(value).__name__}")
+
+
+def workspace_id_of(workspace: Path) -> str | None:
+    """只读：bootstrap 里的 workspace_id（不创建）。"""
+    try:
+        data = json.loads((Path(workspace) / ".workspace" / "bootstrap.json")
+                          .read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+    wid = data.get("workspace_id")
+    return wid if isinstance(wid, str) and _UUID_RE.match(wid) else None
+
+
+def ensure_workspace_id(workspace: Path) -> str | None:
+    """bootstrap 的 `workspace_id`：缺失则生成 UUID4 并原子写回（幂等、进程间串行）。
+
+    为什么放 bootstrap：它是**工作区身份**，必须随工作区走（改路径不变、换机器不变），
+    而 `.local` 里的东西是机器的。上下文分片、gate 结论都以它为输入之一。
+    """
+    boot = Path(workspace) / ".workspace" / "bootstrap.json"
+    if not boot.is_file():
+        return None
+
+    def _read_id() -> str | None:
+        try:
+            data = json.loads(boot.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            return None
+        wid = data.get("workspace_id")
+        return wid if isinstance(wid, str) and _UUID_RE.match(wid) else None
+
+    wid = _read_id()
+    if wid:
+        return wid
+    lock_key = "bootstrap-" + hashlib.sha256(os.fsencode(os.path.realpath(os.fspath(workspace)))).hexdigest()[:16]
+    with _locked(lock_key):
+        wid = _read_id()
+        if wid:
+            return wid
+        try:
+            data = json.loads(boot.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        wid = str(uuid.uuid4())
+        data["workspace_id"] = wid
+        tmp = boot.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, boot)
+    return wid
 
 
 def _root_binding(workspace: Path, cid: str) -> str:
@@ -266,7 +319,9 @@ def read_status(workspace: Path, workspace_id: str, ident: Identity | None, *,
 
 
 def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
-         venv_relpath: str | None, version: str, *, ephemeral: bool) -> dict:
+         venv_relpath: str | None, version: str, *, ephemeral: bool,
+         runtime: dict | None = None, capabilities: dict | None = None,
+         decision_source: str | None = None) -> dict:
     _require_bool(ephemeral, "ephemeral")
     if ident is None:
         return _result("IDENTITY_UNAVAILABLE", R_IDENTITY_UNAVAILABLE)
@@ -301,6 +356,19 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
         "version": version,
         "bound_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    # 可选扩展：运行时标识、能力声明、决策来源（都不含明文绝对路径）
+    if runtime is not None:
+        if not isinstance(runtime, dict):
+            raise ValueError("runtime must be dict|None")
+        data["runtime"] = runtime
+    if capabilities is not None:
+        if not isinstance(capabilities, dict):
+            raise ValueError("capabilities must be dict|None")
+        data["capabilities"] = capabilities
+    if decision_source is not None:
+        if not isinstance(decision_source, str):
+            raise ValueError("decision_source must be str|None")
+        data["decision_source"] = decision_source
     payload = json.dumps(data, sort_keys=True)
 
     with _locked(cid):

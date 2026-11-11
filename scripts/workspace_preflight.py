@@ -137,6 +137,30 @@ def _legacy_gate_note(ws: Path, boot: dict, record: dict) -> str:
     return ""
 
 
+def _python_state(ws: Path, boot: dict) -> dict:
+    """运行时状态：本机 `.local` 优先（python.mode 已下沉），bootstrap.python 仅旧位置兼容。"""
+    try:
+        scripts = Path(ws) / "scripts"
+        if (scripts / "local_state.py").is_file() and str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import local_state as _ls
+        wid = _ls.workspace_id_of(Path(ws))
+        if wid:
+            ident = _ls.resolve_identity({}, _ls.detect_platform_info())
+            if ident is not None:
+                res = _ls.read_state(Path(ws), wid, ident, ephemeral=False)
+                if res.get("status") == "BOUND":
+                    data = res.get("data") or {}
+                    return {"mode": data.get("mode"), "runtime": data.get("runtime") or {},
+                            "version": data.get("version"), "source": "local-state"}
+    except Exception:
+        pass
+    legacy = boot.get("python")
+    if isinstance(legacy, dict):
+        return {**legacy, "source": "bootstrap(legacy)"}
+    return {"source": "none"}
+
+
 def _gate_record(ws: Path, boot: dict) -> dict:
     """gate 结论：本机分片 `gate.json` 优先；`bootstrap.gate` 只作旧位置兼容。"""
     scope = "unknown"
@@ -192,7 +216,7 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"readme": rd}, ensure_ascii=False))
         return 0
     if a.layout_only:
-        pysec = boot.get("python") or {}
+        pysec = _python_state(ws, boot)
         mode = pysec.get("mode") or "unconfigured"
         ident = ((pysec.get("runtime") or {}).get("identifier") or "").strip()
         # 先按 mode 分流，再决定要不要探测：mcp/unconfigured 根本不碰文件系统。
@@ -244,8 +268,8 @@ def main(argv: list[str]) -> int:
     else:
         rows.append(item("workspace_root", sorted(ws_paths) or host, str(ws), OK))
 
-    # 2) Python 运行时
-    py = boot.get("python") or {}
+    # 2) Python 运行时（本机状态优先）
+    py = _python_state(ws, boot)
     mode = py.get("mode")
     if mode in ("local-venv", "uv"):
         ident = ((py.get("runtime") or {}).get("identifier") or "").strip()

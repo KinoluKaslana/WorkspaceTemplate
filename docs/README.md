@@ -19,7 +19,7 @@
 
 ## 三条共用验收命令
 
-**前提**：完成 Python 初始化（`bootstrap.python.mode` 不再是 `unconfigured`）之后，凡改动都至少跑这三条；未初始化时先按 §0 选运行时，预检报 `python` mismatch 属预期。
+**前提**：完成 Python 初始化（本机状态 `runtime.json` 的 `mode` 不再是 `unconfigured`）之后，凡改动都至少跑这三条；未初始化时先按 §0 选运行时，预检报 `python` mismatch 属预期。
 
 ```bash
 python3 scripts/mark_rules.py check AGENT_RULES.md        # 条款标记完整（改过政策必跑）→ exit 0

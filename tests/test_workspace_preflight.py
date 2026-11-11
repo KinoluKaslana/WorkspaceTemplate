@@ -132,6 +132,35 @@ class Preflight(unittest.TestCase):
         self.assertEqual(rc, 1, data)
         self.assertIn("python", {i["id"] for i in data["items"] if i["status"] == "mismatch"})
 
+    def test_p24_python_mode_read_from_local_state(self):
+        """python.mode 已下沉：bootstrap 无 python 节时，本机状态里的 mode 必须生效。"""
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        shutil.copyfile(SRC / "scripts" / "local_state.py", ws / "scripts" / "local_state.py")
+        sys.path.insert(0, str(SRC / "scripts"))
+        import local_state as ls
+        wid = "11111111-2222-3333-4444-555555555555"
+        boot = json.loads((ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot.pop("python", None)
+        boot["workspace_id"] = wid
+        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        ident = ls.resolve_identity({}, ls.detect_platform_info())
+        if ident is None:
+            self.skipTest("本机身份不可得")
+        cid = ls.context_id(wid, ident)
+        d = ws / ".workspace" / ".local" / "v1" / cid
+        d.mkdir(parents=True)
+        (d / "runtime.json").write_text(json.dumps({
+            "schema": "v1", "workspace_id": wid, "context_id": cid, "realm": ident.realm,
+            "root_binding": ls._root_binding(ws, cid), "mode": "mcp",
+            "venv_relpath": None, "version": "", "bound_at": "2026-11-11T00:00:00Z",
+        }), encoding="utf-8")
+        rc, data = run(ws)
+        item = [i for i in data["items"] if i["id"] == "python"][0]
+        self.assertEqual(item["status"], "n/a", item)
+        self.assertEqual(item["recorded"], "mcp", "bootstrap 无 python 时没有读本机状态")
+
     def test_p3_skills_mismatch(self):
         (self.ws / ".workspace" / "skills" / "extra").mkdir()
         (self.ws / ".workspace" / "skills" / "extra" / "SKILL.md").write_text(

@@ -514,6 +514,20 @@ class LocalStateTest(unittest.TestCase):
         finally:
             ls._MATERIAL_CACHE = old
 
+    def test_36_workspace_id_created_once_and_readonly_variant(self):
+        boot = self.ws / ".workspace" / "bootstrap.json"
+        boot.write_text(json.dumps({"workspace_status": "template"}), encoding="utf-8")
+        self.assertIsNone(ls.workspace_id_of(self.ws), "只读取值不应凭空造 id")
+        self.assertNotIn("workspace_id",
+                         json.loads(boot.read_text(encoding="utf-8")), "只读取值写了盘")
+        wid = ls.ensure_workspace_id(self.ws)
+        self.assertRegex(wid or "", r"^[0-9a-f-]{36}$")
+        self.assertEqual(ls.ensure_workspace_id(self.ws), wid, "ensure 不幂等")
+        self.assertEqual(ls.workspace_id_of(self.ws), wid)
+        data = json.loads(boot.read_text(encoding="utf-8"))
+        self.assertEqual(data["workspace_id"], wid)
+        self.assertEqual(data["workspace_status"], "template", "不得顺手改别的字段")
+
     # ---- 路径安全 -------------------------------------------------------
     def test_15_symlink_escape_refused(self):
         outside = self.tmp / "outside"
