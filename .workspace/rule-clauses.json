@@ -263,22 +263,22 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "357bebabc2abd6932d2ec0ea4754690c56af39784fe99b1e7a5effafbb39c16f",
+    "file_sha256": "f74cdcb677246dfced69faa3ddcb737e8375017837fb4111170da4638d23136f",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "4531d729c7707ed6e78f4937f0dd972640ada9d78943c02c86b80f6f7ce97e58",
+    "file_sha256": "90674abf007145a92fca4c2817c2b7393be4b882ec05d508beaabaabbb41d3f9",
     "marked": 0
   },
   "tests/test_pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "862ed88927c18a410a08e8cd34e78246d0d32aad83bc3bb61006f90715f2360f",
+    "file_sha256": "e61171df68d9b895fff117e70712824dc00a2f3f971b5f8379463b64f5658814",
     "marked": 0
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "ea5649bce85efd5b75e8b3701d50a769a98ccf20b7e843fbc4094f1ffdddf79d",
+    "file_sha256": "3fa23157981cf31a89393efa824034322efe5feeb633f9c9fa7c594bcfc60f64",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
@@ -498,7 +498,7 @@
   },
   ".workspace/hooks/template_anchor.py": {
     "clauses": {},
-    "file_sha256": "9073dcc638b7d7ec36ffb95459cdd33c2457fd7e4b5f5027333be2c0dfbe12c1",
+    "file_sha256": "0e0ca748d3bb0a1c3fa5f7c7e655aa6265bb5949a6b302138984d95a0d7f92bf",
     "marked": 0
   },
   ".workspace/hooks/delegations.py": {

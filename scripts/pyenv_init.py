@@ -118,6 +118,25 @@ def _mark_active(boot_p: Path) -> None:
     os.replace(tmp, boot_p)
 
 
+def _resolve_base_python(spec: str | None) -> str | None:
+    """把 `--python 3.12` 解析成真实解释器路径；不指定则用当前解释器。
+
+    **不得**在指定了版本却找不到时静默退回 `sys.executable`——那会让 `--python` 变成摆设。
+    """
+    if not spec:
+        return sys.executable
+    text = str(spec).strip()
+    cands: list[str] = []
+    if os.path.isabs(text) or os.sep in text:
+        cands.append(text)
+    cands += [f"python{text}", f"python{text.replace('.', '')}"]
+    for cand in cands:
+        path = shutil.which(cand) if not os.path.isabs(cand) else (cand if Path(cand).is_file() else None)
+        if path and py_version(path):
+            return path
+    return None
+
+
 def py_version(exe: str) -> str | None:
     rc, out = run([exe, "-c", "import sys;print(sys.version.split()[0])"])
     return out if rc == 0 else None
@@ -218,8 +237,8 @@ def main(argv: list[str]) -> int:
         if a.apply:
             res = persist_mode(ws, "uv", vdir.name, ver or target,
                                {"identifier": vdir.name, "uv_version": uv_ver},
-                               {"workspace_file_access": True, "network_access": True,
-                                "dependency_persistence": True},
+                               {"workspace_file_access": True, "network_access": None,
+                                "dependency_persistence": True, "basis": "structural"},
                                "uv（用户选择，模板默认推荐）")
             if "error" in res:
                 print(json.dumps(res, ensure_ascii=False))
@@ -237,11 +256,18 @@ def main(argv: list[str]) -> int:
 
     elif a.mode == "venv":
         base = a.python or py_version(sys.executable) or "3.12"
+        base_exe = _resolve_base_python(a.python)
+        if base_exe is None:
+            print(json.dumps({
+                "error": "python-not-found", "requested": a.python,
+                "hint": "指定的解释器不在 PATH 上；装好对应 python<ver> 或改 --python。不会静默退回当前进程解释器。",
+            }, ensure_ascii=False))
+            return 2
         vdir = ws / venv_dir_name(base)
         if vdir.exists():
             out["venv"] = {"path": str(vdir), "created": False}
         elif a.apply:
-            rc, txt = run([sys.executable, "-m", "venv", str(vdir)])
+            rc, txt = run([base_exe, "-m", "venv", str(vdir)])
             if rc != 0:
                 print(json.dumps({"error": "venv-failed", "detail": txt[-300:]}, ensure_ascii=False))
                 return 4
@@ -254,8 +280,8 @@ def main(argv: list[str]) -> int:
         if a.apply:
             res = persist_mode(ws, "local-venv", vdir.name, ver or base,
                                {"identifier": vdir.name},
-                               {"workspace_file_access": True, "network_access": True,
-                                "dependency_persistence": True},
+                               {"workspace_file_access": True, "network_access": None,
+                                "dependency_persistence": True, "basis": "structural"},
                                "local-venv（用户选择）")
             if "error" in res:
                 print(json.dumps(res, ensure_ascii=False))
@@ -280,7 +306,7 @@ def main(argv: list[str]) -> int:
             res = persist_mode(ws, "mcp", None, None,
                                {"mcp_server": a.mcp_server, "mcp_tool": a.mcp_tool},
                                {"workspace_file_access": None, "network_access": None,
-                                "dependency_persistence": None},
+                                "dependency_persistence": None, "basis": "unverified"},
                                "mcp（用户选择）")
             if "error" in res:
                 print(json.dumps(res, ensure_ascii=False))

@@ -161,6 +161,17 @@ class Preflight(unittest.TestCase):
         self.assertEqual(item["status"], "n/a", item)
         self.assertEqual(item["recorded"], "mcp", "bootstrap 无 python 时没有读本机状态")
 
+    def test_p25_unknown_bootstrap_schema_is_mismatch(self):
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        boot = json.loads((ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["schema_version"] = 9
+        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        rc, data = run(ws)
+        item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
+        self.assertEqual(item["status"], "mismatch", item)
+
     def test_p3_skills_mismatch(self):
         (self.ws / ".workspace" / "skills" / "extra").mkdir()
         (self.ws / ".workspace" / "skills" / "extra" / "SKILL.md").write_text(

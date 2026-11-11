@@ -4,7 +4,7 @@
 子进程调 scripts/verify_rules.py --workspace <ws> --vs-template <clone> --json <tmp>
 （timeout 60）。通过条件（三者同时）：verify_rules exit==0 且 顶层 clean==true 且
 template_anchor.template_clean==true。clone 解析顺序：--template → env
-WORKSPACE_TEMPLATE_CLONE → <ws>/.workspace/bootstrap.json 的 template.clone_path；
+WORKSPACE_TEMPLATE_CLONE → <ws>/.workspace/bootstrap.json 的 template.local_clone（旧键 clone_path 兼容）；
 都取不到 → 输出「无法证明 clean（未配置模板克隆）」并 exit 1。
 """
 from __future__ import annotations
@@ -43,7 +43,8 @@ def main(argv: list[str] | None = None) -> int:
         if b.is_file():
             try:
                 data = json.loads(b.read_text(encoding="utf-8-sig"))
-                clone = (data.get("template") or {}).get("clone_path")
+                _tpl = data.get("template") or {}
+                clone = _tpl.get("local_clone") or _tpl.get("clone_path")
             except Exception:
                 clone = None
     if not clone or not str(clone).strip():

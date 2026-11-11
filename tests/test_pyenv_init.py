@@ -210,6 +210,21 @@ class PyenvInit(unittest.TestCase):
         self.assertFalse((self.ws / ".workspace" / ".local").exists(),
                          "旧工作区不该凭空出现本机绑定")
 
+    def test_t13_unknown_python_is_rejected_not_silently_ignored(self):
+        """`--python` 必须真的选解释器：找不到就报错，不得静默退回当前解释器。"""
+        rc, d = run(self.ws, "--mode", "venv", "--python", "9.99", "--apply", "--json")
+        self.assertEqual(rc, 2, d)
+        self.assertEqual(d.get("error"), "python-not-found")
+        self.assertEqual([p.name for p in self.ws.glob(".venv-*")], [], "失败仍建了 venv")
+
+    def test_t14_capabilities_are_not_fabricated(self):
+        rc, d = run(self.ws, "--mode", "venv", "--apply", "--json")
+        self.assertEqual(rc, 0, d)
+        rt = local_runtime(self.ws)
+        caps = rt.get("capabilities") or {}
+        self.assertIsNone(caps.get("network_access"), "未探测就断言有网络")
+        self.assertEqual(caps.get("basis"), "structural")
+
     def test_t6_refuse_overwrite_configured(self):
         rc0, d0 = run(self.ws, "--mode", "venv", "--apply")
         self.assertEqual(rc0, 0, d0)

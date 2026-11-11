@@ -268,6 +268,15 @@ def main(argv: list[str]) -> int:
     else:
         rows.append(item("workspace_root", sorted(ws_paths) or host, str(ws), OK))
 
+    # 1b) bootstrap 结构版本：字段存在就必须是我们认识的版本（否则读法可能已变）
+    sv = boot.get("schema_version")
+    if sv is None:
+        rows.append(item("bootstrap_schema", "未记录", "", WARN,
+                         "bootstrap 缺 schema_version：补 1，或确认这是旧格式"))
+    elif sv != 1:
+        rows.append(item("bootstrap_schema", sv, 1, BAD,
+                         "未知 bootstrap schema_version：按模板迁移步骤升级，勿手改"))
+
     # 2) Python 运行时（本机状态优先）
     py = _python_state(ws, boot)
     mode = py.get("mode")
