@@ -114,7 +114,7 @@
       "R111": "2. **机器属性**：每条条款的属性（`severity` / `trigger` / `check` / `reviewed`）存 `.workspace/clauses.meta.json`，键为 R 号，随模板层分发并哈希锁定；属性**不改变**义务本身，冲突以本文件为准。改条款正文（含新增/删除 R 号）必须同步该文件，否则 `scripts/clause_lint.py` 失败。",
       "R112": "3. **`check` 的准入**：`MUST`/`MUST_NOT` 的 `check` 必须是可执行命令（复用 `verify_rules` / `skill_audit` / `workspace_preflight` / `docs_hit_report` / hook `selfcheck`）或 `manual:<非空理由>`；`manual` 只允许用于「需要用户裁决/意图判断」的条款，且不得用来替代已可机械判定的事实。`clause_lint` 独立成门（findings>0 即失败），不并入 `verify_rules` 与 `skill_audit`，避免红灯归属混淆。",
       "R113": "## 15. 守门接线核验（与 Python 选择同性质，§0 的补充）",
-      "R114": "1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行（`<scope>` 是本机分片目录，见下）；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/<scope>/dsh-session-*.json` 账本。**`<scope>`** 由本机身份派生（`scripts/local_state.py` 的 `machine_scope()`，12 位十六进制）；取不到机器身份时改用本机持久种子（用户状态目录下的 `workspace-template/scope-seed`，不在工作区内）派生，两者都拿不到才为 `unknown`。`<scope>` 之外的目录（含旧布局根目录）**只作只读兼容**：旧根目录的证据在过渡期仍认，其他机器的 `<scope>` **不得**当作本机证据。",
+      "R114": "1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行（`<scope>` 是本机分片目录，见下）；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/<scope>/dsh-session-*.json` 账本。**`<scope>`** 由本机身份派生（`scripts/local_state.py` 的 `machine_scope()`，12 位十六进制）；工作区缺该脚本时**必须**由 hook 自带的最小身份读取派生（`gate_core._fallback_scope()`）。缺脚本不构成退回共享 `unknown` 桶的理由（同桶会让跨机隔离失效）；取不到机器身份时改用本机持久种子（用户状态目录下的 `workspace-template/scope-seed`，不在工作区内）派生，两者都拿不到才为 `unknown`。`<scope>` 之外的目录（含旧布局根目录）**只作只读兼容**：旧根目录的证据在过渡期仍认，其他机器的 `<scope>` **不得**当作本机证据。",
       "R115": "2. 没有证据时，必须在第一条受管写入之前向用户报告「当前 harness 的 gate 未接线」并给出该 harness 的启用命令，由用户决定先接线还是明确接受无 gate 继续；不得把工作区当作已受管继续写入。",
       "R116": "3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入**本机状态** `.workspace/.hook-state/<scope>/gate.json`；`bootstrap.json` 的 `gate` 节是旧位置，**不得**再写入，只作读取兼容。机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。",
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
@@ -138,7 +138,7 @@
       "R135": "## 18. 破坏性目录操作的目标归属（§13 的补充）",
       "R136": "1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且本机 `mode`（本机状态优先，回退 `bootstrap.python.mode`）缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
     },
-    "file_sha256": "d84bb288ce1019319e482c81d9756da52fd7adbb1ee0a71799941cfeb3880eeb",
+    "file_sha256": "613dd6d64b8f3aaf39537e5ed26776a71d78d8615e032c3a5c58f99fcc1cfde6",
     "marked": 136
   },
   "LICENSE": {
@@ -323,7 +323,7 @@
   },
   "docs/hooks-catalog.md": {
     "clauses": {},
-    "file_sha256": "52d69123c0f412884899666a088bcd017449960beb1d8ac63196fba060902dac",
+    "file_sha256": "3117ef33144cf913026277f2c9903d7355c84f708ebd15dad1aae188c58d12f8",
     "marked": 0
   },
   "docs/docs-retrieval.md": {
@@ -478,7 +478,7 @@
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "e0015efbf31daebae0ac74039693377bc636d4db7f6df6839f80956b49c44ca3",
+    "file_sha256": "488c7726ee7854e176c57dd4d589d3c49c704727005edf1fc10dbfa84ef1136b",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {

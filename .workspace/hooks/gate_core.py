@@ -30,12 +30,15 @@ except ImportError:                   # Windows：没有 fcntl，用 msvcrt 做�
     fcntl = None
     import msvcrt
 import hashlib
+import hmac
 import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 SCHEMA = 5
@@ -59,7 +62,7 @@ def _machine_scope(ws_root: str = "") -> str:
     scope = "unknown"
     try:
         import sys as _sys
-        # 以**工作区**为准：工作区里有 scripts/local_state.py 才算能定身份；
+        # 优先以**工作区**的 local_state 为准：工作区里有 scripts/local_state.py 才算能定身份；
         # 不能拿「hook 脚本所在仓库」冒充，否则复制到别的目录的 hook 会算错机器。
         scripts = Path(ws_root) / "scripts"
         if ws_root and (scripts / "local_state.py").is_file():
@@ -67,10 +70,88 @@ def _machine_scope(ws_root: str = "") -> str:
                 _sys.path.insert(0, str(scripts))
             import local_state as _ls
             scope = _ls.machine_scope()
+        else:
+            # 工作区没带 scripts/（未同步完 / 只拷了 .workspace）时**不得**静默落进共享的
+            # `unknown` 桶——那等于所有这类机器共用一个目录，跨机隔离失效。改用 hook 自带的
+            # 最小身份读取 + 本机种子兜底，与 local_state 同口径（见 `_fallback_scope`）。
+            scope = _fallback_scope()
     except Exception:
-        scope = "unknown"
+        scope = _fallback_scope() if _fallback_scope() else "unknown"
     _SCOPE_CACHE[key] = scope
     return scope
+
+
+def _fallback_scope() -> str:
+    """本机作用域键的自足兜底（不依赖工作区 `scripts/local_state.py`）。
+
+    为什么需要：`.hook-state/<scope>/` 只有在每台机器算出**不同** scope 时才有隔离意义。
+    工作区缺 `scripts/`（同步中断、手工拷贝、早期快照）时若直接退回 `unknown`，所有这类
+    机器会共用一个目录，把别人的会话账本当成自己的读证据——这正是要避免的形态。
+
+    原料优先级与 `local_state.machine_scope()` 一致：机器身份 → 本机持久种子；
+    两者都拿不到才返回空串（调用方再退回 `unknown`）。
+    """
+    # 不缓存：兜底会被不同调用方（不同 XDG_STATE_HOME / 测试夹具）观察到，
+    # 进程级常量缓存会让同一次运行里前后的 scope 不一致，状态目录跟着漂。
+    material = b""
+    try:
+        if os.name == "nt":                                   # pragma: no cover - Windows
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                r"SOFTWARE\Microsoft\Cryptography") as key:
+                guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+            material = str(guid).strip().encode("utf-8")
+        elif sys.platform == "darwin":                        # pragma: no cover - macOS
+            import subprocess
+            out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                 capture_output=True, text=True, timeout=5).stdout
+            match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
+            if match:
+                material = match.group(1).encode("utf-8")
+        else:
+            for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                try:
+                    text = Path(candidate).read_text(encoding="utf-8").strip()
+                except OSError:
+                    continue
+                if text:
+                    material = text.encode("utf-8")
+                    break
+    except Exception:
+        material = b""
+
+    if not material:
+        material = _fallback_seed()
+    if not material:
+        return ""
+
+    return hmac.new(material, b"hook-scope", hashlib.sha256).hexdigest()[:12]
+
+
+def _fallback_seed() -> bytes:
+    """本机持久种子（用户状态目录，不在工作区内），两台都取不到机器身份也不共用。"""
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    if os.name == "nt" and not os.environ.get("XDG_STATE_HOME"):   # pragma: no cover - Windows
+        base = os.environ.get("LOCALAPPDATA") or base
+    path = Path(base) / "workspace-template" / "scope-seed"
+    try:
+        existing = path.read_bytes().strip()
+    except OSError:
+        existing = b""
+    if existing:
+        return existing
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fresh = uuid.uuid4().hex.encode("utf-8")
+        tmp = path.with_suffix(".tmp")
+        with open(tmp, "wb") as fh:
+            fh.write(fresh + b"\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+        return path.read_bytes().strip() or fresh
+    except OSError:
+        return b""
 
 
 def _state_dir(ws_root: str) -> Path:

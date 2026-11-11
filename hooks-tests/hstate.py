@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """hooks-tests 共用：本机作用域状态目录。
 
-`.hook-state/` 现在按机器作用域分片（`.hook-state/<scope>/`）。测试夹具的工作区里通常没有
-`scripts/local_state.py`，此时 scope 为 `"unknown"`；为了让断言不写死分支，这里统一解析：
-已存在唯一子目录就用它，否则用 `unknown`。
+`.hook-state/` 按机器作用域分片（`.hook-state/<scope>/`）。夹具工作区里通常没有
+`scripts/local_state.py`，但 scope **不再**因此退化为 `"unknown"`：`gate_core` 自带的
+`_fallback_scope()` 会用机器身份（或本机种子）派生。断言要能同时适用于两种情形，
+所以这里统一**问 gate_core 要目录**，而不是自己猜目录名。
 """
 import sys
 from pathlib import Path
@@ -15,11 +16,14 @@ if str(HOOKS) not in sys.path:
 
 
 def state_dir(ws) -> Path:
-    d = Path(ws) / ".workspace" / ".hook-state"
+    """与守门本体**同一算法**的状态目录（避免测试写到 A、代码写到 B）。"""
     try:
-        subs = [p for p in d.iterdir() if p.is_dir() and not p.name.startswith("__")]
-    except OSError:
-        subs = []
-    if len(subs) == 1:
-        return subs[0]
-    return d / "unknown"
+        import gate_core
+        return Path(gate_core.state_dir(str(ws)))
+    except Exception:                                    # pragma: no cover - 兜底
+        d = Path(ws) / ".workspace" / ".hook-state"
+        try:
+            subs = [p for p in d.iterdir() if p.is_dir() and not p.name.startswith("__")]
+        except OSError:
+            subs = []
+        return subs[0] if len(subs) == 1 else d / "unknown"
