@@ -263,7 +263,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "5b9e728efc1b0693894b0480896999e9b5074e8a220e8c345b0348b637b420a9",
+    "file_sha256": "a1b8c8088be80bebc5a0c243e16cec510ee6c134ccb689363321899128f8e652",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -278,7 +278,7 @@
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "0bd3a224f4f29c487d18f03df16226a7ac09f016bb5655335323763946465861",
+    "file_sha256": "349547aef726641413d854567062710a9ece52070f4ddc112f14be01086ee491",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
@@ -363,7 +363,7 @@
   },
   "scripts/local_state.py": {
     "clauses": {},
-    "file_sha256": "19fb7b56c041746f9ff302444728dd4ca8f41204c23aa021897078fa51c374e7",
+    "file_sha256": "f5fb6db7d813e8cebc575f8fa4dbc010727259d450ee491c849168b22828211c",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -543,7 +543,7 @@
   },
   "tests/test_local_state.py": {
     "clauses": {},
-    "file_sha256": "5f803a5f33ed39560a4c66d018ec3d7a46c17d851256ef24e565462f1d728b9b",
+    "file_sha256": "5423f2258a12830733cd80a840db8ca68348ad327159c29d8d6a37ac0b204402",
     "marked": 0
   }
 }

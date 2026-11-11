@@ -139,12 +139,17 @@ def _legacy_gate_note(ws: Path, boot: dict, record: dict) -> str:
 
 def _gate_record(ws: Path, boot: dict) -> dict:
     """gate 结论：本机分片 `gate.json` 优先；`bootstrap.gate` 只作旧位置兼容。"""
+    scope = "unknown"
     try:
         scripts = Path(ws) / "scripts"
         if (scripts / "gate_status.py").is_file() and str(scripts) not in sys.path:
             sys.path.insert(0, str(scripts))
         import gate_status as _gs
-        sp = Path(ws) / ".workspace" / ".hook-state" / _gs._machine_scope(Path(ws)) / "gate.json"
+        scope = _gs._machine_scope(Path(ws))
+    except Exception:
+        scope = "unknown"
+    try:
+        sp = Path(ws) / ".workspace" / ".hook-state" / scope / "gate.json"
         if sp.is_file():
             data = json.loads(sp.read_text(encoding="utf-8"))
             if isinstance(data, dict):
@@ -282,11 +287,6 @@ def main(argv: list[str]) -> int:
     # 2b) Gate 接线（§15）：登记状态 vs 运行期证据
     gate = _gate_record(ws, boot)
     _legacy_note = _legacy_gate_note(ws, boot, gate)
-    if _legacy_note:
-        # 非阻断：只并进 gate 行的说明，不新增行、不影响 --strict 退出码
-        for _row in rows:
-            if _row.get("id") == "gate":
-                _row["action"] = ((_row.get("action") or "") + "；" if _row.get("action") else "") + _legacy_note
     g_status = gate.get("status")
     g_harness = [h for h in (gate.get("harness") or []) if h]
     want = [h.strip() for h in (getattr(a, "harness", "") or "").split(",") if h.strip()]
@@ -328,6 +328,13 @@ def main(argv: list[str]) -> int:
                                            if stale_but_known
                                            else "声明已接线但没有任何证据：确认 harness 启动方式（dsh 需 --patch）")))
 
+
+    # 非阻断：把「旧 bootstrap.gate 与本机 gate.json 不一致」并进 gate 行说明（不新增行、不影响 --strict）
+    if _legacy_note:
+        for _row in rows:
+            if _row.get("id") == "gate":
+                _row["action"] = ((_row.get("action") or "") + "；" if _row.get("action") else "") + _legacy_note
+                break
 
     # 3) 模板克隆
     tpl = boot.get("template") or {}

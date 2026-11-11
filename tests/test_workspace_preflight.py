@@ -93,6 +93,33 @@ class Preflight(unittest.TestCase):
         self.assertEqual(data.get("mismatch"), 0, data)
         self.assertEqual(rc, 0, data)
 
+    def test_p23_legacy_gate_note_is_visible_and_non_blocking(self):
+        """旧 bootstrap.gate 与本机 gate.json 不一致：提示并进 gate 行，不新增行、不影响退出码。"""
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps({
+            "workspace_status": "active",
+            "python": {"mode": "local-venv", "runtime": {"identifier": ".venv-999"}, "version": "9.9.9"},
+            "git": {"status": "initialized", "remote": ""},
+            "gate": {"status": "configured", "harness": ["cc"]},
+        }), encoding="utf-8")
+        gj = ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
+        gj.parent.mkdir(parents=True, exist_ok=True)
+        gj.write_text(json.dumps({"schema": 1, "status": "unconfigured", "harness": [],
+                                  "machine_scope": "unknown"}), encoding="utf-8")
+        rc, data = run(ws)
+        gate_row = [i for i in data["items"] if i["id"] == "gate"][0]
+        self.assertIn("旧 bootstrap.gate", gate_row["action"], "legacy 提示被丢弃")
+        self.assertFalse([i for i in data["items"] if i["id"] == "gate_legacy"],
+                         "不得新增 gate_legacy 行")
+        # 该提示本身不得把 gate 行从 warn 抬成 mismatch（其它项的 mismatch 与本条无关）
+        self.assertEqual(gate_row["status"], "warn", gate_row)
+        rc_strict, data_strict = run(ws, "--strict")
+        self.assertEqual(
+            [i["id"] for i in data_strict["items"] if i["id"] == "gate_legacy"], [],
+            "gate_legacy 不得成为独立行（否则 --strict 会被它顶红）")
+
     def test_p2_missing_venv(self):
         rc, data = run(self.ws)
         self.assertEqual(rc, 1, data)

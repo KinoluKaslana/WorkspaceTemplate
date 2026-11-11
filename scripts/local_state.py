@@ -444,6 +444,13 @@ def _local_scope_seed(env: Mapping[str, str] | None = None) -> bytes | None:
         try:
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError:
+            # 陈旧锁回收：持锁者崩溃（10s 未释放）且种子仍未生成 → 删锁重试一次
+            try:
+                if time.time() - lock.stat().st_mtime > 10.0 and _read() is None:
+                    lock.unlink()
+                    continue
+            except OSError:
+                pass
             time.sleep(0.01)
             continue
         except OSError:
@@ -451,6 +458,9 @@ def _local_scope_seed(env: Mapping[str, str] | None = None) -> bytes | None:
         os.close(fd)
         acquired = True
         break
+    if not acquired:
+        # 拿不到锁：只回读，绝不自己造种子（否则串行化就白做了）
+        return _read()
     try:
         data = _read()
         if data:
@@ -533,7 +543,7 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
                 match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
                 if match:
                     info["machine_id"] = match.group(1).encode("utf-8")
-            except (OSError, ValueError):
+            except (OSError, ValueError, subprocess.SubprocessError):
                 pass
         else:
             info["realm"] = "wsl" if "microsoft" in _platform.release().lower() else "linux"

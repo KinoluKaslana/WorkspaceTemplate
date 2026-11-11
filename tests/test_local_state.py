@@ -460,6 +460,41 @@ class LocalStateTest(unittest.TestCase):
         self.assertNotIn("unknown", scopes)
         self.assertEqual(len(set(scopes)), 1, f"并发首次创建得到不同 scope：{scopes}")
 
+    def test_33_no_seed_created_without_lock(self):
+        """锁被占（或陈旧未回收）时只能回读，绝不自己造种子。"""
+        old = ls._MATERIAL_CACHE
+        ls._MATERIAL_CACHE = None
+        try:
+            home = self.tmp / "st-locked"
+            seed_dir = home / "workspace-template"
+            seed_dir.mkdir(parents=True)
+            lock = seed_dir / "scope-seed.lock"
+            lock.write_bytes(b"")
+            scope = ls.machine_scope({"XDG_STATE_HOME": str(home)})
+            self.assertEqual(scope, "unknown", "没拿到锁却造了种子")
+            self.assertFalse((seed_dir / "scope-seed").exists(), "没拿到锁却写了种子文件")
+        finally:
+            ls._MATERIAL_CACHE = old
+
+    def test_34_detect_platform_info_never_raises_on_timeout(self):
+        """Darwin 的 ioreg 超时不得穿透（契约是「不抛异常」）。"""
+        import platform as _platform
+        import subprocess as _subprocess
+        old_sys, old_run = _platform.system, _subprocess.run
+
+        def boom(*_a, **_k):
+            raise _subprocess.TimeoutExpired(cmd="ioreg", timeout=5)
+
+        _platform.system = lambda: "Darwin"
+        _subprocess.run = boom
+        try:
+            info = ls.detect_platform_info({})
+        finally:
+            _platform.system = old_sys
+            _subprocess.run = old_run
+        self.assertIsInstance(info, dict)
+        self.assertEqual(info.get("realm"), "macos")
+
     # ---- 路径安全 -------------------------------------------------------
     def test_15_symlink_escape_refused(self):
         outside = self.tmp / "outside"
