@@ -125,6 +125,7 @@ TEMPLATE_FILES = [
     "tests/test_readme_exemption.py",
     "tests/test_git_bin.py",
     "tests/test_local_state.py",
+    "tests/test_registry_freshness.py",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.

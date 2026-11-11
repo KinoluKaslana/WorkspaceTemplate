@@ -203,7 +203,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "4619cf7b33ada9dd14b35c0e45d67dc049e6674bce7d8bdd857a9ac81e61de1d",
+    "file_sha256": "0ecf1a99c1d14fb451ac35c1a1adf2c39a7d02ba387c563040f04576a0f0615f",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -303,7 +303,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "1231654442c421bda45279279b7e56bf573145dfa37fb0745abed068894b3def",
+    "file_sha256": "ee0e025ac96c486c1174cc5faaa42722a1881648a2f8bf172050d291f1ca6169",
     "marked": 0
   },
   "docs/skills.md": {
@@ -313,7 +313,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "38a761b2a5534cdde78ffd973a68d26af5d0a799b59e1275d3f4bd7c57b960be",
+    "file_sha256": "2f3595cc0c3ae916df6742c79ca32220e41b57fe8c9c1068df97764cfb267061",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -544,6 +544,11 @@
   "tests/test_local_state.py": {
     "clauses": {},
     "file_sha256": "9e8cde819b5a60475b472277ab8f9040576bc1aca379dcaf589f13e87d949709",
+    "marked": 0
+  },
+  "tests/test_registry_freshness.py": {
+    "clauses": {},
+    "file_sha256": "e5b9128dea3fe4d10a219d3a08662bcbe617ef6e852396dff7d2df9cba6c4595",
     "marked": 0
   }
 }

@@ -105,6 +105,32 @@ class TemplateAnchor(unittest.TestCase):
         self.assertTrue(out.get("clean"), "受比文件干净时 clean 应仍为 true（验证门禁键）")
         self.assertFalse(out.get("template_clean"), "非受比脏文件仍应令 template_clean=false")
 
+    def _write_bootstrap_template(self, key: str) -> None:
+        (self.ws / ".workspace").mkdir(parents=True, exist_ok=True)
+        (self.ws / ".workspace" / "bootstrap.json").write_text(
+            json.dumps({"schema_version": 1, "workspace_status": "active",
+                        "template": {key: str(self.clone)}}), encoding="utf-8")
+
+    def test_bootstrap_local_clone_is_used(self):
+        """bootstrap 只写 template.local_clone 时（无 CLI/env），anchor 必须能解析。"""
+        self._copy_template_files(self.ws)
+        self._copy_template_files(self.clone)
+        self._init_git(self.clone)
+        self._git_commit_all(self.clone)
+        self._write_bootstrap_template("local_clone")
+        rc, out = self.run_anchor(template=None)
+        self.assertEqual(rc, 0, out)
+
+    def test_bootstrap_legacy_clone_path_still_works(self):
+        """旧键 template.clone_path 仍兼容（一个版本）。"""
+        self._copy_template_files(self.ws)
+        self._copy_template_files(self.clone)
+        self._init_git(self.clone)
+        self._git_commit_all(self.clone)
+        self._write_bootstrap_template("clone_path")
+        rc, out = self.run_anchor(template=None)
+        self.assertEqual(rc, 0, out)
+
     def test_no_clone_exit1(self):
         self._copy_template_files(self.ws)
         rc, out = self.run_anchor(template=None)

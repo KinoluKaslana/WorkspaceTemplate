@@ -155,6 +155,8 @@ root_binding = HMAC-SHA256(context_id, realpath(workspace))
 - 工作区之下的路径链上任何一段是 symlink 都拒绝写入；`runtime.json` 用 `O_NOFOLLOW` 打开。工作区自身是 symlink 时按 `realpath` 锚定（状态仍落在工作区实体内）。
 - `ephemeral` 是调用方显式传入的 `bool`（CI 用），对应目录名带 `-eph` 后缀；传非 `bool` 抛 `TypeError`，避免字符串 `"false"` 被当成真值。
 
+`runtime.json` 里的 `capabilities` 只记**能由模式本身推出**的事实：本地 venv / uv 的`workspace_file_access` 与 `dependency_persistence` 为真（结构性），`network_access` 与 MCP 三项一律为 `null`（未探测）；`basis` 取 `structural` / `unverified` 说明这份声明的来源，不要在未探测时写 `true`。
+
 接口：`read_state()` 返回 `{status, reason, context_id, data}`，`BOUND` 时 `data` 是经校验的 payload；`read_status()` 是只含前三键的兼容视图；`bind()` 返回 `read_state()` 的结果。
 
 判读结果：`BOUND`（`ok`）/ `UNBOUND`（`no-local-state` / `no-self-state` / `root-mismatch`）/ `CORRUPT`（`bad-json` / `unknown-schema` / `missing-fields` / `missing-runtime` / `workspace-mismatch` / `context-mismatch` / `realm-mismatch` / `invalid-fields` / `unsafe-path`）/ `IDENTITY_UNAVAILABLE`（`identity-unavailable`）。
