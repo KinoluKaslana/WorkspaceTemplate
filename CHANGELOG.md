@@ -2,6 +2,29 @@
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 
+## 3.7.0（2026-11-12，仅 dev，未发布）
+
+批次 1–3 的缺陷修复与本机状态分片收口。**尚未打 tag、未跑 release**（三席核验与 Windows 真机闭环仍有未完成项）。
+
+**本机记录与运行期状态（规范性）**
+- `python.mode` 下沉本机状态 `.workspace/.local/v1/<context_id>/runtime.json`；`bootstrap.json` 只留 `workspace_id` / `workspace_status`。
+- `.hook-state/` 按机器作用域分片 `<scope>`（`HMAC(机器身份,"hook-scope")[:12]`）；gate 结论写 `<scope>/gate.json`，不再回写 `bootstrap.gate`。
+- **R114 新增 MUST**：工作区缺 `scripts/local_state.py` 时，`<scope>` **必须**由 hook 自带的最小身份读取派生（`gate_core._fallback_scope()`）；缺脚本不构成退回共享 `unknown` 桶的理由。取不到机器身份时用本机持久种子（Windows 落 `%LOCALAPPDATA%`，其余 `$XDG_STATE_HOME`），两者都没有才是 `unknown`。
+
+**缺陷修复（批次 1–2）**
+- `capabilities` 诚实化：`network_access` 未探测一律 `null` + `basis: unverified`；文件访问/依赖持久化为结构性事实。
+- `--python <ver>` 真正选解释器，找不到即 `python-not-found`（exit 2），不静默退回默认解释器。
+- `template.local_clone` 键名收敛（`clone_path` 兼容）。
+- `bootstrap.schema_version` 由死字段变为预检项：缺失 WARN、未知版本 MISMATCH（只接受精确整数 `1`）。
+- `skill_audit` 检查模板层 skill 的附属文件是否进 `TEMPLATE_FILES`（Windows 路径用 `as_posix()` 归一）。
+- `template_sync --apply` 成功后补齐 `.gitignore` 缺失行（`gitignore_added` / `gitignore_error` 回报，不覆盖用户内容）。
+- 模板 `bootstrap.json` 去掉运行期 `gate` 节；`UPGRADE.md` 迁移口径改写（`identifier` 是 venv 目录名，不是绝对路径）。
+
+**回归与门禁**
+- 新增 `tests/test_registry_freshness.py`：注册表与磁盘不一致即 `unittest discover` 失败。
+- 新增 `hooks-tests/test_scope_fallback.py`（Windows 分支、seed 0600、共享锁、被拒写不产生 gate-commit）。
+- 三条关键变异已实测：种子 `0o644` → 红；私锁 → 红；`hstate` 回 `c831137` → 红。
+
 ## 3.6.1（2026-11-10）
 
 3.6.0 的 tag 里 **R135 挂错了节**（被追加到 §17 `R134` 之后，编号还写成 `8.`，读起来像 §17 的第 8 条），

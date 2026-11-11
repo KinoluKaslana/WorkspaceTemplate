@@ -138,7 +138,7 @@
       "R135": "## 18. 破坏性目录操作的目标归属（§13 的补充）",
       "R136": "1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且本机 `mode`（本机状态优先，回退 `bootstrap.python.mode`）缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
     },
-    "file_sha256": "613dd6d64b8f3aaf39537e5ed26776a71d78d8615e032c3a5c58f99fcc1cfde6",
+    "file_sha256": "e8c93db36810166db339fa03be295f2f4a9e1e31d5dda3ee74fdb11bac8b53b7",
     "marked": 136
   },
   "LICENSE": {
@@ -173,12 +173,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "f5fb72948eb017ef0a7570b9c70940b50a3543ddfa002bb0691157e453c746b9",
+    "file_sha256": "9e66be536905fc5bc81ed1caeea4fff937c1d7baa9d8a44c49cd9a12f2e41c54",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "6d46f88b777f64ce52d66c76410fd26076b59331ddf43789543aa95e6bb66e0d",
+    "file_sha256": "3f55a77ce0b28ea73f3ee8b7ff00af8f91b00e7a0822b10f0d6b45b4c9482e54",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -303,7 +303,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "a5fd8b831750b7ec694973cecd56d19b8cc9f84614dca76d4e3618415e1869cb",
+    "file_sha256": "2366952df7e88dde9ebb1d0ea4fed9476e257d61ceea242d3019a56d9422c1e9",
     "marked": 0
   },
   "docs/skills.md": {
@@ -478,7 +478,7 @@
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "2fa44efe2647d38d4f9141c4ae0d0e95e3829391d4af3d9555779c3dd88916f6",
+    "file_sha256": "12e0eb89e81c77cd5c8e74e9ac2af86dc5f8ccb7aa7d356728364e62a7939c88",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {

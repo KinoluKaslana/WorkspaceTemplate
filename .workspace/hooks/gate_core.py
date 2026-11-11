@@ -46,6 +46,9 @@ BOOTSTRAP_REL = ".workspace/bootstrap.json"
 CUSTOM_REL = ".workspace/gate.custom.json"
 STATE_DIRNAME = ".workspace/.hook-state"
 _SCOPE_CACHE: dict[str, str] = {}
+# 平台开关：单独抽出来是为了能在非 Windows 上测 Windows 分支
+# （直接改 `os.name` 会让 pathlib 去实例化 WindowsPath，测试环境里直接崩）。
+_IS_WINDOWS = os.name == "nt"
 
 
 def _machine_scope(ws_root: str = "") -> str:
@@ -86,7 +89,7 @@ def _fallback_machine_material() -> bytes:
     """Best-effort machine identity used when workspace helpers are unavailable."""
     material = b""
     try:
-        if os.name == "nt":                                   # pragma: no cover - Windows
+        if _IS_WINDOWS:                                   # pragma: no cover - Windows
             import winreg
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
                                 r"SOFTWARE\Microsoft\Cryptography") as key:
@@ -136,7 +139,7 @@ def _fallback_scope() -> str:
 
 def _fsync_dir(path: Path) -> None:
     """Persist a rename on POSIX; directory handles are unavailable on Windows."""
-    if os.name == "nt":                                   # pragma: no cover - Windows
+    if _IS_WINDOWS:                                   # pragma: no cover - Windows
         return
     try:
         fd = os.open(str(path), os.O_RDONLY)
@@ -153,7 +156,7 @@ def _fsync_dir(path: Path) -> None:
 def _fallback_seed() -> bytes:
     """本机持久种子（用户状态目录，不在工作区内），两台都取不到机器身份也不共用。"""
     base = os.environ.get("XDG_STATE_HOME")
-    if not base and os.name == "nt":                         # pragma: no cover - Windows
+    if not base and _IS_WINDOWS:                         # pragma: no cover - Windows
         base = os.environ.get("LOCALAPPDATA")
     base = base or str(Path.home() / ".local" / "state")
     path = Path(base) / "workspace-template" / "scope-seed"

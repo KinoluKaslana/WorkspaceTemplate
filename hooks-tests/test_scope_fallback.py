@@ -132,6 +132,36 @@ class FallbackScope(unittest.TestCase):
             self.assertEqual(self.core._fallback_seed(), b"")
         self.assertFalse(seed.exists(), "未取得共享锁却创建了 seed")
 
+
+    def test_windows_branch_falls_back_to_localappdata_seed(self):
+        """Windows：MachineGuid 取不到时必须落到 %LOCALAPPDATA% 的种子，而不是共享 unknown。
+
+        在 Linux 上跑：把 `os.name` 改成 "nt"、清掉 XDG_STATE_HOME、LOCALAPPDATA 指向临时目录，
+        `import winreg` 在非 Windows 上自然失败（等价于注册表不可读），走的正是真机上的
+        「MachineGuid 读不到 → 本机种子」分支。
+        """
+        local = Path(self.tmp) / "localappdata"
+        local.mkdir()
+        old_xdg = os.environ.pop("XDG_STATE_HOME", None)
+        old_local = os.environ.get("LOCALAPPDATA")
+        os.environ["LOCALAPPDATA"] = str(local)
+        try:
+            with mock.patch.object(self.core, "_IS_WINDOWS", True):
+                scope = self.core._fallback_scope()
+            self.assertEqual(len(scope), 12, scope)
+            int(scope, 16)
+            self.assertNotEqual(scope, "unknown")
+            seed = local / "workspace-template" / "scope-seed"
+            self.assertTrue(seed.is_file(), "Windows 分支没有在 %LOCALAPPDATA% 建种子")
+            self.assertTrue(seed.read_bytes().strip())
+        finally:
+            if old_xdg is not None:
+                os.environ["XDG_STATE_HOME"] = old_xdg
+            if old_local is None:
+                os.environ.pop("LOCALAPPDATA", None)
+            else:
+                os.environ["LOCALAPPDATA"] = old_local
+
     def test_denied_write_records_no_commit(self):
         """被拒的写不得产生 gate-commit（否则账本会把「没写」记成「写了」）。"""
         self.core._SCOPE_CACHE.clear()
