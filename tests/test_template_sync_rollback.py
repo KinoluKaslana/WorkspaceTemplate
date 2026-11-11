@@ -69,6 +69,28 @@ class Rollback(unittest.TestCase):
         self.assertIn("UPGRADE.md", added)                 # 新文件：回滚时删除
         self.assertFalse((bk / "UPGRADE.md").exists())     # 新增文件无需备份
 
+    def test_apply_appends_gitignore_and_reports_it(self):
+        """`--apply` 必须真的接线到 ensure_ignore_lines，并在 JSON 回报里给出追加了哪几行。
+
+        只测 helper 不够：把 apply 里那行调用删掉，helper 测试照样绿。
+        """
+        gi = self.ws / ".gitignore"
+        gi.write_text("node_modules/\n", encoding="utf-8")
+        p = self.run_sync("--apply", "--json")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        report = json.loads(p.stdout)
+        self.assertEqual(report.get("gitignore_added"),
+                         [".workspace/.hook-state/", ".workspace/.local/"], report)
+        text = gi.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("node_modules/\n"), "用户内容被改了")
+        self.assertEqual(text.count(".workspace/.local/"), 1)
+        # 第二次同步：已存在就不再追加，也不再回报
+        p2 = self.run_sync("--apply", "--json")
+        self.assertEqual(p2.returncode, 0, p2.stdout + p2.stderr)
+        self.assertNotIn("gitignore_added", json.loads(p2.stdout),
+                         "重复同步又追加了一遍")
+        self.assertEqual(gi.read_text(encoding="utf-8").count(".workspace/.local/"), 1)
+
     def test_rollback_restores_and_deletes(self):
         self.assertEqual(self.run_sync("--apply").returncode, 0)
         self.assertTrue((self.ws / "UPGRADE.md").is_file())
