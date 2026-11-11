@@ -495,6 +495,25 @@ class LocalStateTest(unittest.TestCase):
         self.assertIsInstance(info, dict)
         self.assertEqual(info.get("realm"), "macos")
 
+    def test_35_stale_lock_is_reclaimed(self):
+        """持锁进程崩溃残留的 .lock（>10s）必须被回收，否则永远 unknown。"""
+        old = ls._MATERIAL_CACHE
+        ls._MATERIAL_CACHE = None
+        try:
+            home = self.tmp / "st-stale"
+            seed_dir = home / "workspace-template"
+            seed_dir.mkdir(parents=True)
+            lock = seed_dir / "scope-seed.lock"
+            lock.write_bytes(b"")
+            old_ts = __import__("time").time() - 20
+            os.utime(lock, (old_ts, old_ts))
+            scope = ls.machine_scope({"XDG_STATE_HOME": str(home)})
+            self.assertNotEqual(scope, "unknown", "陈旧锁没有被回收")
+            self.assertTrue((seed_dir / "scope-seed").read_bytes().strip())
+            self.assertFalse(lock.exists(), "回收后应删掉锁文件")
+        finally:
+            ls._MATERIAL_CACHE = old
+
     # ---- 路径安全 -------------------------------------------------------
     def test_15_symlink_escape_refused(self):
         outside = self.tmp / "outside"

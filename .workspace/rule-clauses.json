@@ -278,7 +278,7 @@
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "349547aef726641413d854567062710a9ece52070f4ddc112f14be01086ee491",
+    "file_sha256": "f80f62dd38b3b83a00f48ec185a96e82822551073abcdce75ee9365b94f52886",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
@@ -543,7 +543,7 @@
   },
   "tests/test_local_state.py": {
     "clauses": {},
-    "file_sha256": "5423f2258a12830733cd80a840db8ca68348ad327159c29d8d6a37ac0b204402",
+    "file_sha256": "5f5d315168cf090b2cb6e71c92b2702fa4778fc3e1a17d96dbed9992a76610fe",
     "marked": 0
   }
 }

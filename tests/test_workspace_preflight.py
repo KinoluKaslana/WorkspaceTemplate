@@ -119,6 +119,13 @@ class Preflight(unittest.TestCase):
         self.assertEqual(
             [i["id"] for i in data_strict["items"] if i["id"] == "gate_legacy"], [],
             "gate_legacy 不得成为独立行（否则 --strict 会被它顶红）")
+        # 直接对照：把旧 bootstrap.gate 改成与本机一致（提示消失）后，--strict 退出码必须不变
+        boot = json.loads((ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["gate"] = {"status": "unconfigured", "harness": []}
+        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        rc_strict_no_note, _ = run(ws, "--strict")
+        self.assertEqual(rc_strict, rc_strict_no_note,
+                         "legacy 提示改变了 --strict 退出码（应非阻断）")
 
     def test_p2_missing_venv(self):
         rc, data = run(self.ws)
