@@ -192,6 +192,20 @@ class Preflight(unittest.TestCase):
         item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
         self.assertEqual(item["status"], "ok", "整数 1 应有可见的 OK 行")
 
+    def test_p27_local_state_ignore_probe_uses_file_path(self):
+        """`.local/` 带尾斜杠的规则只匹配目录内容：探针必须用一个「目录下的文件」。"""
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        if not shutil.which("git"):
+            self.skipTest("未安装 git")
+        subprocess.run(["git", "-C", str(ws), "init", "-q"], check=True)
+        (ws / ".gitignore").write_text(".workspace/.hook-state/\n.workspace/.local/\n",
+                                       encoding="utf-8")
+        rc, data = run(ws)
+        item = [i for i in data["items"] if i["id"] == "git"][0]
+        self.assertTrue(item["actual"].get("local_state_ignored"), item)
+
     def test_p3_skills_mismatch(self):
         (self.ws / ".workspace" / "skills" / "extra").mkdir()
         (self.ws / ".workspace" / "skills" / "extra" / "SKILL.md").write_text(

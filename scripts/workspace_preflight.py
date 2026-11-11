@@ -466,7 +466,9 @@ def main(argv: list[str]) -> int:
             behind, ahead = (int(x) for x in cnt.split())
         _, dirty = sh("git", "-C", str(ws), "status", "--porcelain")
         gi_rc, _ = sh("git", "-C", str(ws), "check-ignore", "-q", ".workspace/.hook-state")
-        gl_rc, _ = sh("git", "-C", str(ws), "check-ignore", "-q", ".workspace/.local")
+        # 用一个「目录下的文件」做探针：`.local/` 这种带尾斜杠的规则只匹配目录内容，
+        # 而路径本身可能还不存在（新工作区），直接探测会误判未忽略。
+        gl_rc, _ = sh("git", "-C", str(ws), "check-ignore", "-q", ".workspace/.local/v1/probe")
         want = norm_url((boot.get("git") or {}).get("remote") or "")
         same = (not want) or norm_url(url) == want
         rows.append(item("git", {"remote": want, "default_branch": (boot.get("git") or {}).get("default_branch")},
