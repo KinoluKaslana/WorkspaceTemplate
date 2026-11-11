@@ -101,6 +101,22 @@ class SkillAudit(unittest.TestCase):
         rc, out = audit(ws, "--strict")
         self.assertEqual(rc, 0, out)
 
+    def test_a6_template_attachment_must_be_in_template_files(self):
+        """模板层 skill 的附属文件没进 TEMPLATE_FILES → 同步会漏，审计必须拦。"""
+        ws = build(self.root, {"demo": FULL.format(name="demo")})
+        ref = ws / ".workspace" / "skills" / "demo" / "references"
+        ref.mkdir(parents=True)
+        (ref / "notes.md").write_text("x\n", encoding="utf-8")
+        vr = ws / "scripts" / "verify_rules.py"
+        vr.write_text('TEMPLATE_FILES = [".workspace/skills/demo/SKILL.md"]\n', encoding="utf-8")
+        rc, out = audit(ws)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("附属文件未进 TEMPLATE_FILES", out)
+        vr.write_text('TEMPLATE_FILES = [".workspace/skills/demo/SKILL.md", '
+                      '".workspace/skills/demo/references/notes.md"]\n', encoding="utf-8")
+        rc2, out2 = audit(ws)
+        self.assertEqual(rc2, 0, out2)
+
     def test_a2_missing_section(self):
         body = FULL.format(name="demo").replace("## 维护", "## 别的")
         ws = build(self.root, {"demo": body})

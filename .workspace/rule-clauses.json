@@ -203,7 +203,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "0ecf1a99c1d14fb451ac35c1a1adf2c39a7d02ba387c563040f04576a0f0615f",
+    "file_sha256": "7952fc209fc7e67c28923d96981d565954ffa80488463db49f08eb26e5b31bbd",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -253,17 +253,17 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "518b046cbe87ee974975e87734c3fe3215535e94beeafeff809780e457873a47",
+    "file_sha256": "1fcdc10a98981799041063a3a55179616be1e787a8e70216e4da67c3306462e1",
     "marked": 0
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "d8f36e2ad6749cc2fa1aba2a1ed2b0532ead697b830a7936c56c23215529d247",
+    "file_sha256": "338a31da2fcd4601dd28bba1fd757ad91ef38879645d343666dcf9ef7f81d364",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "afda6ef82c2ac0e74a4b7f0337813c8b83d48047e43667140aae6c37cbbabb89",
+    "file_sha256": "46f63a597c0ef420a2bf2baa1134b16b87022773d5b71dbdae701d6caa71e30b",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -283,7 +283,7 @@
   },
   "tests/test_skill_audit.py": {
     "clauses": {},
-    "file_sha256": "81293f98620f213ea19295615c763fde654088050961a4675bf9fde9dc617681",
+    "file_sha256": "fcf0968f7482371c3ffb9d9a44aef392f6e73953ff60222636990970f2325059",
     "marked": 0
   },
   ".workspace/skills/_TEMPLATE.md": {
@@ -303,7 +303,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "ee0e025ac96c486c1174cc5faaa42722a1881648a2f8bf172050d291f1ca6169",
+    "file_sha256": "a5fd8b831750b7ec694973cecd56d19b8cc9f84614dca76d4e3618415e1869cb",
     "marked": 0
   },
   "docs/skills.md": {
@@ -333,7 +333,7 @@
   },
   "UPGRADE.md": {
     "clauses": {},
-    "file_sha256": "54118fc402dce89a36f9a6dfdf9d6541eb4208db66c1143e3410b59d60eeac7f",
+    "file_sha256": "1ae37c2221e7c76ddaf2feae903d0a504a93f523c4554ab6f88a7b1596733fc8",
     "marked": 0
   },
   ".workspace/skills/legacy-workspace-upgrade/SKILL.md": {
@@ -549,6 +549,11 @@
   "tests/test_registry_freshness.py": {
     "clauses": {},
     "file_sha256": "e5b9128dea3fe4d10a219d3a08662bcbe617ef6e852396dff7d2df9cba6c4595",
+    "marked": 0
+  },
+  "tests/test_gitignore_ensure.py": {
+    "clauses": {},
+    "file_sha256": "e64b6316b7be0bb6f289af58e33d5c4af7eedfd811c7a0d898ef644863cd7c72",
     "marked": 0
   }
 }

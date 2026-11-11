@@ -237,6 +237,33 @@ def _rollback(ws: Path, backup: Path, purge_generated: bool = False) -> int:
     return 0
 
 
+IGNORE_LINES = (".workspace/.hook-state/", ".workspace/.local/")
+
+
+def ensure_ignore_lines(ws: Path) -> list[str]:
+    """把本机状态目录写进 `.gitignore`（只追加缺失行，不改用户既有内容）。
+
+    `.gitignore` 是用户所有的文件，**不**进 `TEMPLATE_FILES`（同步不能整文件覆盖）；
+    所以由同步流程做「缺则追加」，并把结果回报给用户。
+    """
+    path = Path(ws) / ".gitignore"
+    try:
+        existing = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+    except OSError:
+        return []
+    lines = {ln.strip() for ln in existing.splitlines()}
+    missing = [ln for ln in IGNORE_LINES if ln not in lines]
+    if not missing:
+        return []
+    try:
+        prefix = "" if (not existing or existing.endswith("\n")) else "\n"
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(prefix + "".join(ln + "\n" for ln in missing))
+    except OSError:
+        return []
+    return missing
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", required=True)
@@ -504,6 +531,10 @@ def main(argv: list[str]) -> int:
                        "bootstrap": {"current_policy_version": after,
                                      "last_synced_ref": wanted,
                                      "last_synced_commit": commit}})
+        # `.gitignore` 不在 TEMPLATE_FILES（用户所有）：缺本机状态目录时只追加缺失行
+        added_ignore = ensure_ignore_lines(ws)
+        if added_ignore:
+            report["gitignore_added"] = added_ignore
 
         verify = None
         if a.verify:

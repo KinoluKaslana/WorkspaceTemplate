@@ -466,13 +466,17 @@ def main(argv: list[str]) -> int:
             behind, ahead = (int(x) for x in cnt.split())
         _, dirty = sh("git", "-C", str(ws), "status", "--porcelain")
         gi_rc, _ = sh("git", "-C", str(ws), "check-ignore", "-q", ".workspace/.hook-state")
+        gl_rc, _ = sh("git", "-C", str(ws), "check-ignore", "-q", ".workspace/.local")
         want = norm_url((boot.get("git") or {}).get("remote") or "")
         same = (not want) or norm_url(url) == want
         rows.append(item("git", {"remote": want, "default_branch": (boot.get("git") or {}).get("default_branch")},
                          {"remote": url, "branch": br, "ahead": ahead, "behind": behind,
-                          "dirty_files": len(dirty.splitlines()), "hook_state_ignored": gi_rc == 0},
-                         OK if same else BAD,
-                         "" if same else "remote 与 bootstrap 不一致：确认后更新记录"))
+                          "dirty_files": len(dirty.splitlines()),
+                          "hook_state_ignored": gi_rc == 0, "local_state_ignored": gl_rc == 0},
+                         OK if same and gl_rc == 0 else BAD,
+                         "" if same and gl_rc == 0 else
+                         ("remote 与 bootstrap 不一致：确认后更新记录" if not same else
+                          "`.workspace/.local/` 未被 gitignore：跑 template_sync --apply（会自动补）或手工加一行")))
     else:
         rows.append(item("git", "initialized?", "no .git", WARN, "本机无仓库：clone 或按 git-init 建仓"))
 

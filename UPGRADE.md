@@ -73,10 +73,19 @@ python3 scripts/skill_audit.py --sync-registry    # 新建/重写 REGISTRY 的�
 python3 scripts/skill_audit.py --tools-snippet    # 打印需补进 TOOLS.md 的行
 ```
 
-**旧 `bootstrap.python` 记录不全时**（`preflight` 报 `python` mismatch）：
-- `python.runtime.identifier` 写**venv 目录的绝对路径**（如 `/path/.venv-314` 或 `D:\ws\.venv-314`，**不是** `.../bin/python` / `...\Scripts\python.exe`）；`python.version` 写该 venv 的 `X.Y.Z`（`preflight` 读 `python.version`，缺失时回退 `python.runtime.version`）；
-- 记录指向的 venv 已不存在（换机/搬目录）→ 按 §0.1 **重建同模式 venv**，`python.mode` 不变；
-- 模式本身为 `unconfigured` 才走 `scripts/pyenv_init.py`（uv 默认）。
+**运行时模式已下沉到本机状态**（3.7.0 起）：模式不再存 `bootstrap.python.mode`，而在
+`.workspace/.local/v1/<context_id>/runtime.json`（`scripts/local_state.py`）。旧工作区升级后：
+
+- `preflight` 报 `python` mismatch（旧记录不全或 venv 不在本机）→ 用机械入口重新绑定：
+  `python3 scripts/pyenv_init.py --mode <uv|venv|mcp> --apply`；
+  旧工作区里已有 `bootstrap.python.mode` 时会被 `already-configured` 拒绝，**迁移到本机状态需 `--force` 并取得用户同意**；
+- `runtime.identifier` 是 **venv 目录名**（如 `.venv-314`），**不是**绝对路径、也不是解释器路径；
+  本机状态**不得**写明文绝对路径（R8），解释器/uv 路径只登记在 `TOOLS.md`；
+- `bootstrap.python` 只作读取兼容，不再写入；`bootstrap.workspace_status` / `workspace_id` 仍随工作区走。
+
+**gate 结论同样下沉**：`gate_status.py --record` 写 `.workspace/.hook-state/<scope>/gate.json`；
+`bootstrap.gate` 只作翻转基线兼容，不再写入。旧工作区首次 `--record` 会以旧值作为翻转基线，
+可能要求 `--user-decision`，照提示给用户原话即可。
 
 把最后一条打印的行追加到 `TOOLS.md` 的 workspace-skills 小节（没有就新建）；**先 `grep -c '<skill 名>' TOOLS.md` 再写**，重复执行不要产生重复行。例如：
 
