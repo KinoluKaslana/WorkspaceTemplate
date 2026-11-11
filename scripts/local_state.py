@@ -24,6 +24,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -391,7 +392,7 @@ def _machine_material() -> bytes | None:
                 match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
                 if match:
                     material = match.group(1).encode("utf-8")
-            except (OSError, ValueError):
+            except (OSError, ValueError, subprocess.SubprocessError):
                 material = None
         else:
             for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
@@ -410,39 +411,82 @@ def _local_scope_seed(env: Mapping[str, str] | None = None) -> bytes | None:
     """身份原料取不到时的兜底：本机持久随机种子。
 
     存放位置在用户状态目录（`$XDG_STATE_HOME` 或 `~/.local/state`），**不在工作区里**，
-    因此不会被同步盘带到别的机器。两台都取不到 machine-id 的机器各自得到不同 scope，
+    因此不会被仓库同步带走。两台都取不到 machine-id 的机器各自得到不同 scope，
     不会退化成同一个 `unknown` 桶。
+
+    并发安全：用 `<seed>.lock`（O_EXCL）串行化「读→创建→回读」，先写临时文件再
+    `os.replace` 原子发布，最后**回读**最终内容，所有进程收敛到同一个种子；
+    空种子文件（崩溃残留）会被重建；拿不到锁也会回读，不会自己造一个新种子。
     """
     env = os.environ if env is None else env
     base = env.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
     path = Path(base) / "workspace-template" / "scope-seed"
-    try:
-        if path.is_file():
-            data = path.read_bytes().strip()
-            return data or None
-        path.parent.mkdir(parents=True, exist_ok=True)
-        seed = os.urandom(16).hex().encode("ascii")
-        try:
-            fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
-        except FileExistsError:
-            data = path.read_bytes().strip()
-            return data or None
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(seed)
-        return seed
-    except OSError:
+
+    def _read() -> bytes | None:
         try:
             data = path.read_bytes().strip()
-            return data or None
         except OSError:
             return None
+        return data or None
+
+    existing = _read()
+    if existing:
+        return existing
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return _read()
+
+    lock = path.with_name(path.name + ".lock")
+    acquired = False
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            time.sleep(0.01)
+            continue
+        except OSError:
+            break
+        os.close(fd)
+        acquired = True
+        break
+    try:
+        data = _read()
+        if data:
+            return data
+        seed = os.urandom(16).hex().encode("ascii")
+        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{os.urandom(4).hex()}")
+        try:
+            fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(seed)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+            _fsync_dir(path.parent)
+        except OSError:
+            pass
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        return _read()
+    finally:
+        if acquired:
+            try:
+                os.unlink(lock)
+            except OSError:
+                pass
 
 
 def machine_scope(env: Mapping[str, str] | None = None) -> str:
     """机器级作用域键（12 位 hex），给 hook 运行期状态分片用。
 
     不含 principal：`.hook-state/` 本身就在某个具体工作区副本里，跨机器隔离才是目的。
-    取不到机器身份 → `"unknown"`，**不回退到共享根目录**（否则又变回跨机混用）。
+    取不到机器身份 → 本机持久种子派生；两者都拿不到才是 `"unknown"`，
+    **永不回退到共享根目录**（否则又变回跨机混用）。
     """
     env = os.environ if env is None else env
     seed = env.get("WORKSPACE_CONTEXT_SEED")

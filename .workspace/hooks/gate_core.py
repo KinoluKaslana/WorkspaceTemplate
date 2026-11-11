@@ -50,7 +50,7 @@ def _machine_scope(ws_root: str = "") -> str:
 
     为什么按机器分片：`.hook-state/` 会被同步盘带到别的机器；不隔离就会把
     另一台机器的会话账本/读证据当成自己的（Helper 事故同型）。
-    取不到机器身份 → `"unknown"`；**不回退到共享根目录**。
+    取不到机器身份 → 本机持久种子派生；两者都拿不到才是 `"unknown"`；**不回退到共享根目录**。
     """
     key = str(ws_root)
     cached = _SCOPE_CACHE.get(key)
@@ -394,6 +394,14 @@ def _recent_files(ws_root: str, since_ns: int, cap: int = 2000) -> list[str]:
 HASH_MAX_FILE = 1 << 20          # 单文件超过 1 MiB 不算哈希（预算留给小文件）
 HASH_BUDGET_BYTES = 32 << 20     # 每次哈希扫描最多读 32 MiB
 HASH_CAP = 2000                  # 最多记多少个文件的指纹
+
+
+def _write_hash_baseline(ws_root: str, client: str, session_id: str, data: dict) -> Path:
+    """写哈希基线：**永远**落分片目录（旧根只读，绝不写回）。"""
+    p = _hash_baseline_path(ws_root, client, session_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
 
 
 def _hash_baseline_path(ws_root: str, client: str, session_id: str, *, read: bool = False):
@@ -1176,8 +1184,7 @@ def evaluate_session_start(ws_root: str, client: str, session_id: str,
             if not hp.exists():
                 try:
                     hashes, _complete = _scan_hashes(ws_root)
-                    hp.parent.mkdir(parents=True, exist_ok=True)
-                    hp.write_text(json.dumps(hashes), encoding="utf-8")
+                    _write_hash_baseline(ws_root, client, session_id, hashes)
                 except Exception as exc:
                     log(ws_root, f"hash baseline failed: {exc}")
         ch = state["reminder"]["channels"]
@@ -1536,8 +1543,7 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
                         old = prev.get(rel)
                         if old is not None and old != sha:
                             changed.add(rel)
-                hp.parent.mkdir(parents=True, exist_ok=True)
-                hp.write_text(json.dumps(cur), encoding="utf-8")
+                _write_hash_baseline(ws_root, client, session_id, cur)
                 if not complete:
                     append_audit_event(ws_root, client, session_id,
                                        {"type": "snapshot-incomplete",

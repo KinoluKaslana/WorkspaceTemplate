@@ -48,6 +48,12 @@ def _snapshot(root: Path) -> dict:
     return out
 
 
+def _scope_worker(home: str) -> str:
+    import local_state as _ls
+    _ls._MATERIAL_CACHE = None
+    return _ls.machine_scope({"XDG_STATE_HOME": home})
+
+
 class LocalStateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="ls-test-"))
@@ -429,6 +435,30 @@ class LocalStateTest(unittest.TestCase):
         self.assertTrue(seed_file.is_file())
         if os.name != "nt":
             self.assertEqual(seed_file.stat().st_mode & 0o777, 0o600)
+
+    def test_31_empty_scope_seed_is_repaired(self):
+        """崩溃留下的空种子文件必须被重建，不能永久退化成 unknown。"""
+        old = ls._MATERIAL_CACHE
+        ls._MATERIAL_CACHE = None
+        try:
+            home = self.tmp / "st-empty"
+            seed_dir = home / "workspace-template"
+            seed_dir.mkdir(parents=True)
+            (seed_dir / "scope-seed").write_bytes(b"")
+            scope = ls.machine_scope({"XDG_STATE_HOME": str(home)})
+            self.assertNotEqual(scope, "unknown", "空种子文件没有被修复")
+            self.assertTrue((seed_dir / "scope-seed").read_bytes().strip())
+        finally:
+            ls._MATERIAL_CACHE = old
+
+    def test_32_concurrent_scope_seed_creation_converges(self):
+        """多个进程同时首次创建种子：必须拿到同一个 scope，且不出现 unknown。"""
+        home = str(self.tmp / "st-race")
+        ctx = multiprocessing.get_context("spawn")
+        with ctx.Pool(4) as pool:
+            scopes = pool.map(_scope_worker, [home] * 4)
+        self.assertNotIn("unknown", scopes)
+        self.assertEqual(len(set(scopes)), 1, f"并发首次创建得到不同 scope：{scopes}")
 
     # ---- 路径安全 -------------------------------------------------------
     def test_15_symlink_escape_refused(self):

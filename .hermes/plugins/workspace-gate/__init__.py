@@ -494,7 +494,7 @@ def _machine_scope(ws) -> str:
     """本机作用域键：与 `.workspace/hooks/gate_core._machine_scope()` 同源（读 `<ws>/scripts/local_state.py`）。
 
     `.hook-state/` 会被同步盘带到别的机器；不分片就会把别的机器的读证据当成自己的。
-    取不到身份 → `"unknown"`，不回退到共享根目录。
+    取不到身份 → 本机持久种子派生；两者都拿不到才是 `"unknown"`，不回退到共享根目录。
     """
     global _SCOPE_MOD
     key = str(ws)

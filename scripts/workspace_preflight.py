@@ -283,7 +283,10 @@ def main(argv: list[str]) -> int:
     gate = _gate_record(ws, boot)
     _legacy_note = _legacy_gate_note(ws, boot, gate)
     if _legacy_note:
-        rows.append(item("gate_legacy", "两处结论不一致", gate.get("status") or "", WARN, _legacy_note))
+        # 非阻断：只并进 gate 行的说明，不新增行、不影响 --strict 退出码
+        for _row in rows:
+            if _row.get("id") == "gate":
+                _row["action"] = ((_row.get("action") or "") + "；" if _row.get("action") else "") + _legacy_note
     g_status = gate.get("status")
     g_harness = [h for h in (gate.get("harness") or []) if h]
     want = [h.strip() for h in (getattr(a, "harness", "") or "").split(",") if h.strip()]

@@ -853,19 +853,27 @@ check("P10-1e empty session_id + absolute write outside workspace -> pass", Fals
 L1 = build_ws(ROOT, "lifecycle")
 parent = "lc-parent"
 child = "lc-child"
+# 生命周期事件靠 state.db 的 cwd 归属工作区：先把这两个会话登记进去，否则状态会落到别处
+_con = sqlite3.connect(DB)
+_con.executemany("INSERT OR REPLACE INTO sessions VALUES (?,?,?,?)", [
+    (parent, str(L1), None, None),
+    (child, None, None, parent),
+])
+_con.commit()
+_con.close()
 wg._on_session_start(session_id=parent, model="test-model", platform="cli")
 wg._subagent_start(parent_session_id=parent, child_session_id=child,
                    child_subagent_id="sub-1", child_role="worker", child_goal="do things")
 st_parent = wg._load_state(L1, parent)
 st_child = wg._load_state(L1, child)
-expect("P11-1a parent state 记录 main + 子身份", True,
+expect("P11-1a parent state 记录 main + 子身份",
        str(st_parent.get("agents", {}).get("main", {}).get("session_id")) == parent
        and child in st_parent.get("agents", {}))
-expect("P11-1b child state 独立登记", True,
+expect("P11-1b child state 独立登记",
        str(st_child.get("agents", {}).get("main", {}).get("parent_session_id")) == parent)
 types_parent = [e.get("type") for e in (st_parent.get("agent_events") or [])]
 types_child = [e.get("type") for e in (st_child.get("agent_events") or [])]
-expect("P11-2 父子都落 agent-start", True,
+expect("P11-2 父子都落 agent-start",
        "agent-start" in types_parent and "agent-start" in types_child)
 post(str(L1 / "AGENT_RULES.md"), parent)
 check("P11-3 父读全后子写仍 BLOCK（不继承）", True,
@@ -874,15 +882,17 @@ check("P11-4 父自己写放行", False,
       pre("write_file", {"path": str(L1 / "parent.txt")}, parent))
 wg._subagent_stop(parent_session_id=parent, child_session_id=child, child_status="ok", duration_ms=5)
 types_child2 = [e.get("type") for e in (wg._load_state(L1, child).get("agent_events") or [])]
-expect("P11-5 subagent_stop 落 agent-stop", True, "agent-stop" in types_child2)
+expect("P11-5 subagent_stop 落 agent-stop", "agent-stop" in types_child2)
 
 # P12 [v1.7.0 / 政策 2.8.2]：拒绝消息带机器可读码（供客户端层断言），且 action 语义不变
 res_coded = pre("write_file", {"path": str(L1 / "coded.txt")}, child)
-expect("P12-1 未读拒绝带 [workspace-gate:no-read] 码", True,
-       "[workspace-gate:no-read]" in (res_coded or ""))
+expect("P12-1 未读拒绝带 [workspace-gate:no-read] 码",
+       "[workspace-gate:no-read]" in str((res_coded or {}).get("message", "")),
+       str(res_coded)[:80])
 blk = wg._block("示例原因", code="no-session", session="s", tool="write_file", target="/t")
-expect("P12-2 _block 保留 action=block", True, blk.get("action") == "block")
-expect("P12-3 _block 码前缀可 grep", True, blk.get("message", "").startswith("[workspace-gate:no-session] "))
+expect("P12-2 _block 保留 action=block", blk.get("action") == "block")
+expect("P12-3 _block 码前缀可 grep",
+       blk.get("message", "").startswith("[workspace-gate:no-session] "))
 
 # P13 [v1.8.0]：Hermes 插件与 hooks 对齐的三值记账（intent → commit / unobserved）
 P13 = build_ws(ROOT, "accounting")

@@ -263,7 +263,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "ba4c8f7daf555684ba81b0f3fb65c2e22bee1838513f79702803eabf9fc21c04",
+    "file_sha256": "5b9e728efc1b0693894b0480896999e9b5074e8a220e8c345b0348b637b420a9",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -323,7 +323,7 @@
   },
   "docs/hooks-catalog.md": {
     "clauses": {},
-    "file_sha256": "401b111ecb9e21821437cc24c014ea3ba190a97e7815a7acbd04494981da93d5",
+    "file_sha256": "52d69123c0f412884899666a088bcd017449960beb1d8ac63196fba060902dac",
     "marked": 0
   },
   "docs/docs-retrieval.md": {
@@ -363,7 +363,7 @@
   },
   "scripts/local_state.py": {
     "clauses": {},
-    "file_sha256": "0fede8325d5b4f0c4ace8f244753fb444a61d705520d01e2bfd811a8c7fc6ab8",
+    "file_sha256": "19fb7b56c041746f9ff302444728dd4ca8f41204c23aa021897078fa51c374e7",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -463,12 +463,12 @@
   },
   ".hermes/plugins/workspace-gate/__init__.py": {
     "clauses": {},
-    "file_sha256": "5ddb3c53333c6dbb3482b0a0edba28b40fc271398acafc227813eebfeab6ad5c",
+    "file_sha256": "3a78f82059765e9596804b97c30a2c21941c6c5a7633e1b46b64350a83420d59",
     "marked": 0
   },
   ".hermes/plugins/workspace-gate/selfcheck.py": {
     "clauses": {},
-    "file_sha256": "60ba60befe386931acdc8872c48ce5eff27fe243ce03eeb4bee8477ab7a60321",
+    "file_sha256": "1b02c4c780d4c550369ad2c427cb50b9e1ea4b1753abaa43d7e36a926619317b",
     "marked": 0
   },
   ".workspace/hooks/hook.py": {
@@ -478,7 +478,7 @@
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "acb62684adfd2b5fac34480a05729067ccbe325d8474d539d75ff3388636f0a4",
+    "file_sha256": "6f40b9fda59a85ba9963fc989c7764291ac55937e93aa78bc7ad07038de4e995",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
@@ -543,7 +543,7 @@
   },
   "tests/test_local_state.py": {
     "clauses": {},
-    "file_sha256": "7ffb5f7e78c0f64791d604fde376b6daf3a47aeb57a3455003bbae405b8d9fc0",
+    "file_sha256": "5f803a5f33ed39560a4c66d018ec3d7a46c17d851256ef24e565462f1d728b9b",
     "marked": 0
   }
 }

@@ -136,6 +136,45 @@ class ScopeIsolation(unittest.TestCase):
         self.assertEqual(p, root / "hashes-cc-s1.json")
         self.assertEqual(core._hash_baseline_path(str(self.ws), "cc", "s1").parent.name, scope)
 
+    # S6 -----------------------------------------------------------------
+    def test_s6_real_fallback_seed_isolates_machines(self):
+        """不靠测试钩子：真实「取不到 machine-id → 本机种子」路径也要隔离。"""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ls_scope_probe", self.ws / "scripts" / "local_state.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["ls_scope_probe"] = mod
+        spec.loader.exec_module(mod)
+        mod._MATERIAL_CACHE = None
+        a = mod.machine_scope({"XDG_STATE_HOME": str(Path(self.tmp.name) / "home-a")})
+        b = mod.machine_scope({"XDG_STATE_HOME": str(Path(self.tmp.name) / "home-b")})
+        self.assertNotIn(a, ("", "unknown"))
+        self.assertNotEqual(a, b, "两台机器（不同状态目录）落到了同一个 scope")
+
+    # S7 -----------------------------------------------------------------
+    def test_s7_hash_baseline_never_written_to_legacy(self):
+        """旧根基线只读：审计写入必须落分片目录，旧文件字节不变。"""
+        scope = self.scope("machine-A")
+        root = self.ws / ".workspace" / ".hook-state"
+        root.mkdir(parents=True, exist_ok=True)
+        legacy = root / "hashes-cc-s1.json"
+        legacy.write_text("{}", encoding="utf-8")
+        before = legacy.read_bytes()
+        core._write_hash_baseline(str(self.ws), "cc", "s1", {"a.txt": "deadbeef"})
+        self.assertEqual(legacy.read_bytes(), before, "审计写回了旧根基线")
+        self.assertTrue((root / scope / "hashes-cc-s1.json").is_file())
+
+    def test_s8_worktree_audit_does_not_touch_legacy_baseline(self):
+        scope = self.scope("machine-A")
+        root = self.ws / ".workspace" / ".hook-state"
+        root.mkdir(parents=True, exist_ok=True)
+        legacy = root / "hashes-cc-s1.json"
+        legacy.write_text("{}", encoding="utf-8")
+        before = legacy.read_bytes()
+        core.worktree_audit(str(self.ws), "cc", "s1", source="stop")
+        self.assertEqual(legacy.read_bytes(), before, "worktree_audit 改写了旧根基线")
+        self.assertTrue((root / scope / "hashes-cc-s1.json").is_file())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
