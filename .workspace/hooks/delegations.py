@@ -20,13 +20,14 @@ import os
 import time
 from pathlib import Path
 
-STATE_DIRNAME = ".workspace/.hook-state"
 LEDGER = "delegations.jsonl"
 DEFAULT_TTL = 1800
 
 
 def _state_dir(ws: str | Path) -> Path:
-    d = Path(ws) / STATE_DIRNAME
+    """本机作用域状态目录：与 gate_core 同一口径（`<ws>/.workspace/.hook-state/<scope>/`）。"""
+    import gate_core
+    d = gate_core.state_dir(str(ws))
     d.mkdir(parents=True, exist_ok=True)
     return d
 

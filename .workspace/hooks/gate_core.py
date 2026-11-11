@@ -42,6 +42,54 @@ SCHEMA = 5
 BOOTSTRAP_REL = ".workspace/bootstrap.json"
 CUSTOM_REL = ".workspace/gate.custom.json"
 STATE_DIRNAME = ".workspace/.hook-state"
+_SCOPE_CACHE: dict[str, str] = {}
+
+
+def _machine_scope(ws_root: str = "") -> str:
+    """本机作用域键（12 hex）：`.hook-state/<scope>/` 的目录名。
+
+    为什么按机器分片：`.hook-state/` 会被同步盘带到别的机器；不隔离就会把
+    另一台机器的会话账本/读证据当成自己的（Helper 事故同型）。
+    取不到机器身份 → `"unknown"`；**不回退到共享根目录**。
+    """
+    key = str(ws_root)
+    cached = _SCOPE_CACHE.get(key)
+    if cached:
+        return cached
+    scope = "unknown"
+    try:
+        import sys as _sys
+        # 以**工作区**为准：工作区里有 scripts/local_state.py 才算能定身份；
+        # 不能拿「hook 脚本所在仓库」冒充，否则复制到别的目录的 hook 会算错机器。
+        scripts = Path(ws_root) / "scripts"
+        if ws_root and (scripts / "local_state.py").is_file():
+            if str(scripts) not in _sys.path:
+                _sys.path.insert(0, str(scripts))
+            import local_state as _ls
+            scope = _ls.machine_scope()
+    except Exception:
+        scope = "unknown"
+    _SCOPE_CACHE[key] = scope
+    return scope
+
+
+def _state_dir(ws_root: str) -> Path:
+    return Path(ws_root) / STATE_DIRNAME / _machine_scope(ws_root)
+
+
+def _legacy_state_dir(ws_root: str) -> Path:
+    """旧布局（`.hook-state/` 根）：只读兼容一个版本，不再写入。"""
+    return Path(ws_root) / STATE_DIRNAME
+
+
+def state_dir(ws_root: str) -> Path:
+    """本机作用域状态目录（公开入口，供 delegations / cc_transcript / 插件复用）。"""
+    return _state_dir(ws_root)
+
+
+def machine_scope(ws_root: str = "") -> str:
+    """本机作用域键（公开入口；工作区里有 scripts/local_state.py 才算能定身份）。"""
+    return _machine_scope(ws_root)
 GATE_FILE = "AGENT_RULES.md"
 DEFAULT_GATE_FILES = [GATE_FILE]
 DEFAULT_WRITE_TOOLS = ["write", "edit", "apply_patch"]
@@ -170,12 +218,15 @@ AUTHZ_FILENAME = "authz.json"
 
 
 def _authz_path(ws_root: str) -> Path:
-    return Path(ws_root) / STATE_DIRNAME / AUTHZ_FILENAME
+    return _state_dir(ws_root) / AUTHZ_FILENAME
 
 
 def load_authz(ws_root: str) -> dict:
     """损坏/缺失 → 视为无令牌（fail-safe）。返回 {"schema":1,"tokens":[]}。"""
     p = _authz_path(ws_root)
+    if not p.is_file():
+        legacy = _legacy_state_dir(ws_root) / AUTHZ_FILENAME
+        p = legacy if legacy.is_file() else p
     if not p.is_file():
         return {"schema": 1, "tokens": []}
     try:
@@ -346,7 +397,7 @@ HASH_CAP = 2000                  # 最多记多少个文件的指纹
 
 
 def _hash_baseline_path(ws_root: str, client: str, session_id: str):
-    return Path(ws_root) / STATE_DIRNAME / ("hashes-%s-%s.json" % (client, session_id))
+    return _state_dir(ws_root) / ("hashes-%s-%s.json" % (client, session_id))
 
 
 def _scan_hashes(ws_root: str, budget: int = HASH_BUDGET_BYTES,
@@ -418,21 +469,20 @@ def sibling_commits(ws_root: str, client: str, session_id: str) -> set[str]:
     base, _ = split_scoped_id(session_id)
     out: set[str] = set()
     try:
-        d = Path(ws_root) / STATE_DIRNAME
-        prefix = f"{client}-{base}"
-        for path in d.glob(f"{client}-{base}*.json"):
-            stem = path.name[len(client) + 1:-5]
-            if stem != base and not stem.startswith(base + AGENT_SCOPE_SEP):
-                continue
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            for e in (data.get("events") or []):
-                if isinstance(e, dict) and e.get("type") == "gate-commit":
-                    t = e.get("target")
-                    if isinstance(t, str):
-                        out.add(t)
+        for d in (_state_dir(ws_root), _legacy_state_dir(ws_root)):
+            for path in d.glob(f"{client}-{base}*.json"):
+                stem = path.name[len(client) + 1:-5]
+                if stem != base and not stem.startswith(base + AGENT_SCOPE_SEP):
+                    continue
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                for e in (data.get("events") or []):
+                    if isinstance(e, dict) and e.get("type") == "gate-commit":
+                        t = e.get("target")
+                        if isinstance(t, str):
+                            out.add(t)
     except Exception:
         return out
     return out
@@ -441,7 +491,7 @@ def sibling_commits(ws_root: str, client: str, session_id: str) -> set[str]:
 def _append_commit_ledger(ws_root: str, client: str, session_id: str, rec: dict) -> None:
     """工作区级 commit 账本（跨会话/跨 agent）：worktree 差集按它判定「已观测」。"""
     try:
-        d = Path(ws_root) / STATE_DIRNAME
+        d = _state_dir(ws_root)
         d.mkdir(parents=True, exist_ok=True)
         p = d / "commits.jsonl"
         if p.exists() and p.stat().st_size > LOG_ROTATE_BYTES:
@@ -472,7 +522,9 @@ def committed_targets(ws_root: str, current_sha: dict[str, str | None]) -> set[s
     """从工作区级账本读出「当前磁盘 sha 与账本记录一致」的目标集合。"""
     out: set[str] = set()
     try:
-        p = Path(ws_root) / STATE_DIRNAME / "commits.jsonl"
+        p = _state_dir(ws_root) / "commits.jsonl"
+        if not p.is_file():
+            p = _legacy_state_dir(ws_root) / "commits.jsonl"
         if not p.is_file():
             return out
         text = p.read_text(encoding="utf-8", errors="replace")
@@ -493,12 +545,17 @@ def committed_targets(ws_root: str, current_sha: dict[str, str | None]) -> set[s
         return out
     return out
 
-def _state_path(ws_root: str, client: str, session_id: str) -> Path:
+def _state_path(ws_root: str, client: str, session_id: str, *, read: bool = False) -> Path:
     if client not in ("cc", "codex", "dsh") or not isinstance(session_id, str) or not session_id:
         raise ValueError("missing or invalid client/session identity")
     sid = session_id if re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", session_id) else (
         "~" + sha256_hex(session_id.encode("utf-8")))
-    return Path(ws_root) / STATE_DIRNAME / f"{client}-{sid}.json"
+    sp = _state_dir(ws_root) / f"{client}-{sid}.json"
+    if read and not sp.is_file():
+        legacy = _legacy_state_dir(ws_root) / f"{client}-{sid}.json"
+        if legacy.is_file():
+            return legacy
+    return sp
 
 
 class _StateLock:
@@ -536,7 +593,7 @@ class _StateLock:
 
 
 def load_state(ws_root: str, client: str, session_id: str) -> dict:
-    sp = _state_path(ws_root, client, session_id)
+    sp = _state_path(ws_root, client, session_id, read=True)
     state: dict | None = None
     if sp.is_file():
         try:
@@ -1052,7 +1109,7 @@ def reconcile_session_reads(owner: str, client: str, session_id: str, trigger: s
     """
     if trigger not in ("PreToolUse", "Stop", "SessionEnd"):
         raise ValueError("invalid reconciliation trigger")
-    if not _state_path(owner, client, session_id).is_file():
+    if not _state_path(owner, client, session_id, read=True).is_file():
         return  # Ordinary reads must not create permission/write state.
     with _StateLock(owner, client, session_id):
         index = load_state(owner, client, session_id).get("read_workspaces", [])
@@ -1062,7 +1119,7 @@ def reconcile_session_reads(owner: str, client: str, session_id: str, trigger: s
         roots = sorted(set([owner, *index]))
     # Never hold two workspace locks at once.
     for ws in roots:
-        if not _state_path(ws, client, session_id).is_file():
+        if not _state_path(ws, client, session_id, read=True).is_file():
             continue
         with _StateLock(ws, client, session_id):
             state = load_state(ws, client, session_id)
@@ -1341,7 +1398,7 @@ def anchor_check(ws_root: str, client: str, session_id: str, source: str) -> dic
 
 def log(ws_root: str, msg: str) -> None:
     try:
-        d = Path(ws_root) / STATE_DIRNAME
+        d = _state_dir(ws_root)
         d.mkdir(parents=True, exist_ok=True)
         lp = d / "gate.log"
         if lp.exists() and lp.stat().st_size > LOG_ROTATE_BYTES:
@@ -1354,7 +1411,7 @@ def log(ws_root: str, msg: str) -> None:
 
 def _append_audit(ws_root: str, client: str, state: dict) -> None:
     try:
-        d = Path(ws_root) / STATE_DIRNAME
+        d = _state_dir(ws_root)
         d.mkdir(parents=True, exist_ok=True)
         events = state.get("events")
         if not isinstance(events, list):
@@ -1384,7 +1441,7 @@ def _append_audit_jsonl(ws_root: str, client: str, rec: dict) -> None:
     `unobserved-write` 直接消失。审计是"事后可见"的唯一出口，丢了就等于没做。
     """
     try:
-        path = Path(ws_root) / STATE_DIRNAME / ("audit-%s.jsonl" % client)
+        path = _state_dir(ws_root) / ("audit-%s.jsonl" % client)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")

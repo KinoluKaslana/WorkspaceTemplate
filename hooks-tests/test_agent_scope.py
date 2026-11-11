@@ -29,6 +29,7 @@ HOOK = HOOKS / "hook.py"
 PY = sys.executable
 
 sys.path.insert(0, str(HOOKS))
+import hstate  # noqa: E402
 import gate_core as core  # noqa: E402
 
 
@@ -152,14 +153,14 @@ class AgentScope(unittest.TestCase):
         p = subprocess.run([PY, str(HOOK), "post_bash"], input=json.dumps(payload),
                            text=True, encoding="utf-8", capture_output=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
-        files = sorted(x.name for x in (self.ws / ".workspace" / ".hook-state").glob("*.json"))
+        files = sorted(x.name for x in hstate.state_dir(self.ws).glob("*.json"))
         self.assertTrue(any("s7.agent-e2e" in f for f in files), f"作用域状态未生成：{files}")
 
 
     def test_commit_ledger_rotation_keeps_latest_per_target(self):
         """轮转压缩：同一 target 只保留最新一条，且 committed_targets 仍能命中。"""
         ws = str(self.ws)
-        ledger = self.ws / ".workspace" / ".hook-state" / "commits.jsonl"
+        ledger = hstate.state_dir(self.ws) / "commits.jsonl"
         ledger.parent.mkdir(parents=True, exist_ok=True)
         target = str(self.ws / "rot.txt")
         old = "a" * 64

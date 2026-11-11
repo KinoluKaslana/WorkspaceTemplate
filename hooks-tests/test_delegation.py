@@ -24,6 +24,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 HOOKS = ROOT / ".workspace" / "hooks"
 sys.path.insert(0, str(HOOKS))
+import hstate  # noqa: E402
 import delegations as dg  # noqa: E402
 import gate_core as core  # noqa: E402
 
@@ -91,7 +92,7 @@ class Delegation(unittest.TestCase):
     def test_d7_parent_evidence_lost(self):
         self.mark_read(self.parent)
         self.mint()
-        (self.ws / ".workspace" / ".hook-state" / f"cc-{self.parent}.json").unlink()
+        (hstate.state_dir(self.ws) / f"cc-{self.parent}.json").unlink()
         self.assertEqual(self.pre(self.target)["action"], "deny")
 
     def test_d8_mint_requires_parent_evidence(self):

@@ -29,6 +29,27 @@ from datetime import datetime
 from pathlib import Path
 
 STATE_DIR = Path(".workspace") / ".hook-state"
+GATE_STATE_FILE = "gate.json"
+
+
+def _machine_scope(workspace: Path) -> str:
+    """本机作用域键：以工作区里的 `scripts/local_state.py` 为准，没有则 `unknown`。"""
+    try:
+        scripts = Path(workspace) / "scripts"
+        if not (scripts / "local_state.py").is_file():
+            return "unknown"
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import local_state
+        return local_state.machine_scope()
+    except Exception:
+        return "unknown"
+
+
+def _state_dirs(workspace: Path) -> list[Path]:
+    """本机作用域目录（优先）+ 旧布局根（只读兼容）。"""
+    roots = [workspace / STATE_DIR / _machine_scope(workspace), workspace / STATE_DIR]
+    return [d for d in roots if d.is_dir()]
 CLIENTS = ("cc", "codex", "hermes", "dsh")
 FUTURE_SKEW_MIN = 2.0     # 时间戳比现在超前超过这个分钟数 → 不算证据（时钟回拨 / 伪造）
 GATE_LOG_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) .*client=(\w+)")
@@ -61,8 +82,8 @@ def collect(workspace: Path) -> dict:
     state = workspace / STATE_DIR
     out: dict[str, dict] = {c: {"sources": [], "sessions": 0, "last_seen_minutes": None} for c in CLIENTS}
 
-    gate_log = state / "gate.log"
-    if gate_log.is_file():
+    for gate_log in [d / "gate.log" for d in _state_dirs(workspace)]:
+      if gate_log.is_file():
         for line in gate_log.read_text(encoding="utf-8", errors="replace").splitlines()[-4000:]:
             m = GATE_LOG_RE.match(line)
             if not m:
@@ -101,7 +122,7 @@ def collect(workspace: Path) -> dict:
             if age >= -FUTURE_SKEW_MIN:
                 dsh_apply_age = age
 
-    ledgers = sorted(state.glob("dsh-session-*.json"))
+    ledgers = sorted(p for d in _state_dirs(workspace) for p in d.glob("dsh-session-*.json"))
     ledger_age = None
     for p in ledgers:
         # 账本里的 events[].ts / anchors.().ts 是 hook 自己写的事件时间——只有它算证据；
@@ -238,10 +259,12 @@ def main(argv: list[str]) -> int:
 
 def _record(ws: Path, data: dict, required: list[str], missing: list[str],
             args, active) -> int:
-    """把结论写进 bootstrap.gate（AGENT_RULES §15 R116）。
+    """把结论写进本机状态（`<ws>/.workspace/.hook-state/<scope>/gate.json`，AGENT_RULES §15 R116）。
 
     - 无 `--require` 不记录：不知道在判哪个 harness，写进去就是假事实。
     - 有证据 → `configured`；缺证据 → 拒绝，除非 `--force` **且**给了用户决定来源。
+    - 结论按机器分片：别的机器同步过来的 gate.json 不会被当成本机结论。
+    - `bootstrap.gate` 是旧位置，只读用于翻转检测，不再写入。
     """
     if not required:
         print("--record 必须同时给 --require <harness>（记录的是「哪一端接线了」）", file=sys.stderr)
@@ -264,8 +287,17 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
     except ValueError:
         print(f"{boot_path} 不是合法 JSON，不记录", file=sys.stderr)
         return 2
+
     status = "unconfigured" if missing else "configured"
-    old = boot.get("gate") or {}
+    old = {}
+    sp = ws / STATE_DIR / _machine_scope(ws) / GATE_STATE_FILE
+    if sp.is_file():
+        try:
+            old = json.loads(sp.read_text(encoding="utf-8")) or {}
+        except ValueError:
+            old = {}
+    elif isinstance(boot.get("gate"), dict):
+        old = boot["gate"]          # 旧位置：只用于翻转检测
     old_h = set(old.get("harness") or [])
     changed = bool(old.get("status")) and (status != old.get("status") or old_h != set(required))
     if changed and not args.user_decision.strip():
@@ -273,7 +305,9 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
         print("该记录会翻转 gate 结论（status 或 harness 集合变化），必须给 --user-decision（用户原话）",
               file=sys.stderr)
         return 2
-    boot["gate"] = {
+
+    record = {
+        "schema": 1,
         "status": status,
         "harness": required,
         "evidence": {c: {"active": active(c),
@@ -282,11 +316,15 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
         "ttl_minutes": args.ttl_minutes,
         "decision_source": args.user_decision.strip() or "runtime-evidence",
         "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "machine_scope": _machine_scope(ws),
     }
-    tmp = boot_path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, boot_path)      # 原子替换：避免写一半的 bootstrap 被别的工具读到
-    print(f"已记录 gate.status={status}（harness={','.join(required)}）→ {boot_path}")
+    sp.parent.mkdir(parents=True, exist_ok=True)
+    tmp = sp.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, sp)      # 原子替换：避免写一半的结论被别的工具读到
+    print(f"已记录 gate.status={status}（harness={','.join(required)}）→ {sp}")
+    if isinstance(boot.get("gate"), dict) and boot["gate"].get("status"):
+        print("注：bootstrap.json 的 gate 节是旧位置，已不再写入；以 gate.json 为准", file=sys.stderr)
     return 0 if status == "configured" else 1
 
 

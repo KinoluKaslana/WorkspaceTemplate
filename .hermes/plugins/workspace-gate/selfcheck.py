@@ -204,7 +204,7 @@ expect("E5 relative read w/o task anchor -> no evidence, no crash",
 post(str(WS / "AGENT_RULES.md"), "s6")
 check("E6 read ws-A does not unlock ws-B", True, pre("write_file", {"path": str(TOP / "y.txt")}, "s6"))
 # F. state robustness / bookkeeping
-sp7 = WS / ".workspace" / ".hook-state" / "s7.json"
+sp7 = wg._state_path(WS, "s7")
 sp7.parent.mkdir(parents=True, exist_ok=True)
 sp7.write_text('{"read": {"AGENT_RULES.md": true}}', encoding="utf-8")
 check("F1 legacy read=true migrated away -> BLOCK", True,
@@ -233,7 +233,7 @@ expect("G1 reminder injected once", bool(ctx1 and ctx1.get("context")),
 expect("G2 reminder not repeated", ctx2 is None)
 for _ in range(25):
     wg._on_session_end(session_id="sess-acp", completed=True, interrupted=False)
-st = json.loads((WS / ".workspace" / ".hook-state" / "sess-acp.json").read_text(encoding="utf-8"))
+st = json.loads(wg._state_path(WS, "sess-acp").read_text(encoding="utf-8"))
 expect("G3 on_session_end bounded to 20", len(st["ends"]) == 20, f"(len={len(st['ends'])})")
 expect("G4 on_session_end keeps last_end", st.get("last_end", {}).get("completed") is True)
 # H. internal fail-closed
@@ -689,7 +689,7 @@ finally:
     else:
         _sys.modules.pop("tools.file_tools_paths", None)
 # P7-4 [V140-4]: schema 2→3 迁移写独立 *_legacy_s2，不覆盖更早 generic legacy
-T3 = T2 / ".workspace" / ".hook-state" / "p7d.json"
+T3 = wg._state_path(T2, "p7d")
 T3.parent.mkdir(parents=True, exist_ok=True)
 T3.write_text(json.dumps({
     "evidence_schema": 2,
@@ -896,7 +896,7 @@ expect("P13-2 允许时落 intent", True, tgt13 in (st13.get("intents") or {}))
 wg._post_tool_call(tool_name="write_file", args={"path": tgt13}, session_id=sid13, status="ok")
 st13 = wg._load_state(P13, sid13)
 expect("P13-3 写后落 commit", True, any(c.get("target") == tgt13 for c in (st13.get("commits") or [])))
-led13 = P13 / ".workspace" / ".hook-state" / "commits.jsonl"
+led13 = wg._state_path(P13, "x").parent / "commits.jsonl"
 rows13 = [json.loads(l) for l in led13.read_text(encoding="utf-8").splitlines() if l.strip()] if led13.is_file() else []
 expect("P13-4 commits.jsonl 记 hermes 行", True,
        any(r.get("client") == "hermes" and r.get("target") == tgt13 for r in rows13))

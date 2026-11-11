@@ -172,7 +172,7 @@ The template ships a **Hermes project-level plugin** (`.hermes/plugins/workspace
 | Enabling it | `HERMES_ENABLE_PROJECT_PLUGINS=true` (allows project-plugin discovery) **and** `plugins.enabled: [workspace-gate]` in `~/.hermes/config.yaml` (loads it) — both are required |
 | Tuning | Write the workspace-owned override `.hermes/plugins/workspace-gate/plugin.custom.json` (`enabled` / `gate_files` / `write_tools`); **do not edit the script itself** (locked layer — a template sync replaces it wholesale) |
 | Self-check | `<configured-python> .hermes/plugins/workspace-gate/selfcheck.py` (synthetic-payload assertions; all green means the gate logic has not regressed) |
-| Trust boundary | Prevents "accidental skipping", not "deliberate bypass": state files live in `.workspace/.hook-state/` (gitignored), and an agent holding `terminal`/`execute_code` can step outside the tool layer — defending against that needs a sandbox/OS permission layer |
+| Trust boundary | Prevents "accidental skipping", not "deliberate bypass": state files live in `.workspace/.hook-state/<scope>/` (per-machine, gitignored), and an agent holding `terminal`/`execute_code` can step outside the tool layer — defending against that needs a sandbox/OS permission layer |
 
 The block is a **safety net, not a substitute**: the rules themselves still come from `AGENT_RULES.md` §2/§9/§11 plus the `delivery-closure` skill (**skill treats the will, hook treats the hand**). Obligations are unchanged when the hook is not enabled.
 
@@ -183,7 +183,7 @@ The block is a **safety net, not a substitute**: the rules themselves still come
 tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # expect: workspace-gate active (v1.4.3, hermes_home=…)  ← version follows the plugin
 # (2) behavioural check: inside the workspace, write a file before reading the rules — it must be blocked
 #     with the workspace path and the resolved target in the message
-# (3) state file: <workspace>/.workspace/.hook-state/<session_id>.json records what the session read
+# (3) state file: <workspace>/.workspace/.hook-state/<scope>/<session_id>.json records what the session read
 ```
 
 ## Client Governance Hooks (Codex / Claude Code / DeepSeek Harness)

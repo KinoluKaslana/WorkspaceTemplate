@@ -19,11 +19,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "gate_status.py"
 
 
-def run(ws: Path, *args: str) -> subprocess.CompletedProcess:
+def run(ws: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
     # HERMES_HOME 指向工作区内的空目录：否则本机真实插件日志会把 hermes 判成「有证据」
+    base = {**os.environ, "HERMES_HOME": str(ws / "no-hermes-home")}
+    if env:
+        base.update(env)
     return subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(ws), *args],
                           capture_output=True, text=True, encoding="utf-8", timeout=60,
-                          env={**os.environ, "HERMES_HOME": str(ws / "no-hermes-home")})
+                          env=base)
 
 
 class GateStatus(unittest.TestCase):
@@ -115,6 +118,48 @@ class GateStatus(unittest.TestCase):
         self.assertNotEqual(gate.get("status"), "configured",
                             "模板仓不得提交 gate.status=configured（运行期事实不是模板事实）")
 
+    def _seed_cc_evidence(self, scope: str) -> Path:
+        state = self.ws / ".workspace" / ".hook-state" / scope
+        state.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        (state / "gate.log").write_text(
+            f"{stamp} post_read client=cc session=s1 file=AGENT_RULES.md\n", encoding="utf-8")
+        return state
+
+    def test_record_writes_scoped_gate_json_not_bootstrap(self):
+        """结论落本机分片 gate.json；bootstrap 不再被写。"""
+        (self.ws / ".workspace").mkdir(parents=True, exist_ok=True)
+        boot_path = self.ws / ".workspace" / "bootstrap.json"
+        boot_path.write_text(json.dumps({"workspace_status": "active"}), encoding="utf-8")
+        self._seed_cc_evidence("unknown")
+        r = run(self.ws, "--require", "cc", "--record", "--json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        gj = self.ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
+        self.assertTrue(gj.is_file(), "gate.json 未写到本机作用域目录")
+        rec = json.loads(gj.read_text(encoding="utf-8"))
+        self.assertEqual(rec["status"], "configured")
+        self.assertEqual(rec["harness"], ["cc"])
+        self.assertEqual(rec["machine_scope"], "unknown")
+        boot = json.loads(boot_path.read_text(encoding="utf-8"))
+        self.assertNotIn("gate", boot, "bootstrap 不得再被写入 gate 结论")
+
+    def test_other_machine_scope_evidence_is_ignored(self):
+        """别的机器同步过来的 gate.log 不算本机证据。"""
+        scripts = self.ws / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "local_state.py").write_text(
+            (ROOT / "scripts" / "local_state.py").read_text(encoding="utf-8"), encoding="utf-8")
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import local_state
+        other = local_state.machine_scope({"WORKSPACE_CONTEXT_SEED": "machine-A"})
+        mine = local_state.machine_scope({"WORKSPACE_CONTEXT_SEED": "machine-B"})
+        self.assertNotEqual(other, mine)
+        self._seed_cc_evidence(other)
+        r_other = run(self.ws, "--require", "cc", env={"WORKSPACE_CONTEXT_SEED": "machine-A"})
+        r_mine = run(self.ws, "--require", "cc", env={"WORKSPACE_CONTEXT_SEED": "machine-B"})
+        self.assertEqual(r_other.returncode, 0, r_other.stdout)
+        self.assertEqual(r_mine.returncode, 1, "另一台机器的证据被当成了本机证据")
+
     def test_cc_evidence_from_gate_log(self):
         state = self.ws / ".workspace" / ".hook-state"
         state.mkdir(parents=True)
@@ -142,7 +187,7 @@ class GateStatus(unittest.TestCase):
         boot.write_text(json.dumps({"workspace_status": "active"}, ensure_ascii=False), encoding="utf-8")
         return boot
 
-    def test_record_configured_writes_bootstrap(self):
+    def test_record_configured_writes_local_gate_json(self):
         boot = self._boot()
         state = self.ws / ".workspace" / ".hook-state"
         state.mkdir(parents=True, exist_ok=True)
@@ -153,7 +198,11 @@ class GateStatus(unittest.TestCase):
                         "event": "apply", "pid": 1}) + "\n", encoding="utf-8")
         r = run(self.ws, "--require", "dsh", "--ttl-minutes", "30", "--record")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        gate = json.loads(boot.read_text(encoding="utf-8"))["gate"]
+        gj = self.ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
+        self.assertTrue(gj.is_file(), "结论未落到本机作用域 gate.json")
+        gate = json.loads(gj.read_text(encoding="utf-8"))
+        self.assertNotIn("gate", json.loads(boot.read_text(encoding="utf-8")),
+                         "bootstrap 不得再被写入 gate 结论")
         self.assertEqual(gate["status"], "configured")
         self.assertEqual(gate["harness"], ["dsh"])
         self.assertTrue(gate["checked_at"])
@@ -172,7 +221,8 @@ class GateStatus(unittest.TestCase):
         r = run(self.ws, "--require", "dsh", "--record", "--force",
                 "--user-decision", "用户明确接受本机无 gate")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        gate = json.loads(boot.read_text(encoding="utf-8"))["gate"]
+        gj = self.ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
+        gate = json.loads(gj.read_text(encoding="utf-8"))
         self.assertEqual(gate["status"], "unconfigured")
         self.assertEqual(gate["decision_source"], "用户明确接受本机无 gate")
 
@@ -228,7 +278,10 @@ class GateStatus(unittest.TestCase):
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
         r = run(self.ws, "--require", "dsh", "--record", "--user-decision", "用户：分析机不再用 cc")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(json.loads(boot.read_text(encoding="utf-8"))["gate"]["harness"], ["dsh"])
+        gj = self.ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
+        self.assertEqual(json.loads(gj.read_text(encoding="utf-8"))["harness"], ["dsh"])
+        self.assertEqual(json.loads(boot.read_text(encoding="utf-8"))["gate"]["harness"], ["cc", "dsh"],
+                         "旧位置 bootstrap.gate 只读，不得被改写")
 
     def test_ledger_timestamp_beats_file_mtime(self):
         """账本 events[].ts 是 2 小时前、mtime 是现在：必须判过期（SOL R2-6：mtime 可被 touch）。"""

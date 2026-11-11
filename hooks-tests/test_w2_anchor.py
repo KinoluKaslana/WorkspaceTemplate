@@ -20,6 +20,7 @@ HOOK = HOOKS / "hook.py"
 PY = sys.executable
 
 sys.path.insert(0, str(HOOKS))
+import hstate  # noqa: E402
 import gate_core as core  # noqa: E402
 
 
@@ -68,7 +69,7 @@ class W2Anchor(unittest.TestCase):
         没有这一行，「hook 在跑但从不写盘」的会话会被判 `未接线`——假阴性，且会让人去重装已经生效的 hook。
         """
         self.invoke("session_start", "codex")
-        log = self.ws / core.STATE_DIRNAME / "gate.log"
+        log = hstate.state_dir(self.ws) / "gate.log"
         self.assertTrue(log.is_file(), "session_start 未写 gate.log")
         text = log.read_text(encoding="utf-8", errors="replace")
         self.assertIn("client=codex", text)

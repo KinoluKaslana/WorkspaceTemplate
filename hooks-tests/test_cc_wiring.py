@@ -21,6 +21,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 HOOKS = ROOT / ".workspace" / "hooks"
 sys.path.insert(0, str(HOOKS))
+import hstate  # noqa: E402
 import cc_transcript as ct  # noqa: E402
 
 GATE = "AGENT_RULES.md"
@@ -75,10 +76,10 @@ class CcWiring(unittest.TestCase):
     def audit_events(self):
         """state 里缓冲的事件 + 已 flush 的 audit 行（stop 只入 state，session_end 才 flush）。"""
         events = []
-        state = self.ws / ".workspace" / ".hook-state" / f"cc-{self.sid}.json"
+        state = hstate.state_dir(self.ws) / f"cc-{self.sid}.json"
         if state.exists():
             events.extend(json.loads(state.read_text(encoding="utf-8")).get("events", []))
-        p = self.ws / ".workspace" / ".hook-state" / "audit-cc.jsonl"
+        p = hstate.state_dir(self.ws) / "audit-cc.jsonl"
         if p.exists():
             for line in p.read_text(encoding="utf-8").splitlines():
                 if line.strip():
@@ -93,7 +94,7 @@ class CcWiring(unittest.TestCase):
                           tool_input={"file_path": str(self.ws / "denied.txt"), "content": "x"})
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         # 子作用域账本里的 gate-deny（flush 前的缓冲即可作为证据，Stop/SessionEnd 会写进 audit）
-        child_state = self.ws / ".workspace" / ".hook-state" / f"cc-{self.sid}.{agent}.json"
+        child_state = hstate.state_dir(self.ws) / f"cc-{self.sid}.{agent}.json"
         self.assertTrue(child_state.is_file(), "子作用域账本应存在")
         events = json.loads(child_state.read_text(encoding="utf-8")).get("events") or []
         self.invoke("session_end", session_id=f"{self.sid}.{agent}")

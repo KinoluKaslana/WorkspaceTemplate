@@ -359,6 +359,55 @@ def _windows_sid(runner=None) -> str | None:
     return match.group(0) if match else None
 
 
+_UNSET = object()
+_MATERIAL_CACHE: object = _UNSET
+
+
+def _machine_material() -> bytes | None:
+    """机器身份原料（不含用户）：Linux machine-id / Windows MachineGuid / macOS IOPlatformUUID。
+
+    只读、带进程内缓存；取不到返回 None。hooks 每次工具调用都会取，所以这里不做子进程。
+    """
+    global _MATERIAL_CACHE
+    if _MATERIAL_CACHE is not _UNSET:
+        return _MATERIAL_CACHE                      # type: ignore[return-value]
+    material: bytes | None = None
+    if os.name == "nt":                             # pragma: no cover - Windows
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                r"SOFTWARE\Microsoft\Cryptography") as key:
+                guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+                material = str(guid).encode("utf-8")
+        except OSError:
+            material = None
+    else:
+        for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+            try:
+                text = Path(candidate).read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if text:
+                material = text.encode("utf-8")
+                break
+    _MATERIAL_CACHE = material
+    return material
+
+
+def machine_scope(env: Mapping[str, str] | None = None) -> str:
+    """机器级作用域键（12 位 hex），给 hook 运行期状态分片用。
+
+    不含 principal：`.hook-state/` 本身就在某个具体工作区副本里，跨机器隔离才是目的。
+    取不到机器身份 → `"unknown"`，**不回退到共享根目录**（否则又变回跨机混用）。
+    """
+    env = os.environ if env is None else env
+    seed = env.get("WORKSPACE_CONTEXT_SEED")
+    material = seed.encode("utf-8") if seed else _machine_material()
+    if not material:
+        return "unknown"
+    return hmac.new(material, b"hook-scope", hashlib.sha256).hexdigest()[:12]
+
+
 def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
     """采集本机身份原料（只读、best-effort，不抛异常）。调用方决定缺项时怎么处理。"""
     env = os.environ if env is None else env

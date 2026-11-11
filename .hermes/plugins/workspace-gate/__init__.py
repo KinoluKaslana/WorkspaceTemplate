@@ -486,7 +486,43 @@ def _resolve_target_paths(args, tool_name, session_id, parent_session_id=None, t
     return out, unresolved
 
 
+_SCOPE_CACHE = {}
+_SCOPE_MOD = None
+
+
+def _machine_scope(ws) -> str:
+    """本机作用域键：与 `.workspace/hooks/gate_core._machine_scope()` 同源（读 `<ws>/scripts/local_state.py`）。
+
+    `.hook-state/` 会被同步盘带到别的机器；不分片就会把别的机器的读证据当成自己的。
+    取不到身份 → `"unknown"`，不回退到共享根目录。
+    """
+    global _SCOPE_MOD
+    key = str(ws)
+    if key in _SCOPE_CACHE:
+        return _SCOPE_CACHE[key]
+    scope = "unknown"
+    try:
+        if _SCOPE_MOD is None:
+            lp = Path(ws) / "scripts" / "local_state.py"
+            if lp.is_file():
+                spec = importlib.util.spec_from_file_location("ws_local_state", lp)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                _SCOPE_MOD = mod
+        if _SCOPE_MOD is not None:
+            scope = _SCOPE_MOD.machine_scope()
+    except Exception:
+        scope = "unknown"
+    _SCOPE_CACHE[key] = scope
+    return scope
+
+
 def _state_path(ws, session_id):
+    sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(session_id)) or "unknown"
+    return ws / ".workspace" / STATE_DIRNAME / _machine_scope(ws) / f"{sid}.json"
+
+
+def _legacy_state_path(ws, session_id):
     sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(session_id)) or "unknown"
     return ws / ".workspace" / STATE_DIRNAME / f"{sid}.json"
 
@@ -540,6 +576,10 @@ def _state_lock(ws, session_id):
 def _load_state(ws, session_id):
     state = None
     sp = _state_path(ws, session_id)
+    if not sp.is_file():
+        legacy = _legacy_state_path(ws, session_id)
+        if legacy.is_file():
+            sp = legacy
     if sp.is_file():
         try:
             loaded = json.loads(sp.read_text(encoding="utf-8"))

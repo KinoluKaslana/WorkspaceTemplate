@@ -111,14 +111,19 @@ python3 scripts/workspace_preflight.py  # R11：MCP 模式不得同时存在本�
 
 ## 5.5 Gate 接线：`gate_status.py`
 
+gate 结论按机器分片落在 `<ws>/.workspace/.hook-state/<scope>/gate.json`（`<scope>` 见 `docs/hooks-catalog.md`）；
+`bootstrap.json` 的 `gate` 节是旧位置，只读兼容、不再写入。同一份证据文件（`gate.log`）也按 `<scope>` 分片，
+别的机器同步过来的证据不会被当作本机证据。
+
+
 ```bash
 python3 scripts/gate_status.py --ttl-minutes 30                  # 四端「有没有运行期证据」
 python3 scripts/gate_status.py --require dsh,cc --json           # 缺证据 → 退出码 1
 ```
 
-政策 §15 把这条核验定为启动前必须项（与 Python 选择同性质），结论落 `bootstrap.gate`。判据只看运行期证据：`cc`/`codex` 来自 `.workspace/.hook-state/gate.log` 的 `client=` 行；`hermes` 来自
+政策 §15 把这条核验定为启动前必须项（与 Python 选择同性质），结论落本机状态 `.workspace/.hook-state/<scope>/gate.json`（`bootstrap.gate` 是旧位置，只读兼容）。判据只看运行期证据：`cc`/`codex` 来自 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行；`hermes` 来自
 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，插件日志不绑工作区——这是已知边界）；
-`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/dsh-session-*.json` 账本。
+`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/<scope>/dsh-session-*.json` 账本。
 TTL 必须为正（0 直接拒绝）；时间戳在当前时刻之后超过 2 分钟不算证据（时钟回拨/伪造）。
 **文件在不在不算证据**——
 dsh 没有项目级自动发现，不带 `--patch` 启动就完全没有 gate；`hermes` 需要 `HERMES_ENABLE_PROJECT_PLUGINS=true`

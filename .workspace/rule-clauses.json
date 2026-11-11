@@ -114,9 +114,9 @@
       "R111": "2. **机器属性**：每条条款的属性（`severity` / `trigger` / `check` / `reviewed`）存 `.workspace/clauses.meta.json`，键为 R 号，随模板层分发并哈希锁定；属性**不改变**义务本身，冲突以本文件为准。改条款正文（含新增/删除 R 号）必须同步该文件，否则 `scripts/clause_lint.py` 失败。",
       "R112": "3. **`check` 的准入**：`MUST`/`MUST_NOT` 的 `check` 必须是可执行命令（复用 `verify_rules` / `skill_audit` / `workspace_preflight` / `docs_hit_report` / hook `selfcheck`）或 `manual:<非空理由>`；`manual` 只允许用于「需要用户裁决/意图判断」的条款，且不得用来替代已可机械判定的事实。`clause_lint` 独立成门（findings>0 即失败），不并入 `verify_rules` 与 `skill_audit`，避免红灯归属混淆。",
       "R113": "## 15. 守门接线核验（与 Python 选择同性质，§0 的补充）",
-      "R114": "1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/gate.log` 的 `client=` 行；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/dsh-session-*.json` 账本。",
+      "R114": "1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行（`<scope>` 是本机分片目录，见下）；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/<scope>/dsh-session-*.json` 账本。**`<scope>`** 由本机身份派生（`scripts/local_state.py` 的 `machine_scope()`，12 位十六进制）；取不到机器身份时为 `unknown`。`<scope>` 之外的目录（含旧布局根目录）**只作只读兼容**：旧根目录的证据在过渡期仍认，其他机器的 `<scope>` **不得**当作本机证据。",
       "R115": "2. 没有证据时，必须在第一条受管写入之前向用户报告「当前 harness 的 gate 未接线」并给出该 harness 的启用命令，由用户决定先接线还是明确接受无 gate 继续；不得把工作区当作已受管继续写入。",
-      "R116": "3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入 `.workspace/bootstrap.json`；机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。",
+      "R116": "3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入**本机状态** `.workspace/.hook-state/<scope>/gate.json`；`bootstrap.json` 的 `gate` 节是旧位置，**不得**再写入，只作读取兼容。机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。",
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
       "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。",
       "R119": "## 16. 建仓后的 README 决策（§0.3 的补充）",
@@ -138,7 +138,7 @@
       "R135": "## 18. 破坏性目录操作的目标归属（§13 的补充）",
       "R136": "1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且 `python.mode` 缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
     },
-    "file_sha256": "c6a27dfdcbc4b75a177319d56255fd74aa3717431d8fce05f8ffef4b40e7ed13",
+    "file_sha256": "a11206bb7e98ebe9743c3ed43c98d0e8d77d950480c59b0aea247b64f5fafe6c",
     "marked": 136
   },
   "LICENSE": {
@@ -173,12 +173,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "b09dd08a492cd42bd84240beae3fb9756b57d24db457c33bb7fc96f4c0c45188",
+    "file_sha256": "ecce8ddb840b6d191947eb9f699516271b276ff70d13d54eaa3ffe891967eb63",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "f57316dcc5aaf9f691ff2ffa0a9bd9136d1dd6cff229cfcf6bb6b42abcd37ca1",
+    "file_sha256": "c72b83a0d5c91b756d3b3e164756796f8dac3d6ec04479cb9d6d97e74e16c431",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -263,7 +263,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "d09984610c5838c0d2d824cbcbee49191b1e009716dc3855ec865b17fb661382",
+    "file_sha256": "ac9a04836b6677c65767d38f55908343554edc9553118c7e2400f7a1af835003",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -303,7 +303,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "88167e33b2996804cf1cb336744f2c4a6d1f77bc1ffd866e54ddd57aa1f5475e",
+    "file_sha256": "9ab6cadac3f30ddf4578b7f1861f98d07eca4e6a601a183346086027ca95fb8e",
     "marked": 0
   },
   "docs/skills.md": {
@@ -313,17 +313,17 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "c48cf81fa8af7cd0bf68d72eddd2ead19752601eb6cf69aa7cb6e4142182ceb9",
+    "file_sha256": "a3d94bc17bb55009a412e9b4823019d17cb239f9ee046957a8bed1c6243b473c",
     "marked": 0
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "f38635d2a06c534cf1603c6a12b53072c02f9b0e97558b6a846493bcc7b4d350",
+    "file_sha256": "9150f1959ca31e39e397f00e516b6693eb64caf9c63afc5a7e1aa7854cb6ae32",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
     "clauses": {},
-    "file_sha256": "4a465aa89cd2da0e44d9a2cd532c011f1f7d839f80601ad936a0e1fb4eac73db",
+    "file_sha256": "d3eb6ccbf2dcfe45a9c149f8ef2bbb97e703d03175778a117b37171f2ecab724",
     "marked": 0
   },
   "docs/docs-retrieval.md": {
@@ -363,7 +363,7 @@
   },
   "scripts/local_state.py": {
     "clauses": {},
-    "file_sha256": "90c5d6148c30d80009983d59855ce101b06fe01e9c33a4ec9a46150cd65bdda7",
+    "file_sha256": "34c77a5d34a76797e92af833e6abeb5c0461aa663c793364b2720a944567b42f",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -383,7 +383,7 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "129bc97121979f8ecdce6acd281b2c7081a19eed756645cbd8afcf5c190b7263",
+    "file_sha256": "a3776319bfea4949b3747c45a928e5bd91e0e2e14dc17dec98d1c5816bb74623",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
@@ -463,12 +463,12 @@
   },
   ".hermes/plugins/workspace-gate/__init__.py": {
     "clauses": {},
-    "file_sha256": "a24c00dfeed3bb4156874e7e056ccc5a614f52633b18935ef27329ad22febb12",
+    "file_sha256": "78decbf56f9417c98598a32f52dd9139ca4b128c8dce1f55e2523d2477b49739",
     "marked": 0
   },
   ".hermes/plugins/workspace-gate/selfcheck.py": {
     "clauses": {},
-    "file_sha256": "999de88a41c96e1f66abc7e0b8efb35b1c57f0faaa3f1a26a6687caa00751cab",
+    "file_sha256": "b79f2a7122d159c04b2b35db643705b16e60f7ce5acc0b9fac26e2d4721cfd28",
     "marked": 0
   },
   ".workspace/hooks/hook.py": {
@@ -478,7 +478,7 @@
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "71d7c395eb79456e26e2de317a0ea514827848bd37f4c3f54bb4e0638bbcfca2",
+    "file_sha256": "5be5e85d0b7ef240b2db64ca10f5754a39a79458bce2167e43ba9f3524499e79",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
@@ -493,7 +493,7 @@
   },
   ".workspace/hooks/cc_transcript.py": {
     "clauses": {},
-    "file_sha256": "207250569bfbd2626dd9daf2eb49ead984ec355f75b5b637d6b18cdf97906a5c",
+    "file_sha256": "5086e1a432440fff2ad1374f312ba002f14ce4ac5417e51617307323d74e0f7f",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {
@@ -503,7 +503,7 @@
   },
   ".workspace/hooks/delegations.py": {
     "clauses": {},
-    "file_sha256": "9bba2e707ef7d187eacc6024632e32b81fac51c5cbef83b1d7e8eeb07e97c1c2",
+    "file_sha256": "86fe2decbd17f82d5ec859b764d540cb17f747bae2c3654d50a4c825a1833a1e",
     "marked": 0
   },
   ".codex/hooks.json": {
@@ -518,12 +518,12 @@
   },
   "scripts/gate_status.py": {
     "clauses": {},
-    "file_sha256": "02ff03ae8531e957952d6215fc56aca01ecb412ec27b8b18f6418fecdf1f2f76",
+    "file_sha256": "972926703679b49a2d73d3a09ba23812a6de664b9b63fabe5df880cd2377638b",
     "marked": 0
   },
   "tests/test_gate_status.py": {
     "clauses": {},
-    "file_sha256": "1f52b14d86891b7f630af4ac99fdc59803bfda3ae9d057a49cd17192c3449a2a",
+    "file_sha256": "6d005a36be5bb658728351c68b51107ee04548a7515241ec0a763526a0fc05c2",
     "marked": 0
   },
   "tests/no_git_runner.py": {

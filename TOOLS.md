@@ -54,7 +54,7 @@
 | Bash 解释器/包装类（`python*`/`sh`/`bash`/…） | 受拦（未读 B′ deny） | 不拦截；事后复算 `would_deny`（`class=interpreter_wrapper`） |
 | Bash 其余不可判形态 | 只审计（`unresolved-command`） | 不拦截；记 `cc-bash-gap(unresolved-command)` |
 
-审计与状态落在 `.workspace/.hook-state/`（`audit-<client>.jsonl`、`authz.json`、`cc-transcript-<session>.json` 偏移；已 gitignore）。
+审计与状态落在 `.workspace/.hook-state/<scope>/`（按机器分片）（`audit-<client>.jsonl`、`authz.json`、`cc-transcript-<session>.json` 偏移；已 gitignore）。
 
 CC 的 Bash 归因走**转录回放**（`cc_transcript.py`）：只读 platform payload 给出的 `transcript_path`，先校验 project slug == cwd 拉平值、文件名 == session_id，否则记 `cc-bash-gap` 并拒读；**不遍历 `~/.claude/projects/**`**（避免读入其他项目与会话）。命令原文默认不落盘，需 `.workspace/gate.custom.json` 的 `audit_command_text=true`。事后归因不等于拦截。
 
@@ -169,7 +169,7 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | 项 | 内容 |
 |---|---|
 | **类型** | Python 标准库 CLI |
-| **作用** | 判「现在到底有没有 gate 在跑」：`cc`/`codex` 看 `.workspace/.hook-state/gate.log` 的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.dsh-gate.log` 的 `apply` 与 `.hook-state/dsh-session-*.json`；`--require` 缺证据 → 退出码 1 |
+| **作用** | 判「现在到底有没有 gate 在跑」：`cc`/`codex` 看 `.workspace/.hook-state/<scope>/gate.log` 的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.dsh-gate.log` 的 `apply` 与 `.hook-state/<scope>/dsh-session-*.json`；`--require` 缺证据 → 退出码 1 |
 | **位置** | `scripts/gate_status.py` |
 | **SHA-256** | `4629d5979c6fbc65a2cd4405eaeea18ecb59e4e0ffd783feff05b0cda94a4399` |
 | **运行时** | §2 中已配置的 Python；无第三方依赖 |

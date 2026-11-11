@@ -76,7 +76,7 @@ Agent 决定写 X
 |---|---|---|
 | 设备本地 | 根路径、venv 目录、模板克隆路径、HERMES_HOME、python.mode | 按主机分列登记（`TOOLS.md` §1）；**不互相改写** |
 | 仓库共享 | `notes/`、`skills/`、`scripts/`、`docs/` | 走 git；冲突由用户裁决 |
-| 派生/易变 | `docs/.index.json`、`notes/INDEX.md`、`.hook-state/` | 拉取后重建；`.hook-state/` 必须被 gitignore |
+| 派生/易变 | `docs/.index.json`、`notes/INDEX.md`、`.hook-state/<scope>/` | 拉取后重建；`.hook-state/` 必须被 gitignore |
 
 `workspace_preflight.py` 把这三类差异摊开（11 项），`workspace-repo-sync` skill 负责按用户裁决执行。
 

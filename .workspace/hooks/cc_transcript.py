@@ -761,7 +761,8 @@ def _persist_books(ws: str, books_state: dict[str, dict]) -> dict:
 
 def offset_path(ws: str, session_id: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id)[:64]
-    return os.path.join(ws, ".workspace", ".hook-state", f"cc-transcript-{safe}.json")
+    import gate_core
+    return str(gate_core.state_dir(ws) / f"cc-transcript-{safe}.json")
 
 
 def load_state(ws: str, session_id: str) -> dict:

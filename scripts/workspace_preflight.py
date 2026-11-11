@@ -9,7 +9,7 @@
   host            当前主机名
   workspace_root  TOOLS §1 是否登记了本机路径、是否与当前 cwd 一致
   python          bootstrap 记录的 venv 是否存在、版本是否一致
-  gate            bootstrap.gate 结论 vs 运行期证据（§15；configured 但 TTL 内无证据 = mismatch）
+  gate            本机 gate.json 结论 vs 运行期证据（§15；configured 但 TTL 内无证据 = mismatch）
   template_clone  template.local_clone 是否存在、remote 是否与 source_repo 一致、HEAD 分支
   skills          目录 ↔ REGISTRY.md ↔ TOOLS.md 三方一致
   template_files  TEMPLATE_FILES 是否齐全
@@ -122,6 +122,24 @@ def item(id_: str, recorded, actual, status: str, action: str = "") -> dict:
 def norm_url(u: str) -> str:
     u = (u or "").rstrip("/")
     return u[:-4] if u.endswith(".git") else u
+
+
+def _gate_record(ws: Path, boot: dict) -> dict:
+    """gate 结论：本机分片 `gate.json` 优先；`bootstrap.gate` 只作旧位置兼容。"""
+    try:
+        scripts = Path(ws) / "scripts"
+        if (scripts / "gate_status.py").is_file() and str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import gate_status as _gs
+        sp = Path(ws) / ".workspace" / ".hook-state" / _gs._machine_scope(Path(ws)) / "gate.json"
+        if sp.is_file():
+            data = json.loads(sp.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    legacy = boot.get("gate") or {}
+    return legacy if isinstance(legacy, dict) else {}
 
 
 def main(argv: list[str]) -> int:
@@ -249,7 +267,7 @@ def main(argv: list[str]) -> int:
         rows.append(item("python", "unconfigured", mode, BAD, "按 §0 询问用户后配置"))
 
     # 2b) Gate 接线（§15）：登记状态 vs 运行期证据
-    gate = boot.get("gate") or {}
+    gate = _gate_record(ws, boot)
     g_status = gate.get("status")
     g_harness = [h for h in (gate.get("harness") or []) if h]
     want = [h.strip() for h in (getattr(a, "harness", "") or "").split(",") if h.strip()]

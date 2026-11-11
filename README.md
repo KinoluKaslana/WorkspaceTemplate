@@ -228,7 +228,7 @@ python3 scripts/clause_lint.py --report   # 覆盖率：多少条有命令可查
 | 启用 | `HERMES_ENABLE_PROJECT_PLUGINS=true`（允许发现项目插件）**且** `~/.hermes/config.yaml` 有 `plugins.enabled: [workspace-gate]`（加载）——缺一不生效 |
 | 调参 | 写工作区所有的工作区级覆写 `.hermes/plugins/workspace-gate/plugin.custom.json`（`enabled` / `gate_files` / `write_tools`）；**不要直接改脚本**（锁定层，同步时会被整文件覆盖） |
 | 自检 | `<configured-python> .hermes/plugins/workspace-gate/selfcheck.py`（合成 payload 断言，全绿即守门逻辑未回归） |
-| 信任边界 | 防「无意识跳过」，不防「主动绕过」：守门状态文件在 `.workspace/.hook-state/`（已 gitignore），拥有 `terminal`/`execute_code` 的 Agent 可绕到工具层之外——要防恶意绕过需沙箱/OS 权限层 |
+| 信任边界 | 防「无意识跳过」，不防「主动绕过」：守门状态文件在 `.workspace/.hook-state/<scope>/`（按机器分片，已 gitignore），拥有 `terminal`/`execute_code` 的 Agent 可绕到工具层之外——要防恶意绕过需沙箱/OS 权限层 |
 
 拦截是**兜底**而不是替代：规则内容仍由 `AGENT_RULES.md` §2/§9/§11 与 `delivery-closure` skill 界定（**skill 治心、hook 治手**）。hook 未启用时义务不变。
 
@@ -238,7 +238,7 @@ python3 scripts/clause_lint.py --report   # 覆盖率：多少条有命令可查
 # ① 在场信号：plugin 每次加载都会写一行
 tail -3 "$HERMES_HOME/logs/workspace-gate-plugin.log"   # 期望：workspace-gate active (v1.4.3, hermes_home=…)  ← 版本号随插件升级变化
 # ② 行为验证：在工作区内、未读规则时尝试写文件，应被拦截并报出工作区路径与 target
-# ③ 状态文件：<工作区根>/.workspace/.hook-state/<session_id>.json 记录该会话已读文件
+# ③ 状态文件：<工作区根>/.workspace/.hook-state/<scope>/<session_id>.json 记录该会话已读文件
 ```
 
 ## 客户端治理 hook（Codex / Claude Code / DeepSeek Harness）
@@ -267,7 +267,7 @@ python3 scripts/gate_status.py --ttl-minutes 30                 # 四种 harness
 python3 scripts/gate_status.py --require dsh,cc --ttl-minutes 30 # 要求项缺证据 → 退出码 1
 ```
 
-判定看的是**运行期证据**而不是文件在不在：`cc`/`codex` 看 `.workspace/.hook-state/gate.log` 里的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 与 `.hook-state/dsh-session-*.json` 账本。
+判定看的是**运行期证据**而不是文件在不在：`cc`/`codex` 看 `.workspace/.hook-state/<scope>/gate.log` 里的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 与 `.hook-state/<scope>/dsh-session-*.json` 账本。
 dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走静态可判写，`read` 记读证据；插件异常/hook 超时放行并记 `.workspace/.dsh-gate.log`，拿不到会话身份则 fail-closed。已在**真实模型回合**里验证（dsh headless + DeepSeek 账号）：未读先写被拒且文件未创建、先读后写放行、`bash` 重定向写被拒；另有 8 条走真实 `plugin.js`+`hook.py` 的合成用例。细节与已知限制见 **[docs/dsh.md](docs/dsh.md)**。
 
 ## 工作区生命周期 skills
