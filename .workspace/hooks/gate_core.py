@@ -76,23 +76,14 @@ def _machine_scope(ws_root: str = "") -> str:
             # 最小身份读取 + 本机种子兜底，与 local_state 同口径（见 `_fallback_scope`）。
             scope = _fallback_scope()
     except Exception:
-        scope = _fallback_scope() if _fallback_scope() else "unknown"
+        fallback = _fallback_scope()
+        scope = fallback or "unknown"
     _SCOPE_CACHE[key] = scope
     return scope
 
 
-def _fallback_scope() -> str:
-    """本机作用域键的自足兜底（不依赖工作区 `scripts/local_state.py`）。
-
-    为什么需要：`.hook-state/<scope>/` 只有在每台机器算出**不同** scope 时才有隔离意义。
-    工作区缺 `scripts/`（同步中断、手工拷贝、早期快照）时若直接退回 `unknown`，所有这类
-    机器会共用一个目录，把别人的会话账本当成自己的读证据——这正是要避免的形态。
-
-    原料优先级与 `local_state.machine_scope()` 一致：机器身份 → 本机持久种子；
-    两者都拿不到才返回空串（调用方再退回 `unknown`）。
-    """
-    # 不缓存：兜底会被不同调用方（不同 XDG_STATE_HOME / 测试夹具）观察到，
-    # 进程级常量缓存会让同一次运行里前后的 scope 不一致，状态目录跟着漂。
+def _fallback_machine_material() -> bytes:
+    """Best-effort machine identity used when workspace helpers are unavailable."""
     material = b""
     try:
         if os.name == "nt":                                   # pragma: no cover - Windows
@@ -100,9 +91,8 @@ def _fallback_scope() -> str:
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
                                 r"SOFTWARE\Microsoft\Cryptography") as key:
                 guid, _ = winreg.QueryValueEx(key, "MachineGuid")
-            material = str(guid).strip().encode("utf-8")
+            material = str(guid).encode("utf-8")
         elif sys.platform == "darwin":                        # pragma: no cover - macOS
-            import subprocess
             out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
                                  capture_output=True, text=True, timeout=5).stdout
             match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
@@ -118,40 +108,120 @@ def _fallback_scope() -> str:
                     material = text.encode("utf-8")
                     break
     except Exception:
-        material = b""
+        return b""
+    return material
 
-    if not material:
-        material = _fallback_seed()
-    if not material:
-        return ""
 
-    return hmac.new(material, b"hook-scope", hashlib.sha256).hexdigest()[:12]
+def _fallback_scope() -> str:
+    """本机作用域键的自足兜底（不依赖工作区 `scripts/local_state.py`）。
+
+    为什么需要：`.hook-state/<scope>/` 只有在每台机器算出**不同** scope 时才有隔离意义。
+    工作区缺 `scripts/`（同步中断、手工拷贝、早期快照）时若直接退回 `unknown`，所有这类
+    机器会共用一个目录，把别人的会话账本当成自己的读证据——这正是要避免的形态。
+
+    原料优先级与 `local_state.machine_scope()` 一致：机器身份 → 本机持久种子；
+    两者都拿不到才返回空串（调用方再退回 `unknown`）。
+    """
+    # 不缓存：兜底会被不同调用方（不同 XDG_STATE_HOME / 测试夹具）观察到，
+    # 进程级常量缓存会让同一次运行里前后的 scope 不一致，状态目录跟着漂。
+    explicit = os.environ.get("WORKSPACE_CONTEXT_SEED")
+    material = explicit.encode("utf-8") if explicit else _fallback_machine_material()
+    if material:
+        return hmac.new(material, b"hook-scope", hashlib.sha256).hexdigest()[:12]
+    local = _fallback_seed()
+    if local:
+        return hmac.new(local, b"hook-scope-local", hashlib.sha256).hexdigest()[:12]
+    return ""
+
+
+def _fsync_dir(path: Path) -> None:
+    """Persist a rename on POSIX; directory handles are unavailable on Windows."""
+    if os.name == "nt":                                   # pragma: no cover - Windows
+        return
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _fallback_seed() -> bytes:
     """本机持久种子（用户状态目录，不在工作区内），两台都取不到机器身份也不共用。"""
-    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
-    if os.name == "nt" and not os.environ.get("XDG_STATE_HOME"):   # pragma: no cover - Windows
-        base = os.environ.get("LOCALAPPDATA") or base
+    base = os.environ.get("XDG_STATE_HOME")
+    if not base and os.name == "nt":                         # pragma: no cover - Windows
+        base = os.environ.get("LOCALAPPDATA")
+    base = base or str(Path.home() / ".local" / "state")
     path = Path(base) / "workspace-template" / "scope-seed"
-    try:
-        existing = path.read_bytes().strip()
-    except OSError:
-        existing = b""
+
+    def _read() -> bytes:
+        try:
+            return path.read_bytes().strip()
+        except OSError:
+            return b""
+
+    existing = _read()
     if existing:
         return existing
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        fresh = uuid.uuid4().hex.encode("utf-8")
-        tmp = path.with_suffix(".tmp")
-        with open(tmp, "wb") as fh:
-            fh.write(fresh + b"\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-        return path.read_bytes().strip() or fresh
     except OSError:
-        return b""
+        return _read()
+
+    lock = path.with_name(path.name + ".lock")
+    acquired = False
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > 10.0 and not _read():
+                    lock.unlink()
+                    continue
+            except OSError:
+                pass
+            time.sleep(0.01)
+            continue
+        except OSError:
+            break
+        os.close(fd)
+        acquired = True
+        break
+    if not acquired:
+        return _read()
+
+    try:
+        existing = _read()
+        if existing:
+            return existing
+        fresh = uuid.uuid4().hex.encode("ascii")
+        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}")
+        try:
+            fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(fresh + b"\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+            _fsync_dir(path.parent)
+        except OSError:
+            pass
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        return _read()
+    finally:
+        try:
+            os.unlink(lock)
+        except OSError:
+            pass
 
 
 def _state_dir(ws_root: str) -> Path:

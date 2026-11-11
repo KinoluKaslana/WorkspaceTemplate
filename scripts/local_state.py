@@ -519,7 +519,10 @@ def _local_scope_seed(env: Mapping[str, str] | None = None) -> bytes | None:
     空种子文件（崩溃残留）会被重建；拿不到锁也会回读，不会自己造一个新种子。
     """
     env = os.environ if env is None else env
-    base = env.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    base = env.get("XDG_STATE_HOME")
+    if not base and os.name == "nt":                         # pragma: no cover - Windows
+        base = env.get("LOCALAPPDATA")
+    base = base or str(Path.home() / ".local" / "state")
     path = Path(base) / "workspace-template" / "scope-seed"
 
     def _read() -> bytes | None:

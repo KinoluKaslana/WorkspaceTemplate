@@ -8,11 +8,14 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import hmac
 import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HOOKS = Path(__file__).resolve().parent.parent / ".workspace" / "hooks" / "gate_core.py"
 
@@ -37,7 +40,9 @@ class FallbackScope(unittest.TestCase):
         self.state = Path(self.tmp) / "state"
         self.state.mkdir()
         self._old = os.environ.get("XDG_STATE_HOME")
+        self._old_context_seed = os.environ.get("WORKSPACE_CONTEXT_SEED")
         os.environ["XDG_STATE_HOME"] = str(self.state)
+        os.environ.pop("WORKSPACE_CONTEXT_SEED", None)
 
     def tearDown(self):
         self.core._SCOPE_CACHE.clear()
@@ -45,6 +50,10 @@ class FallbackScope(unittest.TestCase):
             os.environ.pop("XDG_STATE_HOME", None)
         else:
             os.environ["XDG_STATE_HOME"] = self._old
+        if self._old_context_seed is None:
+            os.environ.pop("WORKSPACE_CONTEXT_SEED", None)
+        else:
+            os.environ["WORKSPACE_CONTEXT_SEED"] = self._old_context_seed
 
     def test_no_scripts_dir_does_not_fall_into_shared_unknown(self):
         """缺 scripts/ ⇒ 用 hook 自带身份派生，scope 必须是 12 位十六进制。"""
@@ -67,6 +76,46 @@ class FallbackScope(unittest.TestCase):
         b = self.core.machine_scope(str(other))
         self.assertEqual(a, b)
 
+    def test_no_scripts_honors_explicit_context_seed(self):
+        """缺 scripts/ 时也必须与 local_state 的 CI 显式 seed 算法一致。"""
+        seed = "ci-explicit-seed"
+        os.environ["WORKSPACE_CONTEXT_SEED"] = seed
+        self.core._SCOPE_CACHE.clear()
+        actual = self.core.machine_scope(str(self.ws))
+        expected = hmac.new(seed.encode("utf-8"), b"hook-scope",
+                            hashlib.sha256).hexdigest()[:12]
+        self.assertEqual(actual, expected)
+
+    def test_no_identity_seed_uses_local_state_domain(self):
+        """机器身份缺失时，带/不带 scripts 必须由同一种子得到同一 scope。"""
+        with mock.patch.object(self.core, "_fallback_machine_material", return_value=b""):
+            self.core._SCOPE_CACHE.clear()
+            actual = self.core.machine_scope(str(self.ws))
+        seed = (self.state / "workspace-template" / "scope-seed").read_bytes().strip()
+        expected = hmac.new(seed, b"hook-scope-local", hashlib.sha256).hexdigest()[:12]
+        self.assertEqual(actual, expected)
+
+    def test_fallback_seed_fsyncs_before_publish(self):
+        """新种子必须先 fsync 文件，再原子发布。"""
+        events = []
+        real_fsync = self.core.os.fsync
+        real_replace = self.core.os.replace
+
+        def tracked_fsync(fd):
+            events.append("fsync")
+            return real_fsync(fd)
+
+        def tracked_replace(src, dst):
+            events.append("replace")
+            return real_replace(src, dst)
+
+        with mock.patch.object(self.core.os, "fsync", side_effect=tracked_fsync), \
+             mock.patch.object(self.core.os, "replace", side_effect=tracked_replace):
+            self.assertTrue(self.core._fallback_seed())
+        self.assertIn("replace", events)
+        self.assertEqual(events[0], "fsync", events)
+        self.assertLess(events.index("fsync"), events.index("replace"), events)
+
     def test_denied_write_records_no_commit(self):
         """被拒的写不得产生 gate-commit（否则账本会把「没写」记成「写了」）。"""
         self.core._SCOPE_CACHE.clear()
@@ -83,7 +132,11 @@ class FallbackScope(unittest.TestCase):
                   or result.get("permissionDecision") or result.get("permission"))
         self.assertIn(str(denied).lower(), ("deny", "block"), result)
         self.assertEqual(commits.read_text(encoding="utf-8").strip(), "",
-                         "被拒的写产生了 gate-commit")
+                         "被拒的写产生了 gate-commit 账本记录")
+        state = self.core.load_state(str(self.ws), "dsh", "s1")
+        commit_events = [e for e in state.get("events", [])
+                         if isinstance(e, dict) and e.get("type") == "gate-commit"]
+        self.assertFalse(commit_events, "被拒的写产生了 gate-commit 会话事件")
 
 
 if __name__ == "__main__":

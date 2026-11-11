@@ -323,7 +323,7 @@
   },
   "docs/hooks-catalog.md": {
     "clauses": {},
-    "file_sha256": "3117ef33144cf913026277f2c9903d7355c84f708ebd15dad1aae188c58d12f8",
+    "file_sha256": "f37c27edca649b90a0f69b9cd853cf18cc097704f22c0e6c96090fd943d16a44",
     "marked": 0
   },
   "docs/docs-retrieval.md": {
@@ -363,7 +363,7 @@
   },
   "scripts/local_state.py": {
     "clauses": {},
-    "file_sha256": "3d1e1a93e8dffce0a066c0c83dbf431463cba0550d343db6298e39da338d9e47",
+    "file_sha256": "064d2bb2b46bbb22b5aec9be82c6b6a30691f09537c2bda37b8e5c375a489f17",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -478,7 +478,7 @@
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "488c7726ee7854e176c57dd4d589d3c49c704727005edf1fc10dbfa84ef1136b",
+    "file_sha256": "2fa44efe2647d38d4f9141c4ae0d0e95e3829391d4af3d9555779c3dd88916f6",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {

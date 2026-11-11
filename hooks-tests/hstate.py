@@ -17,13 +17,5 @@ if str(HOOKS) not in sys.path:
 
 def state_dir(ws) -> Path:
     """与守门本体**同一算法**的状态目录（避免测试写到 A、代码写到 B）。"""
-    try:
-        import gate_core
-        return Path(gate_core.state_dir(str(ws)))
-    except Exception:                                    # pragma: no cover - 兜底
-        d = Path(ws) / ".workspace" / ".hook-state"
-        try:
-            subs = [p for p in d.iterdir() if p.is_dir() and not p.name.startswith("__")]
-        except OSError:
-            subs = []
-        return subs[0] if len(subs) == 1 else d / "unknown"
+    import gate_core
+    return Path(gate_core.state_dir(str(ws)))
