@@ -197,6 +197,16 @@ class ScopeIsolation(unittest.TestCase):
         self.assertTrue(core.workspace_is_taken_over(str(self.ws)),
                         "本机已配 mode 的模板态目录必须按已接管守门")
 
+    # S10 ----------------------------------------------------------------
+    def test_s10_legacy_bootstrap_mode_still_counts(self):
+        """旧工作区（3.6.1）只有 bootstrap.python.mode、没有本机状态：仍须判已接管（兼容）。"""
+        core._SCOPE_CACHE.clear()
+        boot = self.ws / ".workspace" / "bootstrap.json"
+        boot.write_text(json.dumps({"workspace_status": "template",
+                                    "python": {"mode": "local-venv"}}), encoding="utf-8")
+        self.assertTrue(core.workspace_is_taken_over(str(self.ws)),
+                        "旧 bootstrap.python.mode 的回退被丢了")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -69,7 +69,7 @@ def read_mode(ws: Path) -> str | None:
     """本机已配置的运行时模式；读不到返回 None（旧工作区回退 bootstrap.python.mode 由调用方决定）。"""
     try:
         ls = _local_state()
-        wid = ls.ensure_workspace_id(ws)
+        wid = ls.workspace_id_of(ws)          # 纯读：dry-run 不得写盘
         if not wid:
             return None
         ident = ls.resolve_identity({}, ls.detect_platform_info())
@@ -150,12 +150,37 @@ def main(argv: list[str]) -> int:
     boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
     cur_mode = read_mode(ws) or ((boot.get("python") or {}).get("mode")) or "unconfigured"
     out: dict = {"mode": a.mode, "apply": a.apply, "existing_mode": cur_mode}
+    target_mode = "local-venv" if a.mode == "venv" else a.mode
+    if (a.apply and cur_mode not in ("unconfigured", None) and not a.force
+            and cur_mode == target_mode and boot.get("workspace_status") != "active"):
+        # 半提交恢复：本机状态已绑定、共享状态没翻（上次 _mark_active 失败）。只补翻转，不重建。
+        try:
+            _mark_active(boot_p)
+        except OSError as exc:
+            print(json.dumps({"error": "mark-active-failed", "detail": str(exc)}, ensure_ascii=False))
+            return 4
+        out.update({"repaired": "workspace_status", "mode": cur_mode})
+        if a.json:
+            print(json.dumps(out, ensure_ascii=False))
+        else:
+            for k, v in out.items():
+                print(f"{k}: {v}")
+        return 0
     if a.apply and cur_mode not in ("unconfigured", None) and not a.force:
         print(json.dumps({
             "error": "already-configured", "existing_mode": cur_mode,
             "hint": "既有工作区保持原模式（模板默认只作用于 unconfigured）。确需切换：加 --force，并先与用户确认重建 venv 的影响。",
         }, ensure_ascii=False))
         return 5
+
+    if a.apply:
+        # 身份不可得就不要开始建 venv：否则会留下「建了却没登记」的半套副作用
+        _ls = _local_state()
+        if _ls.resolve_identity({}, _ls.detect_platform_info()) is None:
+            print(json.dumps({"error": "identity-unavailable",
+                              "hint": "取不到本机身份（machine-id / MachineGuid / 本机种子）；不静默降级，先修环境"},
+                             ensure_ascii=False))
+            return 4
 
     if a.mode == "uv":
         uv = shutil.which("uv")
@@ -195,7 +220,13 @@ def main(argv: list[str]) -> int:
                 print(json.dumps(res, ensure_ascii=False))
                 return 4
             out["local_state"] = res
-            _mark_active(boot_p)
+            try:
+                _mark_active(boot_p)
+            except OSError as exc:
+                print(json.dumps({"error": "mark-active-failed", "detail": str(exc),
+                                  "note": "本机状态已写入；修复 bootstrap 权限后重跑同一命令即可补翻状态"},
+                                 ensure_ascii=False))
+                return 4
         out["tools_snippet"] = (f'| Python 运行时 | uv {uv_ver} → {vdir.name} '
                                 f'(Python {ver or target}) |')
 
@@ -225,7 +256,13 @@ def main(argv: list[str]) -> int:
                 print(json.dumps(res, ensure_ascii=False))
                 return 4
             out["local_state"] = res
-            _mark_active(boot_p)
+            try:
+                _mark_active(boot_p)
+            except OSError as exc:
+                print(json.dumps({"error": "mark-active-failed", "detail": str(exc),
+                                  "note": "本机状态已写入；修复 bootstrap 权限后重跑同一命令即可补翻状态"},
+                                 ensure_ascii=False))
+                return 4
         out["tools_snippet"] = f"| Python 运行时 | {vdir.name} (Python {ver or base}) |"
 
     else:  # mcp
@@ -244,7 +281,13 @@ def main(argv: list[str]) -> int:
                 print(json.dumps(res, ensure_ascii=False))
                 return 4
             out["local_state"] = res
-            _mark_active(boot_p)
+            try:
+                _mark_active(boot_p)
+            except OSError as exc:
+                print(json.dumps({"error": "mark-active-failed", "detail": str(exc),
+                                  "note": "本机状态已写入；修复 bootstrap 权限后重跑同一命令即可补翻状态"},
+                                 ensure_ascii=False))
+                return 4
         out["tools_snippet"] = f"| Python 运行时 | MCP {a.mcp_server}:{a.mcp_tool} |"
 
     if a.json:

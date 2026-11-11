@@ -138,7 +138,7 @@
       "R135": "## 18. 破坏性目录操作的目标归属（§13 的补充）",
       "R136": "1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且本机 `mode`（本机状态优先，回退 `bootstrap.python.mode`）缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
     },
-    "file_sha256": "c8ce899a1c51787b640034425edec6ef937be6cfe3e135a086b32bfbb9411008",
+    "file_sha256": "d84bb288ce1019319e482c81d9756da52fd7adbb1ee0a71799941cfeb3880eeb",
     "marked": 136
   },
   "LICENSE": {
@@ -263,17 +263,17 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "1bb0a5a5a554ed8f01349cc873843b1ba638fde73e916c293899516e0a1cc04e",
+    "file_sha256": "357bebabc2abd6932d2ec0ea4754690c56af39784fe99b1e7a5effafbb39c16f",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "f96abb76df312e8defdbc593be517e820cd252f91e83de86ad3a8122495ccbaf",
+    "file_sha256": "c11f07e9c7dbebe3152941cf7be2997a57f43878e191080a0ed4fae682228cbe",
     "marked": 0
   },
   "tests/test_pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "dcb7c891c0c0be111e6633ed7d968b0e3ea07dc1afca10bb843fdb94d0ca74e5",
+    "file_sha256": "e299ed106745124c10b941199026cf6ecdd94033fa10aa5989ca3e91618f80a8",
     "marked": 0
   },
   "tests/test_workspace_preflight.py": {
@@ -313,7 +313,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "2ead2854b02e97c4384518aa5adda6655491ae9ed1817e407f8bef17f8818357",
+    "file_sha256": "38a761b2a5534cdde78ffd973a68d26af5d0a799b59e1275d3f4bd7c57b960be",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -363,7 +363,7 @@
   },
   "scripts/local_state.py": {
     "clauses": {},
-    "file_sha256": "122ed3751d529a9ea1195c4b0b64eabeedbc0684eb699ed3c6f78ce32ca5a039",
+    "file_sha256": "f049763293af0e216a7802c6ffc5c3fc9cc33c58a2f9adb4b88ca8a9c4893458",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -478,7 +478,7 @@
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "2d88bdcddc474718527f0055804aaad10414a5465ddf2d234088997f91969f10",
+    "file_sha256": "edfd7f4ee6fec1518d96a17a5f69193013169686f61d4a6afec21fc321d94828",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
@@ -543,7 +543,7 @@
   },
   "tests/test_local_state.py": {
     "clauses": {},
-    "file_sha256": "b1e9531f6e5756becd61d42bbf1736c8e8a3e96ab8c0dd30b9c9864d12f3df10",
+    "file_sha256": "e38424bf9584ff2e8f367e0db2fb4049a41c73ce8694e4b0d684989642370053",
     "marked": 0
   }
 }

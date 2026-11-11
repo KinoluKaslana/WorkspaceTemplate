@@ -164,6 +164,33 @@ def _venv_relpath_problem(value: str) -> str | None:
     return None
 
 
+def _looks_absolute(value: str) -> bool:
+    """字符串本身像绝对路径（POSIX / Windows 盘符 / UNC / ~ 家目录）。"""
+    if not value:
+        return False
+    if value.startswith(("/", "\\", "~/")):
+        return True
+    win = PureWindowsPath(value)
+    if win.drive or win.root:
+        return True
+    return bool(re.match(r"^[A-Za-z]:[\\/]", value))
+
+
+def _reject_abs_paths(obj: object, field: str) -> None:
+    """递归检查可选字段：任何字符串都不得是明文绝对路径（R8）。"""
+    if isinstance(obj, str):
+        if _looks_absolute(obj):
+            raise ValueError(f"{field} must not contain an absolute path: {obj!r}")
+        return
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            _reject_abs_paths(v, f"{field}.{k}")
+        return
+    if isinstance(obj, (list, tuple)):
+        for i, v in enumerate(obj):
+            _reject_abs_paths(v, f"{field}[{i}]")
+
+
 def _is_symlink(path: Path) -> bool:
     try:
         return path.is_symlink()
@@ -334,17 +361,6 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
                              f"got {venv_relpath!r} ({problem})")
 
     cid = context_id(workspace_id, ident)
-    d = context_dir(workspace, workspace_id, ident, ephemeral=ephemeral)
-    parent = d.parent
-    # 先查链路再建目录：否则 mkdir 会沿着 symlink 在工作区外建目录
-    if not _chain_is_safe(workspace, parent):
-        raise ValueError(f"refusing to write through symlink: {parent}")
-    parent.mkdir(parents=True, exist_ok=True)
-    if not _chain_is_safe(workspace, parent):
-        raise ValueError(f"refusing to write through symlink: {parent}")
-    if _is_symlink(d) or (d.exists() and not _chain_is_safe(workspace, d)):
-        raise ValueError(f"refusing to write through symlink: {d}")
-
     data = {
         "schema": STATE_VERSION,
         "workspace_id": workspace_id,
@@ -360,16 +376,29 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
     if runtime is not None:
         if not isinstance(runtime, dict):
             raise ValueError("runtime must be dict|None")
+        _reject_abs_paths(runtime, "runtime")
         data["runtime"] = runtime
     if capabilities is not None:
         if not isinstance(capabilities, dict):
             raise ValueError("capabilities must be dict|None")
+        _reject_abs_paths(capabilities, "capabilities")
         data["capabilities"] = capabilities
     if decision_source is not None:
         if not isinstance(decision_source, str):
             raise ValueError("decision_source must be str|None")
+        _reject_abs_paths(decision_source, "decision_source")
         data["decision_source"] = decision_source
     payload = json.dumps(data, sort_keys=True)
+    d = context_dir(workspace, workspace_id, ident, ephemeral=ephemeral)
+    parent = d.parent
+    # 先查链路再建目录：否则 mkdir 会沿着 symlink 在工作区外建目录
+    if not _chain_is_safe(workspace, parent):
+        raise ValueError(f"refusing to write through symlink: {parent}")
+    parent.mkdir(parents=True, exist_ok=True)
+    if not _chain_is_safe(workspace, parent):
+        raise ValueError(f"refusing to write through symlink: {parent}")
+    if _is_symlink(d) or (d.exists() and not _chain_is_safe(workspace, d)):
+        raise ValueError(f"refusing to write through symlink: {d}")
 
     with _locked(cid):
         if not d.exists():

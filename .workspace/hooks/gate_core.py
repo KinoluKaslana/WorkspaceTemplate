@@ -922,9 +922,10 @@ def workspace_is_taken_over(ws_root: str) -> bool:
     if not isinstance(data, dict):
         return True
     status = str(data.get("workspace_status") or "").strip()
-    py_mode = str(((data.get("python") or {}) if isinstance(data.get("python"), dict) else {}).get("mode") or "").strip()
+    # 本机状态优先（python.mode 已下沉），旧 bootstrap.python.mode 只作回退
+    py_mode = str(_local_py_mode(ws_root) or "").strip()
     if py_mode in ("", "unconfigured"):
-        py_mode = _local_py_mode(ws_root) or py_mode       # python.mode 已下沉到本机状态
+        py_mode = str(((data.get("python") or {}) if isinstance(data.get("python"), dict) else {}).get("mode") or "").strip()
     return not (status == "template" and py_mode in ("", "unconfigured"))
 
 

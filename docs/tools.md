@@ -76,7 +76,7 @@ python3 scripts/template_sync.py --workspace . --ref 5edf554 --apply       # 提
 
 - 用 `git worktree add --detach` 取快照，不动模板克隆的工作树；
 - 备份到 `.workspace/backup-<ts>-sync/`（含 `MANIFEST.txt`）；
-- 回报 `changed / skipped / identical / removed_upstream / pruned / python_mode_preserved`；
+- 回报 `changed / skipped / identical / removed_upstream / pruned / python_mode_preserved`（后者只针对旧 `bootstrap.python` 节；本机状态不在同步范围）；
 - `--prune` 删除上游已移除的模板层文件（先备份，并清理空父目录）。
 
 ## 4.5 条款属性：`clause_lint.py`

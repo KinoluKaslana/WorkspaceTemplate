@@ -8,7 +8,7 @@
 检查项（每项给 recorded / actual / status / action）：
   host            当前主机名
   workspace_root  TOOLS §1 是否登记了本机路径、是否与当前 cwd 一致
-  python          bootstrap 记录的 venv 是否存在、版本是否一致
+  python          本机 runtime.json（旧工作区回退 bootstrap.python）记录的 venv 是否存在、版本是否一致
   gate            本机 gate.json 结论 vs 运行期证据（§15；configured 但 TTL 内无证据 = mismatch）
   template_clone  template.local_clone 是否存在、remote 是否与 source_repo 一致、HEAD 分支
   skills          目录 ↔ REGISTRY.md ↔ TOOLS.md 三方一致
@@ -237,7 +237,7 @@ def main(argv: list[str]) -> int:
             # 空 identifier 绝不能回退到工作区根：根目录里的 bin/python 与"这个工作区登记的 venv"无关，
             # 探测它会给出假阳性 exit 0。
             info.update({"layout": "none", "applicable": True,
-                         "note": "bootstrap 未记录 python.runtime.identifier：回写 venv 目录后再诊断"})
+                         "note": "本机状态未记录 runtime.identifier：用 scripts/pyenv_init.py --apply 回绑后再诊断"})
             print(json.dumps(info, ensure_ascii=False))
             return 3
         info = describe_layout(resolve_venv_dir(ws, ident))
@@ -277,7 +277,7 @@ def main(argv: list[str]) -> int:
         venv_py = venv_interpreter(venv_dir) if ident else None
         want = py.get("version") or (py.get("runtime") or {}).get("version")
         if not ident:
-            rows.append(item("python", "未记录 identifier", "", BAD, "回写 bootstrap.python.runtime.identifier"))
+            rows.append(item("python", "未记录 identifier", "", BAD, "本机状态缺 runtime.identifier：用 scripts/pyenv_init.py --apply 回绑"))
         elif venv_py is None:
             rows.append(item("python", {"venv": str(venv_dir),
                                         "searched": [f"{a}/{b}" for a, b in VENV_INTERPRETERS]},
@@ -297,7 +297,7 @@ def main(argv: list[str]) -> int:
             rows.append(item("python", {"path": str(venv_py), "version": want, "mode": mode},
                              {"version": out, **extra}, OK if ok else WARN,
                              "" if ok else ("uv 不可用：安装 uv 或改用 venv/mcp 模式" if mode == "uv"
-                                            else "版本不同：确认后更新 bootstrap/TOOLS")))
+                                            else "版本不同：确认后重跑 pyenv_init 或更新 TOOLS")))
     elif mode == "mcp":
         venvs = sorted(p.name for p in ws.glob(".venv-*") if p.is_dir())
         if venvs:                                  # R11：MCP 模式不得同时建本地 venv

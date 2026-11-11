@@ -8,7 +8,7 @@
 
 ## 0. 首次启动：必须询问 Python 运行时选择 <!-- id:R2 -->
 
-每个 Agent 开始前先读 `.workspace/bootstrap.json`，再按 R14 读**本机状态** `.workspace/.local/v1/<context_id>/runtime.json` 的 `mode`。该 `mode` 缺失或为 `unconfigured` 时，当前 Agent 是模板的“第一个 Agent”，必须在任何 Python 任务/依赖安装/持久化初始化之前询问：
+每个 Agent 开始前先读 `.workspace/bootstrap.json`，再读**本机状态** `.workspace/.local/v1/<context_id>/runtime.json` 的 `mode`。该 `mode` 缺失或为 `unconfigured` 时，当前 Agent 是模板的“第一个 Agent”，必须在任何 Python 任务/依赖安装/持久化初始化之前询问：
 
 > 本工作区的 Python 运行时用哪种？（**推荐默认：uv**）
 > 1. **uv 管理**（`uv venv`，默认）——机器上没有 uv 时我先提示安装方式，由你执行安装；

@@ -54,6 +54,12 @@ def _scope_worker(home: str) -> str:
     return _ls.machine_scope({"XDG_STATE_HOME": home})
 
 
+def _wid_worker(bootdir: str) -> str | None:
+    from pathlib import Path as _P
+    import local_state as _ls
+    return _ls.ensure_workspace_id(_P(bootdir))
+
+
 class LocalStateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="ls-test-"))
@@ -527,6 +533,77 @@ class LocalStateTest(unittest.TestCase):
         data = json.loads(boot.read_text(encoding="utf-8"))
         self.assertEqual(data["workspace_id"], wid)
         self.assertEqual(data["workspace_status"], "template", "不得顺手改别的字段")
+
+    def test_38_concurrent_workspace_id_converges(self):
+        """多进程首次 ensure：所有返回值必须一致，且等于落盘值。"""
+        boot = self.ws / ".workspace" / "bootstrap.json"
+        boot.write_text(json.dumps({"workspace_status": "template", "sentinel": 1}), encoding="utf-8")
+        ctx = multiprocessing.get_context("spawn")
+        with ctx.Pool(6) as pool:
+            ids = pool.map(_wid_worker, [str(self.ws)] * 6)
+        self.assertTrue(all(ids), f"有进程拿不到 id：{ids}")
+        self.assertEqual(len(set(ids)), 1, f"并发首次 ensure 产生多个 id：{set(ids)}")
+        data = json.loads(boot.read_text(encoding="utf-8"))
+        self.assertEqual(data["workspace_id"], ids[0])
+        self.assertEqual(data["sentinel"], 1, "不得改动其他字段")
+
+    def test_39_optional_fields_reject_absolute_paths(self):
+        """R8：本机状态不得存明文绝对路径——可选字段也要拦。"""
+        bad_runtime = ({"identifier": "/abs/python"}, {"nested": {"p": "C:\\abs\\py"}},
+                       {"u": "~/venv"})
+        for payload in bad_runtime:
+            with self.assertRaises(ValueError, msg=str(payload)):
+                ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7",
+                        ephemeral=False, runtime=payload)
+        with self.assertRaises(ValueError):
+            ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7",
+                    ephemeral=False, capabilities={"diag": "\\\\srv\\share"})
+        with self.assertRaises(ValueError):
+            ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7",
+                    ephemeral=False, decision_source="/home/a/choice.txt")
+        self.assertFalse((self.ws / ".workspace" / ".local").exists(), "校验失败不得落盘")
+        ok = ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7",
+                     ephemeral=False, runtime={"identifier": ".venv-312", "uv_version": "0.13"},
+                     decision_source="local-venv（用户选择）")
+        self.assertEqual(ok["status"], "BOUND")
+
+    def test_40_ensure_workspace_id_is_serialised(self):
+        """两个线程同时首次 ensure：必须收敛到同一个 id（去掉锁会稳定失败）。
+
+        用「慢 uuid」把生成窗口撑开：没有锁时两个线程都会在读到空 id 后各自生成，
+        返回值必然不同；有锁时后到者拿到的是前者已落盘的值。
+        """
+        import threading
+        boot = self.ws / ".workspace" / "bootstrap.json"
+        boot.write_text(json.dumps({"workspace_status": "template"}), encoding="utf-8")
+        real_uuid4 = ls.uuid.uuid4
+        counter = [0]
+
+        def slow_uuid4():
+            time.sleep(0.05)
+            counter[0] += 1
+            return real_uuid4()
+
+        results: list[str | None] = []
+        barrier = threading.Barrier(2)
+
+        def worker():
+            barrier.wait()
+            results.append(ls.ensure_workspace_id(self.ws))
+
+        ls.uuid.uuid4 = slow_uuid4
+        try:
+            ts = [threading.Thread(target=worker) for _ in range(2)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(timeout=10)
+        finally:
+            ls.uuid.uuid4 = real_uuid4
+        self.assertEqual(len(results), 2)
+        self.assertEqual(len(set(results)), 1, f"并发首次 ensure 返回了不同 id：{results}")
+        self.assertEqual(json.loads(boot.read_text(encoding="utf-8"))["workspace_id"], results[0])
+        self.assertEqual(counter[0], 1, "锁没有起作用：uuid 被生成了不止一次")
 
     # ---- 路径安全 -------------------------------------------------------
     def test_15_symlink_escape_refused(self):

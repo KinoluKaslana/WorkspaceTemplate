@@ -2,7 +2,7 @@
 """pyenv_init.py 回归（uv / 手动 venv / MCP 三模式）。
 
 T1 uv dry-run：不建目录，报告 would_create
-T2 uv apply：建出 .venv-<ver>，bootstrap.python.mode=uv、记录 uv 路径
+T2 uv apply：建出 .venv-<ver>，本机 runtime.json 记 mode=uv（bootstrap 不再存）
 T3 uv 缺失：exit 3 + 安装提示（不自动安装）
 T4 mcp 缺参数：exit 2
 T5 手动 venv apply：mode=local-venv
@@ -10,6 +10,7 @@ T6 已配置工作区 apply → exit 5，模式不被改写
 T7 已配置 + --force → 才允许切换
 运行：python3 -B tests/test_pyenv_init.py
 """
+import io
 import json
 import os
 
@@ -110,6 +111,88 @@ class PyenvInit(unittest.TestCase):
         self.assertEqual(rc, 0, d)
         self.assertEqual(local_runtime(self.ws).get("mode"), "local-venv")
 
+
+    def test_t8_dry_run_does_not_touch_bootstrap(self):
+        before = self.boot.read_bytes()
+        rc, d = run(self.ws, "--mode", "mcp", "--mcp-server", "s", "--mcp-tool", "t")
+        self.assertEqual(rc, 0, d)
+        self.assertEqual(self.boot.read_bytes(), before, "dry-run 改了 bootstrap")
+
+    def test_t9_persist_mode_never_writes_bootstrap(self):
+        sys.path.insert(0, str(self.ws / "scripts"))
+        import pyenv_init as pi
+        before = self.boot.read_bytes()
+        res = pi.persist_mode(self.ws, "mcp", None, None,
+                              {"mcp_server": "s", "mcp_tool": "t"},
+                              {"workspace_file_access": None}, "mcp（测试）")
+        self.assertEqual(res.get("status"), "BOUND", res)
+        boot = json.loads(self.boot.read_text(encoding="utf-8"))
+        # 旧工作区里既有的 python 节必须原样保留（既不删也不写新模式）
+        self.assertEqual(boot.get("python"), json.loads(before).get("python"),
+                         "persist_mode 动了 bootstrap.python")
+        # 允许它生成 workspace_id（工作区身份），但不得顺手动别的字段
+        self.assertIn("workspace_id", boot)
+        self.assertEqual(boot.get("workspace_status"), json.loads(before)["workspace_status"])
+
+    def _run_inproc(self, pi, argv):
+        buf = io.StringIO()
+        old = sys.stdout
+        sys.stdout = buf
+        try:
+            rc = pi.main(argv)
+        finally:
+            sys.stdout = old
+        return rc, buf.getvalue()
+
+    def test_t10_identity_unavailable_creates_no_venv(self):
+        sys.path.insert(0, str(self.ws / "scripts"))
+        import pyenv_init as pi
+
+        class FakeLS:
+            @staticmethod
+            def resolve_identity(env, info):
+                return None
+
+            @staticmethod
+            def detect_platform_info():
+                return {}
+
+        orig = pi._local_state
+        pi._local_state = lambda: FakeLS
+        try:
+            rc, out = self._run_inproc(pi, ["--workspace", str(self.ws), "--mode", "venv",
+                                            "--apply", "--json"])
+        finally:
+            pi._local_state = orig
+        self.assertEqual(rc, 4, out)
+        self.assertIn("identity-unavailable", out)
+        self.assertEqual([p.name for p in self.ws.glob(".venv-*")], [],
+                         "身份不可得却先建了 venv（半套副作用）")
+
+    def test_t11_mark_failure_returns_4_then_recovers_without_force(self):
+        sys.path.insert(0, str(self.ws / "scripts"))
+        import pyenv_init as pi
+        real = pi._mark_active
+
+        def boom(_boot_p):
+            raise OSError("disk full")
+
+        pi._mark_active = boom
+        try:
+            rc, out = self._run_inproc(pi, ["--workspace", str(self.ws), "--mode", "venv",
+                                            "--apply", "--json"])
+        finally:
+            pi._mark_active = real
+        self.assertEqual(rc, 4, out)
+        self.assertIn("mark-active-failed", out)
+        self.assertEqual(local_runtime(self.ws).get("mode"), "local-venv",
+                         "本机状态应已写入（只差共享状态翻转）")
+        rc2, out2 = self._run_inproc(pi, ["--workspace", str(self.ws), "--mode", "venv",
+                                          "--apply", "--json"])
+        self.assertEqual(rc2, 0, out2)
+        boot = json.loads(self.boot.read_text(encoding="utf-8"))
+        self.assertEqual(boot.get("workspace_status"), "active", "半提交状态没有被修复")
+        self.assertNotIn("python", boot)
 
     def test_t6_refuse_overwrite_configured(self):
         rc0, d0 = run(self.ws, "--mode", "venv", "--apply")

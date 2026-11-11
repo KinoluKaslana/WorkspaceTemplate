@@ -66,7 +66,7 @@ CC 的 Bash 归因走**转录回放**（`cc_transcript.py`）：只读 platform 
 
 **当前状态：`unconfigured`。** 与 `.workspace/bootstrap.json` 保持一致，不在用户选择前预创建 venv 或假定 MCP 工具存在。
 
-### 2.1 本地版本化 venv（仅当 `python.mode=local-venv`）
+### 2.1 本地版本化 venv（仅当本机 `mode=local-venv`）
 
 | venv | Python | 基础解释器 | 用途 | 依赖基线 | 核验日期 |
 |---|---|---|---|---|---|
@@ -81,7 +81,7 @@ CC 的 Bash 归因走**转录回放**（`cc_transcript.py`）：只读 platform 
 
 只在当前任务需要时新增兼容依赖；不直接用系统 Python 运行任务脚本，不向系统 site-packages 安装。
 
-### 2.2 MCP Python（仅当 `python.mode=mcp`）
+### 2.2 MCP Python（仅当本机 `mode=mcp`）
 
 | 项 | 实测值 |
 |---|---|
