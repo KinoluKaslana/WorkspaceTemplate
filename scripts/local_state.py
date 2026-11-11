@@ -168,7 +168,7 @@ def _looks_absolute(value: str) -> bool:
     """字符串本身像绝对路径（POSIX / Windows 盘符 / UNC / ~ 家目录）。"""
     if not value:
         return False
-    if value.startswith(("/", "\\", "~/")):
+    if value.startswith(("/", "\\", "~/", "~\\")):
         return True
     win = PureWindowsPath(value)
     if win.drive or win.root:
@@ -184,6 +184,7 @@ def _reject_abs_paths(obj: object, field: str) -> None:
         return
     if isinstance(obj, dict):
         for k, v in obj.items():
+            _reject_abs_paths(k, f"{field}.<key>")      # 键也可能是路径字符串
             _reject_abs_paths(v, f"{field}.{k}")
         return
     if isinstance(obj, (list, tuple)):
@@ -388,6 +389,8 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
             raise ValueError("decision_source must be str|None")
         _reject_abs_paths(decision_source, "decision_source")
         data["decision_source"] = decision_source
+    # 统一校验**完整 payload**（含必填字段与字典键）：不只查三个可选入口
+    _reject_abs_paths(data, "state")
     payload = json.dumps(data, sort_keys=True)
     d = context_dir(workspace, workspace_id, ident, ephemeral=ephemeral)
     parent = d.parent

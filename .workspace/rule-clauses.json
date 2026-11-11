@@ -363,7 +363,7 @@
   },
   "scripts/local_state.py": {
     "clauses": {},
-    "file_sha256": "f049763293af0e216a7802c6ffc5c3fc9cc33c58a2f9adb4b88ca8a9c4893458",
+    "file_sha256": "3d1e1a93e8dffce0a066c0c83dbf431463cba0550d343db6298e39da338d9e47",
     "marked": 0
   },
   "scripts/version_check.py": {
@@ -543,7 +543,7 @@
   },
   "tests/test_local_state.py": {
     "clauses": {},
-    "file_sha256": "e38424bf9584ff2e8f367e0db2fb4049a41c73ce8694e4b0d684989642370053",
+    "file_sha256": "9e8cde819b5a60475b472277ab8f9040576bc1aca379dcaf589f13e87d949709",
     "marked": 0
   }
 }

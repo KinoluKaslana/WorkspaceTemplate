@@ -561,6 +561,18 @@ class LocalStateTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7",
                     ephemeral=False, decision_source="/home/a/choice.txt")
+        # 字典**键**也是字符串：不能靠「值安全」蒙混
+        with self.assertRaises(ValueError):
+            ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7",
+                    ephemeral=False, runtime={"/abs/key": "safe"})
+        # Windows 风格 ~\ 也要识别
+        with self.assertRaises(ValueError):
+            ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7",
+                    ephemeral=False, runtime={"p": "~\\secret"})
+        # 必填字段同样不得是绝对路径（version 就是一条真实可乘之机）
+        with self.assertRaises(ValueError):
+            ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "/home/u/python",
+                    ephemeral=False)
         self.assertFalse((self.ws / ".workspace" / ".local").exists(), "校验失败不得落盘")
         ok = ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7",
                      ephemeral=False, runtime={"identifier": ".venv-312", "uv_version": "0.13"},
@@ -604,6 +616,35 @@ class LocalStateTest(unittest.TestCase):
         self.assertEqual(len(set(results)), 1, f"并发首次 ensure 返回了不同 id：{results}")
         self.assertEqual(json.loads(boot.read_text(encoding="utf-8"))["workspace_id"], results[0])
         self.assertEqual(counter[0], 1, "锁没有起作用：uuid 被生成了不止一次")
+
+    def test_41_written_state_has_no_absolute_strings(self):
+        """不变量不是「几个字段被拒」，而是「落盘的 JSON 里任何字符串都不像绝对路径」。"""
+        res = ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7",
+                      ephemeral=False, runtime={"identifier": ".venv-312", "uv_version": "0.13"},
+                      capabilities={"workspace_file_access": True},
+                      decision_source="local-venv（用户选择）")
+        self.assertEqual(res["status"], "BOUND")
+        path = ls.context_dir(self.ws, WSID, ident(), ephemeral=False) / "runtime.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+
+        offenders: list[str] = []
+
+        def walk(node, where: str) -> None:
+            if isinstance(node, str):
+                if ls._looks_absolute(node):
+                    offenders.append(f"{where}={node!r}")
+                return
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    walk(k, f"{where}.<key>")
+                    walk(v, f"{where}.{k}")
+                return
+            if isinstance(node, (list, tuple)):
+                for i, v in enumerate(node):
+                    walk(v, f"{where}[{i}]")
+
+        walk(data, "$")
+        self.assertEqual(offenders, [], f"状态文件含绝对路径字符串：{offenders}")
 
     # ---- 路径安全 -------------------------------------------------------
     def test_15_symlink_escape_refused(self):
