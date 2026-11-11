@@ -148,12 +148,15 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
     boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
-    cur_mode = read_mode(ws) or ((boot.get("python") or {}).get("mode")) or "unconfigured"
+    local_mode = read_mode(ws)                      # 只认本机 BOUND 状态，绝不回退 bootstrap
+    cur_mode = local_mode or ((boot.get("python") or {}).get("mode")) or "unconfigured"
     out: dict = {"mode": a.mode, "apply": a.apply, "existing_mode": cur_mode}
     target_mode = "local-venv" if a.mode == "venv" else a.mode
-    if (a.apply and cur_mode not in ("unconfigured", None) and not a.force
-            and cur_mode == target_mode and boot.get("workspace_status") != "active"):
-        # 半提交恢复：本机状态已绑定、共享状态没翻（上次 _mark_active 失败）。只补翻转，不重建。
+    if (a.apply and local_mode == target_mode and not a.force
+            and boot.get("workspace_status") != "active"):
+        # 半提交恢复：**本机确实 BOUND 且模式一致**、只是共享状态没翻（上次 _mark_active 失败）。
+        # 只补翻转，不重建。判据必须用 local_mode，不能用手回退过的 cur_mode——
+        # 否则「只有旧 bootstrap.python.mode」的老工作区会被误当成半提交，被删掉唯一记录并假激活。
         try:
             _mark_active(boot_p)
         except OSError as exc:
@@ -169,7 +172,9 @@ def main(argv: list[str]) -> int:
     if a.apply and cur_mode not in ("unconfigured", None) and not a.force:
         print(json.dumps({
             "error": "already-configured", "existing_mode": cur_mode,
-            "hint": "既有工作区保持原模式（模板默认只作用于 unconfigured）。确需切换：加 --force，并先与用户确认重建 venv 的影响。",
+            "hint": ("既有工作区保持原模式（模板默认只作用于 unconfigured）。"
+                     "旧工作区（模式只在 bootstrap.python 里）迁移到本机状态需要 --force 并取得用户同意；"
+                     "确需切换同理。"),
         }, ensure_ascii=False))
         return 5
 

@@ -922,7 +922,9 @@ def workspace_is_taken_over(ws_root: str) -> bool:
     if not isinstance(data, dict):
         return True
     status = str(data.get("workspace_status") or "").strip()
-    # 本机状态优先（python.mode 已下沉），旧 bootstrap.python.mode 只作回退
+    # 本机状态优先（python.mode 已下沉），旧 bootstrap.python.mode 只作回退。
+    # 注意：本函数只返回布尔值，两个来源「都配了」时任一顺序结果相同——这里的顺序是
+    # 政策一致性（R102/R136），行为等价；真正被测试钉住的是「旧 bootstrap 回退不丢」。
     py_mode = str(_local_py_mode(ws_root) or "").strip()
     if py_mode in ("", "unconfigured"):
         py_mode = str(((data.get("python") or {}) if isinstance(data.get("python"), dict) else {}).get("mode") or "").strip()

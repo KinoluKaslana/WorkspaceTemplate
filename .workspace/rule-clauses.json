@@ -268,12 +268,12 @@
   },
   "scripts/pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "c11f07e9c7dbebe3152941cf7be2997a57f43878e191080a0ed4fae682228cbe",
+    "file_sha256": "4531d729c7707ed6e78f4937f0dd972640ada9d78943c02c86b80f6f7ce97e58",
     "marked": 0
   },
   "tests/test_pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "e299ed106745124c10b941199026cf6ecdd94033fa10aa5989ca3e91618f80a8",
+    "file_sha256": "862ed88927c18a410a08e8cd34e78246d0d32aad83bc3bb61006f90715f2360f",
     "marked": 0
   },
   "tests/test_workspace_preflight.py": {
@@ -478,7 +478,7 @@
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "edfd7f4ee6fec1518d96a17a5f69193013169686f61d4a6afec21fc321d94828",
+    "file_sha256": "e0015efbf31daebae0ac74039693377bc636d4db7f6df6839f80956b49c44ca3",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {

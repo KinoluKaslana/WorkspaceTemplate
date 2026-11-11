@@ -194,6 +194,22 @@ class PyenvInit(unittest.TestCase):
         self.assertEqual(boot.get("workspace_status"), "active", "半提交状态没有被修复")
         self.assertNotIn("python", boot)
 
+    def test_t12_legacy_bootstrap_only_is_not_half_commit(self):
+        """只有旧 bootstrap.python.mode 的老工作区，不得被「半提交恢复」误吃。"""
+        boot = json.loads(self.boot.read_text(encoding="utf-8"))
+        boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-312"},
+                          "version": "3.12.1"}
+        boot["workspace_status"] = "template"
+        self.boot.write_text(json.dumps(boot), encoding="utf-8")
+        before = self.boot.read_bytes()
+        rc, d = run(self.ws, "--mode", "venv", "--apply", "--json")
+        self.assertEqual(rc, 5, d)
+        self.assertEqual(d.get("error"), "already-configured")
+        self.assertEqual(self.boot.read_bytes(), before,
+                         "旧工作区被误改：状态被翻转或唯一 mode 记录被删")
+        self.assertFalse((self.ws / ".workspace" / ".local").exists(),
+                         "旧工作区不该凭空出现本机绑定")
+
     def test_t6_refuse_overwrite_configured(self):
         rc0, d0 = run(self.ws, "--mode", "venv", "--apply")
         self.assertEqual(rc0, 0, d0)
