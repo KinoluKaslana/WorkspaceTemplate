@@ -16,7 +16,7 @@
   template_files  TEMPLATE_FILES 是否齐全
   notes_index     notes/INDEX.md 是否存在
   docs_index      docs/ 存在时索引是否新鲜（不存在则 n/a）
-  git             remote / 当前分支 / 上游 / ahead-behind / 脏文件数 / .hook-state 是否被忽略
+  git             remote / 当前分支 / 上游 / ahead-behind / 脏文件数 / .hook-state 与 .local 是否被忽略
 
 用法：python3 scripts/workspace_preflight.py [--workspace .] [--json] [--strict]
 退出码：0 无 mismatch；1 有 mismatch（--strict 时 warning 也算）。

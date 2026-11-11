@@ -50,6 +50,10 @@ def _is_template_repo() -> bool:
     return (data.get("workspace_status") or "").strip() == "template"
 
 
+def _upgrade_text() -> str:
+    return (Path(__file__).resolve().parent.parent / "UPGRADE.md").read_text(encoding="utf-8")
+
+
 class DocsConsistency(unittest.TestCase):
     def test_d1_links_resolve(self):
         bad = []
@@ -231,3 +235,20 @@ class DocsConsistency(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class UpgradeSemantics(unittest.TestCase):
+    """UPGRADE 的迁移口径必须与当前模型一致（否则会教用户写回旧位置/绝对路径）。"""
+
+    def test_upgrade_says_mode_lives_in_local_state(self):
+        text = _upgrade_text()
+        self.assertIn("runtime.json", text, "没提本机状态")
+        self.assertIn("目录名", text, "没说明 identifier 是 venv 目录名")
+        self.assertIn("<scope>/gate.json", text, "没说明 gate 结论的位置")
+        self.assertNotIn("identifier` 写**venv 目录的绝对路径**", text,
+                         "仍在教用户写明文绝对路径")
+        self.assertNotIn("回写 `bootstrap.python`", text, "仍在教用户写旧位置")
+
+
+if __name__ == "__main__":
+    unittest.main()

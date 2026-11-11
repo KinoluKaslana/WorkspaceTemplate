@@ -430,7 +430,7 @@ def template_attachment_findings(skill_dir: Path) -> list[str]:
         if "__pycache__" in p.parts or p.suffix == ".pyc":
             continue
         try:
-            rel = str(p.relative_to(root))
+            rel = p.relative_to(root).as_posix()
         except ValueError:
             continue
         if rel not in files:

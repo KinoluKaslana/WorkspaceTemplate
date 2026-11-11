@@ -253,17 +253,17 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "1fcdc10a98981799041063a3a55179616be1e787a8e70216e4da67c3306462e1",
+    "file_sha256": "f51a8d2d7dc48239dd606315a0076bfadde82b23f04dbee91beecb413bd36775",
     "marked": 0
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "338a31da2fcd4601dd28bba1fd757ad91ef38879645d343666dcf9ef7f81d364",
+    "file_sha256": "7f00d74a1925f8840460113de77bf8859eb1e8626de35065118436025255d7f9",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "886bfe80415424d53814dfaa9a953cfe8cdd08f44a525e96f86d018d90285405",
+    "file_sha256": "b55ab4608504019c025355f41ba06afc0ba05a81e1d64c4c40e07eb74947aa93",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -343,7 +343,7 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "4d7cd86d80b0584a89c217809913706126108b9e0d9c7552b9dad223ddb9aca0",
+    "file_sha256": "930b890ed4aeeb0f9629bde8fc506282b0000da17ba16deaaaf33a7484fd3a5d",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
@@ -523,7 +523,7 @@
   },
   "tests/test_gate_status.py": {
     "clauses": {},
-    "file_sha256": "6d005a36be5bb658728351c68b51107ee04548a7515241ec0a763526a0fc05c2",
+    "file_sha256": "9610f330528541e4c90ae0c49811bb77305edc4d063427285b733d0bb2e3879b",
     "marked": 0
   },
   "tests/no_git_runner.py": {
@@ -553,7 +553,7 @@
   },
   "tests/test_gitignore_ensure.py": {
     "clauses": {},
-    "file_sha256": "e64b6316b7be0bb6f289af58e33d5c4af7eedfd811c7a0d898ef644863cd7c72",
+    "file_sha256": "8f321d90ac8d3056412dc5fb6e934c1479798d123f8f8829435b8deae41e9932",
     "marked": 0
   }
 }

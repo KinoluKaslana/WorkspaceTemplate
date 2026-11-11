@@ -249,19 +249,19 @@ def ensure_ignore_lines(ws: Path) -> list[str]:
     path = Path(ws) / ".gitignore"
     try:
         existing = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
-    except OSError:
-        return []
+    except OSError as exc:
+        return [], f"读取失败：{exc}"
     lines = {ln.strip() for ln in existing.splitlines()}
     missing = [ln for ln in IGNORE_LINES if ln not in lines]
     if not missing:
-        return []
+        return [], None
     try:
         prefix = "" if (not existing or existing.endswith("\n")) else "\n"
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(prefix + "".join(ln + "\n" for ln in missing))
-    except OSError:
-        return []
-    return missing
+    except OSError as exc:
+        return [], f"写入失败：{exc}"
+    return missing, None
 
 
 def main(argv: list[str]) -> int:
@@ -532,9 +532,13 @@ def main(argv: list[str]) -> int:
                                      "last_synced_ref": wanted,
                                      "last_synced_commit": commit}})
         # `.gitignore` 不在 TEMPLATE_FILES（用户所有）：缺本机状态目录时只追加缺失行
-        added_ignore = ensure_ignore_lines(ws)
+        added_ignore, ignore_err = ensure_ignore_lines(ws)
         if added_ignore:
             report["gitignore_added"] = added_ignore
+        if ignore_err:
+            report["gitignore_error"] = ignore_err
+            print(f"警告：.gitignore 未能写入（{ignore_err}）；请手工补 "
+                  f"{' / '.join(IGNORE_LINES)}", file=sys.stderr)
 
         verify = None
         if a.verify:

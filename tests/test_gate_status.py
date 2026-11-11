@@ -117,6 +117,8 @@ class GateStatus(unittest.TestCase):
         gate = boot.get("gate") or {}
         self.assertNotEqual(gate.get("status"), "configured",
                             "模板仓不得提交 gate.status=configured（运行期事实不是模板事实）")
+        self.assertNotIn("gate", boot,
+                         "模板 bootstrap 不得分发任何 gate 节（R116：结论在本机状态）")
 
     def _seed_cc_evidence(self, scope: str) -> Path:
         state = self.ws / ".workspace" / ".hook-state" / scope

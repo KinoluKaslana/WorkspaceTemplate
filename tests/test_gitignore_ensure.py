@@ -31,19 +31,28 @@ class EnsureIgnore(unittest.TestCase):
     def test_appends_only_missing_lines_and_keeps_user_content(self):
         gi = self.ws / ".gitignore"
         gi.write_text("node_modules/\n.workspace/.hook-state/\n", encoding="utf-8")
-        added = self.ts.ensure_ignore_lines(self.ws)
+        added, err = self.ts.ensure_ignore_lines(self.ws)
+        self.assertIsNone(err)
         self.assertEqual(added, [".workspace/.local/"])
         text = gi.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("node_modules/\n"), "用户内容被改了")
         self.assertEqual(text.count(".workspace/.local/"), 1)
-        self.assertEqual(self.ts.ensure_ignore_lines(self.ws), [], "重复追加")
+        self.assertEqual(self.ts.ensure_ignore_lines(self.ws), ([], None), "重复追加")
 
     def test_creates_file_when_missing(self):
-        added = self.ts.ensure_ignore_lines(self.ws)
+        added, err = self.ts.ensure_ignore_lines(self.ws)
+        self.assertIsNone(err)
         self.assertIn(".workspace/.hook-state/", added)
         self.assertIn(".workspace/.local/", added)
         text = (self.ws / ".gitignore").read_text(encoding="utf-8")
         self.assertIn(".workspace/.local/", text)
+
+    def test_write_failure_is_reported_not_swallowed(self):
+        """.gitignore 写不进去时必须回报错误，不能静默当成「无需追加」。"""
+        (self.ws / ".gitignore").mkdir()          # 目录冒充文件 → 读写都失败
+        added, err = self.ts.ensure_ignore_lines(self.ws)
+        self.assertEqual(added, [])
+        self.assertIsNotNone(err, "写失败被吞掉了")
 
     def test_no_trailing_newline_is_respected(self):
         gi = self.ws / ".gitignore"
