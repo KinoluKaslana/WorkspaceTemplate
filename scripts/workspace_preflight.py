@@ -7,6 +7,7 @@
 
 检查项（每项给 recorded / actual / status / action）：
   host            当前主机名
+  bootstrap_schema bootstrap 结构版本（只接受整数 1；缺失 warn / 其它 mismatch）
   workspace_root  TOOLS §1 是否登记了本机路径、是否与当前 cwd 一致
   python          本机 runtime.json（旧工作区回退 bootstrap.python）记录的 venv 是否存在、版本是否一致
   gate            本机 gate.json 结论 vs 运行期证据（§15；configured 但 TTL 内无证据 = mismatch）
@@ -273,9 +274,12 @@ def main(argv: list[str]) -> int:
     if sv is None:
         rows.append(item("bootstrap_schema", "未记录", "", WARN,
                          "bootstrap 缺 schema_version：补 1，或确认这是旧格式"))
-    elif sv != 1:
+    elif type(sv) is not int or sv != 1:
+        # 注意 `True == 1`、`1.0 == 1`：只认精确整数 1，其余一律按未知版本处理
         rows.append(item("bootstrap_schema", sv, 1, BAD,
-                         "未知 bootstrap schema_version：按模板迁移步骤升级，勿手改"))
+                         "未知 bootstrap schema_version（只接受整数 1）：按模板迁移步骤升级，勿手改"))
+    else:
+        rows.append(item("bootstrap_schema", 1, 1, OK))
 
     # 2) Python 运行时（本机状态优先）
     py = _python_state(ws, boot)

@@ -172,6 +172,26 @@ class Preflight(unittest.TestCase):
         item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
         self.assertEqual(item["status"], "mismatch", item)
 
+    def test_p26_schema_version_type_is_strict(self):
+        """`True == 1`、`1.0 == 1`：只认精确整数 1。"""
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        boot_p = ws / ".workspace" / "bootstrap.json"
+        for bad in (True, 1.0, "1"):
+            boot = json.loads(boot_p.read_text(encoding="utf-8"))
+            boot["schema_version"] = bad
+            boot_p.write_text(json.dumps(boot), encoding="utf-8")
+            rc, data = run(ws)
+            item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
+            self.assertEqual(item["status"], "mismatch", f"{bad!r} 被当成合法版本：{item}")
+        boot = json.loads(boot_p.read_text(encoding="utf-8"))
+        boot["schema_version"] = 1
+        boot_p.write_text(json.dumps(boot), encoding="utf-8")
+        rc, data = run(ws)
+        item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
+        self.assertEqual(item["status"], "ok", "整数 1 应有可见的 OK 行")
+
     def test_p3_skills_mismatch(self):
         (self.ws / ".workspace" / "skills" / "extra").mkdir()
         (self.ws / ".workspace" / "skills" / "extra" / "SKILL.md").write_text(

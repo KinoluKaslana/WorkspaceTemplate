@@ -39,7 +39,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 
 ## 什么时候**不该**用它
 
-这套东西的成本在「机械一致性」：127 条政策、11 项预检、三层门禁（plugin / 客户端 hook / 差集审计）。以下场景它不划算：
+这套东西的成本在「机械一致性」：136 条政策、12 项预检、三层门禁（plugin / 客户端 hook / 差集审计）。以下场景它不划算：
 
 - **一次性任务或单文件改动**：读完政策、跑预检、写 note 的时间比改代码还长，直接干活更快。
 - **只是偶尔问答**：`hook` 与 `preflight` 的收益来自「长期、反复、多会话」；一次性咨询用不上。
@@ -75,7 +75,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 机械守门补强 | 拒绝码前缀、委托审计、`gate-deny` 独立核验、审计十三型 | 插件 1.9.0 + `docs/hooks-catalog.md` §2.6 |
 | skills 契约化 | 8 个 skill 必须齐 8 维；`skill_audit.py` 缺节即失败；REGISTRY 由目录派生 | `docs/skills.md` §1 |
 | Python 三选一 | **uv 默认** / 手动 venv / MCP；已配置不被改写 | R2–R8 + `pyenv_init.py` |
-| 跨设备可核验 | 11 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
+| 跨设备可核验 | 12 项预检把"登记 vs 本机实际"摊开；模板按任意 ref 同步且带 `--prune` | `workspace_preflight.py` / `template_sync.py` |
 | docs 检索（可选） | 确定性索引，**省账单不省 token**，命中 10/10 | `docs/docs-retrieval.md` |
 
 > 完整文档入口：[`docs/README.md`](docs/README.md)（按读者选路径）。
@@ -362,7 +362,7 @@ Agent 将自动完成：
 │   ├── mark_rules.py        # 条款 ID 标记 + 注册表生成
 │   ├── verify_rules.py      # 双级校验 + --vs-template 权威比对
 │   ├── skill_audit.py       # skills 契约 / 双登记 / --sync-registry
-│   ├── workspace_preflight.py # 跨设备 11 项预检
+│   ├── workspace_preflight.py # 跨设备 12 项预检
 │   ├── template_sync.py     # 任意 ref 同步 + --prune
 │   ├── pyenv_init.py        # uv / venv / mcp 三模式初始化
 │   ├── docs_index.py        # docs 确定性索引

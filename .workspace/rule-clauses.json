@@ -173,7 +173,7 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "e2f5356c9cb130d166fc35f688b8648948e0c84e4f5ed9608001fc3e96803b42",
+    "file_sha256": "f5fb72948eb017ef0a7570b9c70940b50a3543ddfa002bb0691157e453c746b9",
     "marked": 0
   },
   "README_EN.md": {
@@ -263,7 +263,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "f74cdcb677246dfced69faa3ddcb737e8375017837fb4111170da4638d23136f",
+    "file_sha256": "afda6ef82c2ac0e74a4b7f0337813c8b83d48047e43667140aae6c37cbbabb89",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -278,7 +278,7 @@
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "3fa23157981cf31a89393efa824034322efe5feeb633f9c9fa7c594bcfc60f64",
+    "file_sha256": "2ef2fafd9257b3973eba16ca70a7e1a9b846919f81540c59537aeec5bb94771f",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
@@ -313,7 +313,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "2f3595cc0c3ae916df6742c79ca32220e41b57fe8c9c1068df97764cfb267061",
+    "file_sha256": "db77bee3ba23ae48857096c53cec318faea65cea26aa795cfb89ed0fdd71a25e",
     "marked": 0
   },
   "docs/hooks-guide.md": {
