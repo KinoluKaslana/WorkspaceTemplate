@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -159,6 +160,11 @@ class AgentScope(unittest.TestCase):
 
     def test_commit_ledger_rotation_keeps_latest_per_target(self):
         """轮转压缩：同一 target 只保留最新一条，且 committed_targets 仍能命中。"""
+        # hstate 必须把目录解析完全委托给 gate_core；旧版吞异常后猜目录会掩盖接线漂移。
+        with mock.patch.object(core, "state_dir",
+                               side_effect=RuntimeError("state-dir-sentinel")):
+            with self.assertRaisesRegex(RuntimeError, "state-dir-sentinel"):
+                hstate.state_dir(self.ws)
         ws = str(self.ws)
         ledger = hstate.state_dir(self.ws) / "commits.jsonl"
         ledger.parent.mkdir(parents=True, exist_ok=True)

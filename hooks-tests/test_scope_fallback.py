@@ -115,6 +115,22 @@ class FallbackScope(unittest.TestCase):
         self.assertIn("replace", events)
         self.assertEqual(events[0], "fsync", events)
         self.assertLess(events.index("fsync"), events.index("replace"), events)
+        if os.name != "nt":
+            seed = self.state / "workspace-template" / "scope-seed"
+            self.assertEqual(seed.stat().st_mode & 0o777, 0o600,
+                             "fallback seed 必须是 0600")
+
+    def test_fallback_seed_respects_shared_lock(self):
+        """持有标准锁时不得另起私锁造种子；确定性杀掉并发串行漂移。"""
+        seed = self.state / "workspace-template" / "scope-seed"
+        seed.parent.mkdir(parents=True, exist_ok=True)
+        lock = seed.with_name(seed.name + ".lock")
+        lock.write_bytes(b"")
+        with mock.patch.object(self.core.time, "time",
+                               side_effect=[0.0, 0.0, 0.0, 3.0]), \
+             mock.patch.object(self.core.time, "sleep", return_value=None):
+            self.assertEqual(self.core._fallback_seed(), b"")
+        self.assertFalse(seed.exists(), "未取得共享锁却创建了 seed")
 
     def test_denied_write_records_no_commit(self):
         """被拒的写不得产生 gate-commit（否则账本会把「没写」记成「写了」）。"""
