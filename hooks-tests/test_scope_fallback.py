@@ -128,7 +128,8 @@ class FallbackScope(unittest.TestCase):
         lock = seed.with_name(seed.name + ".lock")
         lock.write_bytes(b"")
         with mock.patch.object(self.core.time, "time",
-                               side_effect=[0.0, 0.0, 0.0, 3.0]), \
+                               side_effect=itertools.chain([0.0, 0.0, 0.0],
+                                                           itertools.repeat(3.0))), \
              mock.patch.object(self.core.time, "sleep", return_value=None):
             self.assertEqual(self.core._fallback_seed(), b"")
         self.assertFalse(seed.exists(), "未取得共享锁却创建了 seed")
@@ -137,9 +138,10 @@ class FallbackScope(unittest.TestCase):
     def test_windows_branch_falls_back_to_localappdata_seed(self):
         """Windows：MachineGuid 取不到时必须落到 %LOCALAPPDATA% 的种子，而不是共享 unknown。
 
-        在 Linux 上跑：把 `os.name` 改成 "nt"、清掉 XDG_STATE_HOME、LOCALAPPDATA 指向临时目录，
-        `import winreg` 在非 Windows 上自然失败（等价于注册表不可读），走的正是真机上的
-        「MachineGuid 读不到 → 本机种子」分支。
+        平台无关做法：patch `_IS_WINDOWS=True`（不碰全局 `os.name`，否则 pathlib 会崩），
+        再用 `sys.modules["winreg"]=None` **显式注入**「注册表模块不可用」——这样在真有
+        `winreg` 且 MachineGuid 可读的 Windows 上，也稳定走「MachineGuid 读不到 → 本机种子」
+        分支，不会因为平台不同而反转结论。
         """
         local = Path(self.tmp) / "localappdata"
         local.mkdir()

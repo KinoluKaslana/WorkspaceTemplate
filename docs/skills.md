@@ -52,7 +52,7 @@ python3 scripts/template_sync.py --workspace . --ref alpha --apply --verify --js
 ### 2.2 `workspace-repo-sync`
 
 ```bash
-python3 scripts/workspace_preflight.py            # 11 项登记事实核验（先跑）
+python3 scripts/workspace_preflight.py            # 登记事实核验（条目以脚本输出为准）
 git fetch --all --prune && git status -sb         # 只读看清差异
 # 由用户决定：方向 / ff|merge|rebase / 冲突处置
 ```

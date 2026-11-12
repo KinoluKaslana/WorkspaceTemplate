@@ -95,7 +95,13 @@ class DocsConsistency(unittest.TestCase):
             if md.name.startswith("README") and not strict:
                 continue
             text = md.read_text(encoding="utf-8")
-            for m in re.finditer(r"政策版本?\s*(?:\*\*)?v?([\d.]+)(?:\*\*)?"
+            # 只查「断言当前版本」的写法，不碰历史叙述：
+            #   · 「当前/基线/对应 … 政策 3.x.y」这类现状声明
+            #   · 「政策 3.x.y 为准 / 生效」这类判据声明
+            #   · 徽章与 policy **x** 形态
+            # 历史句子（如「v1.7.0 / 政策 2.8.2 起支持机器码」）不是快照，不算漂移。
+            for m in re.finditer(r"(?:当前|基线|对应)[^\n]{0,12}?政策(?:版本)?\s*(?:\*\*)?v?([\d.]+)"
+                                 r"|政策(?:版本)?\s*(?:\*\*)?v?([\d.]+)(?:\*\*)?\s*(?:为准|生效)"
                                  r"|policy \*\*([\d.]+)\*\*|policy-v([\d.]+)-"
                                  r"|badge/policy-v([\d.]+)", text):
                 v = next(g for g in m.groups() if g)

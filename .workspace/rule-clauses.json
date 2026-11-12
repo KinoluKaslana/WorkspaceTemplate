@@ -303,12 +303,12 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "2366952df7e88dde9ebb1d0ea4fed9476e257d61ceea242d3019a56d9422c1e9",
+    "file_sha256": "7a0d8d404ef4fec40551d17ee3145002b3d2a02a22334d9e48f82b3077dfccd2",
     "marked": 0
   },
   "docs/skills.md": {
     "clauses": {},
-    "file_sha256": "c0b12e19e444728c6118d13969a2aed5df832b13ce5ef9d2978920d79aca1223",
+    "file_sha256": "f1915b98409de91fe39e6b2dd8e787867644a67231b88231547f51f19393d8d9",
     "marked": 0
   },
   "docs/tools.md": {
@@ -343,7 +343,7 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "6f8ad35cdf6b3f9afe496b3a424a46762973a648466cb56439b6b1f66a230f2f",
+    "file_sha256": "8f41c9420df5739cd1aa980317a90e35864e30589f1fcdf4e21748d84d230aee",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
