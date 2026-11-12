@@ -95,8 +95,9 @@ class DocsConsistency(unittest.TestCase):
             if md.name.startswith("README") and not strict:
                 continue
             text = md.read_text(encoding="utf-8")
-            for m in re.finditer(r"政策 \*\*([\d.]+)\*\*|policy \*\*([\d.]+)\*\*"
-                                 r"|policy-v([\d.]+)-|badge/policy-v([\d.]+)", text):
+            for m in re.finditer(r"政策版本?\s*(?:\*\*)?v?([\d.]+)(?:\*\*)?"
+                                 r"|policy \*\*([\d.]+)\*\*|policy-v([\d.]+)-"
+                                 r"|badge/policy-v([\d.]+)", text):
                 v = next(g for g in m.groups() if g)
                 if v != policy:
                     offenders.append(f"{md.relative_to(ROOT)}: 写了旧版本 {v}（当前 {policy}）")

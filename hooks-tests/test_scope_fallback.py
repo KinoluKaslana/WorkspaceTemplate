@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import hashlib
 import hmac
 import os
@@ -146,7 +147,12 @@ class FallbackScope(unittest.TestCase):
         old_local = os.environ.get("LOCALAPPDATA")
         os.environ["LOCALAPPDATA"] = str(local)
         try:
-            with mock.patch.object(self.core, "_IS_WINDOWS", True):
+            # 关键：不能靠「Linux 上没有 winreg」来制造失败路径——CI 的 windows-latest
+            # 上 winreg 存在且通常可读，那样这个用例会反过来要求建种子而失败。
+            # 用 sys.modules["winreg"]=None 让 `import winreg` 抛 ImportError，
+            # 两种平台上都等价于「MachineGuid 读不到」。
+            with mock.patch.object(self.core, "_IS_WINDOWS", True), \
+                 mock.patch.dict(sys.modules, {"winreg": None}):
                 scope = self.core._fallback_scope()
             self.assertEqual(len(scope), 12, scope)
             int(scope, 16)

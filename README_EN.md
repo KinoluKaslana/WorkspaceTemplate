@@ -37,7 +37,7 @@ WorkspaceTemplate turns those principles into a small, explicit set of files. It
 
 ## When **not** to use it
 
-The cost here is mechanical consistency: 118 clauses, 10 preflight checks, and three gate layers
+The cost here is mechanical consistency: 136 clauses, 12 preflight checks, and three gate layers
 (plugin / client hooks / post-hoc diff audit). It does not pay off when:
 
 - **One-off tasks or single-file edits** — reading the policy, running preflight and writing a note costs more than the change itself.

@@ -178,7 +178,7 @@
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "3f55a77ce0b28ea73f3ee8b7ff00af8f91b00e7a0822b10f0d6b45b4c9482e54",
+    "file_sha256": "3142cf76bd38aa0cebb36427cbcaac70fd7b794bff565416904952fb4a8a7430",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -318,7 +318,7 @@
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "9150f1959ca31e39e397f00e516b6693eb64caf9c63afc5a7e1aa7854cb6ae32",
+    "file_sha256": "c4cef4d4a7dc28d1eea5c120cb96ca428c887d7ea46d89443c691a3f457a0383",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
@@ -343,7 +343,7 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "930b890ed4aeeb0f9629bde8fc506282b0000da17ba16deaaaf33a7484fd3a5d",
+    "file_sha256": "6f8ad35cdf6b3f9afe496b3a424a46762973a648466cb56439b6b1f66a230f2f",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
@@ -433,7 +433,7 @@
   },
   "docs/policy-language.md": {
     "clauses": {},
-    "file_sha256": "32f7a9ada42a333f13a2f53b58517c986393b530efd1cc6617f194ecb742cca0",
+    "file_sha256": "c5ac4833cc9b63300dd911426e1b1421b560e6916950e5e1e20cc3b25916bd7a",
     "marked": 0
   },
   ".workspace/skills/workspace-repo-sync/SKILL.md": {
