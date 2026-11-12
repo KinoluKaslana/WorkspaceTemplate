@@ -63,7 +63,7 @@ E8 是防自欺的关键：`hook` / `template-sync` / `skills-registry` / `docs`
 
 ```
 条款数与情态分布见 `AGENT_RULES.md` 与 `.workspace/clauses.meta.json`（不在此处写死快照）
-check：命令 24 / manual 16 / 空 72（SHOULD·MAY·INFO 不强制）
+check 分布以 `python3 scripts/clause_lint.py --report` 的实测输出为准（此处不写死计数）
 0 errors / 0 warnings（findings>0 即 exit 1）
 ```
 
@@ -96,7 +96,7 @@ check：命令 24 / manual 16 / 空 72（SHOULD·MAY·INFO 不强制）
 | R80 索引不得手改 | `notes_index_check.py` | C1 产物 | 两个索引文件与「重新生成」逐字节一致（时间戳除外） | 生成脚本本身是否有 bug |
 | R11 MCP 模式不得建本地 venv | `workspace_preflight.py` | C1 产物 | `python.mode=mcp` 时工作区没有 `.venv-*` 目录 | venv 是否建在别处；「shell python ≠ MCP 运行时」这半句仍靠人判 |
 
-仍然保持 `manual` 的 16 条（R3/R6/R20/R57/R58/R59/R60/R62/R63/R66/R67/R68/R71/R75/R84/R104）都是**意图或过程**判断（用户是否同意、是否属当次范围、合并前是否检查），不满足 C1–C3。**把"用户确认"做成自我声明的日志或环境变量，等于把 manual 换成假绿**——这类转换一律拒绝。
+仍然保持 `manual` 的那些条款（清单见 `clause_lint.py --report`）都是**意图或过程**判断（用户是否同意、是否属当次范围、合并前是否检查），不满足 C1–C3。**把"用户确认"做成自我声明的日志或环境变量，等于把 manual 换成假绿**——这类转换一律拒绝。
 
 **下一步候选（两席同提，未做）**：R2 / R11 / R61 各自都含「可判事实 + 人的判断」两半——
 例如 R2 的「版本号与 CHANGELOG 条目存在」可判，但「该升 PATCH 还是 MINOR」不可判；

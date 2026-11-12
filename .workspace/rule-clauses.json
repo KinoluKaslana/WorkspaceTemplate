@@ -303,7 +303,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "7a0d8d404ef4fec40551d17ee3145002b3d2a02a22334d9e48f82b3077dfccd2",
+    "file_sha256": "cc2d2e1947f8742b55f35ad7093e764d98ffc22e0cfb63466ba121bb4953761e",
     "marked": 0
   },
   "docs/skills.md": {
@@ -343,7 +343,7 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "8f41c9420df5739cd1aa980317a90e35864e30589f1fcdf4e21748d84d230aee",
+    "file_sha256": "82a00e76cbd214f1e3356e74bdb1ff5f722200a36ad3c6cbe896aa31ec4b5a34",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
@@ -433,7 +433,7 @@
   },
   "docs/policy-language.md": {
     "clauses": {},
-    "file_sha256": "c5ac4833cc9b63300dd911426e1b1421b560e6916950e5e1e20cc3b25916bd7a",
+    "file_sha256": "64ad9c3c2c26072e539b07b86350cf7c97e205ee66de9b3fbf993364bc13015b",
     "marked": 0
   },
   ".workspace/skills/workspace-repo-sync/SKILL.md": {

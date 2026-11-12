@@ -26,6 +26,26 @@ WORD_NUM = {"One": 1, "Two": 2, "Three": 3, "Four": 4, "Five": 5, "Six": 6,
             "Seven": 7, "Eight": 8, "Nine": 9, "Ten": 10, "Fourteen": 14}
 
 
+# D4：只认「断言当前版本」的三种句式 + README 徽章；历史叙述一律不匹配。
+_ASSERT_PATTERNS = (
+    r"当前政策版本\s*\*\*([\d.]+)\*\*",
+    r"当前对应：政策\s*\*\*([\d.]+)\*\*",
+    r"当前基线（政策\s*([\d.]+)）",
+)
+_BADGE_PATTERNS = (r"badge/policy-v([\d.]+)-", r"\[!\[Policy\]\([^)]*policy-v([\d.]+)")
+
+
+def _d4_offenders(rel: str, text: str, policy: str) -> list[str]:
+    out = []
+    patterns = _ASSERT_PATTERNS + (_BADGE_PATTERNS if rel.startswith("README") else ())
+    for pat in patterns:
+        for m in re.finditer(pat, text):
+            v = m.group(1)
+            if v != policy:
+                out.append(f"{rel}: 写了旧版本 {v}（当前 {policy}）")
+    return out
+
+
 def skills() -> dict[str, str]:
     out = {}
     for p in (ROOT / ".workspace" / "skills").glob("*/SKILL.md"):
@@ -85,29 +105,38 @@ class DocsConsistency(unittest.TestCase):
         self.assertEqual(missing, [], f"docs/tools.md 未覆盖脚本：{missing}")
 
     def test_d4_no_stale_version_snapshots(self):
-        """文档不得写死易漂移的版本快照；版本只以 AGENT_RULES.md 为准。"""
+        """文档不得写死易漂移的版本快照；版本只以 AGENT_RULES.md 为准。
+
+        只认**断言当前版本**的写法 + README 徽章；历史叙述（「在 3.6.1 发布时…」
+        「v1.7.0 / 政策 2.8.2 起」）与旧徽章示例不是快照，不能误报。
+        """
         policy = re.search(r"模板政策版本：`([\d.]+)`", (ROOT / "AGENT_RULES.md").read_text(encoding="utf-8")).group(1)
-        offenders = []
         strict = _is_template_repo()
+        offenders = []
         for md in DOCS:
-            # 实例的 README 是用户首页（同步豁免）；模板正主的 README 必须被查——徽章里的
-            # `policy-vX.Y.Z` 曾经一路漂到 v3.5.0 而没人管，正是这条检查漏了 README 与徽章格式。
             if md.name.startswith("README") and not strict:
                 continue
-            text = md.read_text(encoding="utf-8")
-            # 只查「断言当前版本」的写法，不碰历史叙述：
-            #   · 「当前/基线/对应 … 政策 3.x.y」这类现状声明
-            #   · 「政策 3.x.y 为准 / 生效」这类判据声明
-            #   · 徽章与 policy **x** 形态
-            # 历史句子（如「v1.7.0 / 政策 2.8.2 起支持机器码」）不是快照，不算漂移。
-            for m in re.finditer(r"(?:当前|基线|对应)[^\n]{0,12}?政策(?:版本)?\s*(?:\*\*)?v?([\d.]+)"
-                                 r"|政策(?:版本)?\s*(?:\*\*)?v?([\d.]+)(?:\*\*)?\s*(?:为准|生效)"
-                                 r"|policy \*\*([\d.]+)\*\*|policy-v([\d.]+)-"
-                                 r"|badge/policy-v([\d.]+)", text):
-                v = next(g for g in m.groups() if g)
-                if v != policy:
-                    offenders.append(f"{md.relative_to(ROOT)}: 写了旧版本 {v}（当前 {policy}）")
+            offenders += _d4_offenders(md.relative_to(ROOT).as_posix(), md.read_text(encoding="utf-8"), policy)
         self.assertEqual(offenders, [], "; ".join(offenders))
+
+    def test_d4_ignores_historical_narrative(self):
+        """反证：历史叙述不得被判成版本漂移（否则 D4 会逼人删掉真实历史）。"""
+        policy = "3.7.0"
+        cases = [
+            "在 3.6.1 发布时，当前对应政策 3.6.1；后来才升级到 3.7.0。",
+            "**拒绝消息带机器可读码**（v1.7.0 / 政策 2.8.2 起），形如 `[workspace-gate:no-read]`：",
+            "迁移示例：旧徽章 `badge/policy-v3.4.0-6f42c1` 应改成新版本。",
+        ]
+        for text in cases:
+            self.assertEqual(_d4_offenders("docs/example.md", text, policy), [], text)
+
+    def test_d4_catches_current_declaration(self):
+        """正证：三种「当前版本」写法都必须被抓到。"""
+        policy = "3.7.0"
+        for text in ("当前政策版本 **3.3.1**",
+                     "> 当前对应：政策 **3.6.1** · 插件 1.9.0",
+                     "## 5. 当前基线（政策 3.4.0）"):
+            self.assertTrue(_d4_offenders("docs/example.md", text, policy), text)
 
     def test_d5_readme_lists_all_skills(self):
         if not _is_template_repo():

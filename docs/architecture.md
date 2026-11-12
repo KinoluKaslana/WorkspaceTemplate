@@ -18,7 +18,7 @@
 └───────────────┬──────────────────────────────────────────────┘
                 │ 兜底（不是替代）
 ┌───────────────▼──────────────────────────────────────────────┐
-│ ③ 流程层  .workspace/skills/（7 个）                          │
+│ ③ 流程层  .workspace/skills/（个数以 `scripts/skill_audit.py --strict` 为准）                          │
 │    8 维契约：触发/前置/契约/边界/执行/失败回滚/验收/维护       │
 └───────────────┬──────────────────────────────────────────────┘
                 │ 调用
@@ -78,7 +78,7 @@ Agent 决定写 X
 | 仓库共享 | `notes/`、`skills/`、`scripts/`、`docs/` | 走 git；冲突由用户裁决 |
 | 派生/易变 | `docs/.index.json`、`notes/INDEX.md`、`.hook-state/<scope>/` | 拉取后重建；`.hook-state/` 必须被 gitignore |
 
-`workspace_preflight.py` 把这三类差异摊开（项数以脚本 `--list` 输出为准），`workspace-repo-sync` skill 负责按用户裁决执行。
+`workspace_preflight.py` 把这三类差异摊开（项数以 `workspace_preflight.py --json` 的 `items` 为准），`workspace-repo-sync` skill 负责按用户裁决执行。
 
 ## 6. 模板演进与实例的关系
 
@@ -94,7 +94,7 @@ Agent 决定写 X
 - 同步**不改** `bootstrap` 的既有 `python`/`gate` 旧节（`python_mode_preserved` / `gate_preserved` 是硬条件）；运行时模式与 gate 结论都在**本机状态**，天然不在同步范围内；
 - **`.github/` 不下发**：CI 工作流与 `.github/scripts/release_anchor.py` 属模板仓自己的基础设施，不进
   `TEMPLATE_FILES`、不随 `template_sync` 同步到实例；实例不需要它们也能跑全部治理脚本（`tests/test_docs_consistency.py` 的 D9 断言此边界）。
-- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（**不在此处写死项数**；新增/删除模板层文件时以脚本输出为准，`tests/test_docs_consistency.py` 会拦写死快照）。
+- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（**不在此处写死项数**；新增/删除模板层文件时以脚本输出为准（写死项数不会被测试拦住，靠评审把关））。
 
 ## 7. 扩展点
 
