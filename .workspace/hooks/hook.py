@@ -8,6 +8,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import gate_core as core
@@ -355,34 +356,49 @@ def _failed_response(obj: dict) -> bool:
     return False
 
 
-DSH_WRAP = re.compile(r"^\s*<path>.*?</path>\s*\n\s*<type>file</type>\s*\n\s*<content>\n(.*)\n</content>\s*$",
-                      re.S)
 DSH_NUM = re.compile(r"^(\d+): ?(.*)$")
-DSH_TRAILER = re.compile(r"^\((?:Showing lines \d+-\d+ of \d+\. Use offset=\d+ to continue|End of file - total \d+ lines)\.?\)$")
+DSH_SHOWING = re.compile(
+    r"^\(Showing lines (\d+)-(\d+) of (\d+)\. Use offset=\d+ to continue\.??\)$")
+DSH_EOF = re.compile(r"^\(End of file - total (\d+) lines?\.?\)$")
 
 
-def _dsh_read_body(value: object, offset: int) -> str | None:
+def _dsh_read_body(value: object, offset: int | None = None) -> tuple[str, int, int] | None:
     """dsh read 正文带 `<path>/<type>/<content>` 包装与 `N: ` 行号前缀。
 
-    只接受**行号连续、从 offset 开始**的形态；任何不符 → None（不授证，方向安全）。
+    区间以正文的 ASCII 行号推断；尾注存在时作为权威区间。只接受连续行号，且显式
+    offset 必须与推断起点一致；任何不符 → None（不授证，方向安全）。
     """
     raw = _dsh_text(value)
     if not raw:
         return None
-    m = DSH_WRAP.match(raw)
-    body = m.group(1) if m else raw
+    raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+    marker = "<content>\n"
+    body = raw.split(marker, 1)[1] if marker in raw else raw
     lines = body.split("\n")
-    # dsh 在 windowed read 末尾附一行 "(Showing lines A-B of N. Use offset=K to continue.)"
-    if lines and DSH_TRAILER.match(lines[-1].strip()):
+    while lines and (not lines[-1].strip() or lines[-1].strip() == "</content>"):
         lines.pop()
-        while lines and lines[-1] == "":
+    authoritative = None
+    if lines:
+        trailer = lines[-1].strip()
+        shown = DSH_SHOWING.fullmatch(trailer)
+        eof = DSH_EOF.fullmatch(trailer)
+        if shown:
+            authoritative = (int(shown.group(1)), int(shown.group(2)))
             lines.pop()
-    # dsh 整文件读在末尾附一行 "(End of file - total N lines)"；它不是正文
-    if lines and re.fullmatch(r"\(End of file - total \d+ lines?\)", lines[-1].strip()):
+        elif eof:
+            authoritative = (None, int(eof.group(1)))
+            lines.pop()
+    while lines and not lines[-1].strip():
         lines.pop()
-        while lines and lines[-1] == "":
-            lines.pop()
-    want = offset
+    if not lines:
+        return None
+    first = DSH_NUM.match(lines[0])
+    if not first:
+        return None
+    start = int(first.group(1))
+    if offset is not None and offset != start:
+        return None
+    want = start
     out = []
     for line in lines:
         mm = DSH_NUM.match(line)
@@ -390,7 +406,13 @@ def _dsh_read_body(value: object, offset: int) -> str | None:
             return None
         out.append(mm.group(2))
         want += 1
-    return "\n".join(out)
+    end = want - 1
+    if authoritative:
+        auth_start, auth_end = authoritative
+        if (auth_start is not None and auth_start != start) or auth_end != end:
+            return None
+        start, end = auth_start or start, auth_end
+    return "\n".join(out), start, end
 
 
 def _dsh_text(value: object, depth: int = 0) -> str | None:
@@ -432,18 +454,19 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         path = inp.get("path") or inp.get("file_path")
         if not isinstance(path, str) or not path.strip():
             return
-        off0 = inp.get("offset", 1)
-        if type(off0) is not int or off0 < 1:
+        off0 = inp.get("offset")
+        if off0 is not None and (type(off0) is not int or off0 < 1):
             return
-        body = _dsh_read_body(data.get("tool_response"), off0)
-        if body is None:
+        parsed = _dsh_read_body(data.get("tool_response"), off0)
+        if parsed is None:
             return                       # 形态不符 → 不记账（方向安全）
+        body, inferred_start, inferred_end = parsed
         target = _absolute(path, cwd)
         try:
             total = len(Path(target).read_text(encoding="utf-8", errors="replace").split("\n"))
         except OSError:
             return
-        off = inp.get("offset", 1)
+        off = inp.get("offset", inferred_start)
         lim = inp.get("limit")
         if type(off) is not int or off < 1:
             return
@@ -452,7 +475,9 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         # EOF 哨兵：split("\n") 末尾多一行空行；物理行数要减去它，
         # 否则「读到最后一行」会被判成不完整（gate_core 会在 end==total-1 时自动升格）。
         physical = total - 1 if (total > 1 and Path(target).read_bytes().endswith(b"\n")) else total
-        end = physical if lim is None else min(physical, off + lim - 1)
+        end = inferred_end
+        if lim is not None and end != min(physical, off + lim - 1):
+            return
         # 非 EOF 区间恒补自身行终止符：gate_core 的 expected 对这个区间**无条件**补 LF。
         # 只在 body 不以 LF 结尾时补，会让「区间末行是空行」的读永远对不上（真实事故：
         # 分次读 1..130 + 131..EOF 永远累加不上，违反 R98「分次可累加」）。
@@ -470,7 +495,12 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         with core._StateLock(ws, client, skey):
             st = core.load_state(ws, client, skey)
             for gate_rel in conf["gate_files"]:
-                if core.record_read(st, ws, gate_rel, client, read_info).get("recorded"):
+                result = core.record_read(st, ws, gate_rel, client, read_info)
+                if result.get("recorded"):
+                    events = st.get("events") if isinstance(st.get("events"), list) else []
+                    events.append({"type": "read", "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                   "file": gate_rel, "start": off, "end": end})
+                    st["events"] = events[-50:]
                     break
             core.save_state(ws, client, skey, st)
         return

@@ -8,7 +8,10 @@
 
 Start from a clean, auditable rule skeleton so an Agent confirms the Python runtime, business boundaries, tool facts, and skills sources before doing real work.
 
+<!-- gen:policy-facts:begin -->
+<!-- doc-fact:readme-en-policy-badge -->
 [![Policy](https://img.shields.io/badge/policy-v3.7.0%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+<!-- gen:policy-facts:end -->
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)
 [![Bootstrap](https://img.shields.io/badge/bootstrap-zero%20third--party%20dependencies-2ea44f)](scripts/inspect_skills.py)
@@ -37,7 +40,7 @@ WorkspaceTemplate turns those principles into a small, explicit set of files. It
 
 ## When **not** to use it
 
-The cost here is mechanical consistency: 136 clauses, 12 preflight checks, and three gate layers
+The cost here is mechanical consistency: 136 clauses, a cross-device preflight, and three gate layers
 (plugin / client hooks / post-hoc diff audit). It does not pay off when:
 
 - **One-off tasks or single-file edits** — reading the policy, running preflight and writing a note costs more than the change itself.
@@ -55,7 +58,7 @@ See “Why It Exists” and “Core Capabilities” above for where it does fit.
 | One policy source | [`AGENT_RULES.md`](AGENT_RULES.md) governs primary and delegated Agents; client entry files only point to it |
 | Rule layering | Template-layer files are **locked read-only** (sync = whole-file replacement); local rules live in `<file>.custom.md` and **custom takes precedence** (§10) |
 | Integrity verification | Stable clause IDs (`<!-- id:Rn -->`) + registry-based two-level verification; `--vs-template` byte-compares against the template clone with a **git trust anchor**, closing the "edit the file then regenerate the registry" self-attestation hole |
-| Lifecycle skills | Eight skills ship in `.workspace/skills/`: `template-update` (sync from any ref), `workspace-repo-sync` (cross-device repo sync), `workspace-init` (adopt / first landing), `git-init` (create repo), `delivery-closure` (finish check), `docs-retrieval-maintenance` (docs index & aliases), `legacy-workspace-upgrade` (bootstrap an old workspace). Each must satisfy the 8-dimension contract, enforced by `skill_audit.py` |
+| Lifecycle skills | Skills ship in `.workspace/skills/`: `template-update` (sync from any ref), `workspace-repo-sync` (cross-device repo sync), `workspace-init` (adopt / first landing), `git-init` (create repo), `delivery-closure` (finish check), `docs-retrieval-maintenance` (docs index & aliases), `legacy-workspace-upgrade` (bootstrap an old workspace), `workspace-skill-authoring` (author a workspace-local skill). Each must satisfy the 8-dimension contract, enforced by `skill_audit.py` |
 | First-init protocol | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) persists `workspace_id` / `workspace_status` and `git.status`; the runtime mode (`uv` / `local-venv` / `mcp`, uv by default) lives in **machine-local state** `.workspace/.local/v1/<context_id>/runtime.json` (**optional**: initialized / declined); a configured mode is never rewritten by template upgrades |
 | Business-agnostic foundation | [`WORKSPACE.md`](WORKSPACE.md) starts undefined and is shaped by the user's stable goals, scope, and acceptance criteria |
 | One-path skills onboarding | The user provides a root directory; the Agent discovers entries, records fingerprints, and resolves duplicate names |
@@ -201,17 +204,18 @@ Boundary that must be stated alongside: **Claude Code Bash writes are neither su
 
 ## Workspace Lifecycle Skills
 
-Eight skills ship with the template in `.workspace/skills/` (workspace-skills namespace) and are registered in `skills/REGISTRY.md` and `TOOLS.md`; each must satisfy the 8-dimension contract checked by `skill_audit.py`:
+Skills ship with the template in `.workspace/skills/` (workspace-skills namespace) and are registered in `skills/REGISTRY.md` and `TOOLS.md`; each must satisfy the 8-dimension contract checked by `skill_audit.py`:
 
 | Skill | Version | Trigger | What it does |
 |---|---|---|---|
 | [template-update](.workspace/skills/template-update/SKILL.md) | 3.2.1 | "sync the template / switch to a branch or tag", or version lag / verify drift | Sync template layer from **any ref** (branch/tag/commit): dry-run → backup (MANIFEST) → whole-file replacement → custom migration → `--vs-template`; `--prune` removes files deleted upstream |
-| [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.2 | New device, notes/TOOLS changed elsewhere, or tooling looks broken | `workspace_preflight.py` (10 checks) → user decides direction/merge/conflicts → pull → rebuild indexes → four-way re-verification |
+| [workspace-repo-sync](.workspace/skills/workspace-repo-sync/SKILL.md) | 1.1.2 | New device, notes/TOOLS changed elsewhere, or tooling looks broken | `workspace_preflight.py` preflight → user decides direction/merge/conflicts → pull → rebuild indexes → four-way re-verification |
 | [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.3.0 | "initialize / adopt this workspace", or no trustworthy lineage / no clause markers | Inventory → diff verdict → pre-v2.0 migration → Python (keep if configured) → git decision → registry → verify |
 | [git-init](.workspace/skills/git-init/SKILL.md) | 1.2.0 | "create a git repo", or `git.status=declined` then mind changed | init → .gitignore → register → review staging → commit → verify tree; includes rollback |
 | [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | Before declaring a task-mode deliverable complete | Artifact inventory (timestamp listing when no repo) → INDEX → note decision → index write-back → external verification → three-tier completion wording |
 | [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | workspace built from an old template, missing current skills / `template_sync.py` | clone snapshot → `--apply` → `--sync-registry` + TOOLS rows → four acceptances |
 | [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | docs changed, index stale, hit rate dropped | build/check → hit report → aliases only from real miss logs (cap 8, leave-one-out) → five acceptances |
+| [workspace-skill-authoring](.workspace/skills/workspace-skill-authoring/SKILL.md) | 1.0.0 | user explicitly asks to create or modify a **workspace-local** skill | gap evidence → overlap check → kebab naming → draft → 8-dimension contract → activation and three registrations → approval / trial |
 
 ## How It Works
 
@@ -297,7 +301,7 @@ Verified end to end: config mount, `apply` on a real boot, **denial during a rea
 │   ├── verify_rules.py      # Two-level verification + --vs-template authoritative compare
 │   ├── template_sync.py     # Sync template layer from any ref (dry-run / apply / prune / rollback)
 │   ├── skill_audit.py       # 8-dim contract + dual registration + --sync-registry / --tools-snippet
-│   ├── workspace_preflight.py  # 9-point cross-device preflight (report only)
+│   ├── workspace_preflight.py  # cross-device preflight (report only; item list from --json)
 │   ├── pyenv_init.py        # Python runtime: uv (default) / manual venv / MCP
 │   ├── docs_index.py        # Docs section index (no body stored)
 │   ├── docs_hit_report.py   # Retrieval hit report (threshold gate)

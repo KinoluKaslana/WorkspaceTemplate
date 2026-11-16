@@ -1,7 +1,14 @@
 # 架构：政策 · 守门 · 流程 · 工具
 
 > 实现说明，不构成政策。判定口径以 [`AGENT_RULES.md`](../AGENT_RULES.md) 为准。
-> 当前对应：政策 **3.7.0** · 插件 **1.9.0** · `TEMPLATE_FILES` **85** 项 · skills **8** 个 · scripts **16** 个。
+<!-- gen:policy-facts:begin -->
+<!-- doc-fact:arch-policy-version -->
+<!-- doc-fact:arch-plugin-version -->
+<!-- doc-fact:arch-template-files -->
+<!-- doc-fact:arch-skills -->
+<!-- doc-fact:arch-scripts -->
+> 当前对应：政策 **3.7.0** · 插件 **1.9.0** · `TEMPLATE_FILES` **94** 项 · skills **9** 个 · scripts **19** 个 · 条款 **R1..R136**。
+<!-- gen:policy-facts:end -->
 
 ## 1. 四层模型
 
@@ -23,7 +30,7 @@
 └───────────────┬──────────────────────────────────────────────┘
                 │ 调用
 ┌───────────────▼──────────────────────────────────────────────┐
-│ ④ 工具层  scripts/（16 个）                                   │
+│ ④ 工具层  scripts/*.py（个数见上方生成块）                   │
 │    确定性、可复跑、带退出码；不读政策、只认参数与文件事实      │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -94,7 +101,7 @@ Agent 决定写 X
 - 同步**不改** `bootstrap` 的既有 `python`/`gate` 旧节（`python_mode_preserved` / `gate_preserved` 是硬条件）；运行时模式与 gate 结论都在**本机状态**，天然不在同步范围内；
 - **`.github/` 不下发**：CI 工作流与 `.github/scripts/release_anchor.py` 属模板仓自己的基础设施，不进
   `TEMPLATE_FILES`、不随 `template_sync` 同步到实例；实例不需要它们也能跑全部治理脚本（`tests/test_docs_consistency.py` 的 D9 断言此边界）。
-- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（**不在此处写死项数**；新增/删除模板层文件时以脚本输出为准（写死项数不会被测试拦住，靠评审把关））。
+- 清单唯一事实源：`scripts/verify_rules.py` 的 `TEMPLATE_FILES`（**不在此处写死项数**；新增/删除模板层文件时以脚本输出为准；若误写固定项数，`docs/policy-language.md` §7 的 G4 会通过 `arch-template-files` 与磁盘清单实测值对账并报错）。
 
 ## 7. 扩展点
 

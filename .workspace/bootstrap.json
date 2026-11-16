@@ -27,7 +27,7 @@
     "curation": {
       "count_threshold": 25,
       "interval_days": 90,
-      "last_curated_at": null
+      "last_curated_at": "2026-11-15"
     }
   },
   "git": {

@@ -103,9 +103,9 @@ python3 .workspace/hooks/delegations.py --workspace . mint \
    子 agent 用 `Bash` 写文件同样拿不到写前拦截——只能在 `SubagentStop` 用 `agent_transcript_path` 回放子转录事后归因（做法见 §3.1）。
 2. **Codex 同一轮里同时读+写会被保守拒绝**：`cat` 与 `apply_patch` 同轮并行时，`post_bash` 记账晚于 `pre_write` 判定 → `已覆盖 无` 被拒（MUX 压测实测）；顺序执行即通过。这是 fail-closed 的代价。
 3. **Hermes 的 `pre_tool_call` 没有 `cwd`**：相对路径的主锚点是 `task_id` 的核心同源 task cwd（`session_id` 只用于提醒与归属面，不发许可）；两者都拿不到 → 无法归属 → 拦。
-4. **空 `session_id` 时工作区内的写一律拦**（政策 2.7.0 / R98）：包括无法解析的相对目标；**非写工具与工作区外绝对路径写入不受影响**。
+4. **空 `session_id` 时工作区内的写一律拦**（政策 2.7.0 / R98）：包括无法解析的相对目标；**非写工具与工作区外绝对路径写入不受影响**。<!-- history:2.7.0 -->
 5. **hook 未送达 = 客户端 fail-open**：客户端不调钩子时，守门只能事后用 `unobserved` 暴露，不能阻止。所以口径是 **advisory**（写前拦截 + 事后可判定），不是安全边界。
-6. **子 agent 的 shell 写**（CC `Bash`）不经过 `PreToolUse`：主会话在 `Stop`/`SessionEnd` 回放归因，子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放（作用域含 `.agent_id`，v2.8.4 起）。
+6. **子 agent 的 shell 写**（CC `Bash`）不经过 `PreToolUse`：主会话在 `Stop`/`SessionEnd` 回放归因，子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放（作用域含 `.agent_id`，v2.8.4 起）。<!-- history:2.8.4 -->
 
 ## 5. 术语
 

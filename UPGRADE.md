@@ -73,7 +73,7 @@ python3 scripts/skill_audit.py --sync-registry    # 新建/重写 REGISTRY 的�
 python3 scripts/skill_audit.py --tools-snippet    # 打印需补进 TOOLS.md 的行
 ```
 
-**运行时模式已下沉到本机状态**（3.7.0 起）：模式不再存 `bootstrap.python.mode`，而在
+**运行时模式已下沉到本机状态**（本版起，版本号见 `CHANGELOG.md` 顶层条目）：模式不再存 `bootstrap.python.mode`，而在
 `.workspace/.local/v1/<context_id>/runtime.json`（`scripts/local_state.py`）。旧工作区升级后：
 
 - `preflight` 报 `python` mismatch（旧记录不全或 venv 不在本机）→ 用机械入口重新绑定：

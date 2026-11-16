@@ -1,0 +1,10 @@
+[
+  {
+    "version": "3.7.0",
+    "date": "2026-11-12",
+    "summary": "批次 1–3 的缺陷修复与本机状态分片收口",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {"AGENT_RULES.md": "e8c93db36810166d", "CHANGELOG.md": "e0f649c2546f7454"}
+  }
+]

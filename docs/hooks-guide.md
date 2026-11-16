@@ -148,7 +148,7 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 
 两条必须知道的口径：① **判定逻辑内部异常一律 block**（fail-closed）；② **空 `session_id` 也 block**：写工作区文件时无法归属会话即拒绝，非写工具与工作区外绝对路径写入不受影响——不再有「身份缺失就跳过」的 fail-open 通道。
 
-**拒绝消息带机器可读码**（v1.7.0 / 政策 2.8.2 起），形如 `[workspace-gate:no-read] WorkspaceTemplate 守门…`：
+**拒绝消息带机器可读码**（v1.7.0 / 政策 2.8.2 起）<!-- history:2.8.2 -->，形如 `[workspace-gate:no-read] WorkspaceTemplate 守门…`：
 
 | 码 | 含义 | 怎么解 |
 |---|---|---|
@@ -342,7 +342,7 @@ claude -p "执行一条 Bash：printf x >> POLICY2.md" \
 | 写前拦截（原生文件工具） | ✅ `write_file`/`patch` | ✅ 原生 `apply_patch` | ✅ `Write`/`Edit` |
 | 写前拦截（Bash 静态写） | ⛔ 不在该层 | ✅ `>`/`>>`/`tee`/`sed -i`… | ⛔ 不订阅 |
 | Bash 写的覆盖方式 | ⛔ 该层没有 Bash 事件 | **实时拦截**（`PreToolUse`）+ `PostToolUse` 记账 | **仅事后归因**（转录回放 `cc-bash-write`） |
-| 无法识别会话（空 `session_id`） | **拒绝工作区写**（fail-closed，v1.5.0） | 无此路径 | 无此路径 |
+| 无法识别会话（空 `session_id`） | **拒绝工作区写**（fail-closed，v1.5.0）<!-- history:1.5.0 --> | 无此路径 | 无此路径 |
 | 读证据 | 行号 + 内容指纹 + 覆盖区间 | 同左 | 同左（从转录重建） |
 | 写治理文件需令牌 | 由 §12 判据覆盖 | ✅ `authz.py mint` | ✅ 同左 |
 | 完成声明门禁（advisory） | 会话结束时审计 | ✅ `Stop` → `completion-gate` | ✅ `Stop` → 同左 |

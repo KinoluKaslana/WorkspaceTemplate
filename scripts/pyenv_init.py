@@ -24,10 +24,18 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+try:
+    from repo_identity import classify as classify_repo
+    from repo_identity import repair as repair_repo
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from repo_identity import classify as classify_repo
+    from repo_identity import repair as repair_repo
 
 INSTALL_HINT = """uv 未安装。三种安装方式（任选其一，均由用户执行）：
   curl -LsSf https://astral.sh/uv/install.sh | sh      # 官方脚本（默认装到 ~/.local/bin）
@@ -104,18 +112,63 @@ def persist_mode(ws: Path, mode: str, venv_name: str | None, version: str | None
     return {"status": "BOUND", "context_id": res.get("context_id")}
 
 
-def _mark_active(boot_p: Path) -> None:
-    """bootstrap 只保留共享事实：翻转 workspace_status，删掉旧的 python 节（本机状态已接管）。
+def _repo_identity(value: str, base: str | os.PathLike[str] | None = None) -> str | None:
+    """兼容旧调用点；实现唯一位于 repo_identity.repair。"""
+    return repair_repo(value, base=base)
+
+
+def _may_activate_workspace(ws: Path, boot: dict) -> tuple[bool | None, str | None]:
+    """只在可归一化的 origin 明确不同于模板源时允许翻转。"""
+    source_value = str((boot.get("template") or {}).get("source_repo") or "")
+    source = _repo_identity(source_value, base=ws)
+    if not source:
+        return None, "缺 template.source_repo，无法排除模板正主；已 fail-closed 保留状态"
+    rc, inside = run(["git", "-C", str(ws), "rev-parse", "--is-inside-work-tree"])
+    if rc != 0 or inside.strip() != "true":
+        return None, ("非 git 工作树或 git 判定不可得；已 fail-closed 保留状态。"
+                       "请执行 `git init`，再执行 `git remote add origin <你的派生仓地址>`，"
+                       "然后原样重跑当前 `pyenv_init.py ... --apply` 命令；"
+                       "必须提供派生 origin，才能证明当前目录不是模板正主")
+    rc, origin = run(["git", "-C", str(ws), "config", "--get", "remote.origin.url"])
+    if rc == 1 and not origin:
+        return None, ("git 工作树没有 remote.origin.url，无法证明已脱离模板正主；"
+                       "已 fail-closed 保留状态。请执行 "
+                       "`git remote add origin <你的派生仓地址>`，然后原样重跑当前 "
+                       "`pyenv_init.py ... --apply` 命令")
+    if rc != 0:
+        return None, "无法读取 remote.origin.url；已 fail-closed 保留状态"
+    kind = classify_repo(origin, source_value, base=ws)
+    if kind is None:
+        return None, ("remote.origin.url 无法归一化；已 fail-closed 保留状态。"
+                       "合法本地路径会作为派生身份；否则请执行 "
+                       "`git remote set-url origin <你的派生仓地址>`，然后原样重跑当前 "
+                       "`pyenv_init.py ... --apply` 命令")
+    if kind == "template":
+        return False, ("检测到模板正主（origin == template.source_repo）；"
+                       "已保留 workspace_status=template。请执行 "
+                       "`git remote set-url origin <你的派生仓地址>`，然后原样重跑当前 "
+                       "`pyenv_init.py ... --apply` 命令；"
+                       "必须把 origin 改为派生仓，才能证明不会直接接管模板正主")
+    return True, None
+
+
+def _mark_active(boot_p: Path, activate: bool, hint: str | None) -> dict:
+    """bootstrap 只删旧 python，且仅在可证明为派生工作区时翻转状态。
 
     必须**重新读盘**再改：`persist_mode` 刚写入了 `workspace_id`，用函数开头那份旧内容
     覆盖回去会把它抹掉。
     """
     boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
-    boot["workspace_status"] = "active"
+    if activate:
+        boot["workspace_status"] = "active"
     boot.pop("python", None)
     tmp = boot_p.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, boot_p)
+    result = {"workspace_status": boot.get("workspace_status")}
+    if hint:
+        result.update({"template_protected": True, "hint": hint})
+    return result
 
 
 def _resolve_base_python(spec: str | None) -> str | None:
@@ -142,9 +195,25 @@ def py_version(exe: str) -> str | None:
     return out if rc == 0 else None
 
 
+def _norm_python_version(value: str) -> str:
+    """Normalize common Python version spellings to ``major.minor[.patch]``.
+
+    Interpreter names are deliberately not retained: identifiers and human-readable
+    snippets must be derived from the semantic version, never from ``python3.12``.
+    """
+    text = str(value).strip()
+    match = re.fullmatch(r"(?i:python)\s*(\d+\.\d+(?:\.\d+)?)", text)
+    if match is None:
+        match = re.fullmatch(r"(\d+\.\d+(?:\.\d+)?)", text)
+    if match is None:
+        raise ValueError(
+            f"非法 Python 版本 {value!r}；请使用 3.12、python3.12、3.12.4 或 Python 3.12"
+        )
+    return ".".join(str(int(part)) for part in match.group(1).split("."))
+
+
 def venv_dir_name(version: str) -> str:
-    parts = version.split(".")
-    return f".venv-{parts[0]}{parts[1]}" if len(parts) >= 2 else ".venv-3"
+    return f".venv-{_norm_python_version(version).replace('.', '')}"
 
 
 def main(argv: list[str]) -> int:
@@ -171,17 +240,28 @@ def main(argv: list[str]) -> int:
     cur_mode = local_mode or ((boot.get("python") or {}).get("mode")) or "unconfigured"
     out: dict = {"mode": a.mode, "apply": a.apply, "existing_mode": cur_mode}
     target_mode = "local-venv" if a.mode == "venv" else a.mode
+    activation: bool | None = False
+    activation_hint: str | None = None
+    if a.apply:
+        activation, activation_hint = _may_activate_workspace(ws, boot)
+        if activation is None:
+            print(json.dumps({"error": "repo-identity-unavailable", "hint": activation_hint},
+                             ensure_ascii=False))
+            return 4
     if (a.apply and local_mode == target_mode and not a.force
             and boot.get("workspace_status") != "active"):
         # 半提交恢复：**本机确实 BOUND 且模式一致**、只是共享状态没翻（上次 _mark_active 失败）。
         # 只补翻转，不重建。判据必须用 local_mode，不能用手回退过的 cur_mode——
         # 否则「只有旧 bootstrap.python.mode」的老工作区会被误当成半提交，被删掉唯一记录并假激活。
         try:
-            _mark_active(boot_p)
+            mark = _mark_active(boot_p, activation, activation_hint)
         except OSError as exc:
             print(json.dumps({"error": "mark-active-failed", "detail": str(exc)}, ensure_ascii=False))
             return 4
-        out.update({"repaired": "workspace_status", "mode": cur_mode})
+        out.update(mark)
+        if mark.get("workspace_status") == "active":
+            out["repaired"] = "workspace_status"
+        out["mode"] = cur_mode
         if a.json:
             print(json.dumps(out, ensure_ascii=False))
         else:
@@ -206,6 +286,15 @@ def main(argv: list[str]) -> int:
                              ensure_ascii=False))
             return 4
 
+    if a.mode in ("uv", "venv"):
+        requested = a.python or py_version(sys.executable) or "3.12"
+        try:
+            normalized_python = _norm_python_version(requested)
+        except ValueError as exc:
+            print(json.dumps({"error": "invalid-python-version", "detail": str(exc)},
+                             ensure_ascii=False))
+            return 2
+
     if a.mode == "uv":
         uv = shutil.which("uv")
         if not uv:
@@ -218,7 +307,7 @@ def main(argv: list[str]) -> int:
                 print(json.dumps({"error": "uv-install-failed", "detail": txt[-200:]}, ensure_ascii=False))
                 return 3
         _, uv_ver = run([uv, "--version"])
-        target = a.python or py_version(sys.executable) or "3.12"
+        target = normalized_python
         vdir = ws / venv_dir_name(target)
         if vdir.exists():
             out["venv"] = {"path": str(vdir), "created": False}
@@ -245,7 +334,7 @@ def main(argv: list[str]) -> int:
                 return 4
             out["local_state"] = res
             try:
-                _mark_active(boot_p)
+                out.update(_mark_active(boot_p, activation, activation_hint))
             except OSError as exc:
                 print(json.dumps({"error": "mark-active-failed", "detail": str(exc),
                                   "note": "本机状态已写入；修复 bootstrap 权限后重跑同一命令即可补翻状态"},
@@ -255,8 +344,8 @@ def main(argv: list[str]) -> int:
                                 f'(Python {ver or target}) |')
 
     elif a.mode == "venv":
-        base = a.python or py_version(sys.executable) or "3.12"
-        base_exe = _resolve_base_python(a.python)
+        base = normalized_python
+        base_exe = _resolve_base_python(normalized_python if a.python else None)
         if base_exe is None:
             print(json.dumps({
                 "error": "python-not-found", "requested": a.python,
@@ -288,7 +377,7 @@ def main(argv: list[str]) -> int:
                 return 4
             out["local_state"] = res
             try:
-                _mark_active(boot_p)
+                out.update(_mark_active(boot_p, activation, activation_hint))
             except OSError as exc:
                 print(json.dumps({"error": "mark-active-failed", "detail": str(exc),
                                   "note": "本机状态已写入；修复 bootstrap 权限后重跑同一命令即可补翻状态"},
@@ -313,7 +402,7 @@ def main(argv: list[str]) -> int:
                 return 4
             out["local_state"] = res
             try:
-                _mark_active(boot_p)
+                out.update(_mark_active(boot_p, activation, activation_hint))
             except OSError as exc:
                 print(json.dumps({"error": "mark-active-failed", "detail": str(exc),
                                   "note": "本机状态已写入；修复 bootstrap 权限后重跑同一命令即可补翻状态"},

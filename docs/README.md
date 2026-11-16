@@ -33,7 +33,7 @@ python3 scripts/clause_lint.py                            # 条款属性与用�
 
 | 场景 | 追加命令 |
 |---|---|
-| 改过 `docs/*.md` | `python3 scripts/docs_index.py build && python3 scripts/docs_hit_report.py --min 9` |
+| 改过 `docs/*.md` / README | `python3 scripts/policy_facts.py --check`（版本与计数只从生成块来）→ 必要时 `--write`；再 `python3 scripts/docs_index.py build && python3 scripts/docs_hit_report.py --min 9` |
 | 改过 hook / 插件 | `python3 -B .hermes/plugins/workspace-gate/selfcheck.py` |
 | 跑过同步/迁移 | 单元测试：`python3 -B -m unittest discover -s tests -p 'test_*.py'`；hook 测试逐个跑：`for f in hooks-tests/test_*.py; do python3 -B "$f" || break; done` |
 
@@ -41,8 +41,8 @@ python3 scripts/clause_lint.py                            # 条款属性与用�
 
 | 文件 | 讲什么 | 不讲什么 |
 |---|---|---|
-| [`skills.md`](skills.md) | 8 个 workspace skill 的触发、边界、验收与契约要求 | 不定义义务 |
-| [`tools.md`](tools.md) | 16 个脚本的用途、命令、退出码 | 不代替脚本 `--help` |
+| [`skills.md`](skills.md) | skill 的触发、边界、验收与契约要求 | 不定义义务 |
+| [`tools.md`](tools.md) | 脚本的用途、命令、退出码（个数见 tools.md 生成块） | 不代替脚本 `--help` |
 | [`architecture.md`](architecture.md) | 分层模型、数据流、失败姿态、跨设备模型 | 不重复政策条文 |
 | [`hooks-guide.md`](hooks-guide.md) | 三个 harness 的接线方法（用户视角） | 不列事件清单 |
 | [`hooks-catalog.md`](hooks-catalog.md) | 事件/拒绝码/审计/新 harness 照搬清单 | 不写义务句 |

@@ -31,7 +31,7 @@
 
 | 文件 | SHA-256 |
 |---|---|
-| `.workspace/hooks/hook.py` | `866a6c37cfc4c7b6f9c3619b9bc97f1e3742a71a2a903d4e1becad9d799e36fb` |
+| `.workspace/hooks/hook.py` | `3c410f1b948b6152508e04bb478f50b8ad7e82c7f74fdca61d1ebc0b1cb7b704` |
 | `.workspace/hooks/gate_core.py` | `8da4614815ef3b54250b9fa8ce791b2da4ebd605f12bd50fc2d010b10fdaa8bb` |
 | `.workspace/hooks/wtarget.py` | `689672e6a96f28df9c486460766417567c505f11afc52c6db2b86fe719f97751` |
 | `.workspace/hooks/authz.py` | `2bf60ed12f50e845c087f8f6a7ae7089dfb5c24a1634f1525f85d3cc420a018a` |
@@ -145,8 +145,9 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | **delivery-closure** | 交付闭环六步（产物清点→note 判定→索引回写→外部动作与机械验证→完成声明格式）。入口 `.workspace/skills/delivery-closure/SKILL.md`（v1.0.0）。触发：任务模式产物落盘、准备声明完成 |
 | **legacy-workspace-upgrade** | 入口 `.workspace/skills/legacy-workspace-upgrade/SKILL.md`（v1.0.0）。旧版本工作区自举升级；触发见其 frontmatter description |
 | **docs-retrieval-maintenance** | 维护 `docs/` 检索链路（索引/别名表/命中报告）。入口 `.workspace/skills/docs-retrieval-maintenance/SKILL.md`（v1.1.0）。配套 `scripts/docs_index.py`（build/check/query）、`scripts/docs_hit_report.py`（判据集命中）、`scripts/docs_alias_audit.py`（死指针/指纹/来源合规/留一验证/`--restore`）、判据集 `tests/docs_probe.json`、缺口日志 `docs/.miss-log.jsonl`。触发：docs 改动、`check` 报 stale/unindexed、标题改名、命中低于阈值、用户报搜不到 |
-| **workspace-repo-sync** | 跨设备同步工作区自身仓库。入口 `.workspace/skills/workspace-repo-sync/SKILL.md`（v1.1.2）；机械入口 `python3 scripts/workspace_preflight.py [--json] [--strict]` 核验 12 项（host/bootstrap_schema/根路径/python/gate/template_clone/skills/template_files/notes_index/docs_index/git/readme）。触发：换设备、另端改了 notes/TOOLS、疑似工具失效 |
+| **workspace-repo-sync** | 跨设备同步工作区自身仓库。入口 `.workspace/skills/workspace-repo-sync/SKILL.md`（v1.1.2）；机械入口 `python3 scripts/workspace_preflight.py [--json] [--strict]` 核验登记项（host/bootstrap_schema/根路径/python/gate/template_clone/skills/template_files/notes_index/docs_index/git/readme，条目以 `--json` 为准）。触发：换设备、另端改了 notes/TOOLS、疑似工具失效 |
 | **workspace-skill-authoring** | 把用户要的能力落成**工作区级（本地）skill**：缺口证据 → 重叠检查 → kebab 命名 → `_drafts/` 草稿 → 8 维契约 → 三处登记（REGISTRY 本地表 / TOOLS / bootstrap）→ 审批与试用。入口 `.workspace/skills/workspace-skill-authoring/SKILL.md`（v1.0.0）。触发：用户明确要求新建/修改本地 skill |
+| **release** | 模板发版机械闭环：dry-run → apply 事务/回滚 → verify → tag；入口 `.workspace/skills/release/SKILL.md`（v1.0.0），机械入口 `scripts/release.py`（纯 stdlib，默认 dry-run，绝不 push）。触发：升政策版本、打 tag、发版 |
 | **skills 健康检查** | `python3 scripts/skill_audit.py [--strict]`：检查**模板层** `.workspace/skills/*` 与**本地层** `.workspace/skills-local/*` 的 frontmatter、触发语、semver、条款 ID 与路径引用、8 维契约、状态机（draft/approved/deprecated/removed）、审批证据（`approved_skill_sha256`）与 `REGISTRY.md`/`TOOLS.md` 双登记；维护节奏见 `skills/REGISTRY.md`「维护节奏」 |
 | **template-update（分支同步）** | v2.1.0 起支持指定模板分支：入口仍是 `.workspace/skills/template-update/SKILL.md`；机械入口 `scripts/template_sync.py --workspace . --branch <main|dev|alpha> [--apply --verify]`（dry-run 默认；用 `git worktree` 取目标提交快照，不动模板克隆工作树） |
 | **check_template.py SHA-256** | `bbfa379269a3a3982a3d65997f9dac31f30b0cb939167e98cdc09959bfccd489` |

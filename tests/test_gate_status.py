@@ -9,6 +9,7 @@ import os
 
 os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
 import subprocess
+import shutil
 import sys
 import tempfile
 import time
@@ -43,6 +44,30 @@ class GateStatus(unittest.TestCase):
         data = json.loads(r.stdout)
         self.assertTrue(all(not v["active"] for v in data["clients"].values()))
         self.assertEqual(data["missing"], [])
+
+    def test_scope_matches_gate_core_after_local_state_is_moved_away(self):
+        scripts = self.ws / "scripts"
+        hooks = self.ws / ".workspace" / "hooks"
+        scripts.mkdir(parents=True)
+        hooks.mkdir(parents=True)
+        local_state = scripts / "local_state.py"
+        shutil.copyfile(ROOT / "scripts" / "local_state.py", local_state)
+        shutil.copyfile(ROOT / ".workspace" / "hooks" / "gate_core.py", hooks / "gate_core.py")
+        moved = scripts / "local_state.py.moved"
+        local_state.rename(moved)
+        code = (
+            "import importlib.util,json,sys;from pathlib import Path;ws=Path(sys.argv[1]);"
+            "spec=importlib.util.spec_from_file_location('gate_status_under_test',sys.argv[2]);"
+            "gs=importlib.util.module_from_spec(spec);spec.loader.exec_module(gs);"
+            "sys.path.insert(0,str(ws/'.workspace/hooks'));import gate_core;"
+            "print(json.dumps([gs._machine_scope(ws),gate_core._fallback_scope()]))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", code, str(self.ws), str(SCRIPT)],
+            capture_output=True, text=True, encoding="utf-8", check=True)
+        actual, expected = json.loads(result.stdout)
+        self.assertRegex(actual, r"^[0-9a-f]{12}$")
+        self.assertEqual(actual, expected)
 
     def test_require_fails_without_evidence(self):
         r = run(self.ws, "--require", "dsh")
@@ -133,15 +158,23 @@ class GateStatus(unittest.TestCase):
         (self.ws / ".workspace").mkdir(parents=True, exist_ok=True)
         boot_path = self.ws / ".workspace" / "bootstrap.json"
         boot_path.write_text(json.dumps({"workspace_status": "active"}), encoding="utf-8")
-        self._seed_cc_evidence("unknown")
+        hooks = self.ws / ".workspace" / "hooks"
+        hooks.mkdir(parents=True)
+        shutil.copyfile(ROOT / ".workspace" / "hooks" / "gate_core.py", hooks / "gate_core.py")
+        expected = subprocess.run(
+            [sys.executable, "-B", "-c",
+             "import sys;sys.path.insert(0,sys.argv[1]);import gate_core;print(gate_core._fallback_scope())",
+             str(hooks)], capture_output=True, text=True, check=True).stdout.strip()
+        self.assertRegex(expected, r"^[0-9a-f]{12}$")
+        self._seed_cc_evidence(expected)
         r = run(self.ws, "--require", "cc", "--record", "--json")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        gj = self.ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
+        gj = self.ws / ".workspace" / ".hook-state" / expected / "gate.json"
         self.assertTrue(gj.is_file(), "gate.json 未写到本机作用域目录")
         rec = json.loads(gj.read_text(encoding="utf-8"))
         self.assertEqual(rec["status"], "configured")
         self.assertEqual(rec["harness"], ["cc"])
-        self.assertEqual(rec["machine_scope"], "unknown")
+        self.assertEqual(rec["machine_scope"], expected)
         boot = json.loads(boot_path.read_text(encoding="utf-8"))
         self.assertNotIn("gate", boot, "bootstrap 不得再被写入 gate 结论")
 

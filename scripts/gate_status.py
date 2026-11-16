@@ -33,15 +33,22 @@ GATE_STATE_FILE = "gate.json"
 
 
 def _machine_scope(workspace: Path) -> str:
-    """本机作用域键：以工作区里的 `scripts/local_state.py` 为准，没有则 `unknown`。"""
+    """本机作用域键：local_state 优先，缺失时与 gate_core 的自足兜底完全同源。"""
     try:
         scripts = Path(workspace) / "scripts"
-        if not (scripts / "local_state.py").is_file():
-            return "unknown"
-        if str(scripts) not in sys.path:
-            sys.path.insert(0, str(scripts))
-        import local_state
-        return local_state.machine_scope()
+        if (scripts / "local_state.py").is_file():
+            if str(scripts) not in sys.path:
+                sys.path.insert(0, str(scripts))
+            import local_state
+            return local_state.machine_scope()
+    except Exception:
+        pass
+    try:
+        hooks = Path(workspace) / ".workspace" / "hooks"
+        if str(hooks) not in sys.path:
+            sys.path.insert(0, str(hooks))
+        from gate_core import _fallback_scope
+        return _fallback_scope() or "unknown"
     except Exception:
         return "unknown"
 

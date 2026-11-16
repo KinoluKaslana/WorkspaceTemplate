@@ -10,6 +10,7 @@
   bootstrap_schema bootstrap 结构版本（只接受整数 1；缺失 warn / 其它 mismatch）
   workspace_root  TOOLS §1 是否登记了本机路径、是否与当前 cwd 一致
   python          本机 runtime.json（旧工作区回退 bootstrap.python）记录的 venv 是否存在、版本是否一致
+  template_runtime 模板正主树是否误配本机 Python 运行时（仅 warning）
   gate            本机 gate.json 结论 vs 运行期证据（§15；configured 但 TTL 内无证据 = mismatch）
   template_clone  template.local_clone 是否存在、remote 是否与 source_repo 一致、HEAD 分支
   skills          目录 ↔ REGISTRY.md ↔ TOOLS.md 三方一致
@@ -33,6 +34,8 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+
+from repo_identity import classify as classify_repo
 
 OK, WARN, BAD, NA = "ok", "warn", "mismatch", "n/a"
 
@@ -123,6 +126,12 @@ def item(id_: str, recorded, actual, status: str, action: str = "") -> dict:
 def norm_url(u: str) -> str:
     u = (u or "").rstrip("/")
     return u[:-4] if u.endswith(".git") else u
+
+
+def _origin_push_urls(ws: Path) -> list[str]:
+    """读取 origin 的全部 push URL；无仓库/无 remote 时返回空列表。"""
+    rc, out = sh("git", "-C", str(ws), "remote", "get-url", "--push", "--all", "origin")
+    return [line.strip() for line in out.splitlines() if line.strip()] if rc == 0 else []
 
 
 def _legacy_gate_note(ws: Path, boot: dict, record: dict) -> str:
@@ -320,6 +329,23 @@ def main(argv: list[str]) -> int:
             rows.append(item("python", "mcp", "mcp", NA, "MCP 模式：核验 provider/tool 仍可用"))
     else:
         rows.append(item("python", "unconfigured", mode, BAD, "按 §0 询问用户后配置"))
+
+    # 2a) 模板正主只承载分发内容，不应落本机运行时配置；副本不受此护栏约束。
+    source = ((boot.get("template") or {}).get("source_repo") or "").strip()
+    pushes = _origin_push_urls(ws)
+    is_template_repo = any(classify_repo(url, source, base=ws) == "template" for url in pushes)
+    runtime_files = sorted((ws / ".workspace" / ".local" / "v1").glob("*/runtime.json"))
+    if is_template_repo and runtime_files:
+        rows.append(item(
+            "template_runtime", {"push": pushes, "template_source": source},
+            [p.relative_to(ws).as_posix() for p in runtime_files], WARN,
+            "正主仓不应运行 pyenv_init --apply；实验与配置请在 TemplateDev/sandbox-*/ 副本里做，只把 diff 回传",
+        ))
+    else:
+        rows.append(item(
+            "template_runtime", {"push": pushes, "template_source": source},
+            "no runtime.json" if not runtime_files else "非模板正主", OK,
+        ))
 
     # 2b) Gate 接线（§15）：登记状态 vs 运行期证据
     gate = _gate_record(ws, boot)

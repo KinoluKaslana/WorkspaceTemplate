@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent.parent
@@ -32,13 +33,19 @@ def mkws(tmp: Path) -> Path:
     (ws / ".workspace").mkdir(parents=True)
     (ws / "scripts").mkdir()
     shutil.copyfile(SRC / SCRIPT, ws / SCRIPT)
+    shutil.copyfile(SRC / "scripts" / "repo_identity.py", ws / "scripts" / "repo_identity.py")
     # 布局口径在 workspace_preflight.py 里，两脚本必须一起分发（真实工作区里都是 TEMPLATE_FILES）
     shutil.copyfile(SRC / "scripts" / "workspace_preflight.py", ws / "scripts" / "workspace_preflight.py")
     # 运行时模式写本机状态：local_state.py 必须一起分发
     shutil.copyfile(SRC / "scripts" / "local_state.py", ws / "scripts" / "local_state.py")
     (ws / ".workspace" / "bootstrap.json").write_text(
         json.dumps({"schema_version": 1, "workspace_status": "template",
-                    "python": {"mode": "unconfigured"}}, ensure_ascii=False), encoding="utf-8")
+                    "python": {"mode": "unconfigured"},
+                    "template": {"source_repo": "https://example.invalid/template"}},
+                   ensure_ascii=False), encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(ws)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(ws), "remote", "add", "origin",
+                    "https://example.invalid/derived/repo.git"], check=True, capture_output=True)
     return ws
 
 
@@ -52,10 +59,11 @@ def local_runtime(ws: Path) -> dict:
     return {}
 
 
-def run(ws: Path, *args, env=None):
-    p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(ws), "--json", *args],
-                       cwd=ws, capture_output=True, text=True, encoding="utf-8",
-                       env={**os.environ, **(env or {})})
+def run(ws: Path, *args, env=None, cwd=None):
+    p = subprocess.run([sys.executable, "-B", str(ws / SCRIPT),
+                        "--workspace", str(ws), "--json", *args],
+                       cwd=cwd or ws, capture_output=True, text=True, encoding="utf-8",
+                       env={**os.environ, "UV_CACHE_DIR": str(ws / ".uv-cache"), **(env or {})})
     try:
         data = json.loads(p.stdout)
     except Exception:
@@ -82,6 +90,10 @@ class PyenvInit(unittest.TestCase):
     def test_t2_uv_apply(self):
         if not HAS_UV:
             self.skipTest("uv 未安装")
+        subprocess.run(
+            ["git", "-C", str(self.ws), "remote", "set-url", "origin",
+             "https://example.com/someone/derived.git"],
+            check=True, capture_output=True, text=True)
         rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply")
         self.assertEqual(rc, 0, d)
         rt = local_runtime(self.ws)
@@ -174,7 +186,7 @@ class PyenvInit(unittest.TestCase):
         import pyenv_init as pi
         real = pi._mark_active
 
-        def boom(_boot_p):
+        def boom(_boot_p, _activate, _hint):
             raise OSError("disk full")
 
         pi._mark_active = boom
@@ -191,7 +203,7 @@ class PyenvInit(unittest.TestCase):
                                           "--apply", "--json"])
         self.assertEqual(rc2, 0, out2)
         boot = json.loads(self.boot.read_text(encoding="utf-8"))
-        self.assertEqual(boot.get("workspace_status"), "active", "半提交状态没有被修复")
+        self.assertEqual(boot.get("workspace_status"), "active")
         self.assertNotIn("python", boot)
 
     def test_t12_legacy_bootstrap_only_is_not_half_commit(self):
@@ -217,6 +229,37 @@ class PyenvInit(unittest.TestCase):
         self.assertEqual(d.get("error"), "python-not-found")
         self.assertEqual([p.name for p in self.ws.glob(".venv-*")], [], "失败仍建了 venv")
 
+    def test_t13a_python_version_spellings_are_normalized_for_both_modes(self):
+        sys.path.insert(0, str(self.ws / "scripts"))
+        import pyenv_init as pi
+        forms = ("3.12", "python3.12", "Python 3.12", "  python  3.12  ")
+        self.assertEqual({pi.venv_dir_name(value) for value in forms}, {".venv-312"})
+        self.assertEqual(pi.venv_dir_name("3.12.4"), ".venv-3124")
+        if HAS_UV:
+            for value in forms[:3]:
+                rc, data = run(self.ws, "--mode", "uv", "--python", value)
+                self.assertEqual(rc, 0, data)
+                self.assertEqual(data["identifier"], ".venv-312")
+                self.assertIn("(Python 3.12)", data["tools_snippet"])
+        with mock.patch.object(pi, "_resolve_base_python", return_value=sys.executable):
+            for value in forms[:3]:
+                rc, output = self._run_inproc(
+                    pi, ["--workspace", str(self.ws), "--mode", "venv", "--python", value,
+                         "--json"])
+                self.assertEqual(rc, 0, output)
+                self.assertEqual(json.loads(output)["identifier"], ".venv-312")
+
+    def test_t13b_invalid_python_versions_are_clear_errors(self):
+        sys.path.insert(0, str(self.ws / "scripts"))
+        import pyenv_init as pi
+        for value in ("abc", "3", "python"):
+            with self.assertRaisesRegex(ValueError, "非法 Python 版本"):
+                pi._norm_python_version(value)
+            for mode in ("uv", "venv"):
+                rc, data = run(self.ws, "--mode", mode, "--python", value)
+                self.assertEqual(rc, 2, data)
+                self.assertEqual(data.get("error"), "invalid-python-version")
+
     def test_t14_capabilities_are_not_fabricated(self):
         rc, d = run(self.ws, "--mode", "venv", "--apply", "--json")
         self.assertEqual(rc, 0, d)
@@ -224,6 +267,25 @@ class PyenvInit(unittest.TestCase):
         caps = rt.get("capabilities") or {}
         self.assertIsNone(caps.get("network_access"), "未探测就断言有网络")
         self.assertEqual(caps.get("basis"), "structural")
+
+    def test_t15_relative_origin_is_independent_of_process_cwd(self):
+        (self.ws / "localrepo").mkdir()
+        subprocess.run(["git", "-C", str(self.ws), "remote", "set-url", "origin", "localrepo"],
+                       check=True, capture_output=True, text=True)
+        args = ("--mode", "mcp", "--mcp-server", "s", "--mcp-tool", "t", "--apply")
+        rc_ws, d_ws = run(self.ws, *args, cwd=self.ws)
+        self.assertEqual(rc_ws, 0, d_ws)
+        self.assertEqual(d_ws.get("workspace_status"), "active")
+        self.assertEqual(d_ws.get("local_state", {}).get("status"), "BOUND")
+
+        other = mkws(Path(self.tmp.name) / "other")
+        (other / "localrepo").mkdir()
+        subprocess.run(["git", "-C", str(other), "remote", "set-url", "origin", "localrepo"],
+                       check=True, capture_output=True, text=True)
+        rc_tmp, d_tmp = run(other, *args, cwd=Path(tempfile.gettempdir()))
+        self.assertEqual(rc_tmp, 0, d_tmp)
+        self.assertEqual(d_tmp.get("workspace_status"), "active")
+        self.assertEqual(d_tmp.get("local_state", {}).get("status"), "BOUND")
 
     def test_t6_refuse_overwrite_configured(self):
         rc0, d0 = run(self.ws, "--mode", "venv", "--apply")

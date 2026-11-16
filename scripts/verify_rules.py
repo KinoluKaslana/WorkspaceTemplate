@@ -69,7 +69,10 @@ TEMPLATE_FILES = [
     "scripts/skill_audit.py",
     "scripts/workspace_preflight.py",
     "scripts/pyenv_init.py",
+    "scripts/repo_identity.py",
     "tests/test_pyenv_init.py",
+    "tests/test_repo_identity.py",
+    "tests/test_template_status_authority.py",
     "tests/test_workspace_preflight.py",
     "tests/test_skill_audit.py",
     ".workspace/skills/_TEMPLATE.md",
@@ -89,6 +92,11 @@ TEMPLATE_FILES = [
     "tests/test_check_scripts.py",
     "scripts/local_state.py",
     "scripts/version_check.py",
+    "scripts/policy_facts.py",
+    "scripts/release.py",
+    ".workspace/skills/release/SKILL.md",
+    ".workspace/releases.json",
+    "tests/test_release.py",
     "scripts/notes_index_check.py",
     "scripts/secret_scan.py",
     "docs/dsh.md",
@@ -127,6 +135,7 @@ TEMPLATE_FILES = [
     "tests/test_local_state.py",
     "tests/test_registry_freshness.py",
     "tests/test_gitignore_ensure.py",
+    "tests/test_regression_ledger.py",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.

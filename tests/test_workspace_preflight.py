@@ -42,6 +42,7 @@ def base_ws(tmp: Path) -> Path:
     (ws / "skills").mkdir()
     (ws / "notes").mkdir()
     shutil.copyfile(SRC / "scripts" / "workspace_preflight.py", ws / "scripts" / "workspace_preflight.py")
+    shutil.copyfile(SRC / "scripts" / "repo_identity.py", ws / "scripts" / "repo_identity.py")
     # 用桩代替真实 verify_rules，避免夹具依赖模板完整清单
     (ws / "scripts" / "verify_rules.py").write_text(
         'TEMPLATE_FILES = ["AGENT_RULES.md", ".workspace/skills/demo/SKILL.md"]\n', encoding="utf-8")
@@ -232,6 +233,38 @@ class Preflight(unittest.TestCase):
         rc, data = run(self.ws)
         st = {i["id"]: i["status"] for i in data["items"]}
         self.assertEqual(st["template_clone"], "mismatch")
+
+    def test_p28_template_runtime_warns_on_template_push(self):
+        """模板正主存在本机 runtime.json 时只 warn，并给出沙箱操作指引。"""
+        _require_git()
+        boot_p = self.ws / ".workspace" / "bootstrap.json"
+        boot = json.loads(boot_p.read_text(encoding="utf-8"))
+        boot["template"]["source_repo"] = "https://example.com/template.git"
+        boot_p.write_text(json.dumps(boot), encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.ws), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(self.ws), "remote", "add", "origin",
+                        "git@example.com:template.git"], check=True)
+        runtime = self.ws / ".workspace" / ".local" / "v1" / "host" / "runtime.json"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text("{}\n", encoding="utf-8")
+        _, data = run(self.ws)
+        row = next(i for i in data["items"] if i["id"] == "template_runtime")
+        self.assertEqual(row["status"], "warn", row)
+        self.assertIn("sandbox-*", row["action"])
+        self.assertIn("pyenv_init --apply", row["action"])
+
+    def test_p29_runtime_in_derived_repo_is_ok(self):
+        """派生仓即使有 runtime.json 也不触发正主护栏。"""
+        _require_git()
+        subprocess.run(["git", "-C", str(self.ws), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(self.ws), "remote", "add", "origin",
+                        "https://example.com/derived.git"], check=True)
+        runtime = self.ws / ".workspace" / ".local" / "v1" / "host" / "runtime.json"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text("{}\n", encoding="utf-8")
+        _, data = run(self.ws)
+        row = next(i for i in data["items"] if i["id"] == "template_runtime")
+        self.assertEqual(row["status"], "ok", row)
 
 
     @unittest.skipIf(os.name == "nt", "POSIX 上用 shell 桩模拟 .exe 解释器")
