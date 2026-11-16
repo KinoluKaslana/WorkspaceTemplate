@@ -220,7 +220,7 @@ ls -la                            → ALLOW
 
 | # | 项 | 结果 | 证据 |
 |---|---|---|---|
-| V1 | 子 agent 身份 | 子 `agent.id` 独立（`0c498da2-…`，父是 `session-…`），账本独立，父读证据**不**继承，子写被拒 | `.hook-state/dsh-<child>.json` reads 空；sub1.txt 未创建 |
+| V1 | 子 agent 身份 | 子 `agent.id` 独立（`0c498da2-…`，父是 `session-…`），账本独立，父读证据**不**继承，子写被拒 | `.hook-state/<scope>/dsh-<child>.json` reads 空；sub1.txt 未创建 |
 | V2 | 分段读 | 只读 1..50/204 → 写入**拒**；补齐 1..204 → 放行 | 账本 coverage `[[1,50]]` vs `[[1,204]]` |
 | V3 | hook 缺失 | **放行** + 日志 `hook-missing` | `v3.txt` 创建；`.dsh-gate.log` |
 | V4 | 不可判 bash | 解释器 **拒**；变量间接 / `awk` **放行**（盲区） | 见上方矩阵；`v4e.txt` 被创建 |
@@ -239,7 +239,7 @@ ls -la                            → ALLOW
   非 git 工作区用 **mtime 水位线**（状态只存 `audit_watermark_ns`，不存全量文件清单——清单落盘就得截断，
   截断会让干净树持续报假阳性）；「没有对应 `gate-commit` 的变化」记成 `unobserved-write`
   （report-only，不 deny；最小间隔 `WORKSPACE_GATE_DSH_AUDIT_MS`，默认 5000 ms；基线在会话第一次工具调用时建立）。
-  每条审计同时追加到 `.workspace/.hook-state/audit-dsh.jsonl`（256 KiB 轮转）——会话状态的 `events` 只有 50 条窗口，
+  每条审计同时追加到 `.workspace/.hook-state/<scope>/audit-dsh.jsonl`（256 KiB 轮转）——会话状态的 `events` 只有 50 条窗口，
   审计记录会被后面的普通事件顶掉，jsonl 才是留得住的出口。
   真机实测（Windows，`0.2.1-rc.5`）：`& ('Set'+'-Content') -Path blind3.txt -Value ok` 被静态分类器放行、
   文件真的写出来，同一会话账本随后出现 `worktree-change(source=post_shell, git=false, files=[blind3.txt])`
@@ -253,8 +253,8 @@ ls -la                            → ALLOW
 **怎么读这条审计**：
 
 ```bash
-grep -h '"type": "unobserved-write"' .workspace/.hook-state/audit-dsh.jsonl   # 未观测写（含 session_id）
-grep -h '"type": "snapshot-incomplete"' .workspace/.hook-state/audit-dsh.jsonl # 哈希预算被打满：那一轮只覆盖了预算内的文件
+grep -h '"type": "unobserved-write"' .workspace/.hook-state/<scope>/audit-dsh.jsonl   # 未观测写（含 session_id）
+grep -h '"type": "snapshot-incomplete"' .workspace/.hook-state/<scope>/audit-dsh.jsonl # 哈希预算被打满：那一轮只覆盖了预算内的文件
 ```
 
 

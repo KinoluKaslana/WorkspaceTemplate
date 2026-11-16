@@ -8,11 +8,11 @@
       "R5": "2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python <venv>/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `<venv>/bin/python -m pip install <pkg>`。**Windows 上解释器在 `<venv>\\Scripts\\python.exe`**，上述 `<venv>/bin/python` 一律按此替换（`scripts/workspace_preflight.py` 两种布局都认）。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。",
       "R6": "3. 初始化只创建运行时，**不得**联网升级包管理器、**不得**预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。",
       "R7": "4. 验证 `<venv>/bin/python`（Windows：`<venv>\\Scripts\\python.exe`）的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。",
-      "R8": "5. **必须**将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。",
+      "R8": "5. **必须**把 `mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把 venv 目录名、Python 版本、uv 版本和核验日期写入**本机状态** `.workspace/.local/v1/<context_id>/runtime.json`（`scripts/local_state.py`）与 `TOOLS.md`；`bootstrap.json` 只保留 `workspace_id` 与 `workspace_status`。**不得**在本机状态里写明文绝对路径（解释器/uv 路径只在 `TOOLS.md` 记环境事实）。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。",
       "R9": "### 0.2 选择 MCP Python",
       "R10": "1. 检查会话实际可用的 MCP Python 工具，记录 provider/server、tool 名、版本、文件系统/网络/依赖持久性与输出限制。",
       "R11": "2. **不得**创建本地 venv，**不得**假设 shell 中的 `python` 与 MCP 运行时等价。本地文件编辑仍使用 Agent 的文件工具；计算才交给已登记的 MCP Python。",
-      "R12": "3. 将 `python.mode` 更新为 `mcp`，把工具标识、能力边界和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。",
+      "R12": "3. 把 `mode` 更新为 `mcp`，把工具标识、能力边界和核验日期写入**本机状态** `runtime.json` 与 `TOOLS.md`。",
       "R13": "4. 若当前会话没有可用 MCP Python，不伪装已配置；请用户接入对应 MCP，或确认回退到本地 venv。",
       "R14": "### 0.3 git 仓库决策（可选初始化项）",
       "R15": "1. **抹除模板 git 标记**：确认 `.git` 的 remote 指向模板库（`KinoluKaslana/WorkspaceTemplate`）后，先导出本地独有 commit 为 patch 备份（若有），再删除 `.git`。remote 指向他处或存在无法确认的提交历史时，**暂停并请用户裁决**，不得擅自删除。",
@@ -46,7 +46,7 @@
       "R43": "7. 任务命中后完整读对应 `SKILL.md`，按引用渐进读资源；平台原生触发优先，文件登记不伪装成平台已安装能力。",
       "R44": "8. 复用前核对 revision/指纹；变化后先审查差异与副作用，再串行更新两个登记文件。",
       "R45": "## 5. Python、工具与 MCP",
-      "R46": "- Python 运行时以 `.workspace/bootstrap.json` 的模式和 `TOOLS.md` 的实测记录为准。本地模式只用登记 venv；MCP 模式只使用已登记的 MCP Python 工具做计算。",
+      "R46": "- Python 运行时以**本机状态** `.workspace/.local/v1/<context_id>/runtime.json` 的 `mode` 和 `TOOLS.md` 的实测记录为准（旧工作区回退 `.workspace/bootstrap.json` 的 `python.mode`）。本地模式只用登记 venv；MCP 模式只使用已登记的 MCP Python 工具做计算。",
       "R47": "- 安装新依赖前先检查现有能力，评估版本兼容、来源、许可、网络和供应链风险。共享 venv 不为单个任务卸载/降级既有包；冲突使用任务专用版本化 venv。",
       "R48": "- 新安装包、CLI、下载二进制、MCP 服务和可复用脚本必须在 `TOOLS.md` 登记位置、版本/哈希、来源、信任边界、副作用/数据外发、用法和核验日期。",
       "R49": "- 工具已登记不等于自动授权。写外部系统、发消息、发布、上传数据、安装系统包和破坏性动作仍需满足用户范围与平台审批。",
@@ -102,7 +102,7 @@
       "R99": "2. **分工与边界**：hook 只保证机械动作不被绕过，不代替 Agent 理解并遵守规则。hook 未启用、被绕过、或在无法归属会话的状态下被拦截/放行时，§2/§9/§11 的义务**不变**——不得以「hook 没拦」为由免除任何规则义务。",
       "R100": "3. **调参与信任边界**：调参写 `.hermes/plugins/workspace-gate/plugin.custom.json`（`enabled`/`gate_files`/`write_tools`）；**不得直接改锁定脚本**（哈希校验报漂移、同步时被覆盖）。守门防「无意识跳过」，不防「主动绕过」：`terminal`/`execute_code` 可绕行，属沙箱/权限层。实现文档（`docs/…`）只陈述机械事实，不得出现义务句；授权、禁止、例外与判定口径的权威表述只在本文件，冲突以本文件为准。",
       "R101": "## 13. 客户端治理 hook（Claude Code / Codex）",
-      "R102": "1. **适用与身份**：只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份由 `bootstrap.json` 存在性承担，但 `workspace_status` 为 `template` 且 `python.mode` 为空或 `unconfigured` 的目录**不得**视为受管工作区（其写/删除/移动目标的判定见 R135）；脚本在 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定。**身份粒度**：状态键 `session_id`，子 agent 再拼 `.agent_id`（CC 主子共用 `session_id`，实测；Codex 子 agent payload 带 `agent_id`），**账本不继承父读证据；仅经 R98 的有效委托引用父证据**；`SubagentStart`/`SubagentStop` 落 `agent-start`/`agent-stop`。",
+      "R102": "1. **适用与身份**：只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份由 `bootstrap.json` 存在性承担，但 `workspace_status` 为 `template` 且本机 `mode`（本机状态优先，回退 `bootstrap.python.mode`）为空或 `unconfigured` 的目录**不得**视为受管工作区（其写/删除/移动目标的判定见 R135）；脚本在 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定。**身份粒度**：状态键 `session_id`，子 agent 再拼 `.agent_id`（CC 主子共用 `session_id`，实测；Codex 子 agent payload 带 `agent_id`），**账本不继承父读证据；仅经 R98 的有效委托引用父证据**；`SubagentStart`/`SubagentStop` 落 `agent-start`/`agent-stop`。",
       "R103": "2. **守门判据**：Codex `apply_patch` 与 Bash 静态可判写（清单见 catalog §2.6）在目标属本工作区且未完整读 gate 当前修订时 deny；解释器/包装类未读即 deny；其余不可判形态只审计不拦（`unresolved-command`）。",
       "R104": "3. **客户端差异（必须明说）**：CC 仅 `Write`/`Edit` 受管，**Bash 写不订阅、不拦截**；`Stop`/`SessionEnd` 的差集与指纹锚只到文件/目录级，但**可经转录回放做事后归因**（子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放，作用域含 `.agent_id`）。**事后归因不等于拦截**，`would_deny=true` 不表示写入被阻止；转录可被同 uid 删改，不得据此推断整仓受管。命令原文默认不落盘（只记 digest），需 `audit_command_text=true` 显式开启。回放与归因细则见 catalog §2.7。",
       "R105": "4. **证据与审计**：读证据绑指纹 `c<size>:<sha256>` 与覆盖 `1..total`；审计十三型（清单见 catalog §2.6）。`gate-deny` 记拒绝本身，作用域含 `.agent_id`，可在 `audit-<client>.jsonl` 独立核验。写前 `gate-intent` → 写后 `gate-commit` 对账，缺失一侧记 `unobserved-write`（**不表示通过**）。只记路径/哈希/会话/动作，不落正文。`unresolved-command` 只含 `tool_use_id`/`client`/`digest`/`class`，不落原文、不可直读归因；`worktree-change` 粒度受 git 限制，文件级归因须由 `completion-gate` 补证。账本轮转与压缩规则见 catalog §2.7。",
@@ -114,9 +114,9 @@
       "R111": "2. **机器属性**：每条条款的属性（`severity` / `trigger` / `check` / `reviewed`）存 `.workspace/clauses.meta.json`，键为 R 号，随模板层分发并哈希锁定；属性**不改变**义务本身，冲突以本文件为准。改条款正文（含新增/删除 R 号）必须同步该文件，否则 `scripts/clause_lint.py` 失败。",
       "R112": "3. **`check` 的准入**：`MUST`/`MUST_NOT` 的 `check` 必须是可执行命令（复用 `verify_rules` / `skill_audit` / `workspace_preflight` / `docs_hit_report` / hook `selfcheck`）或 `manual:<非空理由>`；`manual` 只允许用于「需要用户裁决/意图判断」的条款，且不得用来替代已可机械判定的事实。`clause_lint` 独立成门（findings>0 即失败），不并入 `verify_rules` 与 `skill_audit`，避免红灯归属混淆。",
       "R113": "## 15. 守门接线核验（与 Python 选择同性质，§0 的补充）",
-      "R114": "1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/gate.log` 的 `client=` 行；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/dsh-session-*.json` 账本。",
+      "R114": "1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行（`<scope>` 是本机分片目录，见下）；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/<scope>/dsh-session-*.json` 账本。**`<scope>`** 由本机身份派生（`scripts/local_state.py` 的 `machine_scope()`，12 位十六进制）；工作区缺该脚本时**必须**由 hook 自带的最小身份读取派生（`gate_core._fallback_scope()`）。缺脚本不构成退回共享 `unknown` 桶的理由（同桶会让跨机隔离失效）；取不到机器身份时改用本机持久种子（用户状态目录下的 `workspace-template/scope-seed`，不在工作区内）派生，两者都拿不到才为 `unknown`。`<scope>` 之外的目录（含旧布局根目录）**只作只读兼容**：旧根目录的证据在过渡期仍认，其他机器的 `<scope>` **不得**当作本机证据。",
       "R115": "2. 没有证据时，必须在第一条受管写入之前向用户报告「当前 harness 的 gate 未接线」并给出该 harness 的启用命令，由用户决定先接线还是明确接受无 gate 继续；不得把工作区当作已受管继续写入。",
-      "R116": "3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入 `.workspace/bootstrap.json`；机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。",
+      "R116": "3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入**本机状态** `.workspace/.hook-state/<scope>/gate.json`；`bootstrap.json` 的 `gate` 节是旧位置，**不得**再写入，只作读取兼容。机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。",
       "R117": "4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。",
       "R118": "5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。",
       "R119": "## 16. 建仓后的 README 决策（§0.3 的补充）",
@@ -136,9 +136,9 @@
       "R133": "5. 本地 skill 的登记**必须**由 `scripts/skill_audit.py --sync-registry` 从磁盘派生后写入三处：`skills/REGISTRY.md` 的「## 本地层入口」表、`TOOLS.md` 的本地登记行、`.workspace/bootstrap.json` 的 `skills.registered_roots`；草稿不登记，退役项保留墓碑行。",
       "R134": "6. `approved` 项的审批证据**必须**写在同目录 `APPROVAL.json`（`approved_by` 角色标识、`approved_at`、`approved_skill_sha256` = 当前 `SKILL.md` 字节的 sha256，外加 `approved_directive` 用户原话或存在的 `review_artifact`）；内容变化后**必须**重新批准，删除该文件即撤销批准。",
       "R135": "## 18. 破坏性目录操作的目标归属（§13 的补充）",
-      "R136": "1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且 `python.mode` 缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
+      "R136": "1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且本机 `mode`（本机状态优先，回退 `bootstrap.python.mode`）缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
     },
-    "file_sha256": "c6a27dfdcbc4b75a177319d56255fd74aa3717431d8fce05f8ffef4b40e7ed13",
+    "file_sha256": "0ffb5264ca8382d1c8ccf15d3bf1d170f52b20d89c3d27b70773eb3d2015cfdc",
     "marked": 136
   },
   "LICENSE": {
@@ -173,12 +173,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "d1f01db593d528e73b29d3d422d1c28571b7503f971b0ef82df7c70c5a13bb75",
+    "file_sha256": "1ceceb398a85775168e8fe041746839f4f525fa35042ec74052d24026e6f299f",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "f57316dcc5aaf9f691ff2ffa0a9bd9136d1dd6cff229cfcf6bb6b42abcd37ca1",
+    "file_sha256": "9bff91a624f66a1e6d4e061744cd272736a2d00ac9262ff5cb945e3f95aabe38",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -203,12 +203,12 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "d8402e3301367c681accba076890b89beda9b98f998dbb045c21f1ea9ed6e696",
+    "file_sha256": "0674db75ad577c94f17c02f68ca6cdad34648da7f35e39e3376967c7c36d2cad",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
     "clauses": {},
-    "file_sha256": "b28e029c65a184018b1a0eed4c023775b0e5e94aeb0fb2231ec9189b4c547b41",
+    "file_sha256": "c78f0a9114d1d09443977ac796ed421e4249e1f456657d81a851fbdf2bba1694",
     "marked": 0
   },
   ".workspace/skills/template-update/check_template.py": {
@@ -253,37 +253,52 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "518b046cbe87ee974975e87734c3fe3215535e94beeafeff809780e457873a47",
+    "file_sha256": "f51a8d2d7dc48239dd606315a0076bfadde82b23f04dbee91beecb413bd36775",
     "marked": 0
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "299e036b3515b49080c63d65f467e44b0a83afbd3233e81b5a14dc12cb53b5a0",
+    "file_sha256": "7f00d74a1925f8840460113de77bf8859eb1e8626de35065118436025255d7f9",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "d09984610c5838c0d2d824cbcbee49191b1e009716dc3855ec865b17fb661382",
+    "file_sha256": "11ec6ea48b041d7d1b3bbffa75e565d796f1431a972c91b018c2ed0bfcc99850",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "2617185ba3391805193e12192fe9e41ade056b015a19bfd8057a625ace720baf",
+    "file_sha256": "5b2a3e7a9b85b8e6dd9f148025cf32dc31d1bd190d62758eeb1215a3780fefb5",
+    "marked": 0
+  },
+  "scripts/repo_identity.py": {
+    "clauses": {},
+    "file_sha256": "ffabaef9cb6efc91e4bad6ddfaadb9daf742f5b652c50d8a6c73e08c5e63915a",
     "marked": 0
   },
   "tests/test_pyenv_init.py": {
     "clauses": {},
-    "file_sha256": "6d7d7a47cf91df5775270fb7418b31faa237d9ddaf67453ccd0ca98fbb550294",
+    "file_sha256": "b5a37595d9c1e467fd8777957acce54d559a2840527bded683d97fbb393ddbd3",
+    "marked": 0
+  },
+  "tests/test_repo_identity.py": {
+    "clauses": {},
+    "file_sha256": "580a09e6552399acc345c89f2a68b7558a15e64d5d7b507da0995dc622247758",
+    "marked": 0
+  },
+  "tests/test_template_status_authority.py": {
+    "clauses": {},
+    "file_sha256": "1853af42726dc382d069c0cdd28e92db160378cc716bb83cc1ec543faba29cde",
     "marked": 0
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "0bd3a224f4f29c487d18f03df16226a7ac09f016bb5655335323763946465861",
+    "file_sha256": "2b07d83b30c7f3e31c991d0a2fa254643f0b95ca14310ac1f14d3de6f0ad31b5",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
     "clauses": {},
-    "file_sha256": "81293f98620f213ea19295615c763fde654088050961a4675bf9fde9dc617681",
+    "file_sha256": "fcf0968f7482371c3ffb9d9a44aef392f6e73953ff60222636990970f2325059",
     "marked": 0
   },
   ".workspace/skills/_TEMPLATE.md": {
@@ -298,32 +313,32 @@
   },
   "docs/README.md": {
     "clauses": {},
-    "file_sha256": "ec3c408ac0424a7f4b8cfea0ca411b87983b0cebefee8af47070fae038f67499",
+    "file_sha256": "a412eb3a860f21fe78134b5bff0a27117ac75374869c32fb136482dcd6b5176b",
     "marked": 0
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "71b4b2fd4dc84c445b989a0ced86d0fc19c92a572cfadc26173f9708df1e1dbc",
+    "file_sha256": "0f1f363d81976deed9ca387e8c5b4074f47fc72691a424907ac07b22d3c445a9",
     "marked": 0
   },
   "docs/skills.md": {
     "clauses": {},
-    "file_sha256": "f7e15c25a9d84f85c69b2094e971342bbf2ce50d791406b4ea69a55551d9b59f",
+    "file_sha256": "3094139b3c28e268410de6bcff657926600c3baa6df6a750e85849b34633616e",
     "marked": 0
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "daa873a0f4ba53dce2529932008c6059b3df3d519a4088e13cedcd3b841407e9",
+    "file_sha256": "8798cf87fafd15e9cc6f77577d6f57bb9b636d282bef8261f0db2a9fd6e2ae49",
     "marked": 0
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "f38635d2a06c534cf1603c6a12b53072c02f9b0e97558b6a846493bcc7b4d350",
+    "file_sha256": "e31ddcaca041738189701c88f8bc3804a30e05b4d360c0c0822a474ec5d3c6ac",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
     "clauses": {},
-    "file_sha256": "4a465aa89cd2da0e44d9a2cd532c011f1f7d839f80601ad936a0e1fb4eac73db",
+    "file_sha256": "7db66f606c28a1b7dcdb8a39a6bed92f76bcedd5e65b9fa458d1cab586fafb9e",
     "marked": 0
   },
   "docs/docs-retrieval.md": {
@@ -333,7 +348,7 @@
   },
   "UPGRADE.md": {
     "clauses": {},
-    "file_sha256": "54118fc402dce89a36f9a6dfdf9d6541eb4208db66c1143e3410b59d60eeac7f",
+    "file_sha256": "832b76ddd54695c1327a24f83dcbb0c733504e2e5c2b184a07ac2002f815473e",
     "marked": 0
   },
   ".workspace/skills/legacy-workspace-upgrade/SKILL.md": {
@@ -343,12 +358,12 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "4d7cd86d80b0584a89c217809913706126108b9e0d9c7552b9dad223ddb9aca0",
+    "file_sha256": "84e7be2260ca4a42e9efae7152b6ae306071acff3393ead6ddb471178fd4b9ae",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "f8d5c48092d7bfa77b0c5658a70bd0e016849e9809fbd5f114f1f0492c2bf18b",
+    "file_sha256": "d8f3de04ff3989f12298669544136fa50b3ce07b1be6ef4a1122a02dcb964f4f",
     "marked": 0
   },
   "tests/test_clause_lint.py": {
@@ -361,9 +376,39 @@
     "file_sha256": "111c1af4bf1679f577040b865e1c60743f6808e6bc1b706e9e63f1906a80cf42",
     "marked": 0
   },
+  "scripts/local_state.py": {
+    "clauses": {},
+    "file_sha256": "064d2bb2b46bbb22b5aec9be82c6b6a30691f09537c2bda37b8e5c375a489f17",
+    "marked": 0
+  },
   "scripts/version_check.py": {
     "clauses": {},
     "file_sha256": "b213c082b419b132c7c3d3d5893742c779099c819d6f1481c3d8d61ea67932aa",
+    "marked": 0
+  },
+  "scripts/policy_facts.py": {
+    "clauses": {},
+    "file_sha256": "ff6176555952a8722611b0e17a393836ee3c14400816dc37311b3af207c5e5fd",
+    "marked": 0
+  },
+  "scripts/release.py": {
+    "clauses": {},
+    "file_sha256": "b137281f6ac0de0de12f8251328b7354de389b42b2c655931ae0fccdab27e665",
+    "marked": 0
+  },
+  ".workspace/skills/release/SKILL.md": {
+    "clauses": {},
+    "file_sha256": "142156704a8bccc565b134202528e76fe1f8ff04baae0ca4d6e89b8bd682fb4f",
+    "marked": 0
+  },
+  ".workspace/releases.json": {
+    "clauses": {},
+    "file_sha256": "dd008e14858cc39fc3cbe69b49bf4557c82d4258cd6b7e5fdb929674cdac753a",
+    "marked": 0
+  },
+  "tests/test_release.py": {
+    "clauses": {},
+    "file_sha256": "f219ab58e6297a1ded29bbddf47ae220b9f1057d3c03dadf4b8361bd95636735",
     "marked": 0
   },
   "scripts/notes_index_check.py": {
@@ -378,7 +423,7 @@
   },
   "docs/dsh.md": {
     "clauses": {},
-    "file_sha256": "129bc97121979f8ecdce6acd281b2c7081a19eed756645cbd8afcf5c190b7263",
+    "file_sha256": "a3776319bfea4949b3747c45a928e5bd91e0e2e14dc17dec98d1c5816bb74623",
     "marked": 0
   },
   ".dsh/workspace-gate/plugin.js": {
@@ -428,7 +473,7 @@
   },
   "docs/policy-language.md": {
     "clauses": {},
-    "file_sha256": "32f7a9ada42a333f13a2f53b58517c986393b530efd1cc6617f194ecb742cca0",
+    "file_sha256": "ecc51a0be8a156170b648e20e2a56c072525c1c3d4737c354d9ee2af38821f46",
     "marked": 0
   },
   ".workspace/skills/workspace-repo-sync/SKILL.md": {
@@ -458,22 +503,22 @@
   },
   ".hermes/plugins/workspace-gate/__init__.py": {
     "clauses": {},
-    "file_sha256": "a24c00dfeed3bb4156874e7e056ccc5a614f52633b18935ef27329ad22febb12",
+    "file_sha256": "3a78f82059765e9596804b97c30a2c21941c6c5a7633e1b46b64350a83420d59",
     "marked": 0
   },
   ".hermes/plugins/workspace-gate/selfcheck.py": {
     "clauses": {},
-    "file_sha256": "999de88a41c96e1f66abc7e0b8efb35b1c57f0faaa3f1a26a6687caa00751cab",
+    "file_sha256": "1b02c4c780d4c550369ad2c427cb50b9e1ea4b1753abaa43d7e36a926619317b",
     "marked": 0
   },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "750bdc05bc8317eb7f20e4fada0005a1ca43db3e9affc5306d240faa1016581b",
+    "file_sha256": "3c410f1b948b6152508e04bb478f50b8ad7e82c7f74fdca61d1ebc0b1cb7b704",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "71d7c395eb79456e26e2de317a0ea514827848bd37f4c3f54bb4e0638bbcfca2",
+    "file_sha256": "12e0eb89e81c77cd5c8e74e9ac2af86dc5f8ccb7aa7d356728364e62a7939c88",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
@@ -488,17 +533,17 @@
   },
   ".workspace/hooks/cc_transcript.py": {
     "clauses": {},
-    "file_sha256": "207250569bfbd2626dd9daf2eb49ead984ec355f75b5b637d6b18cdf97906a5c",
+    "file_sha256": "f840628ad5611218409460876db66ccda7ac8d004d7e6a6d5dbc10a4e3353b1c",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {
     "clauses": {},
-    "file_sha256": "9073dcc638b7d7ec36ffb95459cdd33c2457fd7e4b5f5027333be2c0dfbe12c1",
+    "file_sha256": "0e0ca748d3bb0a1c3fa5f7c7e655aa6265bb5949a6b302138984d95a0d7f92bf",
     "marked": 0
   },
   ".workspace/hooks/delegations.py": {
     "clauses": {},
-    "file_sha256": "9bba2e707ef7d187eacc6024632e32b81fac51c5cbef83b1d7e8eeb07e97c1c2",
+    "file_sha256": "d1b7f16453df43269e6fcd3f9a01b015efce78595b3104fd81a2fcb2a03e9f4c",
     "marked": 0
   },
   ".codex/hooks.json": {
@@ -513,12 +558,12 @@
   },
   "scripts/gate_status.py": {
     "clauses": {},
-    "file_sha256": "02ff03ae8531e957952d6215fc56aca01ecb412ec27b8b18f6418fecdf1f2f76",
+    "file_sha256": "9480eb36da2b196667272296a0553085145a3ccd91421a92e044d064d7e25a60",
     "marked": 0
   },
   "tests/test_gate_status.py": {
     "clauses": {},
-    "file_sha256": "1f52b14d86891b7f630af4ac99fdc59803bfda3ae9d057a49cd17192c3449a2a",
+    "file_sha256": "b463bbb2e4ad0a1e34bc8ac1c94a4f69e836b70c93bddb1590481ed5272b495f",
     "marked": 0
   },
   "tests/no_git_runner.py": {
@@ -534,6 +579,26 @@
   "tests/test_git_bin.py": {
     "clauses": {},
     "file_sha256": "b30deebf091ec2941c12625be2c5757d000ff1efd22312dbeef418818571df6f",
+    "marked": 0
+  },
+  "tests/test_local_state.py": {
+    "clauses": {},
+    "file_sha256": "9e8cde819b5a60475b472277ab8f9040576bc1aca379dcaf589f13e87d949709",
+    "marked": 0
+  },
+  "tests/test_registry_freshness.py": {
+    "clauses": {},
+    "file_sha256": "0e8e1a574a4143a3710ad6467ce3c42aecf3ec1bb55270893a8fbc09e7a7f5e7",
+    "marked": 0
+  },
+  "tests/test_gitignore_ensure.py": {
+    "clauses": {},
+    "file_sha256": "8f321d90ac8d3056412dc5fb6e934c1479798d123f8f8829435b8deae41e9932",
+    "marked": 0
+  },
+  "tests/test_regression_ledger.py": {
+    "clauses": {},
+    "file_sha256": "e6db7a5c07e5963ff5c03187c5645fe6bb00ef859f6155914efbfd943249aa55",
     "marked": 0
   }
 }

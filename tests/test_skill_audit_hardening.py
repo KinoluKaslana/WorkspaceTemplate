@@ -153,6 +153,22 @@ class Hardening(unittest.TestCase):
         audit(ws, "--sync-registry")
         self.assertIn("local-skills:begin", tools.read_text(encoding="utf-8"))
 
+    def test_t12_dotdir_not_treated_as_file(self):
+        """`.workspace/.local` 是点目录，不能按「文件名带扩展名」判成缺失文件。"""
+        body = FULL.format(name="dotdir") + "\n状态目录 `.workspace/.local` 不进仓库。\n"
+        ws = build(self.root, {"dotdir": body})
+        rc, out = audit(ws)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("引用不存在的路径", out)
+
+    def test_t13_missing_file_still_flagged(self):
+        """真正的缺失文件仍然要报，收紧不能把这一类一起放过。"""
+        body = FULL.format(name="miss") + "\n见 `docs/nope.md`。\n"
+        ws = build(self.root, {"miss": body})
+        rc, out = audit(ws)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("docs/nope.md", out)
+
     def test_t11_tools_snippet_reports_others(self):
         """--tools-snippet 必须提示其余 findings。"""
         ws = build(self.root, {"demo": FULL.format(name="demo").replace("## 维护", "## 别的")})

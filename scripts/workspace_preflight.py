@@ -7,15 +7,17 @@
 
 检查项（每项给 recorded / actual / status / action）：
   host            当前主机名
+  bootstrap_schema bootstrap 结构版本（只接受整数 1；缺失 warn / 其它 mismatch）
   workspace_root  TOOLS §1 是否登记了本机路径、是否与当前 cwd 一致
-  python          bootstrap 记录的 venv 是否存在、版本是否一致
-  gate            bootstrap.gate 结论 vs 运行期证据（§15；configured 但 TTL 内无证据 = mismatch）
+  python          本机 runtime.json（旧工作区回退 bootstrap.python）记录的 venv 是否存在、版本是否一致
+  template_runtime 模板正主树是否误配本机 Python 运行时（仅 warning）
+  gate            本机 gate.json 结论 vs 运行期证据（§15；configured 但 TTL 内无证据 = mismatch）
   template_clone  template.local_clone 是否存在、remote 是否与 source_repo 一致、HEAD 分支
   skills          目录 ↔ REGISTRY.md ↔ TOOLS.md 三方一致
   template_files  TEMPLATE_FILES 是否齐全
   notes_index     notes/INDEX.md 是否存在
   docs_index      docs/ 存在时索引是否新鲜（不存在则 n/a）
-  git             remote / 当前分支 / 上游 / ahead-behind / 脏文件数 / .hook-state 是否被忽略
+  git             remote / 当前分支 / 上游 / ahead-behind / 脏文件数 / .hook-state 与 .local 是否被忽略
 
 用法：python3 scripts/workspace_preflight.py [--workspace .] [--json] [--strict]
 退出码：0 无 mismatch；1 有 mismatch（--strict 时 warning 也算）。
@@ -32,6 +34,8 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+
+from repo_identity import classify as classify_repo
 
 OK, WARN, BAD, NA = "ok", "warn", "mismatch", "n/a"
 
@@ -124,6 +128,72 @@ def norm_url(u: str) -> str:
     return u[:-4] if u.endswith(".git") else u
 
 
+def _origin_push_urls(ws: Path) -> list[str]:
+    """读取 origin 的全部 push URL；无仓库/无 remote 时返回空列表。"""
+    rc, out = sh("git", "-C", str(ws), "remote", "get-url", "--push", "--all", "origin")
+    return [line.strip() for line in out.splitlines() if line.strip()] if rc == 0 else []
+
+
+def _legacy_gate_note(ws: Path, boot: dict, record: dict) -> str:
+    """新 gate.json 与旧 bootstrap.gate 结论不一致时给一句提示（非阻断）。"""
+    legacy = boot.get("gate") or {}
+    if not isinstance(legacy, dict) or not legacy.get("status") or not record:
+        return ""
+    if (legacy.get("status") != record.get("status")
+            or sorted(legacy.get("harness") or []) != sorted(record.get("harness") or [])):
+        return (f"旧 bootstrap.gate={legacy.get('status')}/{(legacy.get('harness') or [])} "
+                f"与本机 gate.json={record.get('status')}/{(record.get('harness') or [])} 不一致；"
+                f"以 gate.json 为准（旧位置只读兼容）")
+    return ""
+
+
+def _python_state(ws: Path, boot: dict) -> dict:
+    """运行时状态：本机 `.local` 优先（python.mode 已下沉），bootstrap.python 仅旧位置兼容。"""
+    try:
+        scripts = Path(ws) / "scripts"
+        if (scripts / "local_state.py").is_file() and str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import local_state as _ls
+        wid = _ls.workspace_id_of(Path(ws))
+        if wid:
+            ident = _ls.resolve_identity({}, _ls.detect_platform_info())
+            if ident is not None:
+                res = _ls.read_state(Path(ws), wid, ident, ephemeral=False)
+                if res.get("status") == "BOUND":
+                    data = res.get("data") or {}
+                    return {"mode": data.get("mode"), "runtime": data.get("runtime") or {},
+                            "version": data.get("version"), "source": "local-state"}
+    except Exception:
+        pass
+    legacy = boot.get("python")
+    if isinstance(legacy, dict):
+        return {**legacy, "source": "bootstrap(legacy)"}
+    return {"source": "none"}
+
+
+def _gate_record(ws: Path, boot: dict) -> dict:
+    """gate 结论：本机分片 `gate.json` 优先；`bootstrap.gate` 只作旧位置兼容。"""
+    scope = "unknown"
+    try:
+        scripts = Path(ws) / "scripts"
+        if (scripts / "gate_status.py").is_file() and str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import gate_status as _gs
+        scope = _gs._machine_scope(Path(ws))
+    except Exception:
+        scope = "unknown"
+    try:
+        sp = Path(ws) / ".workspace" / ".hook-state" / scope / "gate.json"
+        if sp.is_file():
+            data = json.loads(sp.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    legacy = boot.get("gate") or {}
+    return legacy if isinstance(legacy, dict) else {}
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", default=".")
@@ -156,7 +226,7 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"readme": rd}, ensure_ascii=False))
         return 0
     if a.layout_only:
-        pysec = boot.get("python") or {}
+        pysec = _python_state(ws, boot)
         mode = pysec.get("mode") or "unconfigured"
         ident = ((pysec.get("runtime") or {}).get("identifier") or "").strip()
         # 先按 mode 分流，再决定要不要探测：mcp/unconfigured 根本不碰文件系统。
@@ -177,7 +247,7 @@ def main(argv: list[str]) -> int:
             # 空 identifier 绝不能回退到工作区根：根目录里的 bin/python 与"这个工作区登记的 venv"无关，
             # 探测它会给出假阳性 exit 0。
             info.update({"layout": "none", "applicable": True,
-                         "note": "bootstrap 未记录 python.runtime.identifier：回写 venv 目录后再诊断"})
+                         "note": "本机状态未记录 runtime.identifier：用 scripts/pyenv_init.py --apply 回绑后再诊断"})
             print(json.dumps(info, ensure_ascii=False))
             return 3
         info = describe_layout(resolve_venv_dir(ws, ident))
@@ -208,8 +278,20 @@ def main(argv: list[str]) -> int:
     else:
         rows.append(item("workspace_root", sorted(ws_paths) or host, str(ws), OK))
 
-    # 2) Python 运行时
-    py = boot.get("python") or {}
+    # 1b) bootstrap 结构版本：字段存在就必须是我们认识的版本（否则读法可能已变）
+    sv = boot.get("schema_version")
+    if sv is None:
+        rows.append(item("bootstrap_schema", "未记录", "", WARN,
+                         "bootstrap 缺 schema_version：补 1，或确认这是旧格式"))
+    elif type(sv) is not int or sv != 1:
+        # 注意 `True == 1`、`1.0 == 1`：只认精确整数 1，其余一律按未知版本处理
+        rows.append(item("bootstrap_schema", sv, 1, BAD,
+                         "未知 bootstrap schema_version（只接受整数 1）：按模板迁移步骤升级，勿手改"))
+    else:
+        rows.append(item("bootstrap_schema", 1, 1, OK))
+
+    # 2) Python 运行时（本机状态优先）
+    py = _python_state(ws, boot)
     mode = py.get("mode")
     if mode in ("local-venv", "uv"):
         ident = ((py.get("runtime") or {}).get("identifier") or "").strip()
@@ -217,7 +299,7 @@ def main(argv: list[str]) -> int:
         venv_py = venv_interpreter(venv_dir) if ident else None
         want = py.get("version") or (py.get("runtime") or {}).get("version")
         if not ident:
-            rows.append(item("python", "未记录 identifier", "", BAD, "回写 bootstrap.python.runtime.identifier"))
+            rows.append(item("python", "未记录 identifier", "", BAD, "本机状态缺 runtime.identifier：用 scripts/pyenv_init.py --apply 回绑"))
         elif venv_py is None:
             rows.append(item("python", {"venv": str(venv_dir),
                                         "searched": [f"{a}/{b}" for a, b in VENV_INTERPRETERS]},
@@ -237,7 +319,7 @@ def main(argv: list[str]) -> int:
             rows.append(item("python", {"path": str(venv_py), "version": want, "mode": mode},
                              {"version": out, **extra}, OK if ok else WARN,
                              "" if ok else ("uv 不可用：安装 uv 或改用 venv/mcp 模式" if mode == "uv"
-                                            else "版本不同：确认后更新 bootstrap/TOOLS")))
+                                            else "版本不同：确认后重跑 pyenv_init 或更新 TOOLS")))
     elif mode == "mcp":
         venvs = sorted(p.name for p in ws.glob(".venv-*") if p.is_dir())
         if venvs:                                  # R11：MCP 模式不得同时建本地 venv
@@ -248,8 +330,26 @@ def main(argv: list[str]) -> int:
     else:
         rows.append(item("python", "unconfigured", mode, BAD, "按 §0 询问用户后配置"))
 
+    # 2a) 模板正主只承载分发内容，不应落本机运行时配置；副本不受此护栏约束。
+    source = ((boot.get("template") or {}).get("source_repo") or "").strip()
+    pushes = _origin_push_urls(ws)
+    is_template_repo = any(classify_repo(url, source, base=ws) == "template" for url in pushes)
+    runtime_files = sorted((ws / ".workspace" / ".local" / "v1").glob("*/runtime.json"))
+    if is_template_repo and runtime_files:
+        rows.append(item(
+            "template_runtime", {"push": pushes, "template_source": source},
+            [p.relative_to(ws).as_posix() for p in runtime_files], WARN,
+            "正主仓不应运行 pyenv_init --apply；实验与配置请在 TemplateDev/sandbox-*/ 副本里做，只把 diff 回传",
+        ))
+    else:
+        rows.append(item(
+            "template_runtime", {"push": pushes, "template_source": source},
+            "no runtime.json" if not runtime_files else "非模板正主", OK,
+        ))
+
     # 2b) Gate 接线（§15）：登记状态 vs 运行期证据
-    gate = boot.get("gate") or {}
+    gate = _gate_record(ws, boot)
+    _legacy_note = _legacy_gate_note(ws, boot, gate)
     g_status = gate.get("status")
     g_harness = [h for h in (gate.get("harness") or []) if h]
     want = [h.strip() for h in (getattr(a, "harness", "") or "").split(",") if h.strip()]
@@ -291,6 +391,13 @@ def main(argv: list[str]) -> int:
                                            if stale_but_known
                                            else "声明已接线但没有任何证据：确认 harness 启动方式（dsh 需 --patch）")))
 
+
+    # 非阻断：把「旧 bootstrap.gate 与本机 gate.json 不一致」并进 gate 行说明（不新增行、不影响 --strict）
+    if _legacy_note:
+        for _row in rows:
+            if _row.get("id") == "gate":
+                _row["action"] = ((_row.get("action") or "") + "；" if _row.get("action") else "") + _legacy_note
+                break
 
     # 3) 模板克隆
     tpl = boot.get("template") or {}
@@ -385,13 +492,19 @@ def main(argv: list[str]) -> int:
             behind, ahead = (int(x) for x in cnt.split())
         _, dirty = sh("git", "-C", str(ws), "status", "--porcelain")
         gi_rc, _ = sh("git", "-C", str(ws), "check-ignore", "-q", ".workspace/.hook-state")
+        # 用一个「目录下的文件」做探针：`.local/` 这种带尾斜杠的规则只匹配目录内容，
+        # 而路径本身可能还不存在（新工作区），直接探测会误判未忽略。
+        gl_rc, _ = sh("git", "-C", str(ws), "check-ignore", "-q", ".workspace/.local/v1/probe")
         want = norm_url((boot.get("git") or {}).get("remote") or "")
         same = (not want) or norm_url(url) == want
         rows.append(item("git", {"remote": want, "default_branch": (boot.get("git") or {}).get("default_branch")},
                          {"remote": url, "branch": br, "ahead": ahead, "behind": behind,
-                          "dirty_files": len(dirty.splitlines()), "hook_state_ignored": gi_rc == 0},
-                         OK if same else BAD,
-                         "" if same else "remote 与 bootstrap 不一致：确认后更新记录"))
+                          "dirty_files": len(dirty.splitlines()),
+                          "hook_state_ignored": gi_rc == 0, "local_state_ignored": gl_rc == 0},
+                         OK if same and gl_rc == 0 else BAD,
+                         "" if same and gl_rc == 0 else
+                         ("remote 与 bootstrap 不一致：确认后更新记录" if not same else
+                          "`.workspace/.local/` 未被 gitignore：跑 template_sync --apply（会自动补）或手工加一行")))
     else:
         rows.append(item("git", "initialized?", "no .git", WARN, "本机无仓库：clone 或按 git-init 建仓"))
 

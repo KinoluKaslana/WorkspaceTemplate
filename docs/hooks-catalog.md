@@ -58,11 +58,13 @@
 
 > 本节只陈述「机器怎么记账」，不构成义务；义务与判定标准仍在 `AGENT_RULES.md`。
 
-**账本与审计落盘**：状态在 `.workspace/.hook-state/`（已 gitignore）。Hermes 插件订阅 `on_session_start`/`subagent_start`/`subagent_stop`；放行落 `intents{target,base_sha}`，写后落 `commits` 并追加工作区级 `commits.jsonl`（`client="hermes"`），无 intent 的写落 `unobserved`；`on_session_finalize` 落边界审计。客户端 hooks 把 `gate-intent`/`gate-commit`/`unobserved-write`/`gate-deny`/`agent-start`/`agent-stop` 写进 `audit-<client>.jsonl`，`commits.jsonl` 按 sha 精确匹配、轮转时按 target 压缩。
+**账本与审计落盘**：状态在 `.workspace/.hook-state/<scope>/`（按机器分片，已 gitignore）。
+
+`<scope>` 的算法：`HMAC-SHA256(机器身份, "hook-scope")` 的前 12 位十六进制，由 `<工作区>/scripts/local_state.py` 的 `machine_scope()` 给出（机器身份：Linux `/etc/machine-id`、Windows `MachineGuid`、macOS `IOPlatformUUID`）。工作区里没有该脚本时，`gate_core._fallback_scope()` 自带同一套身份读取（不依赖工作区 `scripts/`），**不得**因为缺脚本就静默落进共享的 `unknown` 桶；取不到机器身份时改用本机持久种子（Linux/macOS：`$XDG_STATE_HOME/workspace-template/scope-seed`，Windows 未设置 `XDG_STATE_HOME` 时：`%LOCALAPPDATA%/workspace-template/scope-seed`；文件权限 `0600`，不在工作区内，故不会被工作区同步带走；同步整个家目录的 dotfiles 方案会带上它）派生的 scope；两者都拿不到才是 `unknown`。**为什么不回退到根目录**：`.hook-state/` 会被同步盘带到别的机器，不分片就会把另一台机器的读证据当成自己的（Helper 事故同型）。旧根目录在过渡期**只读兼容**。Hermes 插件订阅 `on_session_start`/`subagent_start`/`subagent_stop`；放行落 `intents{target,base_sha}`，写后落 `commits` 并追加工作区级 `commits.jsonl`（`client="hermes"`），无 intent 的写落 `unobserved`；`on_session_finalize` 落边界审计。客户端 hooks 把 `gate-intent`/`gate-commit`/`unobserved-write`/`gate-deny`/`agent-start`/`agent-stop` 写进 `audit-<client>.jsonl`，`commits.jsonl` 按 sha 精确匹配、轮转时按 target 压缩。
 
 **CC 转录回放**：只读 payload 给的 `transcript_path`（校验 slug 与 session，不遍历 `projects/`）；按静态可判目标分类转录里的 `Bash`，用 `Read` 记录重建读证据并复算 `would_deny`（记 `cc-bash-write`），归因不上的记 `cc-bash-gap`。命令原文默认只记 digest，`audit_command_text=true` 才落原文。
 
-**委托记录（delegations）**：`.workspace/.hook-state/delegations.jsonl` 存 `{id,parent_scope,child_scope,targets[],client,gate_fingerprint,issued_at,expires_at,status}`。签发命令：
+**委托记录（delegations）**：`.workspace/.hook-state/<scope>/delegations.jsonl` 存 `{id,parent_scope,child_scope,targets[],client,gate_fingerprint,issued_at,expires_at,status}`。签发命令：
 ```
 python3 .workspace/hooks/delegations.py --workspace . mint \
   --parent <父会话> --child <子会话> --client hermes --ttl 1800 \
@@ -101,9 +103,9 @@ python3 .workspace/hooks/delegations.py --workspace . mint \
    子 agent 用 `Bash` 写文件同样拿不到写前拦截——只能在 `SubagentStop` 用 `agent_transcript_path` 回放子转录事后归因（做法见 §3.1）。
 2. **Codex 同一轮里同时读+写会被保守拒绝**：`cat` 与 `apply_patch` 同轮并行时，`post_bash` 记账晚于 `pre_write` 判定 → `已覆盖 无` 被拒（MUX 压测实测）；顺序执行即通过。这是 fail-closed 的代价。
 3. **Hermes 的 `pre_tool_call` 没有 `cwd`**：相对路径的主锚点是 `task_id` 的核心同源 task cwd（`session_id` 只用于提醒与归属面，不发许可）；两者都拿不到 → 无法归属 → 拦。
-4. **空 `session_id` 时工作区内的写一律拦**（政策 2.7.0 / R98）：包括无法解析的相对目标；**非写工具与工作区外绝对路径写入不受影响**。
+4. **空 `session_id` 时工作区内的写一律拦**（政策 2.7.0 / R98）：包括无法解析的相对目标；**非写工具与工作区外绝对路径写入不受影响**。<!-- history:2.7.0 -->
 5. **hook 未送达 = 客户端 fail-open**：客户端不调钩子时，守门只能事后用 `unobserved` 暴露，不能阻止。所以口径是 **advisory**（写前拦截 + 事后可判定），不是安全边界。
-6. **子 agent 的 shell 写**（CC `Bash`）不经过 `PreToolUse`：主会话在 `Stop`/`SessionEnd` 回放归因，子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放（作用域含 `.agent_id`，v2.8.4 起）。
+6. **子 agent 的 shell 写**（CC `Bash`）不经过 `PreToolUse`：主会话在 `Stop`/`SessionEnd` 回放归因，子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放（作用域含 `.agent_id`，v2.8.4 起）。<!-- history:2.8.4 -->
 
 ## 5. 术语
 

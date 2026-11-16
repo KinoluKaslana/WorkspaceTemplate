@@ -1,4 +1,7 @@
-# Workspace skills（8 个）
+<!-- gen:policy-facts:begin -->
+<!-- doc-fact:skills-md-heading -->
+# Workspace skills（9 个）
+<!-- gen:policy-facts:end -->
 
 > 实现说明，不构成政策。义务与判定标准见 [`AGENT_RULES.md`](../AGENT_RULES.md)；本页只讲**每个 skill 干什么、什么时候进、失败怎么办**。
 
@@ -14,6 +17,7 @@
 | [`docs-retrieval-maintenance`](../.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | 维护 docs 索引与别名表 | docs 改动、`check` 报 stale、命中率下降 |
 | [`workspace-skill-authoring`](../.workspace/skills/workspace-skill-authoring/SKILL.md) | 1.0.0 | 把用户要的能力落成**工作区级** skill（含 kebab 命名、审批证据、三处登记） | 用户明确要求新建/修改本地 skill |
 | [`legacy-workspace-upgrade`](../.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 旧版本工作区**自举**升级（缺现行 skill 时） | 工作区模板版本落后且没有 `template-update` 3.x / `template_sync.py` |
+| [`release`](../.workspace/skills/release/SKILL.md) | 1.0.0 | 发版事务与 tag 身份闭环 | 升政策版本、打 tag、发版 |
 
 **职责边界口诀**：`template-update` 管模板文件；`workspace-repo-sync` 管工作区仓库；`workspace-init`/`git-init` 管从零落地；`delivery-closure` 管收尾；`docs-retrieval-maintenance` 管检索。工作区自身仓库的**分支切换、迁移、历史改写**不在任何 skill 里——**用户自管**。
 
@@ -34,7 +38,7 @@
 
 `skill_audit.py` 缺任何一节 → `findings`；`--strict` 下 exit 1，可直接进验收链。
 
-## 2. 七个 skill 的细节
+## 2. 各 skill 的细节
 
 ### 2.1 `template-update`
 
@@ -47,12 +51,12 @@ python3 scripts/template_sync.py --workspace . --ref alpha --apply --verify --js
 - `--ref` 接受分支 / 标签 / commit；缺省按 `bootstrap.template.last_synced_ref/branch` → `main`。
 - `--prune` 删除"上游已移除"的模板层文件（先备份；默认只报告）。
 - 备份含 `MANIFEST.txt`；**回滚 = 放回旧文件 + 删除本次新增**。
-- 铁律：只改 `bootstrap.template.*`，**不动** `bootstrap.python`（`python_mode_preserved=true`）。
+- 铁律：只改 `bootstrap.template.*`，**不动** `bootstrap` 的既有 `python`/`gate` 旧节（`python_mode_preserved` / `gate_preserved`）；运行时模式与 gate 结论在本机状态里，本来就不该同步。
 
 ### 2.2 `workspace-repo-sync`
 
 ```bash
-python3 scripts/workspace_preflight.py            # 11 项登记事实核验（先跑）
+python3 scripts/workspace_preflight.py            # 登记事实核验（条目以脚本输出为准）
 git fetch --all --prune && git status -sb         # 只读看清差异
 # 由用户决定：方向 / ff|merge|rebase / 冲突处置
 ```

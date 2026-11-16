@@ -30,18 +30,220 @@ except ImportError:                   # Windows：没有 fcntl，用 msvcrt 做�
     fcntl = None
     import msvcrt
 import hashlib
+import hmac
 import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 SCHEMA = 5
 BOOTSTRAP_REL = ".workspace/bootstrap.json"
 CUSTOM_REL = ".workspace/gate.custom.json"
 STATE_DIRNAME = ".workspace/.hook-state"
+_SCOPE_CACHE: dict[str, str] = {}
+# 平台开关：单独抽出来是为了能在非 Windows 上测 Windows 分支
+# （直接改 `os.name` 会让 pathlib 去实例化 WindowsPath，测试环境里直接崩）。
+_IS_WINDOWS = os.name == "nt"
+
+
+def _machine_scope(ws_root: str = "") -> str:
+    """本机作用域键（12 hex）：`.hook-state/<scope>/` 的目录名。
+
+    为什么按机器分片：`.hook-state/` 会被同步盘带到别的机器；不隔离就会把
+    另一台机器的会话账本/读证据当成自己的（Helper 事故同型）。
+    取不到机器身份 → 本机持久种子派生；两者都拿不到才是 `"unknown"`；**不回退到共享根目录**。
+    """
+    key = str(ws_root)
+    cached = _SCOPE_CACHE.get(key)
+    if cached:
+        return cached
+    scope = "unknown"
+    try:
+        import sys as _sys
+        # 优先以**工作区**的 local_state 为准：工作区里有 scripts/local_state.py 才算能定身份；
+        # 不能拿「hook 脚本所在仓库」冒充，否则复制到别的目录的 hook 会算错机器。
+        scripts = Path(ws_root) / "scripts"
+        if ws_root and (scripts / "local_state.py").is_file():
+            if str(scripts) not in _sys.path:
+                _sys.path.insert(0, str(scripts))
+            import local_state as _ls
+            scope = _ls.machine_scope()
+        else:
+            # 工作区没带 scripts/（未同步完 / 只拷了 .workspace）时**不得**静默落进共享的
+            # `unknown` 桶——那等于所有这类机器共用一个目录，跨机隔离失效。改用 hook 自带的
+            # 最小身份读取 + 本机种子兜底，与 local_state 同口径（见 `_fallback_scope`）。
+            scope = _fallback_scope()
+    except Exception:
+        fallback = _fallback_scope()
+        scope = fallback or "unknown"
+    _SCOPE_CACHE[key] = scope
+    return scope
+
+
+def _fallback_machine_material() -> bytes:
+    """Best-effort machine identity used when workspace helpers are unavailable."""
+    material = b""
+    try:
+        if _IS_WINDOWS:                                   # pragma: no cover - Windows
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                r"SOFTWARE\Microsoft\Cryptography") as key:
+                guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+            material = str(guid).encode("utf-8")
+        elif sys.platform == "darwin":                        # pragma: no cover - macOS
+            out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                 capture_output=True, text=True, timeout=5).stdout
+            match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
+            if match:
+                material = match.group(1).encode("utf-8")
+        else:
+            for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                try:
+                    text = Path(candidate).read_text(encoding="utf-8").strip()
+                except OSError:
+                    continue
+                if text:
+                    material = text.encode("utf-8")
+                    break
+    except Exception:
+        return b""
+    return material
+
+
+def _fallback_scope() -> str:
+    """本机作用域键的自足兜底（不依赖工作区 `scripts/local_state.py`）。
+
+    为什么需要：`.hook-state/<scope>/` 只有在每台机器算出**不同** scope 时才有隔离意义。
+    工作区缺 `scripts/`（同步中断、手工拷贝、早期快照）时若直接退回 `unknown`，所有这类
+    机器会共用一个目录，把别人的会话账本当成自己的读证据——这正是要避免的形态。
+
+    原料优先级与 `local_state.machine_scope()` 一致：机器身份 → 本机持久种子；
+    两者都拿不到才返回空串（调用方再退回 `unknown`）。
+    """
+    # 不缓存：兜底会被不同调用方（不同 XDG_STATE_HOME / 测试夹具）观察到，
+    # 进程级常量缓存会让同一次运行里前后的 scope 不一致，状态目录跟着漂。
+    explicit = os.environ.get("WORKSPACE_CONTEXT_SEED")
+    material = explicit.encode("utf-8") if explicit else _fallback_machine_material()
+    if material:
+        return hmac.new(material, b"hook-scope", hashlib.sha256).hexdigest()[:12]
+    local = _fallback_seed()
+    if local:
+        return hmac.new(local, b"hook-scope-local", hashlib.sha256).hexdigest()[:12]
+    return ""
+
+
+def _fsync_dir(path: Path) -> None:
+    """Persist a rename on POSIX; directory handles are unavailable on Windows."""
+    if _IS_WINDOWS:                                   # pragma: no cover - Windows
+        return
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def _fallback_seed() -> bytes:
+    """本机持久种子（用户状态目录，不在工作区内），两台都取不到机器身份也不共用。"""
+    base = os.environ.get("XDG_STATE_HOME")
+    if not base and _IS_WINDOWS:                         # pragma: no cover - Windows
+        base = os.environ.get("LOCALAPPDATA")
+    base = base or str(Path.home() / ".local" / "state")
+    path = Path(base) / "workspace-template" / "scope-seed"
+
+    def _read() -> bytes:
+        try:
+            return path.read_bytes().strip()
+        except OSError:
+            return b""
+
+    existing = _read()
+    if existing:
+        return existing
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return _read()
+
+    lock = path.with_name(path.name + ".lock")
+    acquired = False
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > 10.0 and not _read():
+                    lock.unlink()
+                    continue
+            except OSError:
+                pass
+            time.sleep(0.01)
+            continue
+        except OSError:
+            break
+        os.close(fd)
+        acquired = True
+        break
+    if not acquired:
+        return _read()
+
+    try:
+        existing = _read()
+        if existing:
+            return existing
+        fresh = uuid.uuid4().hex.encode("ascii")
+        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}")
+        try:
+            fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(fresh + b"\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+            _fsync_dir(path.parent)
+        except OSError:
+            pass
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        return _read()
+    finally:
+        try:
+            os.unlink(lock)
+        except OSError:
+            pass
+
+
+def _state_dir(ws_root: str) -> Path:
+    return Path(ws_root) / STATE_DIRNAME / _machine_scope(ws_root)
+
+
+def _legacy_state_dir(ws_root: str) -> Path:
+    """旧布局（`.hook-state/` 根）：只读兼容一个版本，不再写入。"""
+    return Path(ws_root) / STATE_DIRNAME
+
+
+def state_dir(ws_root: str) -> Path:
+    """本机作用域状态目录（公开入口，供 delegations / cc_transcript / 插件复用）。"""
+    return _state_dir(ws_root)
+
+
+def machine_scope(ws_root: str = "") -> str:
+    """本机作用域键（公开入口；工作区里有 scripts/local_state.py 才算能定身份）。"""
+    return _machine_scope(ws_root)
 GATE_FILE = "AGENT_RULES.md"
 DEFAULT_GATE_FILES = [GATE_FILE]
 DEFAULT_WRITE_TOOLS = ["write", "edit", "apply_patch"]
@@ -170,12 +372,15 @@ AUTHZ_FILENAME = "authz.json"
 
 
 def _authz_path(ws_root: str) -> Path:
-    return Path(ws_root) / STATE_DIRNAME / AUTHZ_FILENAME
+    return _state_dir(ws_root) / AUTHZ_FILENAME
 
 
 def load_authz(ws_root: str) -> dict:
     """损坏/缺失 → 视为无令牌（fail-safe）。返回 {"schema":1,"tokens":[]}。"""
     p = _authz_path(ws_root)
+    if not p.is_file():
+        legacy = _legacy_state_dir(ws_root) / AUTHZ_FILENAME
+        p = legacy if legacy.is_file() else p
     if not p.is_file():
         return {"schema": 1, "tokens": []}
     try:
@@ -345,8 +550,21 @@ HASH_BUDGET_BYTES = 32 << 20     # 每次哈希扫描最多读 32 MiB
 HASH_CAP = 2000                  # 最多记多少个文件的指纹
 
 
-def _hash_baseline_path(ws_root: str, client: str, session_id: str):
-    return Path(ws_root) / STATE_DIRNAME / ("hashes-%s-%s.json" % (client, session_id))
+def _write_hash_baseline(ws_root: str, client: str, session_id: str, data: dict) -> Path:
+    """写哈希基线：**永远**落分片目录（旧根只读，绝不写回）。"""
+    p = _hash_baseline_path(ws_root, client, session_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
+
+
+def _hash_baseline_path(ws_root: str, client: str, session_id: str, *, read: bool = False):
+    p = _state_dir(ws_root) / ("hashes-%s-%s.json" % (client, session_id))
+    if read and not p.is_file():
+        legacy = _legacy_state_dir(ws_root) / ("hashes-%s-%s.json" % (client, session_id))
+        if legacy.is_file():
+            return legacy
+    return p
 
 
 def _scan_hashes(ws_root: str, budget: int = HASH_BUDGET_BYTES,
@@ -418,21 +636,20 @@ def sibling_commits(ws_root: str, client: str, session_id: str) -> set[str]:
     base, _ = split_scoped_id(session_id)
     out: set[str] = set()
     try:
-        d = Path(ws_root) / STATE_DIRNAME
-        prefix = f"{client}-{base}"
-        for path in d.glob(f"{client}-{base}*.json"):
-            stem = path.name[len(client) + 1:-5]
-            if stem != base and not stem.startswith(base + AGENT_SCOPE_SEP):
-                continue
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            for e in (data.get("events") or []):
-                if isinstance(e, dict) and e.get("type") == "gate-commit":
-                    t = e.get("target")
-                    if isinstance(t, str):
-                        out.add(t)
+        for d in (_state_dir(ws_root), _legacy_state_dir(ws_root)):
+            for path in d.glob(f"{client}-{base}*.json"):
+                stem = path.name[len(client) + 1:-5]
+                if stem != base and not stem.startswith(base + AGENT_SCOPE_SEP):
+                    continue
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                for e in (data.get("events") or []):
+                    if isinstance(e, dict) and e.get("type") == "gate-commit":
+                        t = e.get("target")
+                        if isinstance(t, str):
+                            out.add(t)
     except Exception:
         return out
     return out
@@ -441,7 +658,7 @@ def sibling_commits(ws_root: str, client: str, session_id: str) -> set[str]:
 def _append_commit_ledger(ws_root: str, client: str, session_id: str, rec: dict) -> None:
     """工作区级 commit 账本（跨会话/跨 agent）：worktree 差集按它判定「已观测」。"""
     try:
-        d = Path(ws_root) / STATE_DIRNAME
+        d = _state_dir(ws_root)
         d.mkdir(parents=True, exist_ok=True)
         p = d / "commits.jsonl"
         if p.exists() and p.stat().st_size > LOG_ROTATE_BYTES:
@@ -472,7 +689,9 @@ def committed_targets(ws_root: str, current_sha: dict[str, str | None]) -> set[s
     """从工作区级账本读出「当前磁盘 sha 与账本记录一致」的目标集合。"""
     out: set[str] = set()
     try:
-        p = Path(ws_root) / STATE_DIRNAME / "commits.jsonl"
+        p = _state_dir(ws_root) / "commits.jsonl"
+        if not p.is_file():
+            p = _legacy_state_dir(ws_root) / "commits.jsonl"
         if not p.is_file():
             return out
         text = p.read_text(encoding="utf-8", errors="replace")
@@ -493,12 +712,17 @@ def committed_targets(ws_root: str, current_sha: dict[str, str | None]) -> set[s
         return out
     return out
 
-def _state_path(ws_root: str, client: str, session_id: str) -> Path:
+def _state_path(ws_root: str, client: str, session_id: str, *, read: bool = False) -> Path:
     if client not in ("cc", "codex", "dsh") or not isinstance(session_id, str) or not session_id:
         raise ValueError("missing or invalid client/session identity")
     sid = session_id if re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", session_id) else (
         "~" + sha256_hex(session_id.encode("utf-8")))
-    return Path(ws_root) / STATE_DIRNAME / f"{client}-{sid}.json"
+    sp = _state_dir(ws_root) / f"{client}-{sid}.json"
+    if read and not sp.is_file():
+        legacy = _legacy_state_dir(ws_root) / f"{client}-{sid}.json"
+        if legacy.is_file():
+            return legacy
+    return sp
 
 
 class _StateLock:
@@ -536,7 +760,7 @@ class _StateLock:
 
 
 def load_state(ws_root: str, client: str, session_id: str) -> dict:
-    sp = _state_path(ws_root, client, session_id)
+    sp = _state_path(ws_root, client, session_id, read=True)
     state: dict | None = None
     if sp.is_file():
         try:
@@ -814,6 +1038,30 @@ def _revocation(state: dict, gate_rel: str, reason: str) -> None:
         })
 
 
+def _local_py_mode(ws_root: str) -> str | None:
+    """只读：本机状态里的 python.mode（`.local/v1/<context_id>/runtime.json`）。"""
+    try:
+        import sys as _sys
+        scripts = Path(ws_root) / "scripts"
+        if not (scripts / "local_state.py").is_file():
+            return None
+        if str(scripts) not in _sys.path:
+            _sys.path.insert(0, str(scripts))
+        import local_state as _ls
+        wid = _ls.workspace_id_of(Path(ws_root))
+        if not wid:
+            return None
+        ident = _ls.resolve_identity({}, _ls.detect_platform_info())
+        if ident is None:
+            return None
+        res = _ls.read_state(Path(ws_root), wid, ident, ephemeral=False)
+        if res.get("status") == "BOUND":
+            return (res.get("data") or {}).get("mode")
+    except Exception:
+        return None
+    return None
+
+
 def workspace_is_taken_over(ws_root: str) -> bool:
     """工作区是否「已接管」：模板仓自身与未初始化的克隆不算受管工作区。
 
@@ -828,7 +1076,12 @@ def workspace_is_taken_over(ws_root: str) -> bool:
     if not isinstance(data, dict):
         return True
     status = str(data.get("workspace_status") or "").strip()
-    py_mode = str(((data.get("python") or {}) if isinstance(data.get("python"), dict) else {}).get("mode") or "").strip()
+    # 本机状态优先（python.mode 已下沉），旧 bootstrap.python.mode 只作回退。
+    # 注意：本函数只返回布尔值，两个来源「都配了」时任一顺序结果相同——这里的顺序是
+    # 政策一致性（R102/R136），行为等价；真正被测试钉住的是「旧 bootstrap 回退不丢」。
+    py_mode = str(_local_py_mode(ws_root) or "").strip()
+    if py_mode in ("", "unconfigured"):
+        py_mode = str(((data.get("python") or {}) if isinstance(data.get("python"), dict) else {}).get("mode") or "").strip()
     return not (status == "template" and py_mode in ("", "unconfigured"))
 
 
@@ -1052,7 +1305,7 @@ def reconcile_session_reads(owner: str, client: str, session_id: str, trigger: s
     """
     if trigger not in ("PreToolUse", "Stop", "SessionEnd"):
         raise ValueError("invalid reconciliation trigger")
-    if not _state_path(owner, client, session_id).is_file():
+    if not _state_path(owner, client, session_id, read=True).is_file():
         return  # Ordinary reads must not create permission/write state.
     with _StateLock(owner, client, session_id):
         index = load_state(owner, client, session_id).get("read_workspaces", [])
@@ -1062,7 +1315,7 @@ def reconcile_session_reads(owner: str, client: str, session_id: str, trigger: s
         roots = sorted(set([owner, *index]))
     # Never hold two workspace locks at once.
     for ws in roots:
-        if not _state_path(ws, client, session_id).is_file():
+        if not _state_path(ws, client, session_id, read=True).is_file():
             continue
         with _StateLock(ws, client, session_id):
             state = load_state(ws, client, session_id)
@@ -1110,12 +1363,11 @@ def evaluate_session_start(ws_root: str, client: str, session_id: str,
         state.setdefault("audit_watermark_ns", time.time_ns())
         if not _git_ok(ws_root):
             # 哈希兜底基线：`cp -p` / `tar -x` 这类保 mtime 的写只靠水位线会漏。
-            hp = _hash_baseline_path(ws_root, client, session_id)
+            hp = _hash_baseline_path(ws_root, client, session_id, read=True)
             if not hp.exists():
                 try:
                     hashes, _complete = _scan_hashes(ws_root)
-                    hp.parent.mkdir(parents=True, exist_ok=True)
-                    hp.write_text(json.dumps(hashes), encoding="utf-8")
+                    _write_hash_baseline(ws_root, client, session_id, hashes)
                 except Exception as exc:
                     log(ws_root, f"hash baseline failed: {exc}")
         ch = state["reminder"]["channels"]
@@ -1341,7 +1593,7 @@ def anchor_check(ws_root: str, client: str, session_id: str, source: str) -> dic
 
 def log(ws_root: str, msg: str) -> None:
     try:
-        d = Path(ws_root) / STATE_DIRNAME
+        d = _state_dir(ws_root)
         d.mkdir(parents=True, exist_ok=True)
         lp = d / "gate.log"
         if lp.exists() and lp.stat().st_size > LOG_ROTATE_BYTES:
@@ -1354,7 +1606,7 @@ def log(ws_root: str, msg: str) -> None:
 
 def _append_audit(ws_root: str, client: str, state: dict) -> None:
     try:
-        d = Path(ws_root) / STATE_DIRNAME
+        d = _state_dir(ws_root)
         d.mkdir(parents=True, exist_ok=True)
         events = state.get("events")
         if not isinstance(events, list):
@@ -1384,7 +1636,7 @@ def _append_audit_jsonl(ws_root: str, client: str, rec: dict) -> None:
     `unobserved-write` 直接消失。审计是"事后可见"的唯一出口，丢了就等于没做。
     """
     try:
-        path = Path(ws_root) / STATE_DIRNAME / ("audit-%s.jsonl" % client)
+        path = _state_dir(ws_root) / ("audit-%s.jsonl" % client)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -1466,7 +1718,7 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
             changed = set(_recent_files(ws_root, watermark))
             # 哈希兜底：覆盖"保留原 mtime"的写（cp -p / tar -x / rsync -t）。
             try:
-                hp = _hash_baseline_path(ws_root, client, session_id)
+                hp = _hash_baseline_path(ws_root, client, session_id, read=True)
                 prev = json.loads(hp.read_text(encoding="utf-8")) if hp.is_file() else {}
                 cur, complete = _scan_hashes(ws_root)
                 if isinstance(prev, dict):
@@ -1474,8 +1726,7 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
                         old = prev.get(rel)
                         if old is not None and old != sha:
                             changed.add(rel)
-                hp.parent.mkdir(parents=True, exist_ok=True)
-                hp.write_text(json.dumps(cur), encoding="utf-8")
+                _write_hash_baseline(ws_root, client, session_id, cur)
                 if not complete:
                     append_audit_event(ws_root, client, session_id,
                                        {"type": "snapshot-incomplete",

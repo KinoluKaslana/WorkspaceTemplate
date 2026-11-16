@@ -1,4 +1,7 @@
-# 工具（scripts/，15 个）
+<!-- gen:policy-facts:begin -->
+<!-- doc-fact:tools-md-heading -->
+# 工具（scripts/，19 个）
+<!-- gen:policy-facts:end -->
 
 > 实现说明，不构成政策。所有脚本只依赖标准库，要求 Python ≥ 3.10。**`--json` 语义各脚本不同**：`verify_rules.py` 的 `--json` 是**输出文件路径**，`skill_audit.py`/`workspace_preflight.py`/`docs_*.py`/`template_sync.py`/`pyenv_init.py` 的 `--json` 是「打印 JSON 到 stdout」，`mark_rules.py` 无此参数——以各条示例与 `--help` 为准。
 
@@ -10,6 +13,8 @@
 | `mark_rules.py` | 给条款打稳定 ID（`<!-- id:Rn -->`）并重建注册表 | `registry AGENT_RULES.md` | 0 / 1 |
 | `inspect_skills.py` | 只读盘点 skills 目录（入口、name/description、嵌套） | `<skills-dir> [--include-nested]` | 0 / 1 |
 | `version_check.py` | 版本三元组：政策 ↔ CHANGELOG ↔ bootstrap | `[--json]` | 0 / 1 |
+| `policy_facts.py` | 政策事实生成器：从权威源渲染「生成块」（政策/插件版本、`TEMPLATE_FILES`/skills/scripts 计数、条款范围），并判「未登记的政策版本文面量」（历史标记只豁免它声明的版本、不得登记当前版本；`CHANGELOG` 条目须为 `## x.y.z`） | `[--check] \| [--write] \| [--print]` | 0 一致 / 1 有 finding（`--write` 缺标记时为 2） |
+| `release.py` | 发版事务：版本/CHANGELOG/bootstrap/生成块/账本同步，失败整体回滚；tag 单独执行，绝不 push | `--version X.Y.Z --summary "…" [--dry-run\|--apply]`；`--verify`；`--tag X.Y.Z --apply` | 0 / 1 |
 | `notes_index_check.py` | notes 索引与重建结果一致（防手改/过期） | `[--json]` | 0 / 1 |
 | `secret_scan.py` | 高置信度明文凭据扫描（只打印脱敏片段） | `[--root PATH] [--json]` | 0 / 1 |
 | `clause_lint.py` | 条款属性门：正文用词 ↔ `clauses.meta.json` 声明一致 | `[--strict] [--report] [--json]` | 0 / 1 |
@@ -19,9 +24,11 @@
 | `docs_hit_report.py` | 判据集命中报告（`tests/docs_probe.json`） | `--min 9 --top 2 --json` | 0 达标 / 1 未达标 / 2 stale |
 | `docs_alias_audit.py` | 别名审计：死指针/指纹漂移/来源合规/留一验证 | `[--strict] [--restore] [--json]` | 0 / 1 |
 | `template_sync.py` | 按 ref 同步模板层：dry-run / apply / prune / rollback；**写盘与校验都是事务性的**（失败自动回滚，`--keep-on-fail` 保留现场） | `--workspace . --ref alpha [--apply --prune --verify --json]`；`--rollback <备份目录>`；`--keep-on-fail` | 0 / 1 前置失败 / 2 校验失败（已回滚）/ 3 写盘或校验器异常（已回滚）/ 4 回滚失败（需按 MANIFEST 手工恢复） |
-| `workspace_preflight.py` | 跨设备预检：11 项「登记 vs 本机实际」；`--layout-only` 只读诊断 venv 布局 | `[--workspace .] [--json] [--strict] [--harness …] [--layout-only]` | 0 无 mismatch / 1 有 mismatch / `--layout-only`：0 找到解释器 / 0 mcp（`layout=n/a`，不探测）/ 3 没有、未配置或缺 identifier |
+| `workspace_preflight.py` | 跨设备预检：逐项「登记 vs 本机实际」（条目以 `--json` 的 `items` 为准）；`--layout-only` 只读诊断 venv 布局 | `[--workspace .] [--json] [--strict] [--harness …] [--layout-only]` | 0 无 mismatch / 1 有 mismatch / `--layout-only`：0 找到解释器 / 0 mcp（`layout=n/a`，不探测）/ 3 没有、未配置或缺 identifier |
 | `pyenv_init.py` | Python 运行时初始化：uv / 手动 venv / MCP | `--mode uv\|venv\|mcp [--apply] [--json]` | 0 / 1 / 2 参数 / 3 需装 uv / 4 校验失败 / 5 已配置拒绝 |
+| `repo_identity.py` | 仓库身份三段纯函数流水线：编码规范化 → 路径格式转换 → 白名单判定 | `from repo_identity import normalize_encoding, convert_format, repair, classify` | 库：非法或不可证明输入返回 `None` |
 | `gate_status.py` | harness 接线自检：各客户端有没有**运行期** gate 证据 | `[--require cc,codex,hermes,dsh] [--ttl-minutes N] [--json]` | 0 有证据 / 1 `--require` 缺证据 |
+| `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_state` / `read_status` / `bind` / `resolve_identity` / `detect_platform_info` | `import local_state` | 库：不变量失败抛 `ValueError`/`TypeError`；判读结果在返回字典的 `status`/`reason` |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 
@@ -75,7 +82,7 @@ python3 scripts/template_sync.py --workspace . --ref 5edf554 --apply       # 提
 
 - 用 `git worktree add --detach` 取快照，不动模板克隆的工作树；
 - 备份到 `.workspace/backup-<ts>-sync/`（含 `MANIFEST.txt`）；
-- 回报 `changed / skipped / identical / removed_upstream / pruned / python_mode_preserved`；
+- 回报 `changed / skipped / identical / removed_upstream / pruned / python_mode_preserved`（后者只针对旧 `bootstrap.python` 节；本机状态不在同步范围）；
 - `--prune` 删除上游已移除的模板层文件（先备份，并清理空父目录）。
 
 ## 4.5 条款属性：`clause_lint.py`
@@ -104,20 +111,25 @@ python3 scripts/workspace_preflight.py  # R11：MCP 模式不得同时存在本�
 
 ## 5. 跨设备：`workspace_preflight.py`
 
-11 项：`host / workspace_root / python / gate / template_clone / skills / template_files / notes_index / docs_index / git / readme`。
+条目（以 `--json` 的 `items` 为准）：`host / bootstrap_schema / workspace_root / python / gate / template_clone / skills / template_files / notes_index / docs_index / git / readme`。
 每项 `recorded / actual / status / action`；`mismatch` 阻塞，`warn` 记录后继续，`n/a` 跳过。
 **只报告、不改写记录**——记录是共享资产，改写由用户裁决后执行。
 
 ## 5.5 Gate 接线：`gate_status.py`
+
+gate 结论按机器分片落在 `<ws>/.workspace/.hook-state/<scope>/gate.json`（`<scope>` 见 `docs/hooks-catalog.md`）；
+`bootstrap.json` 的 `gate` 节是旧位置，只读兼容、不再写入。同一份证据文件（`gate.log`）也按 `<scope>` 分片，
+别的机器同步过来的证据不会被当作本机证据。
+
 
 ```bash
 python3 scripts/gate_status.py --ttl-minutes 30                  # 四端「有没有运行期证据」
 python3 scripts/gate_status.py --require dsh,cc --json           # 缺证据 → 退出码 1
 ```
 
-政策 §15 把这条核验定为启动前必须项（与 Python 选择同性质），结论落 `bootstrap.gate`。判据只看运行期证据：`cc`/`codex` 来自 `.workspace/.hook-state/gate.log` 的 `client=` 行；`hermes` 来自
+政策 §15 把这条核验定为启动前必须项（与 Python 选择同性质），结论落本机状态 `.workspace/.hook-state/<scope>/gate.json`（`bootstrap.gate` 是旧位置，只读兼容）。判据只看运行期证据：`cc`/`codex` 来自 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行；`hermes` 来自
 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，插件日志不绑工作区——这是已知边界）；
-`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/dsh-session-*.json` 账本。
+`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/<scope>/dsh-session-*.json` 账本。
 TTL 必须为正（0 直接拒绝）；时间戳在当前时刻之后超过 2 分钟不算证据（时钟回拨/伪造）。
 **文件在不在不算证据**——
 dsh 没有项目级自动发现，不带 `--patch` 启动就完全没有 gate；`hermes` 需要 `HERMES_ENABLE_PROJECT_PLUGINS=true`
@@ -128,6 +140,36 @@ dsh 没有项目级自动发现，不带 `--patch` 启动就完全没有 gate；
 
 **与预检的失败姿态**：`workspace_preflight` 的 `gate` 项判 `mismatch` 表示「不能进入受管写入/同步」，
 不表示只读也被禁止（R118）。预检复核 TTL 固定按 ≤30 分钟算，不会因为 bootstrap 里填了更大的值而放宽。
+
+## 5.6 本机状态分片：`local_state.py`
+
+本机状态（运行时模式、venv、版本、后续的 gate 结论）按**执行上下文**分片存放，不写进随仓库分发的 `bootstrap.json`：
+
+```
+<workspace>/.workspace/.local/v1/<context_id>/runtime.json
+context_id   = HMAC-SHA256(machine_material, f"{workspace_id}|{realm}|{principal}")
+root_binding = HMAC-SHA256(context_id, realpath(workspace))
+```
+
+- `machine_material`：Linux/WSL `/etc/machine-id`（回退 `/var/lib/dbus/machine-id`）、Windows `MachineGuid`、macOS `IOPlatformUUID`（Darwin 不走 Linux 的 machine-id 文件）；CI 用 `WORKSPACE_CONTEXT_SEED` 显式给定。采集入口 `detect_platform_info()`（只读、best-effort）。
+- `principal`：POSIX `uid` / Windows `SID`（`whoami /user` 解析；取不到返回 `None`，**不回退用户名**）；`realm`：`linux|windows|macos|wsl|container:<rt>|ci:<provider>`（可用 `WORKSPACE_REALM` 覆盖）。
+- `mode` 的持久值与历史 `bootstrap.python.mode` 一致：`uv` / `local-venv` / `mcp`（`pyenv_init --mode venv` 只是 CLI 别名）；它现在存在本机状态里，`bootstrap` 不再保存。
+- 只读判定（`read_state` / `read_status`）不创建、不修复；只认精确的 `runtime.json`，同步冲突副本与别人的 context 目录一律不采信。
+- 状态文件不存明文绝对路径：`root_binding` 是 HMAC，venv 用工作区相对路径；工作区一移动，绑定自动失效（`UNBOUND` + `root-mismatch`）。`venv_relpath` 必须无 drive、无 root、无 `..`、非空。
+- 首次绑定把内容写进同级临时目录（`mkdtemp`）→ 文件 `fsync` → **临时目录 `fsync`** → 整体 `rename` → 父目录 `fsync`，读者看不到「目录在、`runtime.json` 不在」的中间态；更新已有 context 用 `mkstemp + fsync + os.replace + 目录 fsync`。
+- 写锁在 OS 临时目录（`workspace-template-locks-<uid>/<context_id>.lock`，`0700`），不落在状态树里，不会被同步到别的机器；同 context 的并发写串行化。
+- 工作区之下的路径链上任何一段是 symlink 都拒绝写入；`runtime.json` 用 `O_NOFOLLOW` 打开。工作区自身是 symlink 时按 `realpath` 锚定（状态仍落在工作区实体内）。
+- `ephemeral` 是调用方显式传入的 `bool`（CI 用），对应目录名带 `-eph` 后缀；传非 `bool` 抛 `TypeError`，避免字符串 `"false"` 被当成真值。
+
+`runtime.json` 里的 `capabilities` 只记**能由模式本身推出**的事实：本地 venv / uv 的`workspace_file_access` 与 `dependency_persistence` 为真（结构性），`network_access` 与 MCP 三项一律为 `null`（未探测）；`basis` 取 `structural` / `unverified` 说明这份声明的来源，不要在未探测时写 `true`。
+
+接口：`read_state()` 返回 `{status, reason, context_id, data}`，`BOUND` 时 `data` 是经校验的 payload；`read_status()` 是只含前三键的兼容视图；`bind()` 返回 `read_state()` 的结果。
+
+判读结果：`BOUND`（`ok`）/ `UNBOUND`（`no-local-state` / `no-self-state` / `root-mismatch`）/ `CORRUPT`（`bad-json` / `unknown-schema` / `missing-fields` / `missing-runtime` / `workspace-mismatch` / `context-mismatch` / `realm-mismatch` / `invalid-fields` / `unsafe-path`）/ `IDENTITY_UNAVAILABLE`（`identity-unavailable`）。
+
+契约测试：`tests/test_local_state.py`（29 例：含并发读、首次绑定原子发布、symlink 逃逸、HMAC 固定向量、首绑文件+目录 fsync、多进程写、工作区别名、SID 解析、全分支只读不写盘）。
+
+**存量实例注意**：`.gitignore` 不在 `TEMPLATE_FILES`，同步不会带来 `.workspace/.local/` 这一行，需按 `.workspace/skills/template-update/` 的「同步后检查」手工补一行。
 
 ## 6. Python 运行时：`pyenv_init.py`
 
@@ -140,7 +182,7 @@ python3 scripts/pyenv_init.py --mode mcp --mcp-server s --mcp-tool t --apply
 
 - uv 缺失 → exit 3 + 安装方式；**默认不联网安装**，仅当用户明确要求时才由用户执行安装（或用户自己加 `--allow-install` 跑官方脚本）；
 - 已配置的工作区 → exit 5 `already-configured`（保护既有选择；`--force` 才切换）；
-- 写 `bootstrap.python`（mode/runtime/version/configured_at），输出一段 `TOOLS.md` 待粘贴行。
+- 写**本机状态** `.workspace/.local/v1/<context_id>/runtime.json`（mode / venv 目录名 / 版本 / runtime 标识 / 能力声明），并翻转 `bootstrap.workspace_status=active`、写入 `workspace_id`、删掉旧的 `python` 节；输出一段 `TOOLS.md` 待粘贴行。
 
 ## 7. 退出码约定
 

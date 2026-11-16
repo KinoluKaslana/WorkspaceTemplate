@@ -1,7 +1,7 @@
 # 工作区级 Hook 技术指南
 
 > 面向两类读者：**完全没接触过 hook 的人**（先看第 0–2 章，用比喻理解机制），以及**要改代码/排查问题的人**（第 3–6 章是逐 harness 的实现拆解）。
-> 对应政策：`AGENT_RULES.md` §12（Hermes 侧）与 §13（Codex / Claude Code 侧），当前政策版本 **3.3.1**。
+> 对应政策：`AGENT_RULES.md` §12（Hermes 侧）与 §13（Codex / Claude Code 侧），当前政策版本以 `AGENT_RULES.md` 第 4 行为准。
 
 ---
 
@@ -148,7 +148,7 @@ python3 .workspace/hooks/authz.py mint --workspace . --target AGENT_RULES.md --t
 
 两条必须知道的口径：① **判定逻辑内部异常一律 block**（fail-closed）；② **空 `session_id` 也 block**：写工作区文件时无法归属会话即拒绝，非写工具与工作区外绝对路径写入不受影响——不再有「身份缺失就跳过」的 fail-open 通道。
 
-**拒绝消息带机器可读码**（v1.7.0 / 政策 2.8.2 起），形如 `[workspace-gate:no-read] WorkspaceTemplate 守门…`：
+**拒绝消息带机器可读码**（v1.7.0 / 政策 2.8.2 起）<!-- history:2.8.2 -->，形如 `[workspace-gate:no-read] WorkspaceTemplate 守门…`：
 
 | 码 | 含义 | 怎么解 |
 |---|---|---|
@@ -176,7 +176,7 @@ pre_tool_call ──► 解析目标 → 找所属工作区 → 校验读证据�
 post_tool_call ──► 若是 read_file：把「读了哪些行 + 当时的指纹」写入状态
 ```
 
-状态文件：`<工作区>/.workspace/.hook-state/<session_id>.json`（已 gitignore）；文件名经消毒，`session_id` 里非 `[A-Za-z0-9_.-]` 的字符替换为 `_`。
+状态文件：`<工作区>/.workspace/.hook-state/<scope>/<session_id>.json`（按机器分片，已 gitignore）；文件名经消毒，`session_id` 里非 `[A-Za-z0-9_.-]` 的字符替换为 `_`。
 
 ### 3.4 调参（不要改脚本）
 
@@ -221,9 +221,9 @@ GATE_CLIENT=codex "$PY" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.wo
 **改了 `.codex/hooks.json` 就必须重走一次 `/hooks`**：信任按「每条 hook 的 `trusted_hash`」记录在
 `~/.codex/config.toml` 的 `[hooks.state."<hooks.json 绝对路径>:<event>:<group>:<index>"]`；命令字符串一变，
 哈希就失效，codex 下次启动会显示 `Hooks need review — N hooks are new or changed`，选 `Trust all and continue` 才继续生效。
-验证是否真的生效：跑一次 `codex exec`，看 `.workspace/.hook-state/codex-<thread_id>.json` 是否新增。
+验证是否真的生效：跑一次 `codex exec`，看 `.workspace/.hook-state/<scope>/codex-<thread_id>.json` 是否新增。
 
-`SessionStart` 同时会往 `.workspace/.hook-state/gate.log` 追加一条 `session_start client=codex session=<sid>`：这是 `scripts/gate_status.py --require codex` 判定「已接线」的最小证据，只读会话（从不写盘）也有。
+`SessionStart` 同时会往 `.workspace/.hook-state/<scope>/gate.log` 追加一条 `session_start client=codex session=<sid>`：这是 `scripts/gate_status.py --require codex` 判定「已接线」的最小证据，只读会话（从不写盘）也有。
 
 ### 4.2 Bash 分派：先看是不是 `apply_patch`，再静态识别写
 
@@ -330,7 +330,7 @@ claude -p "用 Read 工具读 AGENT_RULES.md 全文，然后 DONE" \
   --session-id <uuid> --permission-mode bypassPermissions --output-format json
 claude -p "执行一条 Bash：printf x >> POLICY2.md" \
   --resume <uuid> --permission-mode bypassPermissions --output-format json
-# 然后看 <workspace>/.workspace/.hook-state/audit-cc.jsonl 里的 cc-bash-write
+# 然后看 <workspace>/.workspace/.hook-state/<scope>/audit-cc.jsonl 里的 cc-bash-write
 ```
 
 ---
@@ -342,7 +342,7 @@ claude -p "执行一条 Bash：printf x >> POLICY2.md" \
 | 写前拦截（原生文件工具） | ✅ `write_file`/`patch` | ✅ 原生 `apply_patch` | ✅ `Write`/`Edit` |
 | 写前拦截（Bash 静态写） | ⛔ 不在该层 | ✅ `>`/`>>`/`tee`/`sed -i`… | ⛔ 不订阅 |
 | Bash 写的覆盖方式 | ⛔ 该层没有 Bash 事件 | **实时拦截**（`PreToolUse`）+ `PostToolUse` 记账 | **仅事后归因**（转录回放 `cc-bash-write`） |
-| 无法识别会话（空 `session_id`） | **拒绝工作区写**（fail-closed，v1.5.0） | 无此路径 | 无此路径 |
+| 无法识别会话（空 `session_id`） | **拒绝工作区写**（fail-closed，v1.5.0）<!-- history:1.5.0 --> | 无此路径 | 无此路径 |
 | 读证据 | 行号 + 内容指纹 + 覆盖区间 | 同左 | 同左（从转录重建） |
 | 写治理文件需令牌 | 由 §12 判据覆盖 | ✅ `authz.py mint` | ✅ 同左 |
 | 完成声明门禁（advisory） | 会话结束时审计 | ✅ `Stop` → `completion-gate` | ✅ `Stop` → 同左 |

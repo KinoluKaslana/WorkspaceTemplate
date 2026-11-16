@@ -33,6 +33,7 @@ HOOK = HOOKS / "hook.py"
 PY = sys.executable
 
 sys.path.insert(0, str(HOOKS))
+import hstate  # noqa: E402
 import gate_core as core  # noqa: E402
 
 
@@ -111,7 +112,7 @@ class PostShellAudit(unittest.TestCase):
         st = core.load_state(str(self.ws), "dsh", self.sid)
         self.assertFalse(any(e.get("type") == "unobserved-write" for e in (st.get("events") or [])),
                          "前提：窗口轮转后 state 里确实没有这条记录")
-        audit = self.ws / ".workspace" / ".hook-state" / "audit-dsh.jsonl"
+        audit = hstate.state_dir(self.ws) / "audit-dsh.jsonl"
         self.assertTrue(audit.exists(), "必须落 workspace 级审计文件")
         rows = [json.loads(l) for l in audit.read_text(encoding="utf-8").splitlines() if l.strip()]
         self.assertTrue(

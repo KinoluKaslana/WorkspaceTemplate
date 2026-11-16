@@ -21,6 +21,7 @@ HOOK = HOOKS / "hook.py"
 PY = sys.executable  # 模板仓无 .venv-314：用当前解释器（>=3.10）
 
 sys.path.insert(0, str(HOOKS))
+import hstate  # noqa: E402
 import gate_core as core  # noqa: E402
 
 
@@ -74,7 +75,7 @@ class BashDispatch(unittest.TestCase):
 
     def audit(self, client="codex", ws=None):
         ws = Path(ws) if ws else self.ws
-        p = Path(ws) / core.STATE_DIRNAME / f"audit-{client}.jsonl"
+        p = hstate.state_dir(ws) / f"audit-{client}.jsonl"
         if not p.exists():
             return {"lines": [], "events": []}
         lines = [json.loads(l) for l in p.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]

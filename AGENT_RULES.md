@@ -1,14 +1,14 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`3.6.1`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`3.8.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
 
 ## 0. 首次启动：必须询问 Python 运行时选择 <!-- id:R2 -->
 
-每个 Agent 开始前先读 `.workspace/bootstrap.json`。`python.mode` 为 `unconfigured` 时，当前 Agent 是模板的“第一个 Agent”，必须在任何 Python 任务/依赖安装/持久化初始化之前询问：
+每个 Agent 开始前先读 `.workspace/bootstrap.json`，再读**本机状态** `.workspace/.local/v1/<context_id>/runtime.json` 的 `mode`。该 `mode` 缺失或为 `unconfigured` 时，当前 Agent 是模板的“第一个 Agent”，必须在任何 Python 任务/依赖安装/持久化初始化之前询问：
 
 > 本工作区的 Python 运行时用哪种？（**推荐默认：uv**）
 > 1. **uv 管理**（`uv venv`，默认）——机器上没有 uv 时我先提示安装方式，由你执行安装；
@@ -17,9 +17,9 @@
 
 用户若已在同一条消息中明确选择，直接执行该选择，不重复提问。三种模式互斥，不默认同时初始化。
 **未表态时的默认**：按 uv 走；uv 不可用且用户不愿安装，再回到手动 venv / MCP，二者由用户选，不得静默降级。
-**既有工作区不回改**：`python.mode` 一旦配置（`uv` / `local-venv` / `mcp`），模板升级、迁移、仓库同步**均不得改写**；uv 默认只作用于 `unconfigured` 的新工作区。切模式只能由用户明确要求。
+**既有工作区不回改**：本机 `mode` 一旦配置（`uv` / `local-venv` / `mcp`），模板升级、迁移、仓库同步**均不得改写**（它不在随仓库分发的文件里）；uv 默认只作用于 `unconfigured` 的新工作区。切模式只能由用户明确要求。
 
-**子 Agent 无用户通道时不得反复追问**：沿用父会话已记录的模式（`.workspace/bootstrap.json` 的 `python.mode`）；父也未配置时，报告该阻塞并停止依赖 Python 的操作，把决定交回父 Agent/用户。守门接线核验与 Python 选择同属启动前必须项，见 §15。
+**子 Agent 无用户通道时不得反复追问**：沿用父会话已记录的模式（本机状态 `runtime.json` 的 `mode`，旧工作区回退 `.workspace/bootstrap.json` 的 `python.mode`）；父也未配置时，报告该阻塞并停止依赖 Python 的操作，把决定交回父 Agent/用户。守门接线核验与 Python 选择同属启动前必须项，见 §15。
 
 ### 0.1 创建本地版本化 venv（uv 默认 / 手动） <!-- id:R3 -->
 
@@ -27,7 +27,7 @@
 2. 在 Workspace 根目录创建 `.venv-<major><minor>`（例如 `.venv-312`），**不创建无版本后缀的 `.venv`**。创建方式按模式：**uv（默认）** 用 `uv venv .venv-312 --python 3.12`、装包用 `uv pip install --python <venv>/bin/python <pkg>`；**手动 venv** 用 `<解释器> -m venv .venv-312`、装包用 `<venv>/bin/python -m pip install <pkg>`。**Windows 上解释器在 `<venv>\Scripts\python.exe`**，上述 `<venv>/bin/python` 一律按此替换（`scripts/workspace_preflight.py` 两种布局都认）。**uv 不存在时**：给出安装方式（官方脚本 / pipx / 包管理器）**由用户执行**，不自动联网安装；用户拒绝安装则退回手动 venv 或 MCP，并在报告中写明原因。两种创建方式**互斥**，不得对同一目录混用。 <!-- id:R5 -->
 3. 初始化只创建运行时，**不得**联网升级包管理器、**不得**预装大型“万能依赖集”（uv 模式同样不 `uv pip install` 任何预设集）。后续只为实际任务安装必要包。 <!-- id:R6 -->
 4. 验证 `<venv>/bin/python`（Windows：`<venv>\Scripts\python.exe`）的版本、`sys.prefix`、`sys.base_prefix` 与 `python -m pip --version`；之后一律用完整 venv 路径，不向系统 site-packages 安装。 <!-- id:R7 -->
-5. **必须**将 `python.mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把解释器/uv 路径与版本、venv 目录、Python 版本和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。 <!-- id:R8 -->
+5. **必须**把 `mode` 更新为 `uv`（uv 管理）或 `local-venv`（手动 venv），把 venv 目录名、Python 版本、uv 版本和核验日期写入**本机状态** `.workspace/.local/v1/<context_id>/runtime.json`（`scripts/local_state.py`）与 `TOOLS.md`；`bootstrap.json` 只保留 `workspace_id` 与 `workspace_status`。**不得**在本机状态里写明文绝对路径（解释器/uv 路径只在 `TOOLS.md` 记环境事实）。机械入口：`python3 scripts/pyenv_init.py --mode uv|venv --python <ver> --apply`（默认 dry-run；**已配置的工作区会被拒绝，需 `--force`**）。既有工作区不得因模板升级而切模式。 <!-- id:R8 -->
 
 若候选解释器不存在、`venv` 模块缺失或创建需要系统包/提权，不绕过审批；向用户报告精确阻塞，征求安装授权或改用 MCP Python。
 
@@ -35,7 +35,7 @@
 
 1. 检查会话实际可用的 MCP Python 工具，记录 provider/server、tool 名、版本、文件系统/网络/依赖持久性与输出限制。 <!-- id:R10 -->
 2. **不得**创建本地 venv，**不得**假设 shell 中的 `python` 与 MCP 运行时等价。本地文件编辑仍使用 Agent 的文件工具；计算才交给已登记的 MCP Python。 <!-- id:R11 -->
-3. 将 `python.mode` 更新为 `mcp`，把工具标识、能力边界和核验日期写入 `.workspace/bootstrap.json` 与 `TOOLS.md`。 <!-- id:R12 -->
+3. 把 `mode` 更新为 `mcp`，把工具标识、能力边界和核验日期写入**本机状态** `runtime.json` 与 `TOOLS.md`。 <!-- id:R12 -->
 4. 若当前会话没有可用 MCP Python，不伪装已配置；请用户接入对应 MCP，或确认回退到本地 venv。 <!-- id:R13 -->
 
 完成任一模式配置后，将 `workspace_status` 从 `template` 改为 `active`。之后的 Agent 只核验已选运行时，不重复提问；切换模式必须由用户明确要求并同步两个状态文件。
@@ -98,7 +98,7 @@
 
 ## 5. Python、工具与 MCP <!-- id:R45 -->
 
-- Python 运行时以 `.workspace/bootstrap.json` 的模式和 `TOOLS.md` 的实测记录为准。本地模式只用登记 venv；MCP 模式只使用已登记的 MCP Python 工具做计算。 <!-- id:R46 -->
+- Python 运行时以**本机状态** `.workspace/.local/v1/<context_id>/runtime.json` 的 `mode` 和 `TOOLS.md` 的实测记录为准（旧工作区回退 `.workspace/bootstrap.json` 的 `python.mode`）。本地模式只用登记 venv；MCP 模式只使用已登记的 MCP Python 工具做计算。 <!-- id:R46 -->
 - 安装新依赖前先检查现有能力，评估版本兼容、来源、许可、网络和供应链风险。共享 venv 不为单个任务卸载/降级既有包；冲突使用任务专用版本化 venv。 <!-- id:R47 -->
 - 新安装包、CLI、下载二进制、MCP 服务和可复用脚本必须在 `TOOLS.md` 登记位置、版本/哈希、来源、信任边界、副作用/数据外发、用法和核验日期。 <!-- id:R48 -->
 - 工具已登记不等于自动授权。写外部系统、发消息、发布、上传数据、安装系统包和破坏性动作仍需满足用户范围与平台审批。 <!-- id:R49 -->
@@ -189,7 +189,7 @@ Agent 客户端自带的全局持久记忆（例如 Hermes 的 `~/.hermes/memori
 
 模板随仓库分发客户端写前守门 hook（`.workspace/hooks/` 七脚本 + `.codex/hooks.json` + `.claude/settings.json`，均随 `TEMPLATE_FILES` 哈希锁定）：在 Codex CLI / Claude Code 的 hook 层落地「先读再写」，是 §12 的客户端侧扩展；脚本清单、拒绝码、审计事件与静态可判写清单见 `docs/hooks-catalog.md` §2.6：
 
-1. **适用与身份**：只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份由 `bootstrap.json` 存在性承担，但 `workspace_status` 为 `template` 且 `python.mode` 为空或 `unconfigured` 的目录**不得**视为受管工作区（其写/删除/移动目标的判定见 R135）；脚本在 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定。**身份粒度**：状态键 `session_id`，子 agent 再拼 `.agent_id`（CC 主子共用 `session_id`，实测；Codex 子 agent payload 带 `agent_id`），**账本不继承父读证据；仅经 R98 的有效委托引用父证据**；`SubagentStart`/`SubagentStop` 落 `agent-start`/`agent-stop`。 <!-- id:R102 -->
+1. **适用与身份**：只作用于 Codex CLI / Claude Code 的项目级 hook；工作区身份由 `bootstrap.json` 存在性承担，但 `workspace_status` 为 `template` 且本机 `mode`（本机状态优先，回退 `bootstrap.python.mode`）为空或 `unconfigured` 的目录**不得**视为受管工作区（其写/删除/移动目标的判定见 R135）；脚本在 `.workspace/hooks/`，随 `TEMPLATE_FILES` 哈希锁定。**身份粒度**：状态键 `session_id`，子 agent 再拼 `.agent_id`（CC 主子共用 `session_id`，实测；Codex 子 agent payload 带 `agent_id`），**账本不继承父读证据；仅经 R98 的有效委托引用父证据**；`SubagentStart`/`SubagentStop` 落 `agent-start`/`agent-stop`。 <!-- id:R102 -->
 2. **守门判据**：Codex `apply_patch` 与 Bash 静态可判写（清单见 catalog §2.6）在目标属本工作区且未完整读 gate 当前修订时 deny；解释器/包装类未读即 deny；其余不可判形态只审计不拦（`unresolved-command`）。 <!-- id:R103 -->
 3. **客户端差异（必须明说）**：CC 仅 `Write`/`Edit` 受管，**Bash 写不订阅、不拦截**；`Stop`/`SessionEnd` 的差集与指纹锚只到文件/目录级，但**可经转录回放做事后归因**（子 agent 的 `agent_transcript_path` 在 `SubagentStop` 单独回放，作用域含 `.agent_id`）。**事后归因不等于拦截**，`would_deny=true` 不表示写入被阻止；转录可被同 uid 删改，不得据此推断整仓受管。命令原文默认不落盘（只记 digest），需 `audit_command_text=true` 显式开启。回放与归因细则见 catalog §2.7。 <!-- id:R104 -->
 4. **证据与审计**：读证据绑指纹 `c<size>:<sha256>` 与覆盖 `1..total`；审计十三型（清单见 catalog §2.6）。`gate-deny` 记拒绝本身，作用域含 `.agent_id`，可在 `audit-<client>.jsonl` 独立核验。写前 `gate-intent` → 写后 `gate-commit` 对账，缺失一侧记 `unobserved-write`（**不表示通过**）。只记路径/哈希/会话/动作，不落正文。`unresolved-command` 只含 `tool_use_id`/`client`/`digest`/`class`，不落原文、不可直读归因；`worktree-change` 粒度受 git 限制，文件级归因须由 `completion-gate` 补证。账本轮转与压缩规则见 catalog §2.7。 <!-- id:R105 -->
@@ -211,9 +211,9 @@ gate 是否在跑取决于 **harness 的启动方式**，不是工作区的属�
 `--patch .dsh/workspace-gate/cordis.yml` 启动就等于没有 gate），hermes 需要 `HERMES_ENABLE_PROJECT_PLUGINS=true`
 与 config `plugins.enabled` 同时成立，cc/codex 依赖项目受信。「工作区里文件都在」不能推断「已经受管」。
 
-1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/gate.log` 的 `client=` 行；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/dsh-session-*.json` 账本。 <!-- id:R114 -->
+1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行（`<scope>` 是本机分片目录，见下）；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/<scope>/dsh-session-*.json` 账本。**`<scope>`** 由本机身份派生（`scripts/local_state.py` 的 `machine_scope()`，12 位十六进制）；工作区缺该脚本时**必须**由 hook 自带的最小身份读取派生（`gate_core._fallback_scope()`）。缺脚本不构成退回共享 `unknown` 桶的理由（同桶会让跨机隔离失效）；取不到机器身份时改用本机持久种子（用户状态目录下的 `workspace-template/scope-seed`，不在工作区内）派生，两者都拿不到才为 `unknown`。`<scope>` 之外的目录（含旧布局根目录）**只作只读兼容**：旧根目录的证据在过渡期仍认，其他机器的 `<scope>` **不得**当作本机证据。 <!-- id:R114 -->
 2. 没有证据时，必须在第一条受管写入之前向用户报告「当前 harness 的 gate 未接线」并给出该 harness 的启用命令，由用户决定先接线还是明确接受无 gate 继续；不得把工作区当作已受管继续写入。 <!-- id:R115 -->
-3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入 `.workspace/bootstrap.json`；机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。 <!-- id:R116 -->
+3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入**本机状态** `.workspace/.hook-state/<scope>/gate.json`；`bootstrap.json` 的 `gate` 节是旧位置，**不得**再写入，只作读取兼容。机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。 <!-- id:R116 -->
 4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。 <!-- id:R117 -->
 5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。 <!-- id:R118 -->
 
@@ -245,4 +245,4 @@ gate 是否在跑取决于 **harness 的启动方式**，不是工作区的属�
 
 本节适用于静态识别的递归目录删除与目录移动源；判定**必须**按 R136 执行。
 
-1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == "template"` 且 `python.mode` 缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。 <!-- id:R136 -->
+1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == "template"` 且本机 `mode`（本机状态优先，回退 `bootstrap.python.mode`）缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。 <!-- id:R136 -->

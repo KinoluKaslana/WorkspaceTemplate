@@ -147,7 +147,8 @@ def contract_findings(name: str, text: str, fm: dict, ids: set[str], require_io:
     SKIP = re.compile(r"(backup-|\.bak|miss-log|template-base|\.index\.json|\.aliases\.json|x\.md$)")
     missing_paths = sorted({
         p for p in (x.rstrip("/.-") for x in PATH_RE.findall(text))
-        if re.search(r"\.[A-Za-z0-9]{1,8}$", p) and not SKIP.search(p)
+        # 只把 `name.ext` 当文件；`.local` 这类点目录的 basename 以点开头，不是扩展名
+        if re.search(r"[^/\\.]\.[A-Za-z0-9]{1,8}$", p) and not SKIP.search(p)
         and not (ROOT / p).exists() and "$(" not in p and "<" not in p})
     if missing_paths:
         f.append(f"引用不存在的路径：{','.join(missing_paths[:4])}")
@@ -401,6 +402,42 @@ def sync_bootstrap_roots(has_local: bool) -> None:
     BOOTSTRAP.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _template_file_list() -> set[str] | None:
+    """读同目录 `verify_rules.py` 的 TEMPLATE_FILES；读不到返回 None（不误报）。"""
+    try:
+        import importlib.util
+        vp = Path(__file__).resolve().parent / "verify_rules.py"
+        if not vp.is_file():
+            return None
+        spec = importlib.util.spec_from_file_location("_vr_for_audit", vp)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return set(getattr(mod, "TEMPLATE_FILES", []) or [])
+    except Exception:
+        return None
+
+
+def template_attachment_findings(skill_dir: Path) -> list[str]:
+    """模板层 skill 的附属文件必须在 TEMPLATE_FILES 里，否则同步不会分发（改了也不生效）。"""
+    files = _template_file_list()
+    if files is None:
+        return []
+    root = Path(__file__).resolve().parent.parent
+    out: list[str] = []
+    for p in sorted(skill_dir.rglob("*")):
+        if p.is_dir():
+            continue
+        if "__pycache__" in p.parts or p.suffix == ".pyc":
+            continue
+        try:
+            rel = p.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        if rel not in files:
+            out.append(f"附属文件未进 TEMPLATE_FILES：{rel}（模板同步不会分发）")
+    return out
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true")
@@ -437,6 +474,7 @@ def main(argv: list[str]) -> int:
             if rec["area"] in ("active", "retired") and not _in_tools_block(tools, name):
                 f.append("未登记于 TOOLS.md 本地层块（`--sync-registry` 会生成）")
         else:
+            f += template_attachment_findings(rec["path"].parent)
             if f".workspace/skills/{name}/SKILL.md" not in registry:
                 f.append("未登记于 skills/REGISTRY.md")
             if not re.search(rf"^\|[^\n]*\*\*{re.escape(name)}(?=[\s*])", tools, re.M):

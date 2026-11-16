@@ -146,6 +146,15 @@ python3 "$TEMPLATE_DIR/scripts/template_sync.py" --workspace . --ref "$REF" \
 - README 被保留时报 `[vs-template] REPLACED`，进 `info` 不计 `clean`。
 - 任一不过 → 用第 3 步备份回滚，回到第 2 步。
 
+**同步后检查 `.gitignore`**（`.gitignore` 不在 `TEMPLATE_FILES`，同步不会带来这一行）：
+
+```bash
+grep -qxF '.workspace/.local/' .gitignore || echo '.workspace/.local/' >> .gitignore
+```
+
+本机状态目录 `.workspace/.local/` 必须被忽略，否则按 context 分片的运行时状态会进仓库、被同步到别的机器。
+用户 `.gitignore` 里已有同名规则时不重复追加；文件不存在时先创建。这一步只追加一行，不改动既有内容。
+
 ### 第 7 步：报告
 
 `结果 → 来源（repo + ref + kind + commit）→ 漂移判定 → 替换/跳过清单 → custom 引用裁决 →

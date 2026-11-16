@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+os.environ.setdefault("PYTHONUTF8", "1")
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / ".workspace" / "hooks"))
+import gate_core as core  # noqa: E402
+import hook  # noqa: E402
+
+
+class DshReadInterval(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dsh-read-interval-")
+        self.addCleanup(self.tmp.cleanup)
+        self.ws = Path(self.tmp.name) / "ws"
+        (self.ws / ".workspace").mkdir(parents=True)
+        (self.ws / core.BOOTSTRAP_REL).write_text('{"workspace_status":"active"}\n', encoding="utf-8")
+        self.lines = [f"line {i}" for i in range(1, 249)]
+        (self.ws / core.GATE_FILE).write_text("\n".join(self.lines), encoding="utf-8")
+        self.sid = "dsh-interval-" + self._testMethodName
+
+    def run_read(self, text: str, **tool_input) -> dict:
+        payload = {
+            "hook_event_name": "PostToolUse", "tool_name": "read", "session_id": self.sid,
+            "tool_input": {"file_path": str(self.ws / core.GATE_FILE), **tool_input},
+            "tool_response": {"isError": False, "content": [{"type": "text", "text": text}]},
+        }
+        hook._record_read(payload, "dsh", str(self.ws))
+        return core.load_state(str(self.ws), "dsh", self.sid)
+
+    def response(self, start=1, end=248, newline="\n", trailer="") -> str:
+        numbered = newline.join(f"{i}: {self.lines[i - 1]}" for i in range(start, end + 1))
+        suffix = newline + trailer if trailer else ""
+        return (f"<path>{self.ws / core.GATE_FILE}</path>{newline}<type>file</type>{newline}"
+                f"<content>{newline}{numbered}{suffix}")
+
+    def test_file_path_only_infers_all_248_lines(self):
+        entry = self.run_read(self.response())["reads"][core.GATE_FILE]
+        self.assertEqual(entry["coverage"], [[1, 248]])
+        self.assertTrue(entry["complete"])
+
+    def test_crlf_infers_all_248_lines(self):
+        entry = self.run_read(self.response(newline="\r\n"))["reads"][core.GATE_FILE]
+        self.assertEqual(entry["coverage"], [[1, 248]])
+
+    def test_eof_trailer_is_authoritative(self):
+        entry = self.run_read(self.response(trailer="(End of file - total 248 lines)"))["reads"][core.GATE_FILE]
+        self.assertEqual(entry["coverage"], [[1, 248]])
+
+    def test_showing_trailer_records_partial_interval(self):
+        text = self.response(end=100, trailer="(Showing lines 1-100 of 248. Use offset=101 to continue.)")
+        entry = self.run_read(text)["reads"][core.GATE_FILE]
+        self.assertEqual(entry["coverage"], [[1, 100]])
+        self.assertFalse(entry["complete"])
+
+    def test_replacement_character_does_not_break_line_numbers(self):
+        self.lines[20] = "状�"
+        (self.ws / core.GATE_FILE).write_text("\n".join(self.lines), encoding="utf-8")
+        entry = self.run_read(self.response())["reads"][core.GATE_FILE]
+        self.assertTrue(entry["complete"])
+
+    def test_processed_read_appends_timestamped_event(self):
+        events = self.run_read(self.response())["events"]
+        self.assertTrue(events)
+        self.assertEqual(events[-1]["type"], "read")
+        self.assertRegex(events[-1]["ts"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

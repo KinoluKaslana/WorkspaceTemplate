@@ -42,6 +42,7 @@ def base_ws(tmp: Path) -> Path:
     (ws / "skills").mkdir()
     (ws / "notes").mkdir()
     shutil.copyfile(SRC / "scripts" / "workspace_preflight.py", ws / "scripts" / "workspace_preflight.py")
+    shutil.copyfile(SRC / "scripts" / "repo_identity.py", ws / "scripts" / "repo_identity.py")
     # 用桩代替真实 verify_rules，避免夹具依赖模板完整清单
     (ws / "scripts" / "verify_rules.py").write_text(
         'TEMPLATE_FILES = ["AGENT_RULES.md", ".workspace/skills/demo/SKILL.md"]\n', encoding="utf-8")
@@ -93,10 +94,118 @@ class Preflight(unittest.TestCase):
         self.assertEqual(data.get("mismatch"), 0, data)
         self.assertEqual(rc, 0, data)
 
+    def test_p23_legacy_gate_note_is_visible_and_non_blocking(self):
+        """旧 bootstrap.gate 与本机 gate.json 不一致：提示并进 gate 行，不新增行、不影响退出码。"""
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps({
+            "workspace_status": "active",
+            "python": {"mode": "local-venv", "runtime": {"identifier": ".venv-999"}, "version": "9.9.9"},
+            "git": {"status": "initialized", "remote": ""},
+            "gate": {"status": "configured", "harness": ["cc"]},
+        }), encoding="utf-8")
+        gj = ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
+        gj.parent.mkdir(parents=True, exist_ok=True)
+        gj.write_text(json.dumps({"schema": 1, "status": "unconfigured", "harness": [],
+                                  "machine_scope": "unknown"}), encoding="utf-8")
+        rc, data = run(ws)
+        gate_row = [i for i in data["items"] if i["id"] == "gate"][0]
+        self.assertIn("旧 bootstrap.gate", gate_row["action"], "legacy 提示被丢弃")
+        self.assertFalse([i for i in data["items"] if i["id"] == "gate_legacy"],
+                         "不得新增 gate_legacy 行")
+        # 该提示本身不得把 gate 行从 warn 抬成 mismatch（其它项的 mismatch 与本条无关）
+        self.assertEqual(gate_row["status"], "warn", gate_row)
+        rc_strict, data_strict = run(ws, "--strict")
+        self.assertEqual(
+            [i["id"] for i in data_strict["items"] if i["id"] == "gate_legacy"], [],
+            "gate_legacy 不得成为独立行（否则 --strict 会被它顶红）")
+        # 直接对照：把旧 bootstrap.gate 改成与本机一致（提示消失）后，--strict 退出码必须不变
+        boot = json.loads((ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["gate"] = {"status": "unconfigured", "harness": []}
+        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        rc_strict_no_note, _ = run(ws, "--strict")
+        self.assertEqual(rc_strict, rc_strict_no_note,
+                         "legacy 提示改变了 --strict 退出码（应非阻断）")
+
     def test_p2_missing_venv(self):
         rc, data = run(self.ws)
         self.assertEqual(rc, 1, data)
         self.assertIn("python", {i["id"] for i in data["items"] if i["status"] == "mismatch"})
+
+    def test_p24_python_mode_read_from_local_state(self):
+        """python.mode 已下沉：bootstrap 无 python 节时，本机状态里的 mode 必须生效。"""
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        shutil.copyfile(SRC / "scripts" / "local_state.py", ws / "scripts" / "local_state.py")
+        sys.path.insert(0, str(SRC / "scripts"))
+        import local_state as ls
+        wid = "11111111-2222-3333-4444-555555555555"
+        boot = json.loads((ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot.pop("python", None)
+        boot["workspace_id"] = wid
+        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        ident = ls.resolve_identity({}, ls.detect_platform_info())
+        if ident is None:
+            self.skipTest("本机身份不可得")
+        cid = ls.context_id(wid, ident)
+        d = ws / ".workspace" / ".local" / "v1" / cid
+        d.mkdir(parents=True)
+        (d / "runtime.json").write_text(json.dumps({
+            "schema": "v1", "workspace_id": wid, "context_id": cid, "realm": ident.realm,
+            "root_binding": ls._root_binding(ws, cid), "mode": "mcp",
+            "venv_relpath": None, "version": "", "bound_at": "2026-11-11T00:00:00Z",
+        }), encoding="utf-8")
+        rc, data = run(ws)
+        item = [i for i in data["items"] if i["id"] == "python"][0]
+        self.assertEqual(item["status"], "n/a", item)
+        self.assertEqual(item["recorded"], "mcp", "bootstrap 无 python 时没有读本机状态")
+
+    def test_p25_unknown_bootstrap_schema_is_mismatch(self):
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        boot = json.loads((ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot["schema_version"] = 9
+        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        rc, data = run(ws)
+        item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
+        self.assertEqual(item["status"], "mismatch", item)
+
+    def test_p26_schema_version_type_is_strict(self):
+        """`True == 1`、`1.0 == 1`：只认精确整数 1。"""
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        boot_p = ws / ".workspace" / "bootstrap.json"
+        for bad in (True, 1.0, "1"):
+            boot = json.loads(boot_p.read_text(encoding="utf-8"))
+            boot["schema_version"] = bad
+            boot_p.write_text(json.dumps(boot), encoding="utf-8")
+            rc, data = run(ws)
+            item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
+            self.assertEqual(item["status"], "mismatch", f"{bad!r} 被当成合法版本：{item}")
+        boot = json.loads(boot_p.read_text(encoding="utf-8"))
+        boot["schema_version"] = 1
+        boot_p.write_text(json.dumps(boot), encoding="utf-8")
+        rc, data = run(ws)
+        item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
+        self.assertEqual(item["status"], "ok", "整数 1 应有可见的 OK 行")
+
+    def test_p27_local_state_ignore_probe_uses_file_path(self):
+        """`.local/` 带尾斜杠的规则只匹配目录内容：探针必须用一个「目录下的文件」。"""
+        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ws = base_ws(tmp)
+        if not shutil.which("git"):
+            self.skipTest("未安装 git")
+        subprocess.run(["git", "-C", str(ws), "init", "-q"], check=True)
+        (ws / ".gitignore").write_text(".workspace/.hook-state/\n.workspace/.local/\n",
+                                       encoding="utf-8")
+        rc, data = run(ws)
+        item = [i for i in data["items"] if i["id"] == "git"][0]
+        self.assertTrue(item["actual"].get("local_state_ignored"), item)
 
     def test_p3_skills_mismatch(self):
         (self.ws / ".workspace" / "skills" / "extra").mkdir()
@@ -124,6 +233,38 @@ class Preflight(unittest.TestCase):
         rc, data = run(self.ws)
         st = {i["id"]: i["status"] for i in data["items"]}
         self.assertEqual(st["template_clone"], "mismatch")
+
+    def test_p28_template_runtime_warns_on_template_push(self):
+        """模板正主存在本机 runtime.json 时只 warn，并给出沙箱操作指引。"""
+        _require_git()
+        boot_p = self.ws / ".workspace" / "bootstrap.json"
+        boot = json.loads(boot_p.read_text(encoding="utf-8"))
+        boot["template"]["source_repo"] = "https://example.com/template.git"
+        boot_p.write_text(json.dumps(boot), encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.ws), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(self.ws), "remote", "add", "origin",
+                        "git@example.com:template.git"], check=True)
+        runtime = self.ws / ".workspace" / ".local" / "v1" / "host" / "runtime.json"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text("{}\n", encoding="utf-8")
+        _, data = run(self.ws)
+        row = next(i for i in data["items"] if i["id"] == "template_runtime")
+        self.assertEqual(row["status"], "warn", row)
+        self.assertIn("sandbox-*", row["action"])
+        self.assertIn("pyenv_init --apply", row["action"])
+
+    def test_p29_runtime_in_derived_repo_is_ok(self):
+        """派生仓即使有 runtime.json 也不触发正主护栏。"""
+        _require_git()
+        subprocess.run(["git", "-C", str(self.ws), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(self.ws), "remote", "add", "origin",
+                        "https://example.com/derived.git"], check=True)
+        runtime = self.ws / ".workspace" / ".local" / "v1" / "host" / "runtime.json"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text("{}\n", encoding="utf-8")
+        _, data = run(self.ws)
+        row = next(i for i in data["items"] if i["id"] == "template_runtime")
+        self.assertEqual(row["status"], "ok", row)
 
 
     @unittest.skipIf(os.name == "nt", "POSIX 上用 shell 桩模拟 .exe 解释器")

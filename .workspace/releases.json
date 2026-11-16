@@ -1,0 +1,24 @@
+[
+  {
+    "version": "3.7.0",
+    "date": "2026-11-12",
+    "summary": "批次 1–3 的缺陷修复与本机状态分片收口",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "AGENT_RULES.md": "e8c93db36810166d",
+      "CHANGELOG.md": "e0f649c2546f7454"
+    }
+  },
+  {
+    "version": "3.8.0",
+    "date": "2026-11-16",
+    "summary": "### 1. doc-fact 契约：从「正则扫散文」改成「生成器单入口」\n\n- 新增 `scripts/policy_facts.py`：`--check` 只读渲染比对，`--write` 重渲染落盘。\n- 事实落点分两类：`<!-- gen:policy-facts:begin/end -->` 整块（字节比对）；徽章等「整行即事实」用上一行标记。\n- 版本字面量按**位置**分类判定：生成块内（唯一合法处）／已登记历史（`<!-- history:x.y.z -->` + `CHANGELOG` 账本）／其余不判。\n- `CHANGELOG` 标题右边界收紧：`## 3.6.1beta`、`## 3.6.1-hotfix`、`## 3.6.1.1` 不再被误读成 `3.6.1`。\n- 条款范围 `R1..R136` 并入渲染；散文里的范围连接符为闭式集合，起点为 `R1` 或越界即按「政策范围」判定，必须等于 `min..max`。\n- 删除 G5 的散文词表扫描（`政策版本|policy version` 那套）——它既误报字段名，又漏掉词表外说法，改为整行结构判据。\n\n### 2. 派生实例误伤修复\n\n- 派生工作区（`workspace_status=active`）的豁免从 `README*` 扩到 `docs/*.md`：用户在自己文档里写自己的版本号，不再被误判成「历史政策版本未登记」。\n- 关键回归：实例写 `2.0.0`（**恰好撞上模板账本里存在的版本**）此前会红，现在绿。\n- 治理文件（`UPGRADE.md` / `CONTRIBUTING.md` / `SECURITY.md`）**不放宽**；`workspace_status` 为未知值或 JSON 损坏时仍 fail-closed。\n\n### 3. 发版机械闭环（版本号只能由脚本写入）\n\n- 新增 `scripts/release.py`：`--dry-run` / `--apply` / `--verify` / `--tag` / `--list`。\n- `--apply` 按序写：政策头 → `CHANGELOG` 行首条目 → `bootstrap.current_policy_version` → 生成块 → 条款注册表 → docs 索引 → 发版账本；全程事务化。\n- 硬约束：只能升不能降；工作树不干净直接拒绝；**绝不** commit / push / 打 tag（tag 需显式 `--tag`）。\n- 新增 `.workspace/releases.json`（append-only 发版账本）与 `.workspace/skills/release/SKILL.md`（流程 skill：dry-run → 人工确认 → apply → verify → tag → 人工 push）。\n- `policy_facts --check` 新增判据：**账本末条版本必须等于政策头**——手工改版本号必红，除非连账本一起改写（那属显式越权，留痕可见）。\n- 事务缺陷修复（三席核验产出）：\n  - 账本追加曾排在注册表重建**之后**，导致每次合法发版后 `verify_rules` 必报 `HASH-DIFF releases.json` 假红 → 改为所有写盘之后再重建注册表 + 末位自检。\n  - `restore()` 曾无异常保护，回滚期遇只读文件即中断整轮、残留 5 文件 → 改为 best-effort 逐文件恢复，输出「未恢复清单 + 每项原因 + 原始异常」，其余文件继续恢复/删除。\n\n### 4. 「谁是正主」不再自证，改由 CI 兜底\n\n- 新增 `tests/test_template_status_authority.py`：当 push 目标等于 `bootstrap.template.source_repo` 时，`workspace_status` 必须为 `template`；派生仓自动 skip。该测试随 `tests/` 下发，fork 后开启 Actions 即享受同样校验。\n- `scripts/repo_identity.py` 从安全判据降为诊断/hint 工具：白名单化（只认 `http/https/ssh/git://`+host+path、`file://localhost`、scp-like、已存在绝对路径），默认端口折叠（443/80/22/9418），支持 `base` 参数避免依赖进程 cwd。\n- `pyenv_init --apply` 证据不足时保持 `template` 并给出可执行 hint，不再因「有 `.git` 无 origin」翻转状态。\n\n### 5. 判据单一来源\n\n- `policy_facts` 与 `test_docs_consistency` 曾有 7 对平行正则靠手工同步，其中标题正则已漂移（一处 `\\s`、一处 `[ \\t]`）。\n- 现在测试侧按名导入**同一对象**（`is` 断言 + AST 扫 `re.compile` 字面量双保险），`_HEADING_RE` 统一为 `^#{1,6}[ \\t]+`。\n\n### 6. 其他\n\n- hooks：dsh `read` 区间从正文反推（兼容 CRLF/乱码），每次处理读/写向 `events[]` 追加带 `ts` 记录；Windows 真机 gate 证据闭环。\n- `workspace_preflight.py` 12 项（新增 `template_runtime` / `bootstrap_schema` / `gate_legacy`）。\n- `tests/test_regression_ledger.py`：回归台账机械化，26 例带台账 ID（A 桶 11 + B 桶 21）。\n\n### 行为变化（升级需知）\n\n1. **升政策版本必须经 `scripts/release.py`**：手工改 `AGENT_RULES.md` 版本号会红（账本末条对不上）。\n2. **派生实例的 `docs/*.md` 不再受 doc-fact 判据约束**（用户自有文档）；治理文件不受此豁免。\n3. **G5 散文词表扫描已删除**：未登记的自然语言版本断言不判（归人工评审 N2）。\n4. **`workspace_status` 判定不再依赖 origin 解析**：改由 CI 里的 `push == source_repo` 测试兜底。\n\n### 验证\n\n- `tests/` 343 OK；`hooks-tests/` 159 OK\n- `clause_lint` 0 errors / 0 warnings / 136 clauses\n- `verify_rules` clean（0 findings）；`docs_index` `{\"ok\": true, \"stale\": []}`\n- `version_check` 3.7.0→3.8.0 三方一致；`policy_facts --check` ok\n- `skill_audit --strict` 9 skills / 0 findings；`release.py --verify` rc=0\n- 业务场景回归 32/32 PASS\n- 三席核验（SOL / GPT-SOL-6 / PRO）对事务层 T1–T7 与回归 8 项一致通过\n\n### 已知未决（不阻塞本次发布）\n\n- 测试侧 `_policy_version` / `_plugin_version` / `_clause_entries` 等**取数逻辑**仍与生产侧并存（正则已单源，取数未单源）。\n- 回滚后只读文件仍保持 `444`，需人工 `chmod 644`。\n- `gate_status.py` 的 scope 算法与 `gate_core` 仍有分叉；`git archive`（无 `.git`）导出目录下 3 例模板同步测试失败。",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "AGENT_RULES.md": "0ffb5264ca8382d1",
+      "CHANGELOG.md": "8dc6ebd0cc8a53ac"
+    }
+  }
+]

@@ -1,6 +1,98 @@
 # CHANGELOG — WorkspaceTemplate 变更记录
 
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
+> 账本标题格式（不改变历史条目语义）：可识别条目以行首 `##`、空白、`x.y.z` 开始；`x.y.z` 后可接日期或说明，但紧跟字符不得是数字、ASCII 字母、`.` 或 `-`。故 `## 3.7.0（日期，说明）` 可识别，`## 3.6.1beta`、`## 3.6.1.1`、`## 3.6.1-hotfix` 会被 `scripts/policy_facts.py --check` 拒绝；`###` 子标题不参与账本对账。
+
+## 3.8.0（2026-11-16）
+
+### 1. doc-fact 契约：从「正则扫散文」改成「生成器单入口」
+
+- 新增 `scripts/policy_facts.py`：`--check` 只读渲染比对，`--write` 重渲染落盘。
+- 事实落点分两类：`<!-- gen:policy-facts:begin/end -->` 整块（字节比对）；徽章等「整行即事实」用上一行标记。
+- 版本字面量按**位置**分类判定：生成块内（唯一合法处）／已登记历史（`<!-- history:x.y.z -->` + `CHANGELOG` 账本）／其余不判。
+- `CHANGELOG` 标题右边界收紧：`## 3.6.1beta`、`## 3.6.1-hotfix`、`## 3.6.1.1` 不再被误读成 `3.6.1`。
+- 条款范围 `R1..R136` 并入渲染；散文里的范围连接符为闭式集合，起点为 `R1` 或越界即按「政策范围」判定，必须等于 `min..max`。
+- 删除 G5 的散文词表扫描（`政策版本|policy version` 那套）——它既误报字段名，又漏掉词表外说法，改为整行结构判据。
+
+### 2. 派生实例误伤修复
+
+- 派生工作区（`workspace_status=active`）的豁免从 `README*` 扩到 `docs/*.md`：用户在自己文档里写自己的版本号，不再被误判成「历史政策版本未登记」。
+- 关键回归：实例写 `2.0.0`（**恰好撞上模板账本里存在的版本**）此前会红，现在绿。
+- 治理文件（`UPGRADE.md` / `CONTRIBUTING.md` / `SECURITY.md`）**不放宽**；`workspace_status` 为未知值或 JSON 损坏时仍 fail-closed。
+
+### 3. 发版机械闭环（版本号只能由脚本写入）
+
+- 新增 `scripts/release.py`：`--dry-run` / `--apply` / `--verify` / `--tag` / `--list`。
+- `--apply` 按序写：政策头 → `CHANGELOG` 行首条目 → `bootstrap.current_policy_version` → 生成块 → 条款注册表 → docs 索引 → 发版账本；全程事务化。
+- 硬约束：只能升不能降；工作树不干净直接拒绝；**绝不** commit / push / 打 tag（tag 需显式 `--tag`）。
+- 新增 `.workspace/releases.json`（append-only 发版账本）与 `.workspace/skills/release/SKILL.md`（流程 skill：dry-run → 人工确认 → apply → verify → tag → 人工 push）。
+- `policy_facts --check` 新增判据：**账本末条版本必须等于政策头**——手工改版本号必红，除非连账本一起改写（那属显式越权，留痕可见）。
+- 事务缺陷修复（三席核验产出）：
+  - 账本追加曾排在注册表重建**之后**，导致每次合法发版后 `verify_rules` 必报 `HASH-DIFF releases.json` 假红 → 改为所有写盘之后再重建注册表 + 末位自检。
+  - `restore()` 曾无异常保护，回滚期遇只读文件即中断整轮、残留 5 文件 → 改为 best-effort 逐文件恢复，输出「未恢复清单 + 每项原因 + 原始异常」，其余文件继续恢复/删除。
+
+### 4. 「谁是正主」不再自证，改由 CI 兜底
+
+- 新增 `tests/test_template_status_authority.py`：当 push 目标等于 `bootstrap.template.source_repo` 时，`workspace_status` 必须为 `template`；派生仓自动 skip。该测试随 `tests/` 下发，fork 后开启 Actions 即享受同样校验。
+- `scripts/repo_identity.py` 从安全判据降为诊断/hint 工具：白名单化（只认 `http/https/ssh/git://`+host+path、`file://localhost`、scp-like、已存在绝对路径），默认端口折叠（443/80/22/9418），支持 `base` 参数避免依赖进程 cwd。
+- `pyenv_init --apply` 证据不足时保持 `template` 并给出可执行 hint，不再因「有 `.git` 无 origin」翻转状态。
+
+### 5. 判据单一来源
+
+- `policy_facts` 与 `test_docs_consistency` 曾有 7 对平行正则靠手工同步，其中标题正则已漂移（一处 `\s`、一处 `[ \t]`）。
+- 现在测试侧按名导入**同一对象**（`is` 断言 + AST 扫 `re.compile` 字面量双保险），`_HEADING_RE` 统一为 `^#{1,6}[ \t]+`。
+
+### 6. 其他
+
+- hooks：dsh `read` 区间从正文反推（兼容 CRLF/乱码），每次处理读/写向 `events[]` 追加带 `ts` 记录；Windows 真机 gate 证据闭环。
+- `workspace_preflight.py` 12 项（新增 `template_runtime` / `bootstrap_schema` / `gate_legacy`）。
+- `tests/test_regression_ledger.py`：回归台账机械化，26 例带台账 ID（A 桶 11 + B 桶 21）。
+
+### 行为变化（升级需知）
+
+1. **升政策版本必须经 `scripts/release.py`**：手工改 `AGENT_RULES.md` 版本号会红（账本末条对不上）。
+2. **派生实例的 `docs/*.md` 不再受 doc-fact 判据约束**（用户自有文档）；治理文件不受此豁免。
+3. **G5 散文词表扫描已删除**：未登记的自然语言版本断言不判（归人工评审 N2）。
+4. **`workspace_status` 判定不再依赖 origin 解析**：改由 CI 里的 `push == source_repo` 测试兜底。
+
+### 验证
+
+- `tests/` 343 OK；`hooks-tests/` 159 OK
+- `clause_lint` 0 errors / 0 warnings / 136 clauses
+- `verify_rules` clean（0 findings）；`docs_index` `{"ok": true, "stale": []}`
+- `version_check` 3.7.0→3.8.0 三方一致；`policy_facts --check` ok
+- `skill_audit --strict` 9 skills / 0 findings；`release.py --verify` rc=0
+- 业务场景回归 32/32 PASS
+- 三席核验（SOL / GPT-SOL-6 / PRO）对事务层 T1–T7 与回归 8 项一致通过
+
+### 已知未决（不阻塞本次发布）
+
+- 测试侧 `_policy_version` / `_plugin_version` / `_clause_entries` 等**取数逻辑**仍与生产侧并存（正则已单源，取数未单源）。
+- 回滚后只读文件仍保持 `444`，需人工 `chmod 644`。
+- `gate_status.py` 的 scope 算法与 `gate_core` 仍有分叉；`git archive`（无 `.git`）导出目录下 3 例模板同步测试失败。
+
+## 3.7.0（2026-11-12，仅 dev，未发布）
+
+批次 1–3 的缺陷修复与本机状态分片收口。**尚未打 tag、未跑 release**（三席核验与 Windows 真机闭环仍有未完成项）。
+
+**本机记录与运行期状态（规范性）**
+- `python.mode` 下沉本机状态 `.workspace/.local/v1/<context_id>/runtime.json`；`bootstrap.json` 只留 `workspace_id` / `workspace_status`。
+- `.hook-state/` 按机器作用域分片 `<scope>`（`HMAC(机器身份,"hook-scope")[:12]`）；gate 结论写 `<scope>/gate.json`，不再回写 `bootstrap.gate`。
+- **R114 新增 MUST**：工作区缺 `scripts/local_state.py` 时，`<scope>` **必须**由 hook 自带的最小身份读取派生（`gate_core._fallback_scope()`）；缺脚本不构成退回共享 `unknown` 桶的理由。取不到机器身份时用本机持久种子（Windows 落 `%LOCALAPPDATA%`，其余 `$XDG_STATE_HOME`），两者都没有才是 `unknown`。
+
+**缺陷修复（批次 1–2）**
+- `capabilities` 诚实化：`network_access` 未探测一律 `null` + `basis: unverified`；文件访问/依赖持久化为结构性事实。
+- `--python <ver>` 真正选解释器，找不到即 `python-not-found`（exit 2），不静默退回默认解释器。
+- `template.local_clone` 键名收敛（`clone_path` 兼容）。
+- `bootstrap.schema_version` 由死字段变为预检项：缺失 WARN、未知版本 MISMATCH（只接受精确整数 `1`）。
+- `skill_audit` 检查模板层 skill 的附属文件是否进 `TEMPLATE_FILES`（Windows 路径用 `as_posix()` 归一）。
+- `template_sync --apply` 成功后补齐 `.gitignore` 缺失行（`gitignore_added` / `gitignore_error` 回报，不覆盖用户内容）。
+- 模板 `bootstrap.json` 去掉运行期 `gate` 节；`UPGRADE.md` 迁移口径改写（`identifier` 是 venv 目录名，不是绝对路径）。
+
+**回归与门禁**
+- 新增 `tests/test_registry_freshness.py`：注册表与磁盘不一致即 `unittest discover` 失败。
+- 新增 `hooks-tests/test_scope_fallback.py`（Windows 分支、seed 0600、共享锁、被拒写不产生 gate-commit）。
+- 三条关键变异已实测：种子 `0o644` → 红；私锁 → 红；`hstate` 回 `c831137` → 红。
 
 ## 3.6.1（2026-11-10）
 
