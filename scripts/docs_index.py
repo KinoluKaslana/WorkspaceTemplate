@@ -30,6 +30,32 @@ import sys
 import time
 from pathlib import Path
 
+
+def _utf8_stdio() -> None:
+    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+
+    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
+    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
+    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
+    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
+    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+            if encoding == "utf8":
+                continue
+            if getattr(stream, "isatty", lambda: False)():
+                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
+        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
+            pass
+
+
+_utf8_stdio()
+
+
 SCHEMA = 2
 HEADING = re.compile(r"^(#{2,3})\s+(.*)$")
 CLAUSE = re.compile(r"\bR(\d{1,3})\b")
@@ -113,7 +139,7 @@ def build(docs: Path, out: Path) -> dict:
     idx = {"schema": SCHEMA, "docs": docs.name, "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
            "files": filemap, "sections": sections, "df": df, "n_sections": len(sections)}
     tmp = out.with_suffix(out.suffix + ".tmp")      # 原子替换
-    tmp.write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
+    tmp.write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8", newline="\n")
     os.replace(tmp, out)
     return {"sections": len(sections), "files": len(files), "out": str(out)}
 

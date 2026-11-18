@@ -43,11 +43,11 @@ class ReleaseTests(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.repo, check=True,
-                              text=True, capture_output=True)
+                              text=True, encoding="utf-8", errors="replace", capture_output=True)
 
     def cli(self, *args):
         return subprocess.run([str(Path(__import__("sys").executable)), "-B", "scripts/release.py", *args],
-                              cwd=self.repo, text=True, capture_output=True)
+                              cwd=self.repo, text=True, encoding="utf-8", errors="replace", capture_output=True)
 
     def test_dry_run_does_not_write(self):
         before = self.git("status", "--porcelain").stdout
@@ -59,10 +59,13 @@ class ReleaseTests(unittest.TestCase):
     def test_apply_synchronizes_four_files(self):
         result = self.cli("--version", self.next, "--summary", "测试", "--apply")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn(f"模板政策版本：`{self.next}`", (self.repo/"AGENT_RULES.md").read_text())
-        self.assertIn(f"## {self.next}（", (self.repo/"CHANGELOG.md").read_text())
-        self.assertEqual(json.loads((self.repo/".workspace/bootstrap.json").read_text())["template"]["current_policy_version"], self.next)
-        self.assertEqual(json.loads((self.repo/".workspace/releases.json").read_text())[-1]["version"], self.next)
+        # 显式 UTF-8：Windows 上 `read_text()` 默认按 locale（cp1252/cp936）解码，
+        # 中文断言会 mojibake 或直接 UnicodeDecodeError。
+        self.assertIn(f"模板政策版本：`{self.next}`",
+                      (self.repo/"AGENT_RULES.md").read_text(encoding="utf-8"))
+        self.assertIn(f"## {self.next}（", (self.repo/"CHANGELOG.md").read_text(encoding="utf-8"))
+        self.assertEqual(json.loads((self.repo/".workspace/bootstrap.json").read_text(encoding="utf-8"))["template"]["current_policy_version"], self.next)
+        self.assertEqual(json.loads((self.repo/".workspace/releases.json").read_text(encoding="utf-8"))[-1]["version"], self.next)
 
     def test_duplicate_version_rejected(self):
         result = self.cli("--version", self.current, "--summary", "重复", "--apply")
@@ -93,7 +96,7 @@ class ReleaseTests(unittest.TestCase):
     def test_ledger_tail_must_match_policy(self):
         spec = importlib.util.spec_from_file_location("facts_under_test", self.repo/"scripts/policy_facts.py")
         facts = importlib.util.module_from_spec(spec); spec.loader.exec_module(facts)
-        ledger = json.loads((self.repo/".workspace/releases.json").read_text())
+        ledger = json.loads((self.repo/".workspace/releases.json").read_text(encoding="utf-8"))
         ledger[-1]["version"] = "3.6.9"
         (self.repo/".workspace/releases.json").write_text(json.dumps(ledger), encoding="utf-8")
         self.assertTrue(any("版本升级必须经 release.py" in x for x in facts.check(self.repo)))
@@ -103,7 +106,7 @@ class ReleaseTests(unittest.TestCase):
         result = self.cli("--version", self.next, "--summary", "测试", "--apply")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         vr = subprocess.run([sys.executable, "-B", "scripts/verify_rules.py", "--workspace", "."],
-                            cwd=self.repo, text=True, capture_output=True)
+                            cwd=self.repo, text=True, encoding="utf-8", errors="replace", capture_output=True)
         self.assertEqual(vr.returncode, 0, vr.stdout + vr.stderr)
         report = json.loads(vr.stdout)
         self.assertTrue(report["clean"], report["findings"])
@@ -171,7 +174,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         env = dict(os.environ, RELEASE_VERIFY_NESTED="1")
         v = subprocess.run([sys.executable, "-B", "scripts/release.py", "--verify"], cwd=self.repo,
-                           text=True, capture_output=True, env=env)
+                           text=True, encoding="utf-8", errors="replace", capture_output=True, env=env)
         self.assertEqual(v.returncode, 0, (v.stdout + v.stderr)[-4000:])
 
     # ---- --verify 的覆盖面本身（数据化，不需要真跑全套） ----

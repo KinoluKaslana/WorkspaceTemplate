@@ -272,7 +272,7 @@ class CcTranscript(unittest.TestCase):
         self.assertTrue(write["would_deny"], write)
         self.assertEqual(write["targets"], [str(self.ws / "TEST-GATE.md")])
         # 读全该文件后同命令 → 放行（同会话重写转录，从头分析）
-        body = (self.ws / "TEST-GATE.md").read_bytes().decode()
+        body = (self.ws / "TEST-GATE.md").read_bytes().decode("utf-8")
         lines = body.rstrip("\n").split("\n")
         numbered = "\n".join(f"{i+1}\t{l}" for i, l in enumerate(lines))
         Path(path).write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in _records(

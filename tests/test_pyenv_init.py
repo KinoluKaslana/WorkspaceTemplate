@@ -93,7 +93,7 @@ class PyenvInit(unittest.TestCase):
         subprocess.run(
             ["git", "-C", str(self.ws), "remote", "set-url", "origin",
              "https://example.com/someone/derived.git"],
-            check=True, capture_output=True, text=True)
+            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
         rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply")
         self.assertEqual(rc, 0, d)
         rt = local_runtime(self.ws)
@@ -271,7 +271,7 @@ class PyenvInit(unittest.TestCase):
     def test_t15_relative_origin_is_independent_of_process_cwd(self):
         (self.ws / "localrepo").mkdir()
         subprocess.run(["git", "-C", str(self.ws), "remote", "set-url", "origin", "localrepo"],
-                       check=True, capture_output=True, text=True)
+                       check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
         args = ("--mode", "mcp", "--mcp-server", "s", "--mcp-tool", "t", "--apply")
         rc_ws, d_ws = run(self.ws, *args, cwd=self.ws)
         self.assertEqual(rc_ws, 0, d_ws)
@@ -281,7 +281,7 @@ class PyenvInit(unittest.TestCase):
         other = mkws(Path(self.tmp.name) / "other")
         (other / "localrepo").mkdir()
         subprocess.run(["git", "-C", str(other), "remote", "set-url", "origin", "localrepo"],
-                       check=True, capture_output=True, text=True)
+                       check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
         rc_tmp, d_tmp = run(other, *args, cwd=Path(tempfile.gettempdir()))
         self.assertEqual(rc_tmp, 0, d_tmp)
         self.assertEqual(d_tmp.get("workspace_status"), "active")

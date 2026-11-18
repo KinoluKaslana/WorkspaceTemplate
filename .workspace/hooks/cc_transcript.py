@@ -417,7 +417,7 @@ def git_changed_files(ws: str) -> list[str] | None:
     """工作区未提交变更（含未跟踪）的绝对路径；非 git 仓返回 None。"""
     try:
         out = subprocess.run(["git", "-C", ws, "status", "--porcelain", "-z"],
-                             capture_output=True, text=True, timeout=10)
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
     except Exception:
         return None
     if out.returncode != 0:

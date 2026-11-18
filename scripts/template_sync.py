@@ -27,14 +27,31 @@ import shutil
 import subprocess
 import sys
 
-# Windows 的控制台/CI 管道常见 cp1252：中文 print 会抛 UnicodeEncodeError，
-# 把真正的失败原因盖掉（Windows CI 上就是这么红的）。改成不可编码字符用替代符，
-# 而不是让脚本在报错路径上再抛一次。
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(errors="replace")      # type: ignore[union-attr]
-    except Exception:
-        pass
+
+def _utf8_stdio() -> None:
+    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+
+    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
+    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
+    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
+    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
+    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+            if encoding == "utf8":
+                continue
+            if getattr(stream, "isatty", lambda: False)():
+                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
+        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
+            pass
+
+
+_utf8_stdio()
+
 import tempfile
 from pathlib import Path
 
@@ -70,6 +87,24 @@ def git(repo: Path, *args: str, check: bool = True) -> str:
     if check and p.returncode != 0:
         raise _git_failure(f"git {' '.join(args)} failed: {p.stderr}")
     return p.stdout.strip()
+
+
+def _commit_exists(repo: Path, rev: str, *, runner=None) -> bool:
+    """`rev` 在 repo 里能否解析到对象（不 peel、不抛异常）。
+
+    为什么不用 `git cat-file -e <rev>^{commit}`：`^{...}` 是 peel 语法，Windows 上
+    这一步失败时与「rev 不存在」完全同形（同样非零、无 stdout），上层据此判定
+    「上次同步点不可得」→ 用户的 README_EN 删除被当成缺失又装回来。
+    `rev-parse --verify --quiet` 只做解析（失败时 rc=1、静默），语义更窄也更好读。
+    `runner` 只为单测注入，生产路径恒用 `_run`。
+    """
+    run = runner or _run
+    try:
+        proc = run(["-C", str(repo), "rev-parse", "--verify", "--quiet", str(rev)],
+                   capture_output=True)
+    except RuntimeError:                    # git 不可执行：当作「不可得」，由上层 fail-closed
+        return False
+    return getattr(proc, "returncode", 1) == 0
 
 
 def template_files(worktree: Path) -> list[str]:
@@ -368,8 +403,7 @@ def main(argv: list[str]) -> int:
         # README 处置：显式 --keep-readme 恒保留；否则「工作区 README 与上次同步点不同」视为用户首页，保留
         prev_commit = (boot.get("template") or {}).get("last_synced_commit")
         readme_is_local = False
-        if prev_commit and _run(["-C", str(tpl), "cat-file", "-e", f"{prev_commit}^{{commit}}"],
-                                          capture_output=True).returncode == 0:
+        if prev_commit and _commit_exists(tpl, str(prev_commit)):
             for name in ("README.md", "README_EN.md"):
                 cur = ws / name
                 if not cur.is_file():
@@ -451,7 +485,7 @@ def main(argv: list[str]) -> int:
             f"# ref={wanted} commit={commit} {before}->{after}\n"
             "[replaced]\n" + "\n".join(replaced) + "\n"
             "[added]\n" + "\n".join(added) + "\n"
-            "[preserved]\n" + "\n".join(preserved) + "\n", encoding="utf-8")
+            "[preserved]\n" + "\n".join(preserved) + "\n", encoding="utf-8", newline="\n")
 
         boot_path = ws / ".workspace" / "bootstrap.json"
         boot_before = json.loads(boot_path.read_text(encoding="utf-8-sig"))
@@ -502,7 +536,7 @@ def main(argv: list[str]) -> int:
             if kind in ("commit", "tag"):             # 分支、标签或裸提交：记 requested ref
                 tpl_sec["last_synced_branch"] = wanted
             tpl_sec["last_synced_commit"] = commit
-            boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
             return done
 
         try:
@@ -547,7 +581,7 @@ def main(argv: list[str]) -> int:
                 p = subprocess.run([sys.executable, str(ws / "scripts" / "verify_rules.py"),
                                     "--workspace", str(ws), "--vs-template", str(wt),
                                     "--json", str(out_json)],
-                                   cwd=ws, capture_output=True, text=True)
+                                   cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
             except Exception as exc:  # noqa: BLE001 —— 校验器本身起不来也算同步失败
                 rb = _rollback(ws, backup)
                 report["auto_rollback"] = {"reason": f"verify-exception: {exc}", "rollback_rc": rb}

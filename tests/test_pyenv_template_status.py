@@ -17,7 +17,21 @@ SOURCE = "https://github.com/KinoluKaslana/WorkspaceTemplate"
 
 
 def git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+
+def canonical_local_path(p: Path) -> str:
+    """本地绝对路径的 canonical 形式：正斜杠 + 盘符大写 + 路径大小写保持不变。
+
+    与 `scripts/repo_identity.py::_canonical_local` 是**同一个**规范形。为什么不是
+    `str(Path)`：原生写法在 Windows 上是 `C:\\a\\b`、在 POSIX 上是 `/a/b`，同一条路径
+    两个字符串，跨平台/跨工具比较不成立；正斜杠是唯一两边都成立的形态。
+    旧用例拿 `str(existing)` 当期望值，等于假设「产品会回显原生分隔符」——在 Windows
+    上就是那条 `'C:/…' != 'C:\\…'`。
+    """
+    text = p.as_posix()
+    drive = p.drive
+    return (drive.upper() + text[len(drive):]) if drive else text
 
 
 def make_workspace(base: Path, origin: str | None) -> Path:
@@ -101,7 +115,9 @@ class TemplateStatusAuthority(unittest.TestCase):
             "file://localhost:22/tmp/x.git": None,
         }
         existing = self.base.resolve()
-        cases[str(existing)] = str(existing)
+        canonical = canonical_local_path(existing)
+        cases[str(existing)] = canonical      # 原生写法输入 → canonical
+        cases[canonical] = canonical          # 已 canonical → 幂等
         for value, expected in cases.items():
             with self.subTest(value=value):
                 self.assertEqual(module._repo_identity(value), expected)
@@ -115,7 +131,7 @@ class TemplateStatusAuthority(unittest.TestCase):
                 result = apply_mcp(ws)
                 self.assertNotEqual(result.returncode, 0)
                 out = json.loads(result.stdout)
-                boot = json.loads((ws / ".workspace/bootstrap.json").read_text())
+                boot = json.loads((ws / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
                 self.assertEqual(boot["workspace_status"], "template")
                 self.assertIn("重跑", out.get("hint", ""))
 
@@ -149,7 +165,7 @@ class TemplateStatusAuthority(unittest.TestCase):
         boot_path.write_text(json.dumps(boot), encoding="utf-8")
         result = apply_mcp(ws)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(json.loads(boot_path.read_text())["workspace_status"], "template")
+        self.assertEqual(json.loads(boot_path.read_text(encoding="utf-8"))["workspace_status"], "template")
 
     def test_t_b_missing_origin_stays_template(self):
         ws = make_workspace(self.base, None)
@@ -179,7 +195,7 @@ class TemplateStatusAuthority(unittest.TestCase):
                 result = apply_mcp(ws)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 out = json.loads(result.stdout)
-                boot = json.loads((ws / ".workspace/bootstrap.json").read_text())
+                boot = json.loads((ws / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
                 self.assertEqual(boot["workspace_status"], "active")
                 self.assertEqual(out.get("local_state", {}).get("status"), "BOUND")
                 self.assertNotIn("hint", out)

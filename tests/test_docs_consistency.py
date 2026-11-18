@@ -844,7 +844,7 @@ def _run_suite(root, *args) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, "-B",
                            str(Path(root) / "tests" / "test_docs_consistency.py"), *args],
                           cwd=str(root), env=_child_env(root),
-                          capture_output=True, text=True, timeout=600)
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
 
 
 # ── 范围表镜像（docstring ↔ docs/policy-language.md §7，逐行同文）───────────────
@@ -1501,7 +1501,7 @@ class DocFactContract(unittest.TestCase):
                     self.assertTrue(any("workspace-status-unknown" in x for x in test_findings))
                     proc = subprocess.run(
                         [sys.executable, "-B", str(copy / "scripts" / "policy_facts.py"), "--check"],
-                        cwd=str(copy), capture_output=True, text=True, timeout=300)
+                        cwd=str(copy), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
                     self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 finally:
                     shutil.rmtree(copy, ignore_errors=True)
@@ -2001,7 +2001,7 @@ class DocFactContract(unittest.TestCase):
             def run(*args):
                 return subprocess.run(
                     [sys.executable, "-B", str(copy / "scripts" / "policy_facts.py"), *args],
-                    cwd=str(copy), capture_output=True, text=True, timeout=300)
+                    cwd=str(copy), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
 
             stale = run("--check")
             out = stale.stdout + stale.stderr

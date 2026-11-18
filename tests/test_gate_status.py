@@ -164,7 +164,7 @@ class GateStatus(unittest.TestCase):
         expected = subprocess.run(
             [sys.executable, "-B", "-c",
              "import sys;sys.path.insert(0,sys.argv[1]);import gate_core;print(gate_core._fallback_scope())",
-             str(hooks)], capture_output=True, text=True, check=True).stdout.strip()
+             str(hooks)], capture_output=True, text=True, encoding="utf-8", errors="replace", check=True).stdout.strip()
         self.assertRegex(expected, r"^[0-9a-f]{12}$")
         self._seed_cc_evidence(expected)
         r = run(self.ws, "--require", "cc", "--record", "--json")

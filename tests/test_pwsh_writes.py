@@ -70,7 +70,13 @@ class PwshWrites(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
         shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
-        shutil.copy2(ROOT / "AGENT_RULES.md", self.ws / "AGENT_RULES.md")
+        # 治理文件按 **LF** 落到 fixture：门禁的内容锚定是**字节级全等**，且政策明确
+        # 「行尾规范化差异按不可判定处理，不做哈希前归一化」（gate_core.py 模块头）。
+        # 仓库用 `.gitattributes: * text=auto eol=lf` 钉死 LF，所以 LF 才是被支持的
+        # 配置；若把 CRLF 检出原样拷进来，测到的是「检出事故」而不是判据 —— 在 Windows
+        # 上表现为 `test_after_full_read_write_is_allowed` 假红（deny != allow）。
+        rules = (ROOT / "AGENT_RULES.md").read_bytes().replace(b"\r\n", b"\n")
+        (self.ws / "AGENT_RULES.md").write_bytes(rules)
         (self.ws / ".workspace" / "bootstrap.json").write_text(
             json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
                         "template": {"source_repo": "https://example.invalid/t"}}), encoding="utf-8")
@@ -129,7 +135,8 @@ class PwshWrites(unittest.TestCase):
         subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "post_read"],
                        input=json.dumps(post), capture_output=True, text=True, encoding="utf-8",
                        env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
-        self.assertEqual(self.decision("Set-Content -Path 'after.txt' -Value 'hi'")[0], "allow")
+        decision, reason = self.decision("Set-Content -Path 'after.txt' -Value 'hi'")
+        self.assertEqual(decision, "allow", f"完整读取治理文件后仍被拦（{reason}）")
 
 
 if __name__ == "__main__":

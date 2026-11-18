@@ -15,6 +15,17 @@ from repo_identity import classify, convert_format, normalize_encoding, repair  
 SOURCE = "https://github.com/KinoluKaslana/WorkspaceTemplate"
 
 
+def _safe_symlink(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    """建符号链接；本机无此权限（未开开发者模式的 Windows）时跳过夹具。
+
+    跳过的是夹具能力而不是判据：T-d 要证明「经 symlink 的 base 解析被拒」，没有样本就造不出证据。
+    """
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:      # pragma: no cover - 平台相关
+        raise unittest.SkipTest(f"本机不支持创建符号链接（{exc}）")
+
+
 class RepoIdentityPipeline(unittest.TestCase):
     def test_encoding_equivalence_and_traversal(self):
         for value in (
@@ -52,7 +63,7 @@ class RepoIdentityPipeline(unittest.TestCase):
             outside.mkdir()
             self.assertIsNone(repair("localrepo"))                         # T-b
             self.assertIsNone(repair("../outside", base=root))             # T-c
-            (root / "outside-link").symlink_to(outside, target_is_directory=True)
+            _safe_symlink(root / "outside-link", outside, target_is_directory=True)
             self.assertIsNone(repair("outside-link", base=root))           # T-d
 
     def test_idempotence(self):
@@ -115,7 +126,7 @@ class ActivationAtomicity(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
              "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"],
-            capture_output=True, text=True)
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(boot.read_bytes(), before)
         self.assertFalse((ws / ".workspace/.local").exists())
@@ -128,9 +139,9 @@ class ActivationAtomicity(unittest.TestCase):
                 result = subprocess.run(
                     [sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
                      "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"],
-                    capture_output=True, text=True)
+                    capture_output=True, text=True, encoding="utf-8", errors="replace")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                boot = json.loads((ws / ".workspace/bootstrap.json").read_text())
+                boot = json.loads((ws / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
                 self.assertEqual(boot["workspace_status"] == "active", active)
                 if not active:
                     self.assertIn("remote set-url", json.loads(result.stdout)["hint"])

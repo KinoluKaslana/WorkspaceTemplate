@@ -118,7 +118,7 @@ class SyncKeepsDeletedReadmeEn(unittest.TestCase):
             self.skipTest("git archive 失败（仓库不可用）")
         subprocess.run(["tar", "-x", "-C", str(self.ws)], input=archive.stdout, check=True)
         self.head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
-                                   capture_output=True, text=True).stdout.strip()
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
         boot = {
             "workspace_status": "active",
             "python": {"mode": "local-venv", "runtime": {"identifier": ".venv-x"}},

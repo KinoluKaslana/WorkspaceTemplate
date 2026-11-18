@@ -97,7 +97,7 @@ def _fallback_machine_material() -> bytes:
             material = str(guid).encode("utf-8")
         elif sys.platform == "darwin":                        # pragma: no cover - macOS
             out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                                 capture_output=True, text=True, timeout=5).stdout
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5).stdout
             match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
             if match:
                 material = match.group(1).encode("utf-8")
@@ -297,6 +297,24 @@ def _norm_join(base: str, rel: str) -> str:
     return os.path.normpath(rel)
 
 
+def reads_key(ws_root: str, gate_rel: str) -> str:
+    """`state["reads"]` 的**唯一**键口径：工作区相对 POSIX 路径。
+
+    盘符、反斜杠、`~`、相对前缀只在此处、只在解析输入时归一，**永不进入键**：
+    `reads_key("D:/ws", r"\\ws\\AGENT_RULES.md")` → `"AGENT_RULES.md"`（Linux 同口径）。
+    键必须由本函数产出，写入侧（`record_read`）与读取侧（`evaluate_*` / 测试断言）
+    才可能看同一个键；历史上键由调用方原样传入，同一文件在 Windows 上可写成带盘符的
+    绝对路径或裸相对名两种形态，账本按字符串分键 → 写入方与读取方各看一个键（r37）。
+    跨盘符无相对关系（配置错误）→ 退回 posix 化的绝对路径，交由路径比对拒绝。
+    """
+    p = _norm_join(ws_root, gate_rel)
+    try:
+        rel = os.path.relpath(p, ws_root)
+    except ValueError:
+        rel = p
+    return rel.replace(os.sep, "/")
+
+
 # ------------------------------------------------------------ 工作区发现
 
 def _is_dir_git_boundary(p: Path) -> bool:
@@ -347,22 +365,23 @@ def _default_conf() -> dict:
 def load_conf(ws_root: str) -> dict:
     conf = _default_conf()
     p = Path(ws_root) / CUSTOM_REL
-    if not p.is_file():
-        return conf
-    try:
-        user = json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return conf  # 损坏 → 忽略，fail-safe 默认（调用方记日志）
-    if not isinstance(user, dict):
-        return conf
-    if isinstance(user.get("enabled"), bool):
-        conf["enabled"] = user["enabled"]
-    gf = user.get("gate_files")
-    if isinstance(gf, list) and gf and all(isinstance(x, str) and x.strip() for x in gf):
-        conf["gate_files"] = [x.strip() for x in gf]
-    wt = user.get("write_tools")
-    if isinstance(wt, list) and wt and all(isinstance(x, str) and x.strip() for x in wt):
-        conf["write_tools"] = [x.strip() for x in wt]
+    if p.is_file():
+        try:
+            user = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            user = None  # 损坏 → 忽略，fail-safe 默认（调用方记日志）
+        if isinstance(user, dict):
+            if isinstance(user.get("enabled"), bool):
+                conf["enabled"] = user["enabled"]
+            gf = user.get("gate_files")
+            if isinstance(gf, list) and gf and all(isinstance(x, str) and x.strip() for x in gf):
+                conf["gate_files"] = [x.strip() for x in gf]
+            wt = user.get("write_tools")
+            if isinstance(wt, list) and wt and all(isinstance(x, str) and x.strip() for x in wt):
+                conf["write_tools"] = [x.strip() for x in wt]
+    # 配置是 keys 进入账本的唯一入口：在此一次性归一到「工作区相对 POSIX 路径」，
+    # 使写入侧与所有读取侧共用同一口径（见 reads_key）。
+    conf["gate_files"] = [reads_key(ws_root, x) for x in conf["gate_files"]]
     return conf
 
 
@@ -512,7 +531,7 @@ def _git_ok(ws_root: str) -> bool:
     「不是仓库」和「是仓库但干净」——`git status` 两者都返回非空/空，靠 rc 判。"""
     try:
         r = subprocess.run(["git", "-C", ws_root, "rev-parse", "--is-inside-work-tree"],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
         return r.returncode == 0 and (r.stdout or "").strip() == "true"
     except Exception:
         return False
@@ -609,7 +628,7 @@ def worktree_snapshot(ws_root: str) -> dict[str, str | None]:
     snap: dict[str, str | None] = {}
     try:
         st = subprocess.run(["git", "-C", ws_root, "status", "--porcelain"],
-                            capture_output=True, text=True, timeout=5)
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
         if st.returncode != 0:
             return snap
         for line in (st.stdout or "").splitlines():
@@ -956,6 +975,7 @@ def record_read(state: dict, ws_root: str, gate_rel: str, client: str,
     """
     _mark_activity(state)
     reads = state["reads"]
+    key = reads_key(ws_root, gate_rel)          # 账本键口径（唯一入口），见 reads_key
     path = read_info.get("path") or ""
     gate_abs = _norm_join(ws_root, gate_rel)
     if os.path.normpath(os.path.expanduser(path)) != gate_abs:
@@ -965,12 +985,12 @@ def record_read(state: dict, ws_root: str, gate_rel: str, client: str,
     try:
         disk_bytes = gate_path.read_bytes()
     except OSError:
-        _revocation(state, gate_rel, "gate-missing")
+        _revocation(state, key, "gate-missing")
         return {"recorded": False, "reason": "gate-missing"}
     fp = f"c{len(disk_bytes)}:{sha256_hex(disk_bytes)}"
-    entry = reads.get(gate_rel) or {}
+    entry = reads.get(key) or {}
     if entry and entry.get("fingerprint") != fp:
-        _revocation(state, gate_rel, "revision-changed")
+        _revocation(state, key, "revision-changed")
         entry = {}
     if read_info.get("read_ok") is not True:
         return {"recorded": False, "reason": "read-failed"}
@@ -1021,7 +1041,7 @@ def record_read(state: dict, ws_root: str, gate_rel: str, client: str,
             "coverage": coverage,
             "complete": coverage_complete(coverage, total_lines),
         })
-        reads[gate_rel] = entry
+        reads[key] = entry
         return {"recorded": True, "anchor": "content", "complete": entry["complete"]}
 
     return {"recorded": False, "reason": "no-admissible-evidence"}
@@ -1687,9 +1707,9 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
     if is_git:
         try:
             status = subprocess.run(["git", "-C", ws_root, "status", "--porcelain"],
-                                    capture_output=True, text=True, timeout=5)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
             diff = subprocess.run(["git", "-C", ws_root, "diff", "--stat"],
-                                  capture_output=True, text=True, timeout=5)
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
         except Exception as exc:
             log(ws_root, f"worktree_audit git failed: {exc}")
             status, diff = None, None

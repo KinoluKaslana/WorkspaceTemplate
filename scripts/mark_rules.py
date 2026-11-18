@@ -29,6 +29,32 @@ from pathlib import Path
 
 from verify_rules import TEMPLATE_FILES
 
+
+def _utf8_stdio() -> None:
+    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+
+    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
+    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
+    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
+    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
+    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+            if encoding == "utf8":
+                continue
+            if getattr(stream, "isatty", lambda: False)():
+                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
+        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
+            pass
+
+
+_utf8_stdio()
+
+
 MARKER_RE = re.compile(r"\s*<!--\s*id:(R\d+)\s*-->\s*$")
 CLAUSE_RE = re.compile(r"^(\d+\.|[-*]\s|\d+[)、.])")
 HEADING_RE = re.compile(r"^#{1,6}\s")
@@ -97,7 +123,7 @@ def mark_file(path: Path, used: set[str] | None = None, dry: bool = False) -> tu
         else:
             out.append(ln)
     if not dry and added:
-        path.write_text("\n".join(out) + "\n", encoding="utf-8")
+        path.write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
     return added, reg
 
 
@@ -159,7 +185,7 @@ def main() -> int:
         regs = build_registry(root)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
         print(f"OK: marked {total} new clauses; registry -> {out} ({len(regs)} files)")
         return 0
 
@@ -177,7 +203,7 @@ def main() -> int:
         regs = build_registry(root)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
         print(f"OK: registry rebuilt -> {out} ({len(regs)} files)")
         return 0
     return 0

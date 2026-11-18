@@ -28,6 +28,32 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+
+def _utf8_stdio() -> None:
+    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+
+    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
+    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
+    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
+    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
+    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+            if encoding == "utf8":
+                continue
+            if getattr(stream, "isatty", lambda: False)():
+                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
+        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
+            pass
+
+
+_utf8_stdio()
+
+
 STATE_DIR = Path(".workspace") / ".hook-state"
 GATE_STATE_FILE = "gate.json"
 
@@ -327,7 +353,7 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
     }
     sp.parent.mkdir(parents=True, exist_ok=True)
     tmp = sp.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     os.replace(tmp, sp)      # 原子替换：避免写一半的结论被别的工具读到
     print(f"已记录 gate.status={status}（harness={','.join(required)}）→ {sp}")
     if isinstance(boot.get("gate"), dict) and boot["gate"].get("status"):
