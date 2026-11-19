@@ -162,6 +162,12 @@ TEMPLATE_FILES = [
     "tests/test_registry_freshness.py",
     "tests/test_gitignore_ensure.py",
     "tests/test_regression_ledger.py",
+    # R38a：osnorm 归一化层（第 0 步，零调用方）
+    "scripts/osnorm.py",
+    "tests/test_osnorm_cases.json",
+    "tests/test_osnorm_properties.py",
+    "tests/test_osnorm_single_source.py",
+    "tests/osnorm_allowlist.json",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.

@@ -1,6 +1,6 @@
 <!-- gen:policy-facts:begin -->
 <!-- doc-fact:tools-md-heading -->
-# 工具（scripts/，19 个）
+# 工具（scripts/，20 个）
 <!-- gen:policy-facts:end -->
 
 > 实现说明，不构成政策。所有脚本只依赖标准库，要求 Python ≥ 3.10。**`--json` 语义各脚本不同**：`verify_rules.py` 的 `--json` 是**输出文件路径**，`skill_audit.py`/`workspace_preflight.py`/`docs_*.py`/`template_sync.py`/`pyenv_init.py` 的 `--json` 是「打印 JSON 到 stdout」，`mark_rules.py` 无此参数——以各条示例与 `--help` 为准。
@@ -29,6 +29,7 @@
 | `repo_identity.py` | 仓库身份三段纯函数流水线：编码规范化 → 路径格式转换 → 白名单判定 | `from repo_identity import normalize_encoding, convert_format, repair, classify` | 库：非法或不可证明输入返回 `None` |
 | `gate_status.py` | harness 接线自检：各客户端有没有**运行期** gate 证据 | `[--require cc,codex,hermes,dsh] [--ttl-minutes N] [--json]` | 0 有证据 / 1 `--require` 缺证据 |
 | `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_state` / `read_status` / `bind` / `resolve_identity` / `detect_platform_info` | `import local_state` | 库：不变量失败抛 `ValueError`/`TypeError`；判读结果在返回字典的 `status`/`reason` |
+| `osnorm.py` | 路径交换格式与文本 I/O 的**唯一实现**（库，无 CLI）：`canonical_path` / `family` / `read_text` / `write_text` / `run_text` / `atomic_write_text` / `replace_retry` / `configure_stdio` | `import osnorm` | 库：路径形式不可接受抛 `PathFormError`（`ValueError` 子类） |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 
@@ -183,6 +184,63 @@ python3 scripts/pyenv_init.py --mode mcp --mcp-server s --mcp-tool t --apply
 - uv 缺失 → exit 3 + 安装方式；**默认不联网安装**，仅当用户明确要求时才由用户执行安装（或用户自己加 `--allow-install` 跑官方脚本）；
 - 已配置的工作区 → exit 5 `already-configured`（保护既有选择；`--force` 才切换）；
 - 写**本机状态** `.workspace/.local/v1/<context_id>/runtime.json`（mode / venv 目录名 / 版本 / runtime 标识 / 能力声明），并翻转 `bootstrap.workspace_status=active`、写入 `workspace_id`、删掉旧的 `python` 节；输出一段 `TOOLS.md` 待粘贴行。
+
+## 6.5 路径归一与文本 I/O：`osnorm.py`
+
+`scripts/osnorm.py` 是**文件系统路径交换格式 + 文本 I/O 的单一实现**：纯 stdlib、叶子模块
+（不 import 本仓任何模块）、import 期无全局副作用（`configure_stdio()` 必须显式调用）。
+它**不是**业务校验器：git 语义、身份派生、扫描范围、锁与事务、权限 ACL 都不在它里面。
+
+```python
+from osnorm import (PathFormError, canonical_path, family, read_text, write_text,
+                    read_bytes, write_bytes, run_text, utf8_env,
+                    replace_retry, atomic_write_text, configure_stdio)
+
+canonical_path(r"\\?\UNC\host\share\x")        # '//host/share/x'
+canonical_path("a/b", base="/r")               # '/r/a/b'（相对路径必须给 base）
+family("/mnt/c/Users")                        # 'wsl-mount'（≠ windows-drive）
+read_text(p, bom=True)                        # utf-8-sig（剥 BOM）；默认 utf-8 保 BOM
+write_text(p, "a\r\nb")                       # 磁盘落 'a\nb'（newline='lf' 默认）
+run_text(["git", "-C", ws, "status"])         # proc.stdout 恒为 str，永不是 None
+```
+
+**canonical 判定（唯一判据表，全部由 `canonical_path` 实现）**
+
+| 输入 | 结果 |
+|---|---|
+| `C:\a\b` / `C:/a/b` / `c:/A/b` | `C:/a/b` / `C:/a/b` / `C:/A/b`（盘符大写、段保留） |
+| `/c:/a/b`（msys） | `C:/a/b` |
+| `\\?\C:\a\b` / `//?/C:/a/b` | `C:/a/b`（剥前缀） |
+| `\\?\UNC\host\share\x` / `\\host\share\x` | `//host/share/x` |
+| `\\wsl.localhost\<distro>\…` | `//wsl.localhost/<distro>/…` |
+| `/mnt/c/...` | 原样（**不**改写成 `C:`；wsl 挂载与盘符不同族） |
+| `file:///C:/x` / `file://localhost/x` / `file://host/share/x` | `C:/x` / `/x` / `//host/share/x` |
+| `\\.\PhysicalDrive0`、`\\?\GLOBALROOT\…`、`CON`/`NUL`/`COM1` | 抛 `PathFormError`（设备命名空间与保留名不是文件） |
+| `C:relative`、裸 `C:`、`//host`（无 share）、`""`/全空白、含 NUL | 抛 `PathFormError` |
+| `a/b`（无 base）、`../x`（逃出 base） | 抛 `PathFormError`（**没有 cwd 隐式回退**） |
+| `a/b`（base=`/r`） | `/r/a/b`，与 `Path(...).as_posix()` 逐字一致（键口径） |
+
+**换行与解码契约（API 与性质测试共用同一契约）**：`write_text(newline="lf")`（默认）先把
+`\r\n`/`\r` 归一为 `\n`，磁盘恒为 LF；`newline="preserve"` 原样。`read_text` 的 `bom=True`
+用 `utf-8-sig` 剥 BOM，`bom=False` 把 `\ufeff` 留给调用方。`errors` 按场景显式声明：
+治理/JSON 用 `strict`，日志用 `replace`，`secret_scan` 用 `ignore`；**不猜编码**——
+UTF-16/GBK 在 `strict` 下上抛。
+
+**原子发布与子进程**：`atomic_write_text` 走「同目录临时文件 → fsync → `replace_retry`
+（有界退避，Windows 读侧持句柄时 `os.replace` 会失败）→ 目录 fsync」，读者看不到半截文件；
+预算耗尽时原样抛出，**绝不退化成非原子写**。`run_text` 固定 `capture_output=True` +
+UTF-8 + `errors`，并把 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 注入子进程环境
+（`os.environ` → `utf8_env()` → 调用方 `env`，调用方优先），因此 `proc.stdout` 恒为 `str`。
+流式/交互式子进程不在它范围内（调用方自行 `Popen`，且须进门禁 allowlist 登记）。
+
+**门禁（blocking）**：`tests/test_osnorm_single_source.py` 由 `tests/` discovery 与 CI 执行——
+`scripts/`、`.workspace/hooks/`、`tests/` 里再出现自带 `encoding=` 的文本 I/O（R1）、
+自带 `text=`/`encoding=` 的子进程（R2）、直接 `os.replace`（R3）、直接 `reconfigure`（R4）、
+自写归一化函数/内联键（R5）、`os.path.normcase`（R6）即红。结构性豁免只有 osnorm 自身、
+`local_state` 的 no-follow 发布路径、`skill_audit._utf8_stdio` 与两个 hooks adapter
+（hooks 实例可能没有 `scripts/`，所以 hooks **不 import** osnorm，只按 R7 的 adapter oracle
+钉在声明子域上）；其余存量违规只能进 `tests/osnorm_allowlist.json` 的
+`(file, rule, target, line_kind)` 节点级表项，`count` 是**上限**（只许下调，归零必须删表项）。
 
 ## 7. 退出码约定
 

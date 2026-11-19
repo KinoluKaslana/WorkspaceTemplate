@@ -1,0 +1,665 @@
+{
+ "version": 1,
+ "spec_rows": [
+  {
+   "row": "§4-1",
+   "text": "C:\\a\\b / C:/a/b -> C:/a/b",
+   "inputs": [
+    "C:\\a\\b",
+    "C:/a/b"
+   ]
+  },
+  {
+   "row": "§4-2",
+   "text": "c:/A/b -> C:/A/b（盘符大写、段保留）",
+   "inputs": [
+    "c:/A/b"
+   ]
+  },
+  {
+   "row": "§4-3",
+   "text": "/c:/a/b -> C:/a/b",
+   "inputs": [
+    "/c:/a/b"
+   ]
+  },
+  {
+   "row": "§4-4",
+   "text": "\\\\?\\C:\\a\\b / //?/C:/a/b -> C:/a/b（剥前缀）",
+   "inputs": [
+    "\\\\?\\C:\\a\\b",
+    "//?/C:/a/b"
+   ]
+  },
+  {
+   "row": "§4-5",
+   "text": "\\\\?\\UNC\\host\\share\\x -> //host/share/x",
+   "inputs": [
+    "\\\\?\\UNC\\host\\share\\x"
+   ]
+  },
+  {
+   "row": "§4-6",
+   "text": "\\\\.\\PhysicalDrive0 / //./pipe/name -> 抛 PathFormError",
+   "inputs": [
+    "\\\\.\\PhysicalDrive0",
+    "//./pipe/name"
+   ]
+  },
+  {
+   "row": "§4-7",
+   "text": "\\\\?\\GLOBALROOT\\...、CON/NUL/COM1 -> 抛 PathFormError",
+   "inputs": [
+    "\\\\?\\GLOBALROOT\\Device\\Harddisk0",
+    "CON",
+    "NUL",
+    "COM1"
+   ]
+  },
+  {
+   "row": "§4-8",
+   "text": "\\\\host\\share\\x -> //host/share/x",
+   "inputs": [
+    "\\\\host\\share\\x"
+   ]
+  },
+  {
+   "row": "§4-9",
+   "text": "\\\\wsl.localhost\\<distro>\\... -> //wsl.localhost/<distro>/...",
+   "inputs": [
+    "\\\\wsl.localhost\\Ubuntu\\home\\u\\x"
+   ]
+  },
+  {
+   "row": "§4-10",
+   "text": "/mnt/c/... 原样（不改写为 C:）",
+   "inputs": [
+    "/mnt/c/Users/x"
+   ]
+  },
+  {
+   "row": "§4-11",
+   "text": "file:///C:/x -> C:/x",
+   "inputs": [
+    "file:///C:/x"
+   ]
+  },
+  {
+   "row": "§4-12",
+   "text": "file://localhost/x -> /x；file://host/share/x -> //host/share/x",
+   "inputs": [
+    "file://localhost/x",
+    "file://host/share/x"
+   ]
+  },
+  {
+   "row": "§4-13",
+   "text": "file:// 带 query/fragment/userinfo -> 抛 PathFormError",
+   "inputs": [
+    "file:///C:/x?a=1",
+    "file:///C:/x#frag",
+    "file://user@host/share/x"
+   ]
+  },
+  {
+   "row": "§4-14",
+   "text": "C:relative、裸 C: -> 抛 PathFormError",
+   "inputs": [
+    "C:relative",
+    "C:"
+   ]
+  },
+  {
+   "row": "§4-15",
+   "text": "//host（无 share）-> 抛 PathFormError",
+   "inputs": [
+    "//host"
+   ]
+  },
+  {
+   "row": "§4-16",
+   "text": "a/b（无 base）-> 抛 PathFormError",
+   "inputs": [
+    "a/b"
+   ]
+  },
+  {
+   "row": "§4-17",
+   "text": "a/b（base=/r）-> /r/a/b",
+   "inputs": [
+    "a/b"
+   ]
+  },
+  {
+   "row": "§4-18",
+   "text": "../x（逃出 base）-> 抛 PathFormError",
+   "inputs": [
+    "../x"
+   ]
+  },
+  {
+   "row": "§4-19",
+   "text": "含 NUL 字节 -> 抛 PathFormError",
+   "inputs": [
+    "a\u0000b"
+   ]
+  },
+  {
+   "row": "§4-20",
+   "text": "\"\" / 全空白 -> 抛 PathFormError",
+   "inputs": [
+    "",
+    "   ",
+    "\t\n"
+   ]
+  },
+  {
+   "row": "§4-21",
+   "text": "/ -> /；C:/ -> C:/",
+   "inputs": [
+    "/",
+    "C:/"
+   ]
+  },
+  {
+   "row": "§4-22",
+   "text": "posix 相对 + base 与 Path(...).as_posix() 逐字一致",
+   "inputs": [
+    "a/b",
+    "./a",
+    "sub/../b"
+   ]
+  }
+ ],
+ "note": "osnorm 金表（规格 §4 + §5.1）。三类行：valid/invalid/contextual，每行带 family；invalid 行只断异常类型（raises），不比异常文案。adapters 段是 hooks adapter 的逐项 oracle：expected 可以是字面值、{\"formula\": ..} 宿主参数化表达式，或 {\"host\": {\"posix\": .., \"windows\": ..}} 分列（跨平台不取固定值）。",
+ "valid": [
+  {
+   "input": "C:\\a\\b",
+   "expected": "C:/a/b",
+   "family": "windows-drive"
+  },
+  {
+   "input": "C:/a/b",
+   "expected": "C:/a/b",
+   "family": "windows-drive"
+  },
+  {
+   "input": "c:/A/b",
+   "expected": "C:/A/b",
+   "family": "windows-drive"
+  },
+  {
+   "input": "C:\\A\\B",
+   "expected": "C:/A/B",
+   "family": "windows-drive"
+  },
+  {
+   "input": "/c:/a/b",
+   "expected": "C:/a/b",
+   "family": "windows-drive"
+  },
+  {
+   "input": "\\\\?\\C:\\a\\b",
+   "expected": "C:/a/b",
+   "family": "windows-drive"
+  },
+  {
+   "input": "//?/C:/a/b",
+   "expected": "C:/a/b",
+   "family": "windows-drive"
+  },
+  {
+   "input": "\\\\?\\UNC\\host\\share\\x",
+   "expected": "//host/share/x",
+   "family": "unc"
+  },
+  {
+   "input": "\\\\?\\UNC\\wsl.localhost\\Ubuntu\\x",
+   "expected": "//wsl.localhost/Ubuntu/x",
+   "family": "unc"
+  },
+  {
+   "input": "\\\\host\\share\\x",
+   "expected": "//host/share/x",
+   "family": "unc"
+  },
+  {
+   "input": "//host/share/x",
+   "expected": "//host/share/x",
+   "family": "unc"
+  },
+  {
+   "input": "\\\\wsl.localhost\\Ubuntu\\home\\u\\x",
+   "expected": "//wsl.localhost/Ubuntu/home/u/x",
+   "family": "unc"
+  },
+  {
+   "input": "/mnt/c/Users/x",
+   "expected": "/mnt/c/Users/x",
+   "family": "wsl-mount"
+  },
+  {
+   "input": "file:///C:/x",
+   "expected": "C:/x",
+   "family": "file-url"
+  },
+  {
+   "input": "file://localhost/x",
+   "expected": "/x",
+   "family": "file-url"
+  },
+  {
+   "input": "file://host/share/x",
+   "expected": "//host/share/x",
+   "family": "file-url"
+  },
+  {
+   "input": "file:///C:/a%20b",
+   "expected": "C:/a b",
+   "family": "file-url"
+  },
+  {
+   "input": "/",
+   "expected": "/",
+   "family": "posix"
+  },
+  {
+   "input": "C:/",
+   "expected": "C:/",
+   "family": "windows-drive"
+  },
+  {
+   "input": "C:\\",
+   "expected": "C:/",
+   "family": "windows-drive"
+  },
+  {
+   "input": "C:\\a\\..\\b",
+   "expected": "C:/b",
+   "family": "windows-drive"
+  },
+  {
+   "input": "C:/a/./b//c",
+   "expected": "C:/a/b/c",
+   "family": "windows-drive"
+  },
+  {
+   "input": "//host/share/a/../b",
+   "expected": "//host/share/b",
+   "family": "unc"
+  },
+  {
+   "input": "/a//b/./c",
+   "expected": "/a/b/c",
+   "family": "posix"
+  },
+  {
+   "input": "/a/",
+   "expected": "/a",
+   "family": "posix"
+  },
+  {
+   "input": "C:\\w\\..\\..\\x",
+   "expected": "C:/x",
+   "family": "windows-drive"
+  },
+  {
+   "input": "/../x",
+   "expected": "/x",
+   "family": "posix"
+  }
+ ],
+ "invalid": [
+  {
+   "input": "\\\\.\\PhysicalDrive0",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "//./pipe/name",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "\\\\.\\C:\\work\\repo",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "\\\\?\\GLOBALROOT\\Device\\Harddisk0",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "//?/GLOBALROOT/x",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "CON",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "NUL",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "COM1",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "LPT9",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "con",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "NUL.txt",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "C:\\x\\nul\\y",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "C:relative",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "C:",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "//host",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "\\\\host",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "a/b",
+   "base": null,
+   "family": "relative",
+   "raises": "PathFormError"
+  },
+  {
+   "input": ".",
+   "base": null,
+   "family": "relative",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "../x",
+   "base": "/r",
+   "family": "relative",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "a/../../x",
+   "base": "/r",
+   "family": "relative",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "a\u0000b",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "",
+   "family": "empty",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "   ",
+   "family": "empty",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "\t\n",
+   "family": "empty",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "file:///C:/x?a=1",
+   "family": "file-url",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "file:///C:/x#frag",
+   "family": "file-url",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "file://user@host/share/x",
+   "family": "file-url",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "file://",
+   "family": "file-url",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "https://example.com/x",
+   "family": "invalid",
+   "raises": "PathFormError"
+  },
+  {
+   "input": "\\\\host\\share\\..\\..\\x",
+   "family": "unc",
+   "raises": "PathFormError"
+  }
+ ],
+ "contextual": [
+  {
+   "input": "a/b",
+   "base": "/r",
+   "expected": "/r/a/b",
+   "family": "relative"
+  },
+  {
+   "input": "a/b",
+   "base": "/r/",
+   "expected": "/r/a/b",
+   "family": "relative"
+  },
+  {
+   "input": "./a",
+   "base": "/r",
+   "expected": "/r/a",
+   "family": "relative"
+  },
+  {
+   "input": "sub/../b",
+   "base": "/r",
+   "expected": "/r/b",
+   "family": "relative"
+  },
+  {
+   "input": "x",
+   "base": "C:/w",
+   "expected": "C:/w/x",
+   "family": "relative"
+  },
+  {
+   "input": "a\\b",
+   "base": "C:\\w\\",
+   "expected": "C:/w/a/b",
+   "family": "relative"
+  },
+  {
+   "input": "a/b",
+   "base": "//host/share",
+   "expected": "//host/share/a/b",
+   "family": "relative"
+  },
+  {
+   "input": "x",
+   "base": "/mnt/c/Users",
+   "expected": "/mnt/c/Users/x",
+   "family": "relative"
+  },
+  {
+   "input": "x",
+   "base": "c:/w",
+   "expected": "C:/w/x",
+   "family": "relative"
+  },
+  {
+   "input": "C:/abs/x",
+   "base": "/r",
+   "expected": "C:/abs/x",
+   "family": "windows-drive"
+  }
+ ],
+ "adapters": [
+  {
+   "fn": "hook._absolute",
+   "args": [
+    ""
+   ],
+   "cwd": "/ws",
+   "raises": "_PatchParseError"
+  },
+  {
+   "fn": "hook._absolute",
+   "args": [
+    "   "
+   ],
+   "cwd": "/ws",
+   "raises": "_PatchParseError"
+  },
+  {
+   "fn": "hook._absolute",
+   "args": [
+    "a/b"
+   ],
+   "cwd": "/ws",
+   "expected": {
+    "formula": "abspath_normpath_join",
+    "args": [
+     "/ws",
+     "a/b"
+    ]
+   }
+  },
+  {
+   "fn": "hook._absolute",
+   "args": [
+    "~/x"
+   ],
+   "cwd": "/ws",
+   "env": {
+    "HOME": "/h",
+    "USERPROFILE": "C:\\h"
+   },
+   "expected": {
+    "formula": "abspath_normpath_expanduser",
+    "args": [
+     "~/x"
+    ]
+   }
+  },
+  {
+   "fn": "hook._absolute",
+   "args": [
+    "/abs/./x/../y"
+   ],
+   "cwd": "/ws",
+   "expected": {
+    "formula": "abspath_normpath",
+    "args": [
+     "/abs/./x/../y"
+    ]
+   }
+  },
+  {
+   "fn": "gate_core._norm_join",
+   "args": [
+    "/ws",
+    "a/../b"
+   ],
+   "expected": {
+    "formula": "normpath_join",
+    "args": [
+     "/ws",
+     "a/../b"
+    ]
+   }
+  },
+  {
+   "fn": "gate_core._norm_join",
+   "args": [
+    "/ws",
+    "/abs/x"
+   ],
+   "expected": {
+    "formula": "normpath",
+    "args": [
+     "/abs/x"
+    ]
+   }
+  },
+  {
+   "fn": "gate_core._norm_join",
+   "args": [
+    "/ws",
+    "~/x"
+   ],
+   "env": {
+    "HOME": "/h",
+    "USERPROFILE": "C:\\h"
+   },
+   "expected": {
+    "formula": "normpath_expanduser",
+    "args": [
+     "~/x"
+    ]
+   }
+  },
+  {
+   "fn": "cc_transcript.slug_for_cwd",
+   "args": [
+    "C:\\Users\\a"
+   ],
+   "expected": {
+    "formula": "abspath_slug",
+    "args": [
+     "C:\\Users\\a"
+    ]
+   }
+  },
+  {
+   "fn": "cc_transcript.slug_for_cwd",
+   "args": [
+    "/home/u/x"
+   ],
+   "expected": {
+    "host": {
+     "posix": "-home-u-x",
+     "windows": {
+      "formula": "abspath_slug",
+      "args": [
+       "/home/u/x"
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

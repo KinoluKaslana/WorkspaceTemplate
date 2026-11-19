@@ -1,0 +1,1945 @@
+{
+ "version": 1,
+ "entries": [
+  {
+   "file": ".workspace/hooks/authz.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": "open",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R3",
+   "kind": "call",
+   "target": "os.replace",
+   "line_kind": "call",
+   "count": 1,
+   "reason": "存量 os.replace：迁移到 osnorm.replace_retry / atomic_write_text / atomic_write_bytes",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R5",
+   "kind": "expr",
+   "target": "expr:normpath_join",
+   "line_kind": "expr",
+   "count": 6,
+   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R5",
+   "kind": "expr",
+   "target": "expr:relpath_sep_key",
+   "line_kind": "expr",
+   "count": 1,
+   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/delegations.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/delegations.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": "open",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 9,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": "open",
+   "line_kind": "keyword:encoding=",
+   "count": 5,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 5,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 5,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R3",
+   "kind": "call",
+   "target": "os.replace",
+   "line_kind": "call",
+   "count": 4,
+   "reason": "存量 os.replace：迁移到 osnorm.replace_retry / atomic_write_text / atomic_write_bytes",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R5",
+   "kind": "expr",
+   "target": "expr:normpath_join",
+   "line_kind": "expr",
+   "count": 4,
+   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R5",
+   "kind": "expr",
+   "target": "expr:relpath_sep_key",
+   "line_kind": "expr",
+   "count": 2,
+   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/hook.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/hook.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/hook.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/hook.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 5,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/template_anchor.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/template_anchor.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/template_anchor.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/template_anchor.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": ".workspace/hooks/wtarget.py",
+   "rule": "R5",
+   "kind": "expr",
+   "target": "expr:normpath_join",
+   "line_kind": "expr",
+   "count": 2,
+   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/clause_lint.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/clause_lint.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_alias_audit.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 7,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_alias_audit.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_alias_audit.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_alias_audit.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_alias_audit.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_hit_report.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_hit_report.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_hit_report.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_hit_report.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_index.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 3,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_index.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_index.py",
+   "rule": "R3",
+   "kind": "call",
+   "target": "os.replace",
+   "line_kind": "call",
+   "count": 1,
+   "reason": "存量 os.replace：迁移到 osnorm.replace_retry / atomic_write_text / atomic_write_bytes",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/docs_index.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/gate_status.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 6,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/gate_status.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/gate_status.py",
+   "rule": "R3",
+   "kind": "call",
+   "target": "os.replace",
+   "line_kind": "call",
+   "count": 1,
+   "reason": "存量 os.replace：迁移到 osnorm.replace_retry / atomic_write_text / atomic_write_bytes",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/gate_status.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/inspect_skills.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".open",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/inspect_skills.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/inspect_skills.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/inspect_skills.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/local_state.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 5,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/local_state.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/local_state.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 3,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/local_state.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 3,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/mark_rules.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/mark_rules.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 3,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/mark_rules.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/notes_index_check.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/notes_index_check.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/notes_index_check.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/notes_index_check.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/policy_facts.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 14,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/policy_facts.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/policy_facts.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/pyenv_init.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/pyenv_init.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/pyenv_init.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/pyenv_init.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/pyenv_init.py",
+   "rule": "R3",
+   "kind": "call",
+   "target": "os.replace",
+   "line_kind": "call",
+   "count": 1,
+   "reason": "存量 os.replace：迁移到 osnorm.replace_retry / atomic_write_text / atomic_write_bytes",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/pyenv_init.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/release.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/release.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/release.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/release.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/release.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/secret_scan.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/secret_scan.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/skill_audit.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 13,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/skill_audit.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/template_sync.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".open",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/template_sync.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 12,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/template_sync.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/template_sync.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": "open",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/template_sync.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/template_sync.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/template_sync.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/verify_rules.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/verify_rules.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/verify_rules.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/verify_rules.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/verify_rules.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/version_check.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 3,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/version_check.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/workspace_preflight.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/workspace_preflight.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/workspace_preflight.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/workspace_preflight.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "scripts/workspace_preflight.py",
+   "rule": "R4",
+   "kind": "call",
+   "target": ".reconfigure",
+   "line_kind": "call",
+   "count": 2,
+   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_alias_audit.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_alias_audit.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_alias_audit.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_alias_audit.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_check_scripts.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_check_scripts.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 12,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_check_scripts.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_check_scripts.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_clause_lint.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_clause_lint.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_clause_lint.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_docs_consistency.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 50,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_docs_consistency.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 42,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_docs_consistency.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 3,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_docs_consistency.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 3,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_docs_index.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 3,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_docs_index.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 7,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_docs_index.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_docs_index.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_dsh_failure_paths.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_dsh_failure_paths.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 3,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_dsh_failure_paths.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_dsh_failure_paths.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_dsh_wiring.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".open",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_dsh_wiring.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_dsh_wiring.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_dsh_wiring.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_dsh_wiring.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_gate_status.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 10,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_gate_status.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 30,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_gate_status.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 6,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_gate_status.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 6,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_git_bin.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_git_bin.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_git_bin.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_gitignore_ensure.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 3,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_gitignore_ensure.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_local_state.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 8,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_local_state.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 15,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_policy_facts_single_read.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_policy_facts_single_read.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pwsh_writes.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pwsh_writes.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pwsh_writes.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pwsh_writes.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pyenv_init.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 6,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pyenv_init.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pyenv_init.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pyenv_init.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 4,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pyenv_template_status.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 13,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pyenv_template_status.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 5,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pyenv_template_status.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pyenv_template_status.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_pyenv_template_status.py",
+   "rule": "R5",
+   "kind": "def",
+   "target": "def:canonical_local_path",
+   "line_kind": "def",
+   "count": 1,
+   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_readme_exemption.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_readme_exemption.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 3,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_readme_exemption.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 3,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_registry_freshness.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_registry_freshness.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_registry_freshness.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_regression_ledger.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 6,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_regression_ledger.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 5,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_regression_ledger.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_regression_ledger.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_release.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 8,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_release.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_release.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_release.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 4,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_release_anchor_tag_identity.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_release_anchor_tag_identity.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_release_anchor_tag_identity.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_repo_identity.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_repo_identity.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_repo_identity.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_repo_identity.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_skill_audit.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 9,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_skill_audit.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 14,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_skill_audit.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_skill_audit.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 2,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_skill_audit_hardening.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 7,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_skill_audit_hardening.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 6,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_template_status_authority.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_template_status_authority.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_template_status_authority.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_template_status_authority.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_template_sync_rollback.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 13,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_template_sync_rollback.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 14,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_template_sync_rollback.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 9,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_template_sync_rollback.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 9,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_windows_compat.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 6,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_windows_compat.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 4,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_windows_compat.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_windows_compat.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 1,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_workspace_preflight.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".read_text",
+   "line_kind": "keyword:encoding=",
+   "count": 17,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_workspace_preflight.py",
+   "rule": "R1",
+   "kind": "call",
+   "target": ".write_text",
+   "line_kind": "keyword:encoding=",
+   "count": 39,
+   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_workspace_preflight.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:encoding=",
+   "count": 7,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  },
+  {
+   "file": "tests/test_workspace_preflight.py",
+   "rule": "R2",
+   "kind": "call",
+   "target": "subprocess.run",
+   "line_kind": "keyword:text=",
+   "count": 7,
+   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
+   "expires": "R39"
+  }
+ ]
+}

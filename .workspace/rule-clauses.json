@@ -203,7 +203,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "a27a1a09f701e8263b4bc038dc0c1763ab517c48023de80afe3c1872a8a62344",
+    "file_sha256": "de95ad5c4013e99703b8b830b468b138a0f4c2cc82ba468b2af10a40732c0be2",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -318,7 +318,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "0f1f363d81976deed9ca387e8c5b4074f47fc72691a424907ac07b22d3c445a9",
+    "file_sha256": "e35af2a50e33ef3bfd153e80fbec1d24b659a8c2fa3a8438a635325523b0de04",
     "marked": 0
   },
   "docs/skills.md": {
@@ -328,7 +328,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "8798cf87fafd15e9cc6f77577d6f57bb9b636d282bef8261f0db2a9fd6e2ae49",
+    "file_sha256": "cda8e3453f0cc71176520beef84e4a883fece38d320743699728b066fafee790",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -599,6 +599,31 @@
   "tests/test_regression_ledger.py": {
     "clauses": {},
     "file_sha256": "e6db7a5c07e5963ff5c03187c5645fe6bb00ef859f6155914efbfd943249aa55",
+    "marked": 0
+  },
+  "scripts/osnorm.py": {
+    "clauses": {},
+    "file_sha256": "fae3def2d3a0682fb7d2172dbe4a23763d96d4368d56677520fdb15804ebb85b",
+    "marked": 0
+  },
+  "tests/test_osnorm_cases.json": {
+    "clauses": {},
+    "file_sha256": "dbbcd8460487cd01fe2277f4c567e0a567b0eca998ed5ff4ba01271207fcf1c0",
+    "marked": 0
+  },
+  "tests/test_osnorm_properties.py": {
+    "clauses": {},
+    "file_sha256": "c0e7849a46e1aeca2f15dc241abc6043ede7e17c0289ac813d8968173d490da5",
+    "marked": 0
+  },
+  "tests/test_osnorm_single_source.py": {
+    "clauses": {},
+    "file_sha256": "079d74695f85d12bf3df50648ed28d7705823b0d154f66e83945e2d732f1e2b3",
+    "marked": 0
+  },
+  "tests/osnorm_allowlist.json": {
+    "clauses": {},
+    "file_sha256": "99c9456540c42e39f372d8a1feb8b31ad791ab5921257b2ba32fa5475c9045d6",
     "marked": 0
   }
 }
