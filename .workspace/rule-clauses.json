@@ -618,12 +618,12 @@
   },
   "tests/test_osnorm_single_source.py": {
     "clauses": {},
-    "file_sha256": "079d74695f85d12bf3df50648ed28d7705823b0d154f66e83945e2d732f1e2b3",
+    "file_sha256": "f6a6587e19bab6c76ef6d194e663c5f20a022833ad340ea7e8a967430b80176b",
     "marked": 0
   },
   "tests/osnorm_allowlist.json": {
     "clauses": {},
-    "file_sha256": "99c9456540c42e39f372d8a1feb8b31ad791ab5921257b2ba32fa5475c9045d6",
+    "file_sha256": "6a34eba4aed015401f01e272cc0487f24d9b64db28fef77b19a13ce2840938e4",
     "marked": 0
   }
 }

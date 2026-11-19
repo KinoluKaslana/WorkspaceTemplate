@@ -8,7 +8,7 @@
 
 关键约定：
 - 匹配粒度是 `(file, rule, target, line_kind)`，**不按行号**（行号会漂移）。
-- allowlist 的 `count` 是上限：实测 > count 即红；实测 == 0 也即红（归零必须删表项）。
+- allowlist 的 `count` 必须精确等于实测；`baseline` 另钉住每个 `(file, rule)` 的历史最低值。
 - 每条规则都有正例/反例自检（R8），违规片段必须命中、合规片段必须不命中。
 - `osnorm.py` 是唯一实现，所以它是 R1–R5 的结构性豁免对象；hooks 不 import 它，
   而是以 **adapter 等价**（R7）钉在声明子域上。
@@ -237,8 +237,8 @@ def load_allowlist() -> dict:
     return json.loads(osnorm.read_text(ALLOWLIST_PATH))
 
 
-def audit(actual: Counter, entries: list[dict]) -> list[str]:
-    """实测 vs 登记表：超上限、未登记、已归零未删、缺理由/到期，全部算问题。"""
+def audit(actual: Counter, entries: list[dict], baseline: dict[str, dict[str, int]]) -> list[str]:
+    """实测、精确登记与历史最低基线三方对账；任一方向漂移都算问题。"""
     problems: list[str] = []
     recorded: dict[tuple, dict] = {}
     for entry in entries:
@@ -264,12 +264,39 @@ def audit(actual: Counter, entries: list[dict]) -> list[str]:
             problems.append(f"未登记的违规：{key} 实测 {count} 处（要么修掉，要么入表）")
             continue
         limit = entry.get("count") if isinstance(entry.get("count"), int) else 0
-        if count > limit:
-            problems.append(f"违规超过登记上限：{key} 实测 {count} > count {limit}")
+        if count != limit:
+            problems.append(f"违规数与登记不等：{key} 实测 {count} != count {limit}")
 
     for key, entry in sorted(recorded.items()):
         if actual.get(key, 0) == 0:
             problems.append(f"登记项已归零或不存在，必须删除该表项：{key}")
+
+    current_by_file_rule = Counter()
+    for entry in entries:
+        if isinstance(entry.get("count"), int) and entry["count"] > 0:
+            current_by_file_rule[(entry.get("file"), entry.get("rule"))] += entry["count"]
+    baseline_by_file_rule: dict[tuple, int] = {}
+    for file, rules in baseline.items():
+        if not isinstance(rules, dict):
+            problems.append(f"baseline 文件项必须是 rule→count 对象：{file!r}")
+            continue
+        for rule, count in rules.items():
+            key = (file, rule)
+            if rule not in RULES:
+                problems.append(f"baseline 条目规则不在 R1–R6：{key}")
+            if not isinstance(count, int) or count <= 0:
+                problems.append(f"baseline count 必须是正整数：{key}={count!r}")
+                count = 0
+            baseline_by_file_rule[key] = count
+    for key, count in sorted(current_by_file_rule.items()):
+        if key not in baseline_by_file_rule:
+            problems.append(f"baseline 缺少当前登记项：{key}")
+        elif count > baseline_by_file_rule[key]:
+            problems.append(
+                f"当前 count 高于历史最低 baseline：{key} 当前 {count} > baseline {baseline_by_file_rule[key]}"
+            )
+    for key in sorted(set(baseline_by_file_rule) - set(current_by_file_rule)):
+        problems.append(f"baseline 存在无当前登记项：{key}")
     return problems
 
 
@@ -377,7 +404,8 @@ class SingleSourceScanTest(unittest.TestCase):
         self.assertEqual(dirty, [], f"本轮新增文件不得带任何存量违规：{dirty}")
 
     def test_no_unregistered_violation(self) -> None:
-        problems = audit(self.actual, load_allowlist()["entries"])
+        doc = load_allowlist()
+        problems = audit(self.actual, doc["entries"], doc["baseline"])
         self.assertEqual(problems, [], "\n".join(problems))
 
 
@@ -414,10 +442,11 @@ class AllowlistTest(unittest.TestCase):
     def test_schema(self) -> None:
         self.assertEqual(self.doc["version"], 1)
         self.assertIsInstance(self.doc["entries"], list)
+        self.assertIsInstance(self.doc["baseline"], dict)
         self.assertTrue(self.doc["entries"], "第 0 步的存量基线不得为空")
 
     def test_counts_match_reality(self) -> None:
-        problems = audit(self.actual, self.doc["entries"])
+        problems = audit(self.actual, self.doc["entries"], self.doc["baseline"])
         self.assertEqual(problems, [], "\n".join(problems))
 
     def test_every_entry_has_reason_and_expiry(self) -> None:
@@ -439,16 +468,38 @@ class AllowlistTest(unittest.TestCase):
                     "reason": "自检用假条目", "expires": "R39"}]
         over = Counter({("tests/test_osnorm_properties.py", "R1", "open",
                          "keyword:encoding="): 3})
-        self.assertTrue(any("超过登记上限" in p for p in audit(over, entries)))
+        baseline = {"tests/test_osnorm_properties.py": {"R1": 1}}
+        self.assertTrue(any("与登记不等" in p for p in audit(over, entries, baseline)))
         zeroed = Counter()
-        self.assertTrue(any("必须删除" in p for p in audit(zeroed, entries)))
+        self.assertTrue(any("必须删除" in p for p in audit(zeroed, entries, baseline)))
         unregistered = Counter({("scripts/osnorm.py", "R6", "os.path.normcase", "call"): 1})
-        self.assertTrue(any("未登记" in p for p in audit(unregistered, entries)))
-        self.assertTrue(any("必须删除" in p for p in audit(unregistered, entries)))
+        self.assertTrue(any("未登记" in p for p in audit(unregistered, entries, baseline)))
+        self.assertTrue(any("必须删除" in p for p in audit(unregistered, entries, baseline)))
         bad_zero = [dict(entries[0], count=0)]
-        self.assertTrue(any("正整数" in p for p in audit(over, bad_zero)))
+        self.assertTrue(any("正整数" in p for p in audit(over, bad_zero, baseline)))
         no_reason = [dict(entries[0], count=3, reason="")]
-        self.assertTrue(any("reason/expires" in p for p in audit(over, no_reason)))
+        self.assertTrue(any("reason/expires" in p for p in audit(over, no_reason, baseline)))
+
+    def test_t_b2a_count_plus_one_is_red(self) -> None:
+        entries = [dict(item) for item in self.doc["entries"]]
+        entries[0]["count"] += 1
+        self.assertTrue(any("与登记不等" in p
+                            for p in audit(self.actual, entries, self.doc["baseline"])))
+
+    def test_t_b2b_count_minus_one_is_red(self) -> None:
+        entries = [dict(item) for item in self.doc["entries"]]
+        entries[0]["count"] -= 1
+        self.assertTrue(any("与登记不等" in p
+                            for p in audit(self.actual, entries, self.doc["baseline"])))
+
+    def test_t_b2c_count_above_baseline_is_red(self) -> None:
+        entry = dict(self.doc["entries"][0])
+        baseline = {entry["file"]: {entry["rule"]: entry["count"]}}
+        entry["count"] += 1
+        actual = Counter({(entry["file"], entry["rule"], entry["target"],
+                           entry["line_kind"]): entry["count"]})
+        self.assertTrue(any("高于历史最低 baseline" in p
+                            for p in audit(actual, [entry], baseline)))
 
 
 # ---------------------------------------------------------------- 测试：R7 adapter oracle
