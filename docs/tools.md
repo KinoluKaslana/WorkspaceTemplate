@@ -240,7 +240,12 @@ UTF-8 + `errors`，并把 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 注入子进�
 `local_state` 的 no-follow 发布路径、`skill_audit._utf8_stdio` 与两个 hooks adapter
 （hooks 实例可能没有 `scripts/`，所以 hooks **不 import** osnorm，只按 R7 的 adapter oracle
 钉在声明子域上）；其余存量违规只能进 `tests/osnorm_allowlist.json` 的
-`(file, rule, target, line_kind)` 节点级表项，`count` 是**上限**（只许下调，归零必须删表项）。
+`(file, rule, target, line_kind)` 节点级表项。账本口径三条：
+
+- `count` 必须**精确等于**实测（`>` 或 `<` 都红；归零必须删表项）。
+- `baseline` 记录每个 `(file, rule)` 的历史最低值，`count` 不得高于它。
+- 账本本身进 `TEMPLATE_FILES` 哈希锁定：抬高账本会留下 `HASH-DIFF`，派生实例自行放宽会被
+  `verify_rules --vs-template` 暴露。同仓内抬高要同时重建注册表，两次改动都留在 diff 与 CI 记录里。
 
 ## 7. 退出码约定
 

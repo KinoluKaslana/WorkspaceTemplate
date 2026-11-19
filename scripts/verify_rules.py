@@ -167,6 +167,7 @@ TEMPLATE_FILES = [
     "tests/test_osnorm_cases.json",
     "tests/test_osnorm_properties.py",
     "tests/test_osnorm_single_source.py",
+    # 方案 C（三席 V7）：账本进哈希锁定 —— 抬高 count/baseline 必留 HASH-DIFF
     "tests/osnorm_allowlist.json",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
