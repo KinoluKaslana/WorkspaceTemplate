@@ -182,7 +182,8 @@ def _fenced_lines(lines) -> set:
 
 
 _BASELINE_HEAD_RE = re.compile(r"^## 5\. 当前基线")
-_SKIP_DIRS = {".git", "__pycache__", "node_modules"}
+# 递归 md 的跳过名单**不在这里写**：单一来源是 `policy_facts._transient_dir()`（R39b），
+# `_iter_md()` 直接调它；第二份黑名单必然漂移（旧实现已漏掉 `backup-*` / `sandbox-*`）。
 # G7：未登记的 skill 计数。三种形状都算「写死了 skill 数量」：
 #   ① 中文量词（七个 skill / 8 个 skill）
 #   ② 阿拉伯数字或**英文数词**（eight skills / fourteen skills / twenty skills / 101 skills）
@@ -432,10 +433,18 @@ def _authority_value(site, root) -> str:
 # ── scan：读盘 → 定位标记 → 提取 → 取权威值 ───────────────────────────────────
 
 def _iter_md(root):
+    """递归 md 清单：跳过判据的单一来源是 `policy_facts._transient_dir()`（R39b）。
+
+    测试侧不再自留第三份黑名单——备份副本（`.workspace/backup-*/`）、并行沙箱
+    （`sandbox-*/`）在生产扫描器里被跳过，这里也必须跳过，否则「副本基线干净」这类
+    前置断言会因备份目录里的副本而假红。
+    """
     root = Path(root)
+    transient = _policy_facts_module(root)._transient_dir
     for path in sorted(root.rglob("*.md")):
         parts = path.relative_to(root).parts[:-1]
-        if _SKIP_DIRS & set(parts) or any(p.startswith(".venv") for p in parts):
+        if any(transient(part, parts[i - 1] if i else "")
+               for i, part in enumerate(parts)):
             continue
         yield path
 

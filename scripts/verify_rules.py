@@ -158,6 +158,9 @@ TEMPLATE_FILES = [
     # R38f：BOM / 换行的机械统一（§3.1 的清理入口 + 它自己的契约测试）
     "scripts/encoding_guard.py",
     "tests/test_encoding_guard.py",
+    # 提交前统一门禁：单一入口（阶段顺序固定），CI 治理 job 跑同一条命令
+    "scripts/check_all.py",
+    ".workspace/skills/commit-gate/SKILL.md",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.

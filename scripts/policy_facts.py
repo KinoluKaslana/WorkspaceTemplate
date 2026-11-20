@@ -29,6 +29,7 @@
 退出码：0 一致；1 有 finding（--check）；2 用法/IO/块缺失（--write 不自动插标记）。
 """
 import argparse
+import fnmatch
 import importlib.util
 import json
 import re
@@ -92,7 +93,27 @@ _DUP_FACT_SITES = (
 # （`当前政策版本|政策版本|policy version`）是开放词表补洞——词表内的字段名会误报
 # （`"当前政策版本"只是字段名`），词表外的说法照样漏（`本模板现行治理基线为 9.9.9。`）。
 # 现在只认**结构**：生成块 / `<!-- history:x.y.z -->`。纯散文归 N2（人工评审层）。
-_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".hook-state"}
+# 瞬时/旁路目录：**其下的 md 不是本仓文档**（构建产物、虚拟环境、备份副本、并行沙箱）。
+# 扫描一律经 `_transient_dir()` 收口（R39b）：旧实现只按目录名精确匹配，
+# `.workspace/backup-<ts>-encoding/` 里的备份副本会被当成本仓文档 → `--fix` 刚剥完 BOM，
+# `--check` 反而红（备份副本里还留着生成块标记）。新增旁路形态只改这张表，其它脚本可复用。
+TRANSIENT_DIR_PATTERNS = (
+    ".git", ".venv*", "__pycache__", "node_modules", ".hook-state",
+    "backup-*", "sandbox-*", "*.egg-info",
+)
+# 需要「父 + 子」两段才成立的旁路路径（单看目录名会误伤真实文档）。
+TRANSIENT_DIR_PAIRS = {(".workspace", ".local")}
+
+
+def _transient_dir(name, parent=""):
+    """`name` 是否为瞬时/旁路目录 → 其下 md 不参与本仓文档判定。
+
+    `parent` 只用于两段式形态（如 `.workspace/.local`）；其余形态只看目录名。
+    单一入口：任何需要递归 md 的脚本复用本函数，不要在各自文件里另抄一份黑名单。
+    """
+    if any(fnmatch.fnmatchcase(name, pattern) for pattern in TRANSIENT_DIR_PATTERNS):
+        return True
+    return (parent, name) in TRANSIENT_DIR_PAIRS
 
 
 class FactSourceError(Exception):
@@ -284,7 +305,8 @@ def _iter_md(root):
     root = Path(root)
     for path in sorted(root.rglob("*.md")):
         parts = path.relative_to(root).parts[:-1]
-        if _SKIP_DIRS & set(parts) or any(p.startswith(".venv") for p in parts):
+        if any(_transient_dir(part, parts[i - 1] if i else "")
+               for i, part in enumerate(parts)):
             continue
         yield path
 

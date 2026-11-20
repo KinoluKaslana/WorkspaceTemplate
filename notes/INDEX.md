@@ -1,6 +1,6 @@
 # Notes Index — Workspace 经验索引（紧凑路由）
 
-> **本文件由 `notes/rebuild_index.py` 自动生成**（2026-11-20 11:38 +0800），禁止手改。
+> **本文件由 `notes/rebuild_index.py` 自动生成**（2026-11-20 17:28 +0800），禁止手改。
 > 只做路由：按 name+摘要定位 note；关键词倒排索引与关联图在 `_INVERTED.md`（按需加载）。
 
 共 **1** 篇活跃 note，**0** 篇已归档，**2** 个关键词（详见 `_INVERTED.md`）。

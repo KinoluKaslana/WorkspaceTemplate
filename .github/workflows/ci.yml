@@ -30,16 +30,10 @@ jobs:
       - name: tag 身份（同名 tag 必须与 HEAD 同树：改内容必须升版本）
         if: github.ref == 'refs/heads/main'
         run: python3 .github/scripts/release_anchor.py --assert-tag-identity
-      - run: python3 scripts/mark_rules.py check AGENT_RULES.md
-      - run: python3 scripts/verify_rules.py --workspace .
-      - run: python3 scripts/clause_lint.py
-      - run: python3 scripts/skill_audit.py --strict
-      - name: policy facts（生成块 == 权威源；政策版本字面量必须已登记）
-        run: python3 scripts/policy_facts.py --check
-      - name: 文本编码（模板层必须 UTF-8 无 BOM + LF；本仓阻断，实例只 WARN）
-        run: python3 scripts/encoding_guard.py --check
-      - run: python3 scripts/docs_index.py build
-      - run: python3 scripts/docs_hit_report.py --mode both --min 10
+      - name: 提交前统一门禁（check_all.py --check：阶段 5–14；本地提交前跑同一条命令）
+        run: python3 scripts/check_all.py --check
+      - name: docs 判据集命中率（不在 check_all 阶段表内：判据集与阈值是独立口径）
+        run: python3 scripts/docs_hit_report.py --mode both --min 10
 
   tests:
     strategy:

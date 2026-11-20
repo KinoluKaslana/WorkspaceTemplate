@@ -59,7 +59,7 @@ WorkspaceTemplate 把这些约定固化为一组小而明确的文件。它可�
 | 单一政策源 | [`AGENT_RULES.md`](AGENT_RULES.md) 统一约束主 Agent 与子 Agent；客户端入口只负责定位它 |
 | 规则分层 | 模板层文件**锁定只读**（同步=整文件替换）；本地规则全部外置到 `<file>.custom.md`，**custom 优先**（§10） |
 | 完整性校验 | 条款带稳定 ID（`<!-- id:Rn -->`）+ 注册表双级校验；`--vs-template` 对模板克隆做**字节级比对 + git 信任锚**，堵死"改文件再重生成注册表"的自我作证漏洞 |
-| 生命周期 skills | 随模板分发到 `.workspace/skills/`：`template-update`（任意 ref 同步）、`workspace-repo-sync`（跨设备同步工作区仓库）、`workspace-init`（接管/首次落地）、`git-init`（建仓）、`delivery-closure`（交付闭环）、`release`（发版闭环）、`docs-retrieval-maintenance`（文档检索维护）、`legacy-workspace-upgrade`（旧版本工作区自举）、`workspace-skill-authoring`（把用户要的能力落成**工作区级** skill）。每个 skill 必须满足 8 维契约，`skill_audit.py` 机械检查 |
+| 生命周期 skills | 随模板分发到 `.workspace/skills/`：`template-update`（任意 ref 同步）、`workspace-repo-sync`（跨设备同步工作区仓库）、`workspace-init`（接管/首次落地）、`git-init`（建仓）、`delivery-closure`（交付闭环）、`release`（发版闭环）、`commit-gate`（提交前质量门）、`docs-retrieval-maintenance`（文档检索维护）、`legacy-workspace-upgrade`（旧版本工作区自举）、`workspace-skill-authoring`（把用户要的能力落成**工作区级** skill）。每个 skill 必须满足 8 维契约，`skill_audit.py` 机械检查 |
 | 首次初始化协议 | [`.workspace/bootstrap.json`](.workspace/bootstrap.json) 持久化 `workspace_id` / `workspace_status` 与 `git.status`（**可选**：initialized / declined）；运行时模式 `uv` / `local-venv` / `mcp`（默认 uv）在**本机状态** `.workspace/.local/v1/<context_id>/runtime.json`；**既有工作区一旦配置就不被模板演进改写** |
 | 业务无关 | [`WORKSPACE.md`](WORKSPACE.md) 初始为空，由用户的稳定需求定义目标、范围与验收 |
 | Skills 单路径接入 | 用户只提供根目录，Agent 自动发现入口、记录指纹并处理同名冲突 |
@@ -285,6 +285,7 @@ skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间）
 | [git-init](.workspace/skills/git-init/SKILL.md) | 1.2.0 | "建 git 仓库"，或 `git.status=declined` 后改主意 | init → .gitignore → 登记 → 审查暂存清单 → 提交 → 核提交树；含撤销建仓 |
 | [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 任务模式产物落盘、准备声明完成 | 产物清点（无仓用时间戳列举）→ 查 INDEX → note 三选一 → 索引回写 → 外部动作验证 → 三档口径声明 |
 | [release](.workspace/skills/release/SKILL.md) | 1.0.0 | 升政策版本、打 tag、发版 | dry-run → apply 事务/回滚 → verify → tag；push 与实例同步人工执行 |
+| [commit-gate](.workspace/skills/commit-gate/SKILL.md) | 1.0.0 | 任何 `git commit` 之前、`release.py --apply` 之后、合并 main 之前 | 一条命令收敛全部质量门：`check_all.py --fix` → `--check` → `--full`；格式类回修，判据类必须人判 |
 | [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 工作区模板版本旧、缺现行 skill / 无 `template_sync.py` | 从模板快照自举 → `--apply` → `--sync-registry` + TOOLS 补登 → 四条验收 |
 | [workspace-skill-authoring](.workspace/skills/workspace-skill-authoring/SKILL.md) | 1.0.0 | 用户明确要求新建/修改**工作区级** skill | 缺口证据 → 重叠检查 → kebab 命名 → 草稿 → 8 维契约 → 转正与三处登记 → 审批/试用 |
 | [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | docs 改动、索引 stale、命中率下降 | build/check → 命中报告 → 只在真实缺口下加别名（上限 8、留一验证）→ 五条验收 |

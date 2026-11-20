@@ -117,8 +117,9 @@ class FixTest(GuardCase):
     def test_backup_keeps_original_bytes(self) -> None:
         original = osnorm.read_bytes(self.root / "WORKSPACE.md")
         self.assertEqual(self.run_guard("--fix").returncode, 0)
-        backups = sorted((self.root / ".workspace").glob("backup-*-encoding"))
+        backups = sorted((self.root / ".workspace" / "backup-encoding").glob("*"))
         self.assertEqual(len(backups), 1, backups)
+        self.assertTrue(backups[0].is_dir(), "备份目录形态：.workspace/backup-encoding/<ts>/")
         self.assertEqual(osnorm.read_bytes(backups[0] / "WORKSPACE.md"), original)
         self.assertTrue(original.startswith(BOM), "前提：备份的是带 BOM 的原始字节")
 

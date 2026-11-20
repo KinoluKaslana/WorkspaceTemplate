@@ -1,9 +1,9 @@
 <!-- gen:policy-facts:begin -->
 <!-- doc-fact:tools-md-heading -->
-# 工具（scripts/，21 个）
+# 工具（scripts/，22 个）
 <!-- gen:policy-facts:end -->
 
-> 实现说明，不构成政策。所有脚本只依赖标准库，要求 Python ≥ 3.10。**`--json` 语义各脚本不同**：`verify_rules.py` 的 `--json` 是**输出文件路径**，`skill_audit.py`/`workspace_preflight.py`/`docs_*.py`/`template_sync.py`/`pyenv_init.py` 的 `--json` 是「打印 JSON 到 stdout」，`mark_rules.py` 无此参数——以各条示例与 `--help` 为准。
+> 实现说明，不构成政策。所有脚本只依赖标准库，要求 Python ≥ 3.10。**`--json` 语义各脚本不同**：`verify_rules.py` 的 `--json` 是**输出文件路径**，`skill_audit.py`/`workspace_preflight.py`/`docs_*.py`/`template_sync.py`/`pyenv_init.py` 的 `--json` 是「打印 JSON 到 stdout」，`check_all.py --json` 同样是「stdout 只放 JSON，人读进度走 stderr」，`mark_rules.py` 无此参数——以各条示例与 `--help` 为准。
 
 ## 0. 一览
 
@@ -31,6 +31,7 @@
 | `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_state` / `read_status` / `bind` / `resolve_identity` / `detect_platform_info` | `import local_state` | 库：不变量失败抛 `ValueError`/`TypeError`；判读结果在返回字典的 `status`/`reason` |
 | `osnorm.py` | 路径交换格式与文本 I/O 的**唯一实现**（库，无 CLI）：`canonical_path` / `family` / `read_text` / `write_text` / `run_text` / `atomic_write_text` / `replace_retry` / `configure_stdio` / `BOM_POLICY` | `import osnorm` | 库：路径形式不可接受抛 `PathFormError`（`ValueError` 子类） |
 | `encoding_guard.py` | 文本编码机械统一：扫模板层 + 用户可编辑清单的 BOM / 纯 CRLF / 混合换行；`--fix` 备份后剥 BOM + 统一 LF（幂等） | `--check [--json]`；`--fix`；`[--root PATH]` | `--check`：0 干净 / 1 有发现；`--fix`：0 全部修好 / 1 有文件修复失败 |
+| `check_all.py` | 提交前统一门禁：按**固定顺序**跑 4 个修复阶段 + 10 个检查阶段（`--full` 再加 tests / hooks-tests）；本地与 CI 治理 job 跑同一条命令 | `[--fix] [--check] [--full] [--json] [--only a,b]` | 0 全绿 / 1 任一阶段失败 / 2 用法错误 |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 
@@ -275,12 +276,64 @@ python3 scripts/encoding_guard.py --check --root /path/to/ws   # 诊断别的树
 | 清理 | `--fix` 备份 → 剥 BOM → 统一 LF；无发现的文件一个字节都不碰 | 本脚本 |
 | 门禁 | 模板仓自身 CI **阻断**；实例的 `workspace_preflight` 只 **WARN** | `ci.yml` / `workspace_preflight.py` |
 
-`--fix` 的备份目录是 `.workspace/backup-<ts>-encoding/`（保留工作区相对路径，原始字节），
+`--fix` 的备份目录是 `.workspace/backup-encoding/<ts>/`（保留工作区相对路径，原始字节），
 不覆盖已有备份；写盘走 `osnorm.atomic_write_bytes` 并保留原文件权限位。
-`--fix` 之后再跑 `--check` 必须 rc=0；再跑一次 `--fix` 必须一个文件都不改（幂等）。
+`backup-*` 是递归文档扫描的旁路目录（`policy_facts._transient_dir()`），备份副本不会被
+当成本仓文档，所以 `--fix` 之后再跑 `--check` 必须 rc=0；再跑一次 `--fix` 必须一个文件都不改（幂等）。
 
 `template_sync.py --apply` 收尾会跑一次 `--check`，把「有 N 个文件带 BOM/换行问题 + 一键命令」
 写进报告（`--json` 里的 `text_encoding`），**不自动改用户文件**。
+
+## 6.7 提交前统一门禁：`check_all.py`
+
+```bash
+<venv-python> scripts/check_all.py            # = --check：只跑检查（阶段 5–14）
+<venv-python> scripts/check_all.py --fix      # 先修（1–4），再查（5–14）
+<venv-python> scripts/check_all.py --full     # 再加 tests + hooks-tests（15–16，约 2 分钟）
+<venv-python> scripts/check_all.py --check --json | head -c 400
+<venv-python> scripts/check_all.py --only encoding_check,version   # 调试单点，不是提交门
+```
+
+**为什么要它**：格式修复、注册表重建、判据检查、索引校验分散在十几个脚本里，靠人「记得逐个跑」
+必然漏；本地跑一套、CI 跑另一套还会漂移。`check_all.py` 把顺序固定成一张表，本地提交前与
+CI 治理 job 跑**同一条命令**。
+
+| 序 | 阶段 | 命令 | 归类 |
+|---|---|---|---|
+| 1 | `encoding` | `scripts/encoding_guard.py --fix` | 仅 `--fix` |
+| 2 | `registry` | `scripts/mark_rules.py registry AGENT_RULES.md` | 仅 `--fix` |
+| 3 | `docs_index_fix` | `scripts/docs_index.py build` | 仅 `--fix` |
+| 4 | `notes_fix` | `notes/rebuild_index.py` | 仅 `--fix` |
+| 5 | `encoding_check` | `scripts/encoding_guard.py --check` | 检查 |
+| 6 | `registry_check` | `scripts/mark_rules.py check AGENT_RULES.md` | 检查 |
+| 7 | `verify_rules` | `scripts/verify_rules.py --workspace .` | 检查 |
+| 8 | `clause_lint` | `scripts/clause_lint.py` | 检查 |
+| 9 | `skill_audit` | `scripts/skill_audit.py --strict` | 检查 |
+| 10 | `policy_facts` | `scripts/policy_facts.py --check` | 检查 |
+| 11 | `docs_index_check` | `scripts/docs_index.py check` | 检查 |
+| 12 | `notes_check` | `scripts/notes_index_check.py` | 检查 |
+| 13 | `version` | `scripts/version_check.py` | 检查 |
+| 14 | `osnorm_gate` | `python -m unittest tests.test_osnorm_single_source` | 检查 |
+| 15 | `tests` | `python -m unittest discover -s tests -p 'test_*.py'` | 仅 `--full` |
+| 16 | `hooks` | `python -m unittest discover -s hooks-tests -p 'test_*.py'` | 仅 `--full` |
+
+**为什么顺序不能重排**：修复阶段必须在检查阶段之前（否则查的是修之前的状态）；`osnorm_gate`
+在 unittest 派发之前（它的职责是钉住「唯一实现」这条约束，红了就不该再往下跑全量测试）。
+
+**行为契约**（机械可判）：
+
+- 每阶段打一行 `[ok] <stage> <秒>` / `[FAIL] <stage> <秒>`；失败时回显该阶段输出**尾部 20 行**。
+- 任一阶段失败 → rc=1；`--fix` 里修复阶段失败**不短路**，后面的检查照跑（一次看到全貌）。
+- `--fix` 收尾**强制复查**：修复阶段跑完后再跑一遍全部检查阶段，单独打印 `修复后复查` 段，
+  末尾汇总写「修复后仍有阶段未通过：<names>」；有失败即 rc=1（修复是否收口只看这次复查）。
+- `--json` 的 stdout 只有 `{"ok": bool, "stages": [{"name","ok","rc","seconds","tail"}]}`，人读进度走 stderr。
+- 子进程一律走 `osnorm.run_text`（恒捕获 + utf-8），解释器用**当前** `sys.executable`。
+- **只调度，不改判据**：不解释 findings、不自动 `git commit` / `git push`、不把失败改判成通过。
+- `--only a,b` 精确覆盖模式过滤（按阶段表顺序执行）——调试口；提交前只认完整三连。
+
+**它不覆盖什么**：`.github/scripts/release_anchor.py`（模板层改动必须进 `CHANGELOG`、tag 身份）
+留在 CI 里单独跑；`docs_hit_report.py` 的命中率判据、`docs_alias_audit.py` 的别名审计不在阶段表内
+（前者的判据集与阈值是独立口径，后者按需人工触发）。
 
 ## 7. 退出码约定
 

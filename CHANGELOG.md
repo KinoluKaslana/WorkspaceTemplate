@@ -3,6 +3,20 @@
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 > 账本标题格式（不改变历史条目语义）：可识别条目以行首 `##`、空白、`x.y.z` 开始；`x.y.z` 后可接日期或说明，但紧跟字符不得是数字、ASCII 字母、`.` 或 `-`。故 `## 3.7.0（日期，说明）` 可识别，`## 3.6.1beta`、`## 3.6.1.1`、`## 3.6.1-hotfix` 会被 `scripts/policy_facts.py --check` 拒绝；`###` 子标题不参与账本对账。
 
+## Unreleased
+
+- 新增 `scripts/check_all.py`：提交前统一门禁的单一入口，阶段表固定（4 个修复阶段 → 10 个检查阶段，`--full` 再加 tests / hooks-tests）；`--json` 输出 `{"ok","stages"}`；只调度，不 commit/push、不改判据。
+- 新增模板层 skill `.workspace/skills/commit-gate/SKILL.md`：任何 `git commit` 前强制 `--fix` → `--check` → `--full` 三连；格式类失败回修，判据类失败必须人判；`--only` 不得用于绕过必需阶段。
+- CI 治理 job 改用 `python3 scripts/check_all.py --check`（`release_anchor` 两步与 tag 身份检查保留原位），本地与 CI 从此跑同一条命令。
+- 登记：`TEMPLATE_FILES` + `docs/tools.md` 阶段表 + `skills/REGISTRY.md` / `TOOLS.md` 双登记；`policy_facts` 计数随权威源重渲染。
+- **R39b 扫描范围收口**：`policy_facts._iter_md()` 不再拿 `rglob("*.md")` 把旁路目录当本仓文档——
+  跳过逻辑收敛成模块级常量 `TRANSIENT_DIR_PATTERNS` + 单一函数 `_transient_dir()`（`.git`、`.venv*`、
+  `__pycache__`、`node_modules`、`.hook-state`、`.workspace/.local`、`backup-*`、`sandbox-*`、`*.egg-info`）。
+  真实文档判据不变（`README.md` 里的未登记生成块仍红）。
+- `encoding_guard.py --fix` 备份改到 `.workspace/backup-encoding/<ts>/`（旁路形态），`--check` 输出注明备份路径；
+  修完立刻 `policy_facts --check` 必须绿（旧形态下备份副本会被判成未登记生成块）。
+- `check_all.py --fix` 收尾**强制复查**：修完再跑一遍全部检查阶段、单独打印复查段，末尾列「修复后仍有阶段未通过」；有失败即 rc=1。
+
 ## 3.8.0（2026-11-16）
 
 ### 1. doc-fact 契约：从「正则扫散文」改成「生成器单入口」

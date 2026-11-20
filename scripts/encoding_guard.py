@@ -29,7 +29,8 @@ Git autocrlf）写出来的，用户通常不知道 BOM 是什么，也难判断
   --fix  ：0 全部修好（含无事可做）/ 1 有文件修复失败（备份或写盘）/ 2 用法或 IO
 
 幂等：`--fix` 只重写**有发现**的文件；第二次运行既无输出改动，也不触碰任何文件的 mtime。
-改前备份到 `.workspace/backup-<ts>-encoding/`（保留相对路径），失败可原样拷回。
+改前备份到 `.workspace/backup-encoding/<ts>/`（保留相对路径），失败可原样拷回；
+`backup-*` 是旁路目录，备份副本不会被 `policy_facts.py` 等递归扫描当成工作区文档。
 """
 from __future__ import annotations
 
@@ -147,7 +148,9 @@ def scan(root: Path) -> list[dict]:
 
 def backup_dir(root: Path) -> Path:
     stamp = dt.datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
-    return root / ".workspace" / f"backup-{stamp}-encoding"
+    # R39b：备份落在 `.workspace/backup-encoding/<ts>/`。`backup-*` 是 policy_facts 等
+    # 递归扫描的旁路目录（`_transient_dir()`），备份副本不会被当成工作区文档。
+    return root / ".workspace" / "backup-encoding" / stamp
 
 
 def fix(root: Path) -> tuple[list[str], list[str], Path | None]:
@@ -224,7 +227,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{','.join(item['problems']):10s} {item['path']}")
         if findings:
             print(f"{len(findings)}/{len(scanned)} 个文件有 BOM/换行问题 → "
-                  f"python3 scripts/encoding_guard.py --fix")
+                  f"python3 scripts/encoding_guard.py --fix"
+                  f"（改前备份到 .workspace/backup-encoding/<ts>/，保留相对路径与原始字节）")
         else:
             print(f"{len(scanned)} 个文件已是 UTF-8(no BOM) + LF")
     return 1 if findings else 0
