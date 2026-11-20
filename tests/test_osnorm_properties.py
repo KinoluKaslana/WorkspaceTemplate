@@ -216,6 +216,42 @@ class BomContractTest(PropertyCase):
         osnorm.write_text(target, "hello")
         self.assertEqual(osnorm.read_text(target, bom=True), "hello")
 
+    # ---- §3.1 模块级策略：一处决定，不在调用点散落 -------------------------------------
+
+    def _with_policy(self, value, fn):
+        saved = osnorm.BOM_POLICY
+        osnorm.BOM_POLICY = value
+        try:
+            return fn()
+        finally:
+            osnorm.BOM_POLICY = saved
+
+    def test_default_policy_tolerates_bom(self) -> None:
+        """默认 tolerate：不传 bom 也剥 BOM（记事本写的 bootstrap.json 不再被判 unknown）。"""
+        target = self.tmp / "bom.txt"
+        osnorm.write_bytes(target, b"\xef\xbb\xbfhello")
+        self.assertEqual(osnorm.read_text(target), "hello")
+
+    def test_strict_policy_keeps_bom(self) -> None:
+        target = self.tmp / "bom.txt"
+        osnorm.write_bytes(target, b"\xef\xbb\xbfhello")
+        self.assertEqual(self._with_policy("strict", lambda: osnorm.read_text(target)),
+                         "\ufeffhello")
+
+    def test_explicit_flag_overrides_policy(self) -> None:
+        target = self.tmp / "bom.txt"
+        osnorm.write_bytes(target, b"\xef\xbb\xbfhello")
+        self.assertEqual(self._with_policy("strict", lambda: osnorm.read_text(target, bom=True)),
+                         "hello")
+        self.assertEqual(self._with_policy("tolerate", lambda: osnorm.read_text(target, bom=False)),
+                         "\ufeffhello")
+
+    def test_unknown_policy_raises(self) -> None:
+        target = self.tmp / "bom.txt"
+        osnorm.write_bytes(target, b"hello")
+        with self.assertRaises(ValueError):
+            self._with_policy("lax", lambda: osnorm.read_text(target))
+
 
 # ---------------------------------------------------------------- 性质 6：解码
 

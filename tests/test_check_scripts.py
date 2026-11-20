@@ -128,6 +128,61 @@ class NotesIndexCheck(Base):
         self.assertEqual(p.returncode, 1)
         self.assertIn("E2", p.stdout)
 
+    # ---- C2：索引不得随日期漂移 ---------------------------------------------------------
+
+    def _curated(self, last="2026-11-02", interval=90):
+        (self.root / ".workspace").mkdir(exist_ok=True)
+        (self.root / ".workspace" / "bootstrap.json").write_bytes(
+            ('{"notes": {"curation": {"count_threshold": 25, "interval_days": %d,'
+             ' "last_curated_at": "%s"}}}' % (interval, last)).encode("utf-8"))
+
+    def test_index_has_no_today_derived_values(self):
+        """索引只写绝对量（上次策展日 / 间隔 / 到期日），不写「距今 N 天」。"""
+        self._curated()
+        self.build()
+        idx = (self.root / "notes" / "INDEX.md").read_bytes().decode("utf-8")
+        self.assertNotIn("距今", idx)
+        self.assertNotIn("天后到期", idx)
+        self.assertIn("上次策展 2026-11-02", idx)
+        self.assertIn("到期日 2027-01-31", idx)
+        self.assertEqual(self.run_script("notes_index_check.py").returncode, 0)
+
+    def test_status_line_does_not_drift_with_today(self):
+        """同一份 bootstrap 在两个不同的「今天」下必须产出同一行文案（隔天不再必红）。"""
+        import datetime as dtm
+        import importlib.util
+        import types
+
+        self._curated()
+        spec = importlib.util.spec_from_file_location(
+            "_notes_rebuild_probe", self.root / "notes" / "rebuild_index.py")
+        mod = importlib.util.module_from_spec(spec)          # type: ignore[arg-type]
+        spec.loader.exec_module(mod)                          # type: ignore[union-attr]
+
+        class Frozen(dtm.date):
+            _today = dtm.date(2026, 11, 20)
+
+            @classmethod
+            def today(cls):
+                return cls._today
+
+        def line_for(day):
+            Frozen._today = day
+            shim = types.SimpleNamespace(date=Frozen, datetime=dtm.datetime,
+                                         timedelta=dtm.timedelta)
+            saved = getattr(mod, "dt")
+            setattr(mod, "dt", shim)
+            try:
+                return mod.load_curation(1)
+            finally:
+                setattr(mod, "dt", saved)
+
+        line_a, due_a = line_for(dtm.date(2026, 11, 20))
+        line_b, due_b = line_for(dtm.date(2027, 3, 1))
+        self.assertEqual(line_a, line_b, "文案随日期漂移了")
+        self.assertFalse(due_a)
+        self.assertTrue(due_b, "过了到期日必须仍能判到期（只是不写进索引）")
+
 
 class SecretScan(Base):
     def test_clean_tree_is_green(self):

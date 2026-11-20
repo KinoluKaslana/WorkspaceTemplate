@@ -196,8 +196,9 @@ def is_template(root=ROOT):
     按模板契约检查 README。
     """
     try:
-        # 身份判据按原始字节解（bom=False 与原 `encoding="utf-8"` 一致）：带 BOM 的
-        # bootstrap.json 在原实现里就解不成 JSON → unknown，这里不悄悄放宽。
+        # 身份判据按 UTF-8 解；BOM 由 osnorm 的 BOM_POLICY（§3.1，tolerate）统一剥掉——
+        # 用户可编辑的 bootstrap.json 被记事本存成 UTF-8 with BOM 时不该让身份判成 unknown。
+        # 判据本身不放宽：JSON 损坏/字段非法仍 fail-closed。
         data = json.loads(osnorm.read_text(Path(root) / ".workspace" / "bootstrap.json"))
     except Exception:                                  # noqa: BLE001 —— 任一读取/解析失败均未知
         return "unknown"

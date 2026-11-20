@@ -183,7 +183,7 @@
   },
   "notes/rebuild_index.py": {
     "clauses": {},
-    "file_sha256": "49cd6c0882ae542f278822e3dfa39603e636bf814a0d1e022f41803ff3737cc3",
+    "file_sha256": "86ecf0b30c1f8071585ccbd4aa047138721fa4f8a93a7d4193fa70546bc6bf5c",
     "marked": 0
   },
   "notes/_TEMPLATE.md": {
@@ -203,7 +203,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "aa1026b8ba7849a57df7aeae485e37f68bfad316012250cf1546833ffc946dd7",
+    "file_sha256": "64fcb8cb9fc537508e9225a6922b33f0292518ae194be9d8d92a9e0d47615fca",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -253,7 +253,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "556ab24f1bca69cad9b9f9c1aa4aaef3da6b859d1f869b7dc73e28ddb9cbaa1a",
+    "file_sha256": "ef055aea90a0b097e7c5656e944624b66bc2669aed9e2f574e66f1a123d93ef3",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -263,7 +263,7 @@
   },
   "scripts/workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "b0f00f567ce49bde66928671eaccad8cd1e4809d50d9c983d3b8e4fe9632b9ab",
+    "file_sha256": "dd4e6c30787e62b1abab11ce074f027695e9e19cd0465e1316f55c4cb23ab144",
     "marked": 0
   },
   "scripts/pyenv_init.py": {
@@ -318,7 +318,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "e35af2a50e33ef3bfd153e80fbec1d24b659a8c2fa3a8438a635325523b0de04",
+    "file_sha256": "f6adb4e3ef7003b72efd3b95c101112dfecbcdbfa8b490e4d6878b9545217e3f",
     "marked": 0
   },
   "docs/skills.md": {
@@ -328,7 +328,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "c0307d0cb7afd131692b1774b5e840b839a96c8548b2b20b9c0c298ac37e82dc",
+    "file_sha256": "e0ebad2d94d6b60989de8175b4d995b623721ff70338fd2043edc674d8f0965c",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -373,7 +373,7 @@
   },
   "tests/test_check_scripts.py": {
     "clauses": {},
-    "file_sha256": "15ada177ab5b87e2000bcb65fefb121cad2c277e37111a160e1e541b969f8101",
+    "file_sha256": "b9c8f6a28d69239716e0d9dd80f8a12924e1ea8c8d7fde2f879784208b6c2c99",
     "marked": 0
   },
   "scripts/local_state.py": {
@@ -388,7 +388,7 @@
   },
   "scripts/policy_facts.py": {
     "clauses": {},
-    "file_sha256": "4b5da6e19d79a8c4c399090a4c169813419a357d790ac47ac81a9169d74942fe",
+    "file_sha256": "cf1be9eb7446fc4fd894d4a10a57c61a194828dc534b248b00ea6bee000b1d51",
     "marked": 0
   },
   "scripts/release.py": {
@@ -413,7 +413,7 @@
   },
   "scripts/notes_index_check.py": {
     "clauses": {},
-    "file_sha256": "88f8660af7cca8e8cce5fb659608d09450f8a6738a2e1725b00912bf77f384ce",
+    "file_sha256": "07fcc4b64155a38ea248b4602ca5b77187ef50fb641c682b90a0924663f8dab7",
     "marked": 0
   },
   "scripts/secret_scan.py": {
@@ -603,7 +603,7 @@
   },
   "scripts/osnorm.py": {
     "clauses": {},
-    "file_sha256": "fae3def2d3a0682fb7d2172dbe4a23763d96d4368d56677520fdb15804ebb85b",
+    "file_sha256": "e13cc3a740ae415c8468bda48330405c22397956e34298f5f5b55b9885d317ca",
     "marked": 0
   },
   "tests/test_osnorm_cases.json": {
@@ -613,7 +613,7 @@
   },
   "tests/test_osnorm_properties.py": {
     "clauses": {},
-    "file_sha256": "c0e7849a46e1aeca2f15dc241abc6043ede7e17c0289ac813d8968173d490da5",
+    "file_sha256": "e48d9601e0b28dc9fc6fdd8e6a1483c32aa7244d84ad4b9c658df40f87e0c31d",
     "marked": 0
   },
   "tests/test_osnorm_single_source.py": {
@@ -624,6 +624,16 @@
   "tests/osnorm_allowlist.json": {
     "clauses": {},
     "file_sha256": "f42c225be6c0190385125ea7c70129a399c040252ed105bfb5e2e4a349ba8a76",
+    "marked": 0
+  },
+  "scripts/encoding_guard.py": {
+    "clauses": {},
+    "file_sha256": "19c41c8c911c06892f1e52f7a332566d945212e18d998212cc95351e4364bc6e",
+    "marked": 0
+  },
+  "tests/test_encoding_guard.py": {
+    "clauses": {},
+    "file_sha256": "91ae7d4155b44dc29ce6cf59d656f8c9c3defa7a0d56edd51069515ce98f48d7",
     "marked": 0
   }
 }

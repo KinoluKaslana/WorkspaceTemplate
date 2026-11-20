@@ -299,6 +299,36 @@ def ensure_ignore_lines(ws: Path) -> list[str]:
     return missing, None
 
 
+def encoding_report(ws: Path) -> dict | None:
+    """同步收尾的编码自检：只**报告**，绝不改用户文件（一键命令交给用户）。
+
+    `--check --json` 取机器可读结果；脚本不存在（旧工作区）或起不来就返回 None。
+    子进程只给 `capture_output`、自己按 UTF-8 解码字节——本脚本不 import osnorm
+    （旧工作区没有 `scripts/osnorm.py`），也不新增 text/encoding 关键字（R2 单一来源）。
+    """
+    guard = ws / "scripts" / "encoding_guard.py"
+    if not guard.is_file():
+        return None
+    try:
+        p = subprocess.run([sys.executable, "-B", str(guard), "--check",
+                            "--root", str(ws), "--json"],
+                           cwd=str(ws), capture_output=True)
+    except OSError:
+        return None
+    raw = (p.stdout or b"").decode("utf-8", "replace")
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    findings = data.get("findings") or []
+    return {
+        "scanned": data.get("scanned"),
+        "files": len(findings),
+        "first": [f.get("path") for f in findings[:5]],
+        "fix": "python3 scripts/encoding_guard.py --fix" if findings else "",
+    }
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", required=True)
@@ -616,6 +646,11 @@ def main(argv: list[str]) -> int:
                     print(json.dumps(report, ensure_ascii=False))
                 return 2
 
+        # 编码收尾：只报告，不改用户文件（§3.1 机械统一：清理权留给用户一条命令）
+        enc = encoding_report(ws)
+        if enc is not None:
+            report["text_encoding"] = enc
+
         if a.json:
             print(json.dumps(report, ensure_ascii=False))
         else:
@@ -625,6 +660,9 @@ def main(argv: list[str]) -> int:
                 print("已删除上游移除的文件:", ", ".join(report["pruned"]))
             if a.verify:
                 print("verify clean:", (verify or {}).get("clean"))
+            if enc and enc["files"]:
+                print(f"文本编码：{enc['files']} 个文件有 BOM/换行问题（未自动改）→ {enc['fix']}")
+                print("  受影响（前 5）：", ", ".join(enc["first"]))
         return 0 if (not a.verify or (verify or {}).get("clean")) else 2
     finally:
         _run(["-C", str(tpl), "worktree", "remove", "--force", str(wt)],

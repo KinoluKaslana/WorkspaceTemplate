@@ -155,6 +155,9 @@ TEMPLATE_FILES = [
     "tests/test_osnorm_single_source.py",
     # 方案 C（三席 V7）：账本进哈希锁定 —— 抬高 count/baseline 必留 HASH-DIFF
     "tests/osnorm_allowlist.json",
+    # R38f：BOM / 换行的机械统一（§3.1 的清理入口 + 它自己的契约测试）
+    "scripts/encoding_guard.py",
+    "tests/test_encoding_guard.py",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.

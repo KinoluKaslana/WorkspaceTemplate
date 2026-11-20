@@ -112,7 +112,13 @@ def escape_table(value: str) -> str:
 
 
 def load_curation(active_count: int) -> tuple[str, bool]:
-    """Read curation config from bootstrap.json; return (status_line, due)."""
+    """Read curation config from bootstrap.json; return (status_line, due).
+
+    索引里只写**绝对量**（计数 / 阈值 / 上次策展日 / 间隔 / 到期日），**不写「距今 N 天」**。
+    原因：INDEX.md 是 `rebuild_index.py` 的输出，`notes_index_check.py` 逐字节比对「重建结果
+    vs 仓库里的索引」；只要行里带今天的派生值，隔天重建就与昨天落盘的索引不一致 —— 门禁随
+    日期漂移，隔天必红（C2）。到期与否仍是运行期事实：由第二个返回值与 stdout 报告，不进索引。
+    """
     threshold = DEFAULT_THRESHOLD
     interval = DEFAULT_INTERVAL_DAYS
     last: str | None = None
@@ -129,17 +135,18 @@ def load_curation(active_count: int) -> tuple[str, bool]:
     if last is None:
         if active_count > 0:
             due = True
-            return f"策展状态：{active_count} 篇活跃 / 阈值 {threshold}；从未策展 → **已到期**", True
+            return f"策展状态：{active_count} 篇活跃 / 阈值 {threshold}；从未策展（阈值一到即到期）", True
         return f"策展状态：{active_count} 篇活跃 / 阈值 {threshold}；尚未策展（无 note，不触发）", False
     try:
         last_day = dt.date.fromisoformat(str(last)[:10])
     except ValueError:
         return f"策展状态：last_curated_at 无法解析（{last}），请人工核对", True
-    days = (dt.date.today() - last_day).days
-    if days >= interval:
+    due_day = last_day + dt.timedelta(days=interval)
+    if dt.date.today() >= due_day:
         due = True
-    state = "**已到期**" if due else f"{interval - days} 天后到期"
-    return f"策展状态：{active_count} 篇活跃 / 阈值 {threshold}；上次策展 {last}（距今 {days} 天，{state}）", due
+    # 到期日（绝对日期）而不是「距今 N 天」：后者隔天就变，会让检查随日期漂移。
+    return (f"策展状态：{active_count} 篇活跃 / 阈值 {threshold}；"
+            f"上次策展 {last_day.isoformat()}，间隔 {interval} 天（到期日 {due_day.isoformat()}）"), due
 
 
 def main() -> int:

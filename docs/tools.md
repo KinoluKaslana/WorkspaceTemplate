@@ -1,6 +1,6 @@
 <!-- gen:policy-facts:begin -->
 <!-- doc-fact:tools-md-heading -->
-# 工具（scripts/，20 个）
+# 工具（scripts/，21 个）
 <!-- gen:policy-facts:end -->
 
 > 实现说明，不构成政策。所有脚本只依赖标准库，要求 Python ≥ 3.10。**`--json` 语义各脚本不同**：`verify_rules.py` 的 `--json` 是**输出文件路径**，`skill_audit.py`/`workspace_preflight.py`/`docs_*.py`/`template_sync.py`/`pyenv_init.py` 的 `--json` 是「打印 JSON 到 stdout」，`mark_rules.py` 无此参数——以各条示例与 `--help` 为准。
@@ -29,7 +29,8 @@
 | `repo_identity.py` | 仓库身份三段纯函数流水线：编码规范化 → 路径格式转换 → 白名单判定 | `from repo_identity import normalize_encoding, convert_format, repair, classify` | 库：非法或不可证明输入返回 `None` |
 | `gate_status.py` | harness 接线自检：各客户端有没有**运行期** gate 证据 | `[--require cc,codex,hermes,dsh] [--ttl-minutes N] [--json]` | 0 有证据 / 1 `--require` 缺证据 |
 | `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_state` / `read_status` / `bind` / `resolve_identity` / `detect_platform_info` | `import local_state` | 库：不变量失败抛 `ValueError`/`TypeError`；判读结果在返回字典的 `status`/`reason` |
-| `osnorm.py` | 路径交换格式与文本 I/O 的**唯一实现**（库，无 CLI）：`canonical_path` / `family` / `read_text` / `write_text` / `run_text` / `atomic_write_text` / `replace_retry` / `configure_stdio` | `import osnorm` | 库：路径形式不可接受抛 `PathFormError`（`ValueError` 子类） |
+| `osnorm.py` | 路径交换格式与文本 I/O 的**唯一实现**（库，无 CLI）：`canonical_path` / `family` / `read_text` / `write_text` / `run_text` / `atomic_write_text` / `replace_retry` / `configure_stdio` / `BOM_POLICY` | `import osnorm` | 库：路径形式不可接受抛 `PathFormError`（`ValueError` 子类） |
+| `encoding_guard.py` | 文本编码机械统一：扫模板层 + 用户可编辑清单的 BOM / 纯 CRLF / 混合换行；`--fix` 备份后剥 BOM + 统一 LF（幂等） | `--check [--json]`；`--fix`；`[--root PATH]` | `--check`：0 干净 / 1 有发现；`--fix`：0 全部修好 / 1 有文件修复失败 |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 
@@ -199,7 +200,8 @@ from osnorm import (PathFormError, canonical_path, family, read_text, write_text
 canonical_path(r"\\?\UNC\host\share\x")        # '//host/share/x'
 canonical_path("a/b", base="/r")               # '/r/a/b'（相对路径必须给 base）
 family("/mnt/c/Users")                        # 'wsl-mount'（≠ windows-drive）
-read_text(p, bom=True)                        # utf-8-sig（剥 BOM）；默认 utf-8 保 BOM
+read_text(p, bom=True)                        # utf-8-sig（剥 BOM）；bom=False 保 BOM
+read_text(p)                                  # bom=None → 取 BOM_POLICY（默认 tolerate：剥 BOM）
 write_text(p, "a\r\nb")                       # 磁盘落 'a\nb'（newline='lf' 默认）
 run_text(["git", "-C", ws, "status"])         # proc.stdout 恒为 str，永不是 None
 ```
@@ -222,7 +224,8 @@ run_text(["git", "-C", ws, "status"])         # proc.stdout 恒为 str，永不�
 
 **换行与解码契约（API 与性质测试共用同一契约）**：`write_text(newline="lf")`（默认）先把
 `\r\n`/`\r` 归一为 `\n`，磁盘恒为 LF；`newline="preserve"` 原样。`read_text` 的 `bom=True`
-用 `utf-8-sig` 剥 BOM，`bom=False` 把 `\ufeff` 留给调用方。`errors` 按场景显式声明：
+用 `utf-8-sig` 剥 BOM，`bom=False` 把 `\ufeff` 留给调用方；**不传 `bom`（`None`）时取模块级
+`BOM_POLICY`**（默认 `tolerate` = 剥 BOM，见下节 §6.6）。`errors` 按场景显式声明：
 治理/JSON 用 `strict`，日志用 `replace`，`secret_scan` 用 `ignore`；**不猜编码**——
 UTF-16/GBK 在 `strict` 下上抛。
 
@@ -246,6 +249,38 @@ UTF-8 + `errors`，并把 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 注入子进�
 - `baseline` 记录每个 `(file, rule)` 的历史最低值，`count` 不得高于它。
 - 账本本身进 `TEMPLATE_FILES` 哈希锁定：抬高账本会留下 `HASH-DIFF`，派生实例自行放宽会被
   `verify_rules --vs-template` 暴露。同仓内抬高要同时重建注册表，两次改动都留在 diff 与 CI 记录里。
+
+## 6.6 文本编码：`encoding_guard.py`（BOM / 换行机械统一）
+
+```bash
+python3 scripts/encoding_guard.py --check            # 只报告；有发现 rc=1
+python3 scripts/encoding_guard.py --check --json     # {"root","scanned","findings":[{"path","problems"}]}
+python3 scripts/encoding_guard.py --fix              # 备份后剥 BOM + 统一 LF（幂等）
+python3 scripts/encoding_guard.py --check --root /path/to/ws   # 诊断别的树（CI/排查用）
+```
+
+**扫什么**：`TEMPLATE_FILES`（唯一事实源 `scripts/verify_rules.py`）+ 用户可编辑清单
+（`.workspace/bootstrap.json`、`WORKSPACE.md`、`TOOLS.md`、`notes/**/*.md`、任意 `*.custom.md`）。
+
+**判什么**（只看字节，不解码）：`BOM` / 纯 `CRLF` / 纯 `CR` / 混合换行 `MIXED`。
+
+**为什么是「一处决定 + 一键清理」而不是「报错让用户改」**：BOM 与 CRLF 都是外部工具
+（记事本、PowerShell `Set-Content`、Git autocrlf）写的，用户通常不知道 BOM 是什么，
+也难判断哪个编辑器会写它。所以四层分工：
+
+| 层 | 做法 | 落点 |
+|---|---|---|
+| 读 | `osnorm.BOM_POLICY = "tolerate"`：`read_text(bom=None)` 剥 BOM | `scripts/osnorm.py` |
+| 写 | `write_text` 固定 UTF-8 无 BOM（永不自产 BOM） | `scripts/osnorm.py` |
+| 清理 | `--fix` 备份 → 剥 BOM → 统一 LF；无发现的文件一个字节都不碰 | 本脚本 |
+| 门禁 | 模板仓自身 CI **阻断**；实例的 `workspace_preflight` 只 **WARN** | `ci.yml` / `workspace_preflight.py` |
+
+`--fix` 的备份目录是 `.workspace/backup-<ts>-encoding/`（保留工作区相对路径，原始字节），
+不覆盖已有备份；写盘走 `osnorm.atomic_write_bytes` 并保留原文件权限位。
+`--fix` 之后再跑 `--check` 必须 rc=0；再跑一次 `--fix` 必须一个文件都不改（幂等）。
+
+`template_sync.py --apply` 收尾会跑一次 `--check`，把「有 N 个文件带 BOM/换行问题 + 一键命令」
+写进报告（`--json` 里的 `text_encoding`），**不自动改用户文件**。
 
 ## 7. 退出码约定
 

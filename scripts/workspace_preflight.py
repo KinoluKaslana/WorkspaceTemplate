@@ -15,6 +15,7 @@
   template_clone  template.local_clone 是否存在、remote 是否与 source_repo 一致、HEAD 分支
   skills          目录 ↔ REGISTRY.md ↔ TOOLS.md 三方一致
   template_files  TEMPLATE_FILES 是否齐全
+  text_encoding   模板层/用户可编辑文件的 BOM 与换行（WARN，附一条 --fix 命令）
   notes_index     notes/INDEX.md 是否存在
   docs_index      docs/ 存在时索引是否新鲜（不存在则 n/a）
   git             remote / 当前分支 / 上游 / ahead-behind / 脏文件数 / .hook-state 与 .local 是否被忽略
@@ -493,6 +494,32 @@ def main(argv: list[str]) -> int:
     except Exception as e:                                    # noqa: BLE001
         rows.append(item("template_files", "verify_rules 不可导入", repr(e)[:120], BAD,
                          "先同步模板层（scripts/verify_rules.py 缺失或损坏）"))
+
+    # 5b) 文本编码（BOM / 换行）：只 WARN，**绝不阻断**。
+    #     理由（规格 §3.1）：BOM/CRLF 由外部编辑器产生，读侧已容忍（osnorm BOM_POLICY），
+    #     写侧永不产生；剩下的清理是一个机械命令，不该把工作区判成「不可用」。
+    guard = ws / "scripts" / "encoding_guard.py"
+    if guard.is_file():
+        rc, out = sh(str(sys.executable), "-B", str(guard), "--check",
+                     "--root", str(ws), "--json", cwd=ws)
+        try:
+            enc = json.loads(out)
+        except ValueError:
+            enc = None
+        hits = [f["path"] for f in (enc or {}).get("findings", [])] if isinstance(enc, dict) else []
+        if rc == 0:
+            rows.append(item("text_encoding", "UTF-8(no BOM) + LF",
+                             {"scanned": (enc or {}).get("scanned")}, OK))
+        elif isinstance(enc, dict):
+            rows.append(item("text_encoding", "BOM/CRLF 会污染判据与 diff",
+                             {"files": len(hits), "first": hits[:3]}, WARN,
+                             "一条命令统一：python3 scripts/encoding_guard.py --fix"))
+        else:
+            rows.append(item("text_encoding", "encoding_guard 无法运行", out[:120], WARN,
+                             "先同步模板层（scripts/encoding_guard.py 损坏），再重跑本预检"))
+    else:
+        rows.append(item("text_encoding", "—", "no scripts/encoding_guard.py", NA,
+                         "旧工作区：template_sync.py --apply 取回该脚本后可自动扫描"))
 
     # 6) notes 索引
     idx = ws / "notes" / "INDEX.md"

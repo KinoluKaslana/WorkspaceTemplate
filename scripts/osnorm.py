@@ -12,6 +12,8 @@
 - **不折叠大小写**（D1）：`canonical_path` 保留路径段字面大小写，只把盘符大写；
   不提供 `path_key`/`rel_key` 之类的键（键口径仍是「工作区相对 POSIX 路径」）。
 - **不猜编码**：一律 UTF-8；UTF-16/GBK 在 `strict` 下上抛，`ignore/replace` 只在调用点显式声明。
+- **BOM 一处决定**（§3.1）：`BOM_POLICY` 决定 `read_text(bom=None)` 是否剥 BOM；写入侧永不产生 BOM，
+  清理入口是 `scripts/encoding_guard.py`。
 
 `.workspace/hooks/*.py` **不得** import 本模块（实例可能没有 `scripts/`）：hooks 保留私有实现，
 但必须在声明子域上与本模块等价，并由 `tests/test_osnorm_single_source.py` 的 adapter oracle 钉住。
@@ -29,6 +31,7 @@ from collections.abc import Mapping, Sequence
 from urllib.parse import unquote, urlsplit
 
 __all__ = [
+    "BOM_POLICY",
     "PathFormError",
     "atomic_write_text",
     "canonical_path",
@@ -291,6 +294,26 @@ def canonical_path(value: str | os.PathLike[str], *,
 
 # ---------------------------------------------------------------- 文本 / 字节 I/O
 
+# BOM 策略（规格 §3.1）：**一处决定**，不在调用点散落。
+#   tolerate（默认）：`read_text` 未显式指定时剥 BOM。用户可编辑的文件（bootstrap.json /
+#     WORKSPACE.md / *.custom.md）常被 Windows 记事本存成 UTF-8 with BOM，不该因此让工作区
+#     被判成 unknown。
+#   strict：保留首字符 `\ufeff`，只用于「必须字节一致」的判据；哈希类判据一律走 read_bytes，
+#     不受本策略影响。
+# 写入侧永不产生 BOM（`write_text` 固定 UTF-8 无 BOM），所以 BOM 只可能来自外部工具。
+# 运行期读取（不在 import 期固化）：测试与本轮之外的调用方都能按需切换。
+BOM_POLICY = "tolerate"
+_BOM_POLICIES = ("tolerate", "strict")
+
+
+def _strip_bom(bom: bool | None) -> bool:
+    """解析 `read_text(bom=...)`：`True/False` 是显式覆盖，`None` 取模块级策略。"""
+    if bom is not None:
+        return bool(bom)
+    if BOM_POLICY not in _BOM_POLICIES:
+        raise ValueError(f"BOM_POLICY 只接受 'tolerate'/'strict'：{BOM_POLICY!r}")
+    return BOM_POLICY == "tolerate"
+
 
 def _newline_check(newline: str) -> str:
     if newline not in ("lf", "preserve"):
@@ -314,14 +337,15 @@ def write_bytes(path: str | os.PathLike[str], data: bytes, *,
         fh.write(bytes(data))
 
 
-def read_text(path: str | os.PathLike[str], *, bom: bool = False, errors: str = "strict",
+def read_text(path: str | os.PathLike[str], *, bom: bool | None = None, errors: str = "strict",
               newline: str = "lf") -> str:
-    """读 UTF-8 文本。`bom=True` 用 utf-8-sig 剥 BOM；`bom=False` 把 `\\ufeff` 留给调用方。
+    """读 UTF-8 文本。`bom=None`（默认）取模块级 `BOM_POLICY`；`True/False` 是显式覆盖。
 
+    `tolerate` 用 `utf-8-sig` 剥 BOM；`strict`（或显式 `bom=False`）把 `\\ufeff` 留给调用方。
     `newline="lf"`（默认）与写侧契约对称：磁盘 CRLF/CR 归一为 LF；`"preserve"` 原样。
     """
     _newline_check(newline)
-    text = read_bytes(path).decode("utf-8-sig" if bom else "utf-8", errors)
+    text = read_bytes(path).decode("utf-8-sig" if _strip_bom(bom) else "utf-8", errors)
     if newline == "lf":
         text = text.replace("\r\n", "\n").replace("\r", "\n")
     return text
