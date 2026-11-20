@@ -68,6 +68,8 @@ def build(tmp: Path, skills: dict[str, str], declared: int | None = None) -> Pat
     (ws / "skills").mkdir()
     (ws / "TOOLS.md").write_text("# tools\n", encoding="utf-8")
     shutil.copyfile(SRC / "scripts" / "skill_audit.py", ws / "scripts" / "skill_audit.py")
+    # R38e：skill_audit 的文本 I/O 走兄弟模块 osnorm
+    shutil.copyfile(SRC / "scripts" / "osnorm.py", ws / "scripts" / "osnorm.py")
     for name, body in skills.items():
         d = ws / ".workspace" / "skills" / name
         d.mkdir(parents=True)
@@ -265,6 +267,7 @@ class LocalLayer(unittest.TestCase):
         (self.ws / "scripts").mkdir(parents=True)
         (self.ws / "skills").mkdir()
         shutil.copyfile(SRC / "scripts" / "skill_audit.py", self.ws / "scripts" / "skill_audit.py")
+        shutil.copyfile(SRC / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         (self.ws / "TOOLS.md").write_text("# tools\n", encoding="utf-8")
         (self.ws / "skills" / "REGISTRY.md").write_text(
             "# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"

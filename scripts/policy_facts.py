@@ -36,29 +36,15 @@ import sys
 from pathlib import Path
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -135,7 +121,7 @@ def policy_version(root=ROOT):
     path = Path(root) / "AGENT_RULES.md"
     if not path.is_file():
         raise FactSourceError("AGENT_RULES.md 不存在")
-    lines = path.read_text(encoding="utf-8").split("\n")
+    lines = osnorm.read_text(path).split("\n")
     if len(lines) < 4:
         raise FactSourceError("AGENT_RULES.md 不足 4 行")
     m = _POLICY_HEAD_RE.search(lines[3])
@@ -149,7 +135,7 @@ def plugin_version(root=ROOT):
     path = Path(root) / ".hermes" / "plugins" / "workspace-gate" / "plugin.yaml"
     if not path.is_file():
         raise FactSourceError("plugin.yaml 不存在")
-    lines = path.read_text(encoding="utf-8").split("\n")
+    lines = osnorm.read_text(path).split("\n")
     if len(lines) < 2:
         raise FactSourceError("plugin.yaml 不足 2 行")
     m = _PLUGIN_VERSION_RE.match(lines[1])
@@ -184,7 +170,7 @@ def clause_range(root=ROOT):
     root = Path(root)
     ids = []
     for path in sorted(root.glob("AGENT_RULES*.md")):
-        ids += [int(x) for x in _CLAUSE_ID_RE.findall(path.read_text(encoding="utf-8"))]
+        ids += [int(x) for x in _CLAUSE_ID_RE.findall(osnorm.read_text(path))]
     if not ids:
         raise FactSourceError("AGENT_RULES.md 里没有任何 `<!-- id:Rn -->` 标记")
     return f"R{min(ids)}..R{max(ids)}"
@@ -210,8 +196,9 @@ def is_template(root=ROOT):
     按模板契约检查 README。
     """
     try:
-        data = json.loads((Path(root) / ".workspace" / "bootstrap.json")
-                          .read_text(encoding="utf-8"))
+        # 身份判据按原始字节解（bom=False 与原 `encoding="utf-8"` 一致）：带 BOM 的
+        # bootstrap.json 在原实现里就解不成 JSON → unknown，这里不悄悄放宽。
+        data = json.loads(osnorm.read_text(Path(root) / ".workspace" / "bootstrap.json"))
     except Exception:                                  # noqa: BLE001 —— 任一读取/解析失败均未知
         return "unknown"
     status = data.get("workspace_status")
@@ -312,7 +299,7 @@ def _unknown_blocks(root, instance=False):
         if rel in known:
             continue
         try:
-            text = path.read_text(encoding="utf-8")
+            text = osnorm.read_text(path)
         except OSError:
             continue
         if BEGIN in text or END in text:
@@ -343,7 +330,7 @@ def check_blocks(root=ROOT, facts=None, status=None):
         if not path.is_file():
             findings.append(f"{block.path}: 文件不存在（生成块的落点没了）")
             continue
-        lines = path.read_text(encoding="utf-8").split("\n")
+        lines = osnorm.read_text(path).split("\n")
         try:
             span = _span(lines)
         except ValueError as exc:
@@ -379,7 +366,7 @@ def write_blocks(root=ROOT, facts=None):
         if not path.is_file():
             findings.append(f"{block.path}: 文件不存在")
             continue
-        text = path.read_text(encoding="utf-8")
+        text = osnorm.read_text(path)
         lines = text.split("\n")
         try:
             span = _span(lines)
@@ -393,7 +380,7 @@ def write_blocks(root=ROOT, facts=None):
         got = lines[span[0]:span[1] + 1]
         if got != want:
             lines[span[0]:span[1] + 1] = want
-            path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+            osnorm.write_text(path, "\n".join(lines), newline="preserve")
             changed.append(block.path)
     return changed, findings
 
@@ -414,7 +401,7 @@ def changelog_versions(root=ROOT):
         return None
     versions = [m.group(1) for m in
                 (_CHANGELOG_ENTRY_RE.match(line) for line in
-                 path.read_text(encoding="utf-8").split("\n")) if m]
+                 osnorm.read_text(path).split("\n")) if m]
     return versions or None
 
 
@@ -422,7 +409,7 @@ def releases_versions(root=ROOT):
     """读取 append-only 发版账本；不可读时返回 ``None`` 供 check fail-closed。"""
     path = Path(root) / ".workspace" / "releases.json"
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(path))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, list) or not data:
@@ -447,7 +434,7 @@ def changelog_heading_offenders(root=ROOT):
     if not path.is_file():
         return []
     out = []
-    for i, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+    for i, line in enumerate(osnorm.read_text(path).split("\n"), 1):
         m = _CHANGELOG_HEADING_RE.match(line)
         if not m or not _CHANGELOG_VERSIONISH_RE.match(m.group(1)):
             continue
@@ -509,7 +496,7 @@ def literal_offenders(root=ROOT, facts=None, ledger=None, status=None):
         rel = path.relative_to(root).as_posix()
         if _instance_user_doc(rel, instance):
             continue                     # 派生实例的 README/docs 是用户文档
-        lines = path.read_text(encoding="utf-8").split("\n")
+        lines = osnorm.read_text(path).split("\n")
         registered = _registered_lines(lines)
         fence = False
         for i, line in enumerate(lines, 1):
@@ -584,7 +571,7 @@ def heading_offenders(root=ROOT, facts=None, status=None):
         rel = path.relative_to(root).as_posix()
         if _instance_user_doc(rel, instance):
             continue
-        out += heading_text_offenders(rel, path.read_text(encoding="utf-8"), facts["policy"])
+        out += heading_text_offenders(rel, osnorm.read_text(path), facts["policy"])
     return out
 
 
@@ -601,7 +588,7 @@ def dup_fact_offenders(root=ROOT, status=None):
         if not rules:
             continue
         inside = False
-        for i, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+        for i, line in enumerate(osnorm.read_text(path).split("\n"), 1):
             if _GEN_MARK_RE.match(line):
                 inside = not inside
                 continue
@@ -656,7 +643,7 @@ def clause_range_offenders(root=ROOT, facts=None, status=None):
         rel = path.relative_to(root).as_posix()
         if _instance_user_doc(rel, instance):
             continue
-        out += clause_range_text_offenders(rel, path.read_text(encoding="utf-8"),
+        out += clause_range_text_offenders(rel, osnorm.read_text(path),
                                            facts["clause_range"])
     return out
 

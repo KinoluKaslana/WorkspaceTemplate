@@ -4,7 +4,7 @@
 **这是 blocking 门禁**（由 `tests/` discovery 执行，`ci.yml` 已跑；`docs/tools.md` 有登记）：
 `scripts/*.py`、`.workspace/hooks/*.py`、`tests/*.py` 里出现自写归一化 / 自带编码 / 自写原子发布
 就直接红，除非该处**结构性豁免**（osnorm 自身、`local_state` 的 no-follow 路径、
-`skill_audit._utf8_stdio`、两个 hooks adapter）或已在 `tests/osnorm_allowlist.json` 登记。
+两个 hooks adapter）或已在 `tests/osnorm_allowlist.json` 登记。
 
 关键约定：
 - 匹配粒度是 `(file, rule, target, line_kind)`，**不按行号**（行号会漂移）。
@@ -192,8 +192,6 @@ STRUCTURAL_EXEMPT = (
      "reason": "no-follow 路径的重试发布：读侧 sharing 重试是 local_state 私有语义（§5 R3 豁免列）"},
     {"rule": "R4", "file": "scripts/osnorm.py", "target": None,
      "reason": "configure_stdio 是 stdio 重配的唯一实现（§5 R4 豁免列）"},
-    {"rule": "R4", "file": "scripts/skill_audit.py", "target": ".reconfigure",
-     "reason": "skill_audit._utf8_stdio 保留至迁移完成（§5 R4 豁免列）"},
     {"rule": "R5", "file": "scripts/osnorm.py", "target": None,
      "reason": "canonical_path/family 是归一化的唯一实现（§5 R5 豁免列）"},
     {"rule": "R5", "file": ".workspace/hooks/hook.py", "target": "def:_absolute",

@@ -24,7 +24,8 @@ def build_ws(tmp: Path) -> Path:
     (ws / "docs").mkdir(parents=True)
     (ws / "scripts").mkdir()
     (ws / "tests").mkdir()
-    for f in ("docs_index.py", "docs_hit_report.py", "docs_alias_audit.py"):
+    # osnorm.py：R38e 起 docs_hit_report / docs_alias_audit 的文本 I/O 走它
+    for f in ("docs_index.py", "docs_hit_report.py", "docs_alias_audit.py", "osnorm.py"):
         shutil.copyfile(SRC / "scripts" / f, ws / "scripts" / f)
     shutil.copyfile(SRC / "tests" / "docs_probe.json", ws / "tests" / "docs_probe.json")
     (ws / "docs" / "a.md").write_text(

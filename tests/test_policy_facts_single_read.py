@@ -20,6 +20,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import policy_facts as pf  # noqa: E402
+import osnorm  # noqa: E402
 
 BOOT = Path(".workspace") / "bootstrap.json"
 _COPY_IGNORE = shutil.ignore_patterns(".git", "__pycache__", "*.pyc", "*.pyo", ".venv*",
@@ -36,21 +37,25 @@ def _tmpdir() -> Path:
 
 
 class _ReadCounter:
-    """只数 `bootstrap.json` 的 `Path.read_text`，其它读盘一概不记。"""
+    """只数 `bootstrap.json` 的 `osnorm.read_bytes`，其它读盘一概不记。
+
+    R38e 起 policy_facts 的文本读取统一走 osnorm（`osnorm.read_text` 的底层就是
+    `read_bytes`），判据仍是**读盘次数**，所以计数点跟着实现下沉一层，语义不变。
+    """
 
     def __init__(self):
         self.paths: list[str] = []
-        self._real = Path.read_text
+        self._real = osnorm.read_bytes
 
     def __enter__(self):
         real = self._real
 
-        def counting(inner_self, *args, **kwargs):
-            if inner_self.name == "bootstrap.json":
-                self.paths.append(str(inner_self))
-            return real(inner_self, *args, **kwargs)
+        def counting(path, *args, **kwargs):
+            if Path(os.fspath(path)).name == "bootstrap.json":
+                self.paths.append(str(path))
+            return real(path, *args, **kwargs)
 
-        self._patch = mock.patch.object(Path, "read_text", counting)
+        self._patch = mock.patch.object(osnorm, "read_bytes", counting)
         self._patch.start()
         return self
 

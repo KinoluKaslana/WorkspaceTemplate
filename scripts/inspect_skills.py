@@ -23,30 +23,15 @@ from pathlib import Path
 from typing import Any
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
-
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
 
 
 EXCLUDED_DIRS = {
@@ -79,8 +64,9 @@ def _scalar(value: str) -> str:
 
 def _frontmatter(path: Path) -> dict[str, str]:
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
-            text = handle.read(FRONTMATTER_LIMIT)
+        # 与原来的 `open(...).read(FRONTMATTER_LIMIT)` 同语义：整段解成文本后取前
+        # FRONTMATTER_LIMIT 个字符（frontmatter 判定只看这段前缀，超出部分从不参与）。
+        text = osnorm.read_text(path, errors="replace")[:FRONTMATTER_LIMIT]
     except OSError:
         return {}
     if not text.startswith("---\n"):
@@ -125,13 +111,7 @@ def _sha256(path: Path) -> str:
 
 def _git(root: Path) -> dict[str, Any] | None:
     def run(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", "-C", str(root), *args],
-            check=False,
-            capture_output=True,
-            text=True, encoding="utf-8", errors="replace",
-            timeout=8,
-        )
+        return osnorm.run_text(["git", "-C", str(root), *args], check=False, timeout=8)
 
     try:
         top = run("rev-parse", "--show-toplevel")

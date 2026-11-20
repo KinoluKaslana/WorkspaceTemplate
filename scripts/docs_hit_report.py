@@ -16,34 +16,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -53,12 +38,12 @@ DOCS = ROOT / "docs"
 
 
 def load_cases() -> list[dict]:
-    return json.loads(PROBE.read_text(encoding="utf-8"))["cases"]
+    return json.loads(osnorm.read_text(PROBE))["cases"]
 
 
 def query(title: str, top: int) -> tuple[list[dict], str | None]:
-    p = subprocess.run([sys.executable, "-B", str(INDEX), "query", title, "--json", "--top", str(top)],
-                       cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    p = osnorm.run_text([sys.executable, "-B", str(INDEX), "query", title, "--json", "--top", str(top)],
+                        cwd=ROOT)
     if p.returncode == 3:
         return [], "stale"
     if p.returncode != 0:
@@ -67,7 +52,7 @@ def query(title: str, top: int) -> tuple[list[dict], str | None]:
 
 
 def section_body(path: str, start: int, end: int) -> str:
-    lines = (ROOT / path).read_text(encoding="utf-8").split("\n")
+    lines = osnorm.read_text(ROOT / path).split("\n")
     return "\n".join(lines[start - 1:end])
 
 

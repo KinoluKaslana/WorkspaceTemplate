@@ -21,6 +21,8 @@ class Base(unittest.TestCase):
         (self.root / "scripts").mkdir()
         for name in SCRIPTS:
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
+        # R38e：version_check / notes_index_check 的文本 I/O 走兄弟模块 osnorm
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.root / "scripts" / "osnorm.py")
 
     def tearDown(self):
         self.tmp.cleanup()

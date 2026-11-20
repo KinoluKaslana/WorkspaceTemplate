@@ -43,6 +43,8 @@ class ClauseLint(unittest.TestCase):
         (self.root / "scripts").mkdir()
         (self.root / ".workspace").mkdir()
         shutil.copy2(LINT, self.root / "scripts" / "clause_lint.py")
+        # R38e：clause_lint 的文本 I/O 走兄弟模块 osnorm（随 TEMPLATE_FILES 分发）
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.root / "scripts" / "osnorm.py")
         self.write(N_BODY, N_META)
 
     def tearDown(self):

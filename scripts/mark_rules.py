@@ -30,29 +30,15 @@ from pathlib import Path
 from verify_rules import TEMPLATE_FILES
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
 
 
 MARKER_RE = re.compile(r"\s*<!--\s*id:(R\d+)\s*-->\s*$")
@@ -83,7 +69,7 @@ def next_free_id(used: set[str]) -> str:
 
 def scan(path: Path) -> tuple[list[str], dict[str, str]]:
     """Return (marked_lines, registry {id: clause_text})."""
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = osnorm.read_text(path).splitlines()
     out: list[str] = []
     reg: dict[str, str] = {}
     for ln in lines:
@@ -123,7 +109,7 @@ def mark_file(path: Path, used: set[str] | None = None, dry: bool = False) -> tu
         else:
             out.append(ln)
     if not dry and added:
-        path.write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
+        osnorm.write_text(path, "\n".join(out) + "\n", newline="preserve")
     return added, reg
 
 
@@ -185,14 +171,15 @@ def main() -> int:
         regs = build_registry(root)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+        osnorm.write_text(out, json.dumps(regs, ensure_ascii=False, indent=2) + "\n",
+                          newline="preserve")
         print(f"OK: marked {total} new clauses; registry -> {out} ({len(regs)} files)")
         return 0
 
     if args.mode == "check":
         unmarked = 0
         for p in paths:
-            for i, ln in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            for i, ln in enumerate(osnorm.read_text(p).splitlines(), 1):
                 if is_trackable(ln) and not MARKER_RE.search(ln):
                     print(f"UNMARKED {p}:{i}: {ln.strip()[:80]}")
                     unmarked += 1
@@ -203,7 +190,8 @@ def main() -> int:
         regs = build_registry(root)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+        osnorm.write_text(out, json.dumps(regs, ensure_ascii=False, indent=2) + "\n",
+                          newline="preserve")
         print(f"OK: registry rebuilt -> {out} ({len(regs)} files)")
         return 0
     return 0

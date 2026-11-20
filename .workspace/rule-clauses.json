@@ -193,17 +193,17 @@
   },
   "scripts/inspect_skills.py": {
     "clauses": {},
-    "file_sha256": "f0854629c793d30d9b6e31161e960e0759d75006b968e17a2071c697c70cb880",
+    "file_sha256": "f283e08448daae6effdf1ff0acaf32e75102970f7686fb9ae8193a586e118c58",
     "marked": 0
   },
   "scripts/mark_rules.py": {
     "clauses": {},
-    "file_sha256": "80fc8a8785c9cb37e8ed0c2dcc6152a60e565ab23011495d1ce47999c0be376c",
+    "file_sha256": "8616b7962755c90ece7b28868f6dee462f28c58a980a281afec89265dd0865e5",
     "marked": 0
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "2929d6ef91b7c4b9097028e339bceb35ad683b8ed4031bb14f8d0d0b5d7b512f",
+    "file_sha256": "aa1026b8ba7849a57df7aeae485e37f68bfad316012250cf1546833ffc946dd7",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -243,12 +243,12 @@
   },
   "scripts/docs_hit_report.py": {
     "clauses": {},
-    "file_sha256": "7105b2d674f9e3b61c85c2654816e9c464fe794c7af3b79adbf27a4af6cc21f1",
+    "file_sha256": "6b62d29d90e5421f8df3355b8d3e83f753c530e08426eb9a79ffa17a70f7236e",
     "marked": 0
   },
   "scripts/docs_alias_audit.py": {
     "clauses": {},
-    "file_sha256": "859c73810f8cabda4c3ff673db7d3422e75fb5f3234e1ae7fe123a8ba0d2d766",
+    "file_sha256": "880187b1a54bdc46f82f2760f70a701c8a07c0c7b5a1e52cd6d56c68046d3570",
     "marked": 0
   },
   "scripts/template_sync.py": {
@@ -258,7 +258,7 @@
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "2e463ab5c5635fca909f0caf140f61440dae302726f693f6935f74cf96b534bd",
+    "file_sha256": "aeb11f247ef43ef211b377e8ce23777ea9acadb3dd8820c16d60a929725496aa",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
@@ -298,7 +298,7 @@
   },
   "tests/test_skill_audit.py": {
     "clauses": {},
-    "file_sha256": "fcf0968f7482371c3ffb9d9a44aef392f6e73953ff60222636990970f2325059",
+    "file_sha256": "5c4d71bb3d01d179d116164515ce82f9cc45cc85a1db1d07ae23f4c912e0d41a",
     "marked": 0
   },
   ".workspace/skills/_TEMPLATE.md": {
@@ -368,12 +368,12 @@
   },
   "tests/test_clause_lint.py": {
     "clauses": {},
-    "file_sha256": "2c553f196fa908ee642b497aebc05a06ce13cb2856bfd49f77b504825ca45f2d",
+    "file_sha256": "342882cd120fe830226f8cde41f1b8ce43b566518a1e6b7e74122e55fb39352c",
     "marked": 0
   },
   "tests/test_check_scripts.py": {
     "clauses": {},
-    "file_sha256": "111c1af4bf1679f577040b865e1c60743f6808e6bc1b706e9e63f1906a80cf42",
+    "file_sha256": "15ada177ab5b87e2000bcb65fefb121cad2c277e37111a160e1e541b969f8101",
     "marked": 0
   },
   "scripts/local_state.py": {
@@ -383,12 +383,12 @@
   },
   "scripts/version_check.py": {
     "clauses": {},
-    "file_sha256": "53f4e2c5dd18aed5001c5ce093aabe0aee0dd6b88d63cc18dd64d9378133e7de",
+    "file_sha256": "535e185b008e9be4600c3f1f6b21f8c8417fe57db4882be604287291cf733fdd",
     "marked": 0
   },
   "scripts/policy_facts.py": {
     "clauses": {},
-    "file_sha256": "18c8285b4ebcb727b765c6d25b167b259db21e2e392a9787a69cae0f1dc03551",
+    "file_sha256": "4b5da6e19d79a8c4c399090a4c169813419a357d790ac47ac81a9169d74942fe",
     "marked": 0
   },
   "scripts/release.py": {
@@ -413,7 +413,7 @@
   },
   "scripts/notes_index_check.py": {
     "clauses": {},
-    "file_sha256": "c740c0e3c9f50e7bb90f73805c9a6ee79d93748603c6118a982b8a55ceec9b20",
+    "file_sha256": "88f8660af7cca8e8cce5fb659608d09450f8a6738a2e1725b00912bf77f384ce",
     "marked": 0
   },
   "scripts/secret_scan.py": {
@@ -458,7 +458,7 @@
   },
   "scripts/clause_lint.py": {
     "clauses": {},
-    "file_sha256": "ff11d0ef09ba80210da2513c1d611ebc6350f40c04fb084a71f41eabf858fccd",
+    "file_sha256": "9eaec6f465d66173e6d08b4129891190a38056eb1075d1bb7306e8d9b81b9d44",
     "marked": 0
   },
   ".workspace/clauses.meta.json": {
@@ -483,7 +483,7 @@
   },
   "tests/test_alias_audit.py": {
     "clauses": {},
-    "file_sha256": "7617bbed375de819193090aa24806575fcd8508d849b3d08ac24ebede3faf969",
+    "file_sha256": "402bcb10baedf5a56988bf2a257e86d34f2f3b8fd1339a48c172ac4b720cf3ea",
     "marked": 0
   },
   "tests/test_docs_index.py": {
@@ -618,12 +618,12 @@
   },
   "tests/test_osnorm_single_source.py": {
     "clauses": {},
-    "file_sha256": "f6a6587e19bab6c76ef6d194e663c5f20a022833ad340ea7e8a967430b80176b",
+    "file_sha256": "38eb6964f339a4894ea190d34597ad51ce3208211f89e82a64d60622dda52e63",
     "marked": 0
   },
   "tests/osnorm_allowlist.json": {
     "clauses": {},
-    "file_sha256": "6a34eba4aed015401f01e272cc0487f24d9b64db28fef77b19a13ce2840938e4",
+    "file_sha256": "f42c225be6c0190385125ea7c70129a399c040252ed105bfb5e2e4a349ba8a76",
     "marked": 0
   }
 }

@@ -35,29 +35,15 @@ import sys
 from pathlib import Path
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
 
 
 MARKER_RE = re.compile(r"\s*<!--\s*id:(R\d+)\s*-->\s*$")
@@ -162,7 +148,7 @@ TEMPLATE_FILES = [
     "tests/test_registry_freshness.py",
     "tests/test_gitignore_ensure.py",
     "tests/test_regression_ledger.py",
-    # R38a：osnorm 归一化层（第 0 步，零调用方）
+    # R38a：osnorm 归一化层（R38e 起 10 个脚本已迁入为唯一实现）
     "scripts/osnorm.py",
     "tests/test_osnorm_cases.json",
     "tests/test_osnorm_properties.py",
@@ -185,7 +171,7 @@ def sha256(path: Path) -> str:
 
 def scan_clauses(path: Path) -> dict[str, str]:
     reg: dict[str, str] = {}
-    for ln in path.read_text(encoding="utf-8").splitlines():
+    for ln in osnorm.read_text(path).splitlines():
         m = MARKER_RE.search(ln)
         if m:
             reg[m.group(1)] = strip_marker(ln)
@@ -241,7 +227,7 @@ def verify_clause_level(ws: Path, registry: dict) -> list[str]:
             if cid not in reg_clauses:
                 findings.append(f"[clause] ADDED {rel}#{cid}: {cur[cid][:60]}")
         # duplicate + reorder detection over the file's marker sequence
-        ids = [m.group(1) for ln in p.read_text(encoding="utf-8").splitlines() if (m := MARKER_RE.search(ln))]
+        ids = [m.group(1) for ln in osnorm.read_text(p).splitlines() if (m := MARKER_RE.search(ln))]
         if len(ids) != len(set(ids)):
             dupes = sorted({i for i in ids if ids.count(i) > 1})
             findings.append(f"[clause] DUPLICATE {rel}: {dupes}")
@@ -279,7 +265,7 @@ def verify_custom_refs(ws_root: Path, registry: dict, custom_glob: str) -> list[
         all_ids.update(entry.get("clauses", {}).keys())
     for p in sorted(ws_root.glob(custom_glob)):
         rel = p.relative_to(ws_root).as_posix()
-        text = p.read_text(encoding="utf-8")
+        text = osnorm.read_text(p)
         for m in OVERRIDE_RE.finditer(text):
             if m.group(1) not in all_ids:
                 findings.append(f"[custom] {rel}: overrides 指向不存在的条款 {m.group(1)}（模板条款已删除或改写）")
@@ -315,10 +301,8 @@ def verify_vs_template(ws: Path, tpl: Path, trust: bool = True) -> tuple[list[st
 
     git_bin = os.environ.get("GIT_BIN") or "git"
     try:
-        st = subprocess.run([git_bin, "-C", str(tpl), "status", "--porcelain"],
-                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-        head = subprocess.run([git_bin, "-C", str(tpl), "rev-parse", "HEAD"],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        st = osnorm.run_text([git_bin, "-C", str(tpl), "status", "--porcelain"], timeout=30)
+        head = osnorm.run_text([git_bin, "-C", str(tpl), "rev-parse", "HEAD"], timeout=30)
     except (OSError, subprocess.TimeoutExpired) as exc:
         findings.append(f"[trust] git check failed on template clone: {exc}（可设置 GIT_BIN 指向 git 绝对路径）")
         return findings, info, meta
@@ -376,7 +360,7 @@ def main() -> int:
     if not reg_path.is_file():
         print(json.dumps({"error": f"registry not found: {reg_path}"}))
         return 2
-    registry = json.loads(reg_path.read_text(encoding="utf-8"))
+    registry = json.loads(osnorm.read_text(reg_path))
 
     findings: list[str] = []
     info: list[str] = []
@@ -402,7 +386,8 @@ def main() -> int:
         report["template_anchor"] = template_meta
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if args.json:
-        Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+        osnorm.write_text(Path(args.json), json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                          newline="preserve")
     return 0 if not findings else 1
 
 
