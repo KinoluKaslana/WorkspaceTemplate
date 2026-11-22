@@ -23,6 +23,9 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 SRC = Path(__file__).resolve().parent.parent
 SCRIPT = "scripts/pyenv_init.py"
 HAS_UV = shutil.which("uv") is not None
@@ -40,11 +43,10 @@ def mkws(tmp: Path) -> Path:
     shutil.copyfile(SRC / "scripts" / "workspace_preflight.py", ws / "scripts" / "workspace_preflight.py")
     # 运行时模式写本机状态：local_state.py 必须一起分发
     shutil.copyfile(SRC / "scripts" / "local_state.py", ws / "scripts" / "local_state.py")
-    (ws / ".workspace" / "bootstrap.json").write_text(
-        json.dumps({"schema_version": 1, "workspace_status": "template",
+    osnorm.write_text(ws / ".workspace" / "bootstrap.json", json.dumps({"schema_version": 1, "workspace_status": "template",
                     "python": {"mode": "unconfigured"},
                     "template": {"source_repo": "https://example.invalid/template"}},
-                   ensure_ascii=False), encoding="utf-8")
+                   ensure_ascii=False), newline="lf")
     subprocess.run(["git", "init", "-q", str(ws)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(ws), "remote", "add", "origin",
                     "https://example.invalid/derived/repo.git"], check=True, capture_output=True)
@@ -55,17 +57,15 @@ def local_runtime(ws: Path) -> dict:
     """读本机状态里的 runtime.json（缺陷时可返回 {}）。"""
     for p in (ws / ".workspace" / ".local").rglob("runtime.json"):
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
+            return json.loads(osnorm.read_text(p, bom=False, newline="preserve"))
         except ValueError:
             return {}
     return {}
 
 
 def run(ws: Path, *args, env=None, cwd=None):
-    p = subprocess.run([sys.executable, "-B", str(ws / SCRIPT),
-                        "--workspace", str(ws), "--json", *args],
-                       cwd=cwd or ws, capture_output=True, text=True, encoding="utf-8",
-                       env={**os.environ, "UV_CACHE_DIR": str(ws / ".uv-cache"), **(env or {})})
+    p = osnorm.run_text([sys.executable, "-B", str(ws / SCRIPT),
+                        "--workspace", str(ws), "--json", *args], cwd=cwd or ws, env={**os.environ, "UV_CACHE_DIR": str(ws / ".uv-cache"), **(env or {})}, errors="strict")
     try:
         data = json.loads(p.stdout)
     except Exception:
@@ -87,22 +87,20 @@ class PyenvInit(unittest.TestCase):
         self.assertEqual(rc, 0, d)
         self.assertTrue(d["venv"].get("would_create"))
         self.assertFalse(Path(d["venv"]["path"]).exists())
-        self.assertEqual(json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))["python"]["mode"], "unconfigured")
+        self.assertEqual(json.loads(osnorm.read_text(self.boot, bom=False, errors="replace", newline="preserve"))["python"]["mode"], "unconfigured")
 
     def test_t2_uv_apply(self):
         if not HAS_UV:
             self.skipTest("uv 未安装")
-        subprocess.run(
-            ["git", "-C", str(self.ws), "remote", "set-url", "origin",
-             "https://example.com/someone/derived.git"],
-            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        osnorm.run_text(["git", "-C", str(self.ws), "remote", "set-url", "origin",
+             "https://example.com/someone/derived.git"], check=True, errors="replace")
         rc, d = run(self.ws, "--mode", "uv", "--python", "3.12", "--apply")
         self.assertEqual(rc, 0, d)
         rt = local_runtime(self.ws)
         self.assertEqual(rt.get("mode"), "uv")
         self.assertTrue(Path(d["venv"]["path"]).exists())
         self.assertEqual((rt.get("runtime") or {}).get("identifier"), Path(d["venv"]["path"]).name)
-        boot = json.loads(self.boot.read_text(encoding="utf-8", errors="replace"))
+        boot = json.loads(osnorm.read_text(self.boot, bom=False, errors="replace", newline="preserve"))
         self.assertNotIn("python", boot, "bootstrap 不得再存运行时模式")
         self.assertEqual(boot.get("workspace_status"), "active")
         self.assertRegex(boot.get("workspace_id", ""), r"^[0-9a-f-]{36}$")
@@ -140,7 +138,7 @@ class PyenvInit(unittest.TestCase):
                               {"mcp_server": "s", "mcp_tool": "t"},
                               {"workspace_file_access": None}, "mcp（测试）")
         self.assertEqual(res.get("status"), "BOUND", res)
-        boot = json.loads(self.boot.read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.boot, bom=False, newline="preserve"))
         # 旧工作区里既有的 python 节必须原样保留（既不删也不写新模式）
         self.assertEqual(boot.get("python"), json.loads(before).get("python"),
                          "persist_mode 动了 bootstrap.python")
@@ -204,17 +202,17 @@ class PyenvInit(unittest.TestCase):
         rc2, out2 = self._run_inproc(pi, ["--workspace", str(self.ws), "--mode", "venv",
                                           "--apply", "--json"])
         self.assertEqual(rc2, 0, out2)
-        boot = json.loads(self.boot.read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.boot, bom=False, newline="preserve"))
         self.assertEqual(boot.get("workspace_status"), "active")
         self.assertNotIn("python", boot)
 
     def test_t12_legacy_bootstrap_only_is_not_half_commit(self):
         """只有旧 bootstrap.python.mode 的老工作区，不得被「半提交恢复」误吃。"""
-        boot = json.loads(self.boot.read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.boot, bom=False, newline="preserve"))
         boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-312"},
                           "version": "3.12.1"}
         boot["workspace_status"] = "template"
-        self.boot.write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(self.boot, json.dumps(boot), newline="lf")
         before = self.boot.read_bytes()
         rc, d = run(self.ws, "--mode", "venv", "--apply", "--json")
         self.assertEqual(rc, 5, d)
@@ -272,8 +270,7 @@ class PyenvInit(unittest.TestCase):
 
     def test_t15_relative_origin_is_independent_of_process_cwd(self):
         (self.ws / "localrepo").mkdir()
-        subprocess.run(["git", "-C", str(self.ws), "remote", "set-url", "origin", "localrepo"],
-                       check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        osnorm.run_text(["git", "-C", str(self.ws), "remote", "set-url", "origin", "localrepo"], check=True, errors="replace")
         args = ("--mode", "mcp", "--mcp-server", "s", "--mcp-tool", "t", "--apply")
         rc_ws, d_ws = run(self.ws, *args, cwd=self.ws)
         self.assertEqual(rc_ws, 0, d_ws)
@@ -282,8 +279,7 @@ class PyenvInit(unittest.TestCase):
 
         other = mkws(Path(self.tmp.name) / "other")
         (other / "localrepo").mkdir()
-        subprocess.run(["git", "-C", str(other), "remote", "set-url", "origin", "localrepo"],
-                       check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        osnorm.run_text(["git", "-C", str(other), "remote", "set-url", "origin", "localrepo"], check=True, errors="replace")
         rc_tmp, d_tmp = run(other, *args, cwd=Path(tempfile.gettempdir()))
         self.assertEqual(rc_tmp, 0, d_tmp)
         self.assertEqual(d_tmp.get("workspace_status"), "active")

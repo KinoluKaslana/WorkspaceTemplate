@@ -37,6 +37,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+import osnorm  # noqa: E402
 
 from repo_identity import _canonical_local, convert_format, repair  # noqa: E402
 import local_state as ls                                           # noqa: E402
@@ -105,8 +106,7 @@ class WindowsPathFamily(unittest.TestCase):
 # ── W2 tag 身份 ──────────────────────────────────────────────────────────────
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True,
-                          text=True, encoding="utf-8", errors="replace")
+    return osnorm.run_text(["git", "-C", str(root), *args], errors="replace")
 
 
 @unittest.skipUnless(shutil.which("git"), "未安装 git：tag 身份用例需要真实仓库")
@@ -116,10 +116,8 @@ class TagIdentityWithoutPeeling(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         (self.root / "scripts").mkdir(parents=True)
-        (self.root / "AGENT_RULES.md").write_text(
-            "# rules <!-- id:R1 -->\n\n> **模板政策版本：`1.2.3`。**\n", encoding="utf-8")
-        (self.root / "scripts" / "verify_rules.py").write_text(
-            'TEMPLATE_FILES = ["AGENT_RULES.md"]\n', encoding="utf-8")
+        osnorm.write_text(self.root / "AGENT_RULES.md", "# rules <!-- id:R1 -->\n\n> **模板政策版本：`1.2.3`。**\n", newline="lf")
+        osnorm.write_text(self.root / "scripts" / "verify_rules.py", 'TEMPLATE_FILES = ["AGENT_RULES.md"]\n', newline="lf")
         _git(self.root, "init", "-q", "-b", "dev")
         _git(self.root, "config", "user.email", "t@example.com")
         _git(self.root, "config", "user.name", "t")
@@ -225,13 +223,13 @@ class ReplaceRetryOnSharingViolation(unittest.TestCase):
                 calls["n"] += 1
                 if calls["n"] < 3:
                     raise PermissionError(13, "Access is denied")   # errno EACCES == WinError 5 同类
-                Path(dst_path).write_text("ok", encoding="utf-8")
+                osnorm.write_text(Path(dst_path), "ok", newline="lf")
 
             with mock.patch.object(ls.os, "replace", flaky):
                 ls._replace_with_retry("src", dst, sleep=sleeps.append)
             # 夹具必须落在临时目录：旧版直接写相对路径 "dst"，会在**仓库根**留下一个
             # 2 字节的垃圾文件（内容 "ok"），跑一次测试就把工作树弄脏。
-            self.assertEqual(dst.read_text(encoding="utf-8"), "ok")
+            self.assertEqual(osnorm.read_text(dst, bom=False, newline="preserve"), "ok")
         self.assertEqual(calls["n"], 3)
         self.assertEqual(len(sleeps), 2)
         self.assertLess(sleeps[1], sleeps[0] * 2 + 0.001)   # 指数递增
@@ -286,7 +284,7 @@ class ReplaceRetryOnSharingViolation(unittest.TestCase):
 
     def test_bind_uses_retry_path(self):
         """`bind` 的两条写盘路径都必须走重试（而不是裸 os.replace）。"""
-        src = (ROOT / "scripts" / "local_state.py").read_text(encoding="utf-8")
+        src = osnorm.read_text(ROOT / "scripts" / "local_state.py", bom=False, newline="preserve")
         self.assertIn("_replace_with_retry(tmp_path, d / _RUNTIME_FILE)", src)
         self.assertIn("_replace_with_retry(tmp_dir, d)", src)
         self.assertNotIn("os.replace(tmp_path", src)
@@ -314,10 +312,10 @@ class ReadRetryOnSharingViolation(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             f = Path(tmp) / "runtime.json"
-            f.write_text('{"schema": 1}', encoding="utf-8")
+            osnorm.write_text(f, '{"schema": 1}', newline="lf")
             with mock.patch.object(ls.os, "open", flaky):
                 self.assertEqual(ls._read_json_no_follow(f), {"schema": 1})
-            self.assertEqual(f.read_text(encoding="utf-8"), '{"schema": 1}',
+            self.assertEqual(osnorm.read_text(f, bom=False, newline="preserve"), '{"schema": 1}',
                              "读路径重试不得写盘")
         self.assertEqual(calls["n"], 3, "必须真的重试到成功")
 
@@ -338,7 +336,7 @@ class ReadRetryOnSharingViolation(unittest.TestCase):
 
     def test_read_and_write_share_one_retry_helper(self):
         """读侧与写侧必须是**同一个**重试实现（同一预算/分类器），不能各写一套。"""
-        src = (ROOT / "scripts" / "local_state.py").read_text(encoding="utf-8")
+        src = osnorm.read_text(ROOT / "scripts" / "local_state.py", bom=False, newline="preserve")
         self.assertIn("return _retry_on_sharing(_once, budget=_READ_BUDGET)", src)
         self.assertIn("_retry_on_sharing(lambda: os.replace(src, dst)", src)
         self.assertEqual(ls._READ_BUDGET, ls._REPLACE_BUDGET, "读写两侧预算必须对称")
@@ -349,7 +347,7 @@ class ReadRetryOnSharingViolation(unittest.TestCase):
         锁外读的失败形态是多进程并发写时偶发 `p.exitcode == 1`（读到 CORRUPT 或撞上
         PermissionError），与「并发读」同源，靠加读侧重试只是兜底。
         """
-        src = (ROOT / "scripts" / "local_state.py").read_text(encoding="utf-8")
+        src = osnorm.read_text(ROOT / "scripts" / "local_state.py", bom=False, newline="preserve")
         head, _, tail = src.partition("with _locked(cid):")
         self.assertIn("return read_state(workspace, workspace_id, ident, ephemeral=ephemeral)",
                       tail.split("_SID_RE")[0],
@@ -372,7 +370,7 @@ class GovernanceWritersPinLf(unittest.TestCase):
         offenders = []
         for pattern in ("scripts/*.py", ".github/scripts/*.py"):
             for path in sorted(ROOT.glob(pattern)):
-                tree = ast.parse(path.read_text(encoding="utf-8"))
+                tree = ast.parse(osnorm.read_text(path, bom=False, newline="preserve"))
                 for node in ast.walk(tree):
                     if not isinstance(node, ast.Call):
                         continue

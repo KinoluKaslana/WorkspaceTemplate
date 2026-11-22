@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
+import osnorm  # noqa: E402
 
 
 def load(name: str, path: Path):
@@ -63,9 +64,8 @@ class GitBin(unittest.TestCase):
         subprocess.run(["git", "-C", str(clone), "init", "-q"], check=True)
         os.environ["GIT_BIN"] = "/nonexistent/git-binary"
         try:
-            r = subprocess.run([sys.executable, str(ROOT / "scripts" / "verify_rules.py"),
-                                "--workspace", str(ROOT), "--vs-template", str(clone)],
-                               capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT)
+            r = osnorm.run_text([sys.executable, str(ROOT / "scripts" / "verify_rules.py"),
+                                "--workspace", str(ROOT), "--vs-template", str(clone)], errors="replace", cwd=ROOT)
             self.assertIn("GIT_BIN", r.stdout + r.stderr)
         finally:
             os.environ.pop("GIT_BIN", None)
@@ -80,10 +80,9 @@ class GitBin(unittest.TestCase):
         clone.mkdir()
         subprocess.run(["git", "-C", str(clone), "init", "-q"], check=True)
         # 放一份与工作区不同的 AGENT_RULES.md：证明降级模式下字节比对**仍然执行**
-        (clone / "AGENT_RULES.md").write_text("different\n", encoding="utf-8")
-        r = subprocess.run([sys.executable, str(ROOT / "scripts" / "verify_rules.py"),
-                            "--workspace", str(ROOT), "--vs-template", str(clone), "--trust=none"],
-                           capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT)
+        osnorm.write_text(clone / "AGENT_RULES.md", "different\n", newline="lf")
+        r = osnorm.run_text([sys.executable, str(ROOT / "scripts" / "verify_rules.py"),
+                            "--workspace", str(ROOT), "--vs-template", str(clone), "--trust=none"], errors="replace", cwd=ROOT)
         out = r.stdout + r.stderr
         self.assertIn("UNANCHORED", out)
         self.assertNotEqual(r.returncode, 0)

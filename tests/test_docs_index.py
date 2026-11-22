@@ -22,13 +22,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "docs_index.py"
 PY = sys.executable
 
 
 def run(*args, cwd):
-    p = subprocess.run([PY, "-B", str(SCRIPT), *args], cwd=cwd, text=True, encoding="utf-8", capture_output=True)
+    p = osnorm.run_text([PY, "-B", str(SCRIPT), *args], cwd=cwd, errors="strict")
     return p.returncode, p.stdout.strip()
 
 
@@ -38,11 +41,9 @@ class DocsIndex(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.ws = Path(self.tmp.name)
         (self.ws / "docs").mkdir()
-        (self.ws / "docs" / "a.md").write_text(
-            "# A\n\n## 1. 守门判据 <!-- R98 -->\n\n覆盖 `1..total`，缺口即拦。\n\n"
-            "## 2. 活体拒绝腿怎么测\n\n给子 agent 结构性无读定义。\n", encoding="utf-8")
-        (self.ws / "docs" / "b.md").write_text(
-            "# B\n\n## 3. 审计事件\n\n十三个事件，落 audit-<client>.jsonl。\n", encoding="utf-8")
+        osnorm.write_text(self.ws / "docs" / "a.md", "# A\n\n## 1. 守门判据 <!-- R98 -->\n\n覆盖 `1..total`，缺口即拦。\n\n"
+            "## 2. 活体拒绝腿怎么测\n\n给子 agent 结构性无读定义。\n", newline="lf")
+        osnorm.write_text(self.ws / "docs" / "b.md", "# B\n\n## 3. 审计事件\n\n十三个事件，落 audit-<client>.jsonl。\n", newline="lf")
 
     def build(self):
         rc, out = run("build", cwd=self.ws)
@@ -51,7 +52,7 @@ class DocsIndex(unittest.TestCase):
 
     def test_i1_build_schema_and_no_body(self):
         self.build()
-        idx = json.loads((self.ws / "docs" / ".index.json").read_text(encoding="utf-8"))
+        idx = json.loads(osnorm.read_text(self.ws / "docs" / ".index.json", bom=False, newline="preserve"))
         for k in ("schema", "files", "sections", "df", "n_sections"):
             self.assertIn(k, idx)
         self.assertGreaterEqual(idx["n_sections"], 3)
@@ -76,14 +77,14 @@ class DocsIndex(unittest.TestCase):
     def test_i4_stale_refuses(self):
         self.build()
         p = self.ws / "docs" / "a.md"
-        p.write_text(p.read_text(encoding="utf-8") + "\n追加\n", encoding="utf-8")
+        osnorm.write_text(p, osnorm.read_text(p, bom=False, newline="preserve") + "\n追加\n", newline="lf")
         rc, out = run("query", "R98", cwd=self.ws)
         self.assertEqual(rc, 3, out)
         self.assertEqual(json.loads(out)["error"], "stale")
 
     def test_i5_unindexed_detected(self):
         self.build()
-        (self.ws / "docs" / "c.md").write_text("# C\n\n## 4. 新增\n\n正文\n", encoding="utf-8")
+        osnorm.write_text(self.ws / "docs" / "c.md", "# C\n\n## 4. 新增\n\n正文\n", newline="lf")
         rc, out = run("check", cwd=self.ws)
         self.assertEqual(rc, 1, out)
         self.assertFalse(json.loads(out)["ok"])
@@ -102,8 +103,7 @@ class DocsIndex(unittest.TestCase):
 
     # ---- 检索质量（打分重构后新增）----
     def test_i8_heading_idf_scaled(self):
-        (self.ws / "docs" / "c.md").write_text(
-            "# C\n\n## 5. 同轮并发读写的坑\n\n并发写入会被拒。\n", encoding="utf-8")
+        osnorm.write_text(self.ws / "docs" / "c.md", "# C\n\n## 5. 同轮并发读写的坑\n\n并发写入会被拒。\n", newline="lf")
         self.build()
         rc, out = run("query", "同轮并发", "--json", cwd=self.ws)
         self.assertEqual(rc, 0, out)
@@ -120,14 +120,14 @@ class DocsIndex(unittest.TestCase):
     def test_i10_alias_and_fingerprint(self):
         ali = {"schema": 1, "aliases": [{"phrases": ["活体夹具"], "path": "docs/a.md",
                                          "heading": "2. 活体拒绝腿怎么测", "boost": 20}]}
-        (self.ws / "docs" / ".aliases.json").write_text(json.dumps(ali), encoding="utf-8")
+        osnorm.write_text(self.ws / "docs" / ".aliases.json", json.dumps(ali), newline="lf")
         self.build()
         rc, out = run("query", "活体夹具", "--json", cwd=self.ws)
         self.assertEqual(rc, 0, out)
         self.assertIn("活体拒绝腿", json.loads(out)["results"][0]["heading"])
         # 目标文件改动 → 别名失效，且索引 stale 会先拒答
         p = self.ws / "docs" / "a.md"
-        p.write_text(p.read_text(encoding="utf-8") + "\n补\n", encoding="utf-8")
+        osnorm.write_text(p, osnorm.read_text(p, bom=False, newline="preserve") + "\n补\n", newline="lf")
         rc2, out2 = run("query", "活体夹具", cwd=self.ws)
         self.assertEqual(rc2, 3, out2)
 

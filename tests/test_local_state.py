@@ -23,6 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
+import osnorm  # noqa: E402
 
 import local_state as ls  # noqa: E402
 
@@ -128,9 +129,9 @@ class LocalStateTest(unittest.TestCase):
         i = ident()
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         f = ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json"
-        data = json.loads(f.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(f, bom=False, newline="preserve"))
         data["workspace_id"] = "deadbeef-dead-dead-dead-deaddeadbeef"
-        f.write_text(json.dumps(data), encoding="utf-8")
+        osnorm.write_text(f, json.dumps(data), newline="lf")
         res = ls.read_status(self.ws, WSID, i, ephemeral=False)
         self.assertEqual(res["status"], "CORRUPT")
         self.assertIn("workspace", res["reason"])
@@ -138,8 +139,7 @@ class LocalStateTest(unittest.TestCase):
     def test_06_corrupt_json(self):
         i = ident()
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
-        (ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json").write_text(
-            "{not json", encoding="utf-8")
+        osnorm.write_text(ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json", "{not json", newline="lf")
         self.assertEqual(ls.read_status(self.ws, WSID, i, ephemeral=False)["status"], "CORRUPT")
 
     def test_07_identity_unavailable(self):
@@ -173,8 +173,7 @@ class LocalStateTest(unittest.TestCase):
     def test_09_no_plaintext_paths(self):
         i = ident()
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
-        text = (ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json").read_text(
-            encoding="utf-8")
+        text = osnorm.read_text(ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json", bom=False, newline="preserve")
         for bad in (str(self.ws), str(self.ws.resolve()), str(Path.home())):
             self.assertNotIn(bad, text)
 
@@ -295,8 +294,8 @@ class LocalStateTest(unittest.TestCase):
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         d = ls.context_dir(self.ws, WSID, i, ephemeral=False)
         bad = {"schema": "v1", "workspace_id": "other", "context_id": "zzz"}
-        (d / "runtime (conflicted copy).json").write_text(json.dumps(bad), encoding="utf-8")
-        (d / "runtime.sync-conflict-20260101.json").write_text(json.dumps(bad), encoding="utf-8")
+        osnorm.write_text(d / "runtime (conflicted copy).json", json.dumps(bad), newline="lf")
+        osnorm.write_text(d / "runtime.sync-conflict-20260101.json", json.dumps(bad), newline="lf")
         self.assertEqual(ls.read_status(self.ws, WSID, i, ephemeral=False)["status"], "BOUND")
 
     def test_19_context_dir_has_no_extra_files(self):
@@ -317,27 +316,27 @@ class LocalStateTest(unittest.TestCase):
             (ws / ".workspace").mkdir(parents=True)
             ls.bind(ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
             f = ls.state_root(ws) / cid / "runtime.json"
-            data = json.loads(f.read_text(encoding="utf-8"))
+            data = json.loads(osnorm.read_text(f, bom=False, newline="preserve"))
             if kind == "bad-json":
-                f.write_text("{not json", encoding="utf-8")
+                osnorm.write_text(f, "{not json", newline="lf")
             elif kind == "unknown-schema":
                 data["schema"] = "v2"
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "missing-fields":
                 data.pop("version")
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "invalid-fields":
                 data["mode"] = "bogus"
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "workspace-mismatch":
                 data["workspace_id"] = "deadbeef-dead-dead-dead-deaddeadbeef"
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "context-mismatch":
                 data["context_id"] = "0" * 64
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "realm-mismatch":
                 data["realm"] = "windows"
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "missing-runtime":
                 f.unlink()
             return ws
@@ -583,28 +582,28 @@ class LocalStateTest(unittest.TestCase):
 
     def test_36_workspace_id_created_once_and_readonly_variant(self):
         boot = self.ws / ".workspace" / "bootstrap.json"
-        boot.write_text(json.dumps({"workspace_status": "template"}), encoding="utf-8")
+        osnorm.write_text(boot, json.dumps({"workspace_status": "template"}), newline="lf")
         self.assertIsNone(ls.workspace_id_of(self.ws), "只读取值不应凭空造 id")
         self.assertNotIn("workspace_id",
-                         json.loads(boot.read_text(encoding="utf-8")), "只读取值写了盘")
+                         json.loads(osnorm.read_text(boot, bom=False, newline="preserve")), "只读取值写了盘")
         wid = ls.ensure_workspace_id(self.ws)
         self.assertRegex(wid or "", r"^[0-9a-f-]{36}$")
         self.assertEqual(ls.ensure_workspace_id(self.ws), wid, "ensure 不幂等")
         self.assertEqual(ls.workspace_id_of(self.ws), wid)
-        data = json.loads(boot.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))
         self.assertEqual(data["workspace_id"], wid)
         self.assertEqual(data["workspace_status"], "template", "不得顺手改别的字段")
 
     def test_38_concurrent_workspace_id_converges(self):
         """多进程首次 ensure：所有返回值必须一致，且等于落盘值。"""
         boot = self.ws / ".workspace" / "bootstrap.json"
-        boot.write_text(json.dumps({"workspace_status": "template", "sentinel": 1}), encoding="utf-8")
+        osnorm.write_text(boot, json.dumps({"workspace_status": "template", "sentinel": 1}), newline="lf")
         ctx = multiprocessing.get_context("spawn")
         with ctx.Pool(6) as pool:
             ids = pool.map(_wid_worker, [str(self.ws)] * 6)
         self.assertTrue(all(ids), f"有进程拿不到 id：{ids}")
         self.assertEqual(len(set(ids)), 1, f"并发首次 ensure 产生多个 id：{set(ids)}")
-        data = json.loads(boot.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))
         self.assertEqual(data["workspace_id"], ids[0])
         self.assertEqual(data["sentinel"], 1, "不得改动其他字段")
 
@@ -648,7 +647,7 @@ class LocalStateTest(unittest.TestCase):
         """
         import threading
         boot = self.ws / ".workspace" / "bootstrap.json"
-        boot.write_text(json.dumps({"workspace_status": "template"}), encoding="utf-8")
+        osnorm.write_text(boot, json.dumps({"workspace_status": "template"}), newline="lf")
         real_uuid4 = ls.uuid.uuid4
         counter = [0]
 
@@ -675,7 +674,7 @@ class LocalStateTest(unittest.TestCase):
             ls.uuid.uuid4 = real_uuid4
         self.assertEqual(len(results), 2)
         self.assertEqual(len(set(results)), 1, f"并发首次 ensure 返回了不同 id：{results}")
-        self.assertEqual(json.loads(boot.read_text(encoding="utf-8"))["workspace_id"], results[0])
+        self.assertEqual(json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))["workspace_id"], results[0])
         self.assertEqual(counter[0], 1, "锁没有起作用：uuid 被生成了不止一次")
 
     def test_41_written_state_has_no_absolute_strings(self):
@@ -686,7 +685,7 @@ class LocalStateTest(unittest.TestCase):
                       decision_source="local-venv（用户选择）")
         self.assertEqual(res["status"], "BOUND")
         path = ls.context_dir(self.ws, WSID, ident(), ephemeral=False) / "runtime.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(path, bom=False, newline="preserve"))
 
         offenders: list[str] = []
 
@@ -734,7 +733,7 @@ class LocalStateTest(unittest.TestCase):
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         d = ls.context_dir(self.ws, WSID, i, ephemeral=False)
         outside_file = self.tmp / "outside.json"
-        outside_file.write_text(json.dumps({"schema": "v1"}), encoding="utf-8")
+        osnorm.write_text(outside_file, json.dumps({"schema": "v1"}), newline="lf")
         (d / "runtime.json").unlink()
         (d / "runtime.json").symlink_to(outside_file)
         res = ls.read_status(self.ws, WSID, i, ephemeral=False)

@@ -79,21 +79,20 @@ class SingleBootstrapRead(unittest.TestCase):
         shutil.copytree(ROOT, copy, ignore=_COPY_IGNORE, symlinks=True)
         self.addCleanup(shutil.rmtree, copy, True)
         boot = copy / BOOT
-        data = json.loads(boot.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))
         self.assertEqual(data.get("workspace_status"), "template",
                          "本用例假定副本以模板身份起跑")
         # 生成块之外写一份当前政策版本的散文副本：template 下必红，instance 下 README 豁免。
         readme = copy / "README.md"
         cur = pf.collect(copy)["policy"]
-        readme.write_text(readme.read_text(encoding="utf-8")
-                          + f"\n本仓政策版本 {cur} 的散文副本。\n", encoding="utf-8")
+        osnorm.write_text(readme, osnorm.read_text(readme, bom=False, newline="preserve")
+                          + f"\n本仓政策版本 {cur} 的散文副本。\n", newline="lf")
 
         with _ReadCounter() as counter:
             first = pf.check(copy)
             n_first = len(counter.paths)
             data["workspace_status"] = "active"
-            boot.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-                            encoding="utf-8")
+            osnorm.write_text(boot, json.dumps(data, ensure_ascii=False, indent=2) + "\n", newline="lf")
             second = pf.check(copy)
             n_second = len(counter.paths) - n_first
 

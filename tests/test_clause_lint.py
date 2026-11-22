@@ -7,6 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 LINT = ROOT / "scripts" / "clause_lint.py"
 POLICY = ROOT / "AGENT_RULES.md"
@@ -51,13 +54,11 @@ class ClauseLint(unittest.TestCase):
         self.tmp.cleanup()
 
     def write(self, body, meta):
-        (self.root / "AGENT_RULES.md").write_text(body, encoding="utf-8")
-        (self.root / ".workspace" / "clauses.meta.json").write_text(
-            json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+        osnorm.write_text(self.root / "AGENT_RULES.md", body, newline="lf")
+        osnorm.write_text(self.root / ".workspace" / "clauses.meta.json", json.dumps(meta, ensure_ascii=False, indent=1), newline="lf")
 
     def run_lint(self, *args):
-        return subprocess.run([sys.executable, str(self.root / "scripts" / "clause_lint.py"), *args],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return osnorm.run_text([sys.executable, str(self.root / "scripts" / "clause_lint.py"), *args], errors="replace")
 
     def test_t1_clean_baseline(self):
         p = self.run_lint()

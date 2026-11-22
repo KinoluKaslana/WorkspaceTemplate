@@ -12,6 +12,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_skill_audit import FULL, audit, build  # noqa: E402
 
@@ -30,11 +33,11 @@ def approve(d: Path, body: bytes, **over) -> None:
     ev = {"approved_by": "user", "approved_at": "2026-11-10T00:00:00",
           "approved_directive": "照做", "approved_skill_sha256": hashlib.sha256(body).hexdigest()}
     ev.update(over)
-    (d / "APPROVAL.json").write_text(json.dumps(ev, ensure_ascii=False), encoding="utf-8")
+    osnorm.write_text(d / "APPROVAL.json", json.dumps(ev, ensure_ascii=False), newline="lf")
 
 
 def registry_text(ws: Path) -> str:
-    return (ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8")
+    return osnorm.read_text(ws / "skills" / "REGISTRY.md", bom=False, newline="preserve")
 
 
 class Hardening(unittest.TestCase):
@@ -93,7 +96,7 @@ class Hardening(unittest.TestCase):
         """计数行缺失必须报，而不是静默跳过。"""
         ws = build(self.root, {"demo": FULL.format(name="demo")})
         reg = ws / "skills" / "REGISTRY.md"
-        reg.write_text(reg.read_text(encoding="utf-8").replace("已登记（1 入口：demo）", "见下表"), encoding="utf-8")
+        osnorm.write_text(reg, osnorm.read_text(reg, bom=False, newline="preserve").replace("已登记（1 入口：demo）", "见下表"), newline="lf")
         rc, out = audit(ws)
         self.assertEqual(rc, 1, out)
         self.assertIn("缺『已登记", out)
@@ -101,9 +104,9 @@ class Hardening(unittest.TestCase):
     def test_t6_duplicate_section(self):
         ws = build(self.root, {"demo": FULL.format(name="demo")})
         reg = ws / "skills" / "REGISTRY.md"
-        reg.write_text(reg.read_text(encoding="utf-8") +
+        osnorm.write_text(reg, osnorm.read_text(reg, bom=False, newline="preserve") +
                        "\n## 本地层入口\n\n| 路由 ID | 状态 | 触发摘要 | 入口 |\n|---|---|---|---|\n"
-                       "\n## 本地层入口\n\n| 路由 ID | 状态 | 触发摘要 | 入口 |\n|---|---|---|---|\n", encoding="utf-8")
+                       "\n## 本地层入口\n\n| 路由 ID | 状态 | 触发摘要 | 入口 |\n|---|---|---|---|\n", newline="lf")
         rc, out = audit(ws)
         self.assertEqual(rc, 1, out)
         self.assertIn("多个", out)
@@ -112,10 +115,9 @@ class Hardening(unittest.TestCase):
         """旧标题（带后缀）仍能解析，不报假「缺」。"""
         ws = build(self.root, {"demo": FULL.format(name="demo")})
         reg = ws / "skills" / "REGISTRY.md"
-        reg.write_text(reg.read_text(encoding="utf-8") + "\n## 本地层入口（workspace-skills-local）\n\n"
+        osnorm.write_text(reg, osnorm.read_text(reg, bom=False, newline="preserve") + "\n## 本地层入口（workspace-skills-local）\n\n"
                        "| 路由 ID | 状态 | 触发摘要 | 入口 |\n|---|---|---|---|\n"
-                       "| old-one | deprecated | x | `.workspace/skills-local/_retired/old-one/SKILL.md` |\n",
-                       encoding="utf-8")
+                       "| old-one | deprecated | x | `.workspace/skills-local/_retired/old-one/SKILL.md` |\n", newline="lf")
         add_local(ws, "old-one", status="deprecated", area="_retired")
         rc, out = audit(ws)
         self.assertNotIn("缺 ['old-one']", out)
@@ -131,9 +133,9 @@ class Hardening(unittest.TestCase):
         """目录没了但登记表非空 → 拒绝清空（退出 4，文件不动）。"""
         ws = build(self.root, {"demo": FULL.format(name="demo")})
         reg = ws / "skills" / "REGISTRY.md"
-        reg.write_text(reg.read_text(encoding="utf-8") + "\n## 本地层入口\n\n> 生成\n\n"
+        osnorm.write_text(reg, osnorm.read_text(reg, bom=False, newline="preserve") + "\n## 本地层入口\n\n> 生成\n\n"
                        "| 路由 ID | 状态 | 触发摘要 | 入口 |\n|---|---|---|---|\n"
-                       "| precious | approved | x | `.workspace/skills-local/precious/SKILL.md` |\n", encoding="utf-8")
+                       "| precious | approved | x | `.workspace/skills-local/precious/SKILL.md` |\n", newline="lf")
         before = registry_text(ws)
         rc, _ = audit(ws, "--sync-registry")
         self.assertEqual(rc, 4)
@@ -146,12 +148,12 @@ class Hardening(unittest.TestCase):
         d = add_local(ws, "blk", raw=body)
         approve(d, body)
         tools = ws / "TOOLS.md"
-        tools.write_text(tools.read_text(encoding="utf-8") + "| **blk** | 块外 |\n", encoding="utf-8")
+        osnorm.write_text(tools, osnorm.read_text(tools, bom=False, newline="preserve") + "| **blk** | 块外 |\n", newline="lf")
         rc, out = audit(ws)
         self.assertEqual(rc, 1, out)
         self.assertIn("本地层块", out)
         audit(ws, "--sync-registry")
-        self.assertIn("local-skills:begin", tools.read_text(encoding="utf-8"))
+        self.assertIn("local-skills:begin", osnorm.read_text(tools, bom=False, newline="preserve"))
 
     def test_t12_dotdir_not_treated_as_file(self):
         """`.workspace/.local` 是点目录，不能按「文件名带扩展名」判成缺失文件。"""

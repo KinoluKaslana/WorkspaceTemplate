@@ -9,6 +9,9 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +36,7 @@ class ReleaseTests(unittest.TestCase):
         self.git("commit", "-qm", "baseline")
         # 版本从账本末条派生：测试必须与仓库当前政策版本无关，
         # 否则 --apply 之后的 `release.py --verify` 里本套测试会自己再失败。
-        ledger = json.loads((self.repo/".workspace/releases.json").read_text(encoding="utf-8"))
+        ledger = json.loads(osnorm.read_text(self.repo/".workspace/releases.json", bom=False, newline="preserve"))
         self.current = str(ledger[-1]["version"])
         major, minor, _ = (int(x) for x in self.current.split("."))
         self.next = f"{major}.{minor + 1}.0"
@@ -42,12 +45,10 @@ class ReleaseTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def git(self, *args):
-        return subprocess.run(["git", *args], cwd=self.repo, check=True,
-                              text=True, encoding="utf-8", errors="replace", capture_output=True)
+        return osnorm.run_text(["git", *args], cwd=self.repo, check=True, errors="replace")
 
     def cli(self, *args):
-        return subprocess.run([str(Path(__import__("sys").executable)), "-B", "scripts/release.py", *args],
-                              cwd=self.repo, text=True, encoding="utf-8", errors="replace", capture_output=True)
+        return osnorm.run_text([str(Path(__import__("sys").executable)), "-B", "scripts/release.py", *args], cwd=self.repo, errors="replace")
 
     def test_dry_run_does_not_write(self):
         before = self.git("status", "--porcelain").stdout
@@ -62,10 +63,10 @@ class ReleaseTests(unittest.TestCase):
         # 显式 UTF-8：Windows 上 `read_text()` 默认按 locale（cp1252/cp936）解码，
         # 中文断言会 mojibake 或直接 UnicodeDecodeError。
         self.assertIn(f"模板政策版本：`{self.next}`",
-                      (self.repo/"AGENT_RULES.md").read_text(encoding="utf-8"))
-        self.assertIn(f"## {self.next}（", (self.repo/"CHANGELOG.md").read_text(encoding="utf-8"))
-        self.assertEqual(json.loads((self.repo/".workspace/bootstrap.json").read_text(encoding="utf-8"))["template"]["current_policy_version"], self.next)
-        self.assertEqual(json.loads((self.repo/".workspace/releases.json").read_text(encoding="utf-8"))[-1]["version"], self.next)
+                      osnorm.read_text(self.repo/"AGENT_RULES.md", bom=False, newline="preserve"))
+        self.assertIn(f"## {self.next}（", osnorm.read_text(self.repo/"CHANGELOG.md", bom=False, newline="preserve"))
+        self.assertEqual(json.loads(osnorm.read_text(self.repo/".workspace/bootstrap.json", bom=False, newline="preserve"))["template"]["current_policy_version"], self.next)
+        self.assertEqual(json.loads(osnorm.read_text(self.repo/".workspace/releases.json", bom=False, newline="preserve"))[-1]["version"], self.next)
 
     def test_duplicate_version_rejected(self):
         result = self.cli("--version", self.current, "--summary", "重复", "--apply")
@@ -78,7 +79,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("严格升级", result.stderr)
 
     def test_dirty_tree_rejected(self):
-        (self.repo/"dirty.txt").write_text("dirty", encoding="utf-8")
+        osnorm.write_text(self.repo/"dirty.txt", "dirty", newline="lf")
         result = self.cli("--version", self.next, "--summary", "测试", "--apply")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("工作树不干净", result.stderr)
@@ -96,17 +97,16 @@ class ReleaseTests(unittest.TestCase):
     def test_ledger_tail_must_match_policy(self):
         spec = importlib.util.spec_from_file_location("facts_under_test", self.repo/"scripts/policy_facts.py")
         facts = importlib.util.module_from_spec(spec); spec.loader.exec_module(facts)
-        ledger = json.loads((self.repo/".workspace/releases.json").read_text(encoding="utf-8"))
+        ledger = json.loads(osnorm.read_text(self.repo/".workspace/releases.json", bom=False, newline="preserve"))
         ledger[-1]["version"] = "3.6.9"
-        (self.repo/".workspace/releases.json").write_text(json.dumps(ledger), encoding="utf-8")
+        osnorm.write_text(self.repo/".workspace/releases.json", json.dumps(ledger), newline="lf")
         self.assertTrue(any("版本升级必须经 release.py" in x for x in facts.check(self.repo)))
 
     # ---- T1：合法 --apply 之后 verify_rules 必须 clean（缺陷 1 回归） ----
     def test_apply_leaves_verify_rules_clean(self):
         result = self.cli("--version", self.next, "--summary", "测试", "--apply")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        vr = subprocess.run([sys.executable, "-B", "scripts/verify_rules.py", "--workspace", "."],
-                            cwd=self.repo, text=True, encoding="utf-8", errors="replace", capture_output=True)
+        vr = osnorm.run_text([sys.executable, "-B", "scripts/verify_rules.py", "--workspace", "."], cwd=self.repo, errors="replace")
         self.assertEqual(vr.returncode, 0, vr.stdout + vr.stderr)
         report = json.loads(vr.stdout)
         self.assertTrue(report["clean"], report["findings"])
@@ -135,7 +135,7 @@ class ReleaseTests(unittest.TestCase):
 
     # ---- T2b：既已被改写、又恢复失败的文件 → 清单标出真实缺口，其余照常恢复 ----
     def test_rollback_survives_a_modified_file_that_cannot_be_restored(self):
-        baseline_ledger = json.loads((self.repo/".workspace/releases.json").read_text(encoding="utf-8"))
+        baseline_ledger = json.loads(osnorm.read_text(self.repo/".workspace/releases.json", bom=False, newline="preserve"))
         real_run = release.run
 
         def saboteur(cmd, root=None):
@@ -162,7 +162,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("PermissionError", report)
         self.assertIn("磁盘内容与备份不一致，需人工恢复", report)
         # 其余文件（含账本）确实被恢复
-        self.assertEqual(json.loads((self.repo/".workspace/releases.json").read_text(encoding="utf-8")),
+        self.assertEqual(json.loads(osnorm.read_text(self.repo/".workspace/releases.json", bom=False, newline="preserve")),
                          baseline_ledger)
         residual = [ln for ln in self.git("status", "--porcelain").stdout.splitlines() if ln.strip()]
         self.assertEqual(residual, [" M README.md"])
@@ -173,8 +173,7 @@ class ReleaseTests(unittest.TestCase):
         result = self.cli("--version", self.next, "--summary", "测试", "--apply")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         env = dict(os.environ, RELEASE_VERIFY_NESTED="1")
-        v = subprocess.run([sys.executable, "-B", "scripts/release.py", "--verify"], cwd=self.repo,
-                           text=True, encoding="utf-8", errors="replace", capture_output=True, env=env)
+        v = osnorm.run_text([sys.executable, "-B", "scripts/release.py", "--verify"], cwd=self.repo, errors="replace", env=env)
         self.assertEqual(v.returncode, 0, (v.stdout + v.stderr)[-4000:])
 
     # ---- --verify 的覆盖面本身（数据化，不需要真跑全套） ----

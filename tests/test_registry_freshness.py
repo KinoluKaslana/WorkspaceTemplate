@@ -15,15 +15,16 @@ import sys
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "verify_rules.py"
 
 
 class RegistryFreshness(unittest.TestCase):
     def test_registry_matches_disk(self):
-        p = subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(ROOT)],
-                           capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        p = osnorm.run_text([sys.executable, "-B", str(SCRIPT), "--workspace", str(ROOT)], errors="replace", env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
         self.assertEqual(
             p.returncode, 0,
             "模板层文件与 .workspace/rule-clauses.json 不一致——改完文件后忘了跑 "
@@ -38,13 +39,12 @@ class RegistryFreshness(unittest.TestCase):
         两个 README 都受该豁免影响，故必须逐个钉，只钉一个就漏掉另一半。
         """
         try:
-            status = json.loads((ROOT / ".workspace" / "bootstrap.json")
-                               .read_text(encoding="utf-8")).get("workspace_status", "")
+            status = json.loads(osnorm.read_text(ROOT / ".workspace" / "bootstrap.json", bom=False, newline="preserve")).get("workspace_status", "")
         except Exception:
             status = ""
         if status != "template":
             self.skipTest("派生实例的 README 属用户首页（同步豁免），哈希不归模板管")
-        reg = json.loads((ROOT / ".workspace" / "rule-clauses.json").read_text(encoding="utf-8"))
+        reg = json.loads(osnorm.read_text(ROOT / ".workspace" / "rule-clauses.json", bom=False, newline="preserve"))
         for name in ("README.md", "README_EN.md"):
             with self.subTest(readme=name):
                 want = (reg.get(name) or {}).get("file_sha256")

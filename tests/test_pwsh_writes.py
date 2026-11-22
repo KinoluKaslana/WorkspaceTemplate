@@ -22,6 +22,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / ".workspace" / "hooks"
 
@@ -80,9 +83,8 @@ class PwshWrites(unittest.TestCase):
         # 上表现为 `test_after_full_read_write_is_allowed` 假红（deny != allow）。
         rules = (ROOT / "AGENT_RULES.md").read_bytes().replace(b"\r\n", b"\n")
         (self.ws / "AGENT_RULES.md").write_bytes(rules)
-        (self.ws / ".workspace" / "bootstrap.json").write_text(
-            json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
-                        "template": {"source_repo": "https://example.invalid/t"}}), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
+                        "template": {"source_repo": "https://example.invalid/t"}}), newline="lf")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -91,9 +93,7 @@ class PwshWrites(unittest.TestCase):
         payload = {"client": "dsh", "dsh_tool": "pwsh", "hook_event_name": "PreToolUse",
                    "session_id": "pwsh-case", "cwd": str(self.ws), "tool_name": "Bash",
                    "tool_input": {"command": command}}
-        p = subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "pre_bash"],
-                           input=json.dumps(payload), capture_output=True, text=True, encoding="utf-8",
-                           env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
+        p = osnorm.run_text([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "pre_bash"], input=json.dumps(payload), env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws, errors="strict")
         out = p.stdout.strip()
         if not out:
             return "allow", ""
@@ -124,7 +124,7 @@ class PwshWrites(unittest.TestCase):
         self.assertIn("无法静态确定", reason)
 
     def test_after_full_read_write_is_allowed(self):
-        raw = (self.ws / "AGENT_RULES.md").read_text(encoding="utf-8")
+        raw = osnorm.read_text(self.ws / "AGENT_RULES.md", bom=False, newline="preserve")
         lines = raw.split("\n")
         physical = len(lines) - 1 if raw.endswith("\n") else len(lines)
         numbered = "\n".join(f"{i + 1}: {l}" for i, l in enumerate(lines[:physical]))
@@ -135,9 +135,7 @@ class PwshWrites(unittest.TestCase):
                 "cwd": str(self.ws), "tool_name": "read",
                 "tool_input": {"file_path": target, "offset": 1, "limit": physical},
                 "tool_response": {"isError": False, "content": [{"type": "text", "text": text}]}}
-        subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "post_read"],
-                       input=json.dumps(post), capture_output=True, text=True, encoding="utf-8",
-                       env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
+        osnorm.run_text([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "post_read"], input=json.dumps(post), env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws, errors="strict")
         decision, reason = self.decision("Set-Content -Path 'after.txt' -Value 'hi'")
         self.assertEqual(decision, "allow", f"完整读取治理文件后仍被拦（{reason}）")
 

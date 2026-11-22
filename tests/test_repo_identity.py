@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+import osnorm  # noqa: E402
 from repo_identity import classify, convert_format, normalize_encoding, repair  # noqa: E402
 
 SOURCE = "https://github.com/KinoluKaslana/WorkspaceTemplate"
@@ -114,7 +115,7 @@ class ActivationAtomicity(unittest.TestCase):
         (ws / ".workspace").mkdir(parents=True)
         boot = {"schema_version": 1, "workspace_status": "template",
                 "python": {"mode": "unconfigured"}, "template": {"source_repo": SOURCE}}
-        (ws / ".workspace/bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(ws / ".workspace/bootstrap.json", json.dumps(boot), newline="lf")
         subprocess.run(["git", "init", "-q", str(ws)], check=True)
         subprocess.run(["git", "-C", str(ws), "remote", "add", "origin", origin], check=True)
         return ws
@@ -123,10 +124,8 @@ class ActivationAtomicity(unittest.TestCase):
         ws = self._workspace("https://[bad/o/r")
         boot = ws / ".workspace/bootstrap.json"
         before = boot.read_bytes()
-        result = subprocess.run(
-            [sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
-             "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        result = osnorm.run_text([sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
+             "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"], errors="replace")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(boot.read_bytes(), before)
         self.assertFalse((ws / ".workspace/.local").exists())
@@ -136,12 +135,10 @@ class ActivationAtomicity(unittest.TestCase):
         for origin, active in ((SOURCE, False), ("https://example.invalid/o/r", True)):
             with self.subTest(origin=origin):
                 ws = self._workspace(origin)
-                result = subprocess.run(
-                    [sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
-                     "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace")
+                result = osnorm.run_text([sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
+                     "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"], errors="replace")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                boot = json.loads((ws / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
+                boot = json.loads(osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve"))
                 self.assertEqual(boot["workspace_status"] == "active", active)
                 if not active:
                     self.assertIn("remote set-url", json.loads(result.stdout)["hint"])
