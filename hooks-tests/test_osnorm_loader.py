@@ -95,6 +95,56 @@ def _run_probe(hookdir: Path, ws: Path, code: str) -> subprocess.CompletedProces
                           cwd=str(hookdir), env=_clean_env(), timeout=180)
 
 
+def _icacls(*args: str) -> subprocess.CompletedProcess:
+    """调 `icacls`（Windows）。输出是本地化编码，按字节收，失败时再解码。"""
+    exe = shutil.which("icacls") or str(
+        Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "icacls.exe")
+    return subprocess.run([exe, *args], capture_output=True, timeout=120)
+
+
+def _icacls_text(proc: subprocess.CompletedProcess) -> str:
+    raw = (proc.stdout or b"") + (proc.stderr or b"")
+    return raw.decode("mbcs" if os.name == "nt" else "utf-8", "replace").strip()
+
+
+def _deny_read_nt(path: Path):
+    """Windows：用 icacls 造真不可读，返回 `(恢复函数, 机制名)`。
+
+    只拒 `(RD)`（FILE_READ_DATA），**不**用 `(R)`：`(R)` 把 READ_CONTROL 一并拒掉，
+    `icacls /remove:d` 自己也会被拒（真机实测 rc=5），DACL 再也修不回来。
+    `(RD)` 下 `stat`/`os.path.exists` 仍可用，只有读内容抛 PermissionError——这正是
+    osnorm 装载器 `unreadable` 分支要覆盖的形态。
+    """
+    account = os.environ.get("USERNAME", "")
+    if os.environ.get("USERDOMAIN"):
+        account = f"{os.environ['USERDOMAIN']}\\{account}"
+    if not account:
+        raise AssertionError("USERNAME 不可用，无法构造 icacls 主体")
+    proc = _icacls(str(path), "/deny", f"{account}:(RD)")
+    if proc.returncode != 0:
+        raise AssertionError(f"icacls /deny 失败（rc={proc.returncode}）：{_icacls_text(proc)}")
+
+    def restore() -> str | None:
+        done = _icacls(str(path), "/remove:d", account)
+        return None if done.returncode == 0 else (
+            f"icacls /remove:d rc={done.returncode}：{_icacls_text(done)}")
+    return restore, "icacls 未能生效"
+
+
+def _deny_read_posix(path: Path):
+    """POSIX：`chmod 000`，返回 `(恢复函数, 机制名)`；恢复回原 mode。"""
+    mode = path.stat().st_mode & 0o777
+    path.chmod(0)
+
+    def restore() -> str | None:
+        try:
+            path.chmod(mode)
+        except OSError as exc:
+            return f"chmod {mode:o} 失败：{exc}"
+        return None
+    return restore, "chmod 000 未能生效"
+
+
 class _EnvelopeAssertions(unittest.TestCase):
     def assert_deny_envelope(self, proc: subprocess.CompletedProcess, token: str) -> dict:
         """完整包络三字段 + 具体分支标记（N6：不只断 rc，也不只断「有 deny」）。"""
@@ -270,34 +320,36 @@ class T3FaultMatrix(_EnvelopeAssertions):
         self._deny_for(b"OSNORM_API = 2\n", "api-version")
 
     def test_unreadable(self):
-        """不可读 → deny。POSIX 用真 chmod 000；root/Windows 下权限不阻读时
-        退回同一分支的注入版本（`_read_candidate` 抛 PermissionError），
-        覆盖的是同一行代码，不是另一套逻辑。"""
-        with tempfile.TemporaryDirectory(prefix="r41-t3u-") as tmp:
+        """不可读 → deny，**真子进程**断言，两条平台路径都必须真拦住读取。
+
+        - POSIX：`chmod 000`。
+        - Windows：`icacls <file> /deny <user>:(RD)`（只拒 FILE_READ_DATA；理由见
+          `_deny_read_nt`）。
+        施加后先由本进程读一次：预期 OSError；若读得到 → 用例失败（`icacls 未能生效`）。
+        不再退回「进程内 patch `_read_candidate`」：被测 hook 是**子进程**启动的，
+        进程内补丁根本打不到它，那样的绿是假证据（R41b 真机 JSONDecodeError 的来源）。
+        """
+        with tempfile.TemporaryDirectory(prefix="r41b-t3u-") as tmp:
             ws, hooks = _make_ws(Path(tmp))
             path = _put_osnorm(ws)
-            os.chmod(path, 0)
+            restore, mechanism = (
+                _deny_read_nt(path) if os.name == "nt" else _deny_read_posix(path))
             try:
+                enforced = False
                 try:
                     path.read_bytes()
-                    enforced = False
                 except OSError:
                     enforced = True
-                if enforced:
-                    self.assert_deny_envelope(_run_hook(hooks, ws), "unreadable")
-                    return
-                code = ("import json,sys\nsys.path.insert(0,sys.argv[1])\n"
-                        "import osnorm_loader as L\n"
-                        "def boom(p):\n    raise PermissionError('injected')\n"
-                        "L._read_candidate = boom\n"
-                        "try:\n    L.load(sys.argv[2])\n"
-                        "except L.OsnormUnavailable as exc:\n"
-                        "    print(json.dumps({'reason': exc.reason}))\n")
-                proc = _run_probe(hooks, ws, code)
-                self.assertEqual(proc.returncode, 0, proc.stderr)
-                self.assertEqual(json.loads(proc.stdout)["reason"], "unreadable")
+                self.assertTrue(enforced, f"{mechanism}：{path} 仍可被本进程读取")
+                self.assert_deny_envelope(_run_hook(hooks, ws), "unreadable")
             finally:
-                os.chmod(path, 0o600)
+                error = restore()
+                if error is not None:
+                    exc = sys.exc_info()[1]
+                    if exc is not None:
+                        exc.add_note(f"不可读 ACL 恢复失败，需手工清理：{error}")
+                    else:
+                        self.fail(f"不可读 ACL 恢复失败，需手工清理：{error}")
 
     def test_broken_a_never_falls_back_to_b(self):
         """N5：① 存在但初始化抛异常 → 拒绝，**不回退 ②**（回退会造成版本错配）。"""
