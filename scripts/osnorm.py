@@ -20,9 +20,11 @@
 """
 from __future__ import annotations
 
+import errno
 import os
 import posixpath
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -419,9 +421,22 @@ def atomic_write_bytes(path: str | os.PathLike[str], data: bytes, *,
     """同目录临时文件 → fsync → `replace_retry` → 目录 fsync。
 
     读者永远看不到半截文件；失败时清理临时文件并上抛，不留垃圾。
+
+    两条「与 `open(..., "w")` 等价」的硬约束（否则原子发布会在暗处改变语义）：
+    - **只读目标仍然写不动**：rename 换的是目录项，绕过文件自己的写保护；不先查，
+      「只读的治理文件」就会变成一句空话（被静默覆盖）。
+    - **既有文件的权限位随内容一起保留**：`mkstemp` 天生 0600，直接 rename 会把 0644
+      的治理文件悄悄变成 0600。
     """
     target = os.path.abspath(os.fspath(path))
     parent = os.path.dirname(target) or "."
+    if os.path.exists(target) and not os.access(target, os.W_OK):
+        raise PermissionError(errno.EACCES, "目标文件只读，拒绝原子覆盖", target)
+    if mode is None and os.path.isfile(target):
+        try:
+            mode = stat.S_IMODE(os.stat(target).st_mode)
+        except OSError:  # pragma: no cover - 竞态下目标消失：按 mkstemp 默认处理
+            mode = None
     fd, tmp = tempfile.mkstemp(dir=parent, prefix="." + os.path.basename(target) + ".",
                                suffix=".osnorm.tmp")
     try:
@@ -492,12 +507,19 @@ def configure_stdio() -> None:
     幂等：重复调用无害，不改任何模块级状态，**import 期不自动执行**。管道/重定向场景
     父进程统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp936/cp1252）写管道，
     中文会被就地替换或解成乱码——这里就是那条分界。
+
+    幂等落在**编码**上：已经是 UTF-8 的流一律不碰（连 `errors` 都不改）。缺了这条，
+    「重复调用无害」只是「再 reconfigure 一次也一样」，对已经按 UTF-8 打开的流仍是多余的
+    状态改动，也让 `scripts/*` 的旧私有实现在行为上与本函数不等价。
     """
     for stream in (sys.stdout, sys.stderr):
         if stream is None:
             continue
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
+            continue
+        encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if encoding == "utf8":
             continue
         try:
             is_tty = bool(stream.isatty())
@@ -508,5 +530,5 @@ def configure_stdio() -> None:
                 reconfigure(errors="replace")
             else:
                 reconfigure(encoding="utf-8", errors="replace")
-        except (ValueError, OSError):
+        except Exception:  # noqa: BLE001 - 输出层不许抛（任何流实现都可能是残缺的）
             continue

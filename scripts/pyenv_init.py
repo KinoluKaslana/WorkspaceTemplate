@@ -31,29 +31,14 @@ import sys
 from pathlib import Path
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+# 文本 I/O、子进程解码与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）
+# 与被 importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
+osnorm.configure_stdio()
 
 try:
     from repo_identity import classify as classify_repo
@@ -71,7 +56,7 @@ INSTALL_HINT = """uv 未安装。三种安装方式（任选其一，均由用�
 
 
 def run(cmd: list[str], **kw) -> tuple[int, str]:
-    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **kw)
+    p = osnorm.run_text(cmd, errors="replace", **kw)
     return p.returncode, (p.stdout or p.stderr).strip()
 
 
@@ -184,13 +169,12 @@ def _mark_active(boot_p: Path, activate: bool, hint: str | None) -> dict:
     必须**重新读盘**再改：`persist_mode` 刚写入了 `workspace_id`，用函数开头那份旧内容
     覆盖回去会把它抹掉。
     """
-    boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
+    # 写前重新读盘（不吃函数开头那份快照）；写用原子发布，不留 .tmp 残留
+    boot = json.loads(osnorm.read_text(boot_p, bom=True))
     if activate:
         boot["workspace_status"] = "active"
     boot.pop("python", None)
-    tmp = boot_p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    os.replace(tmp, boot_p)
+    osnorm.write_text(boot_p, json.dumps(boot, ensure_ascii=False, indent=2) + "\n", newline="lf")
     result = {"workspace_status": boot.get("workspace_status")}
     if hint:
         result.update({"template_protected": True, "hint": hint})
@@ -261,7 +245,7 @@ def main(argv: list[str]) -> int:
     if not boot_p.is_file():
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
-    boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
+    boot = json.loads(osnorm.read_text(boot_p, bom=True))
     local_mode = read_mode(ws)                      # 只认本机 BOUND 状态，绝不回退 bootstrap
     cur_mode = local_mode or ((boot.get("python") or {}).get("mode")) or "unconfigured"
     out: dict = {"mode": a.mode, "apply": a.apply, "existing_mode": cur_mode}

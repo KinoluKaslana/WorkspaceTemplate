@@ -386,10 +386,21 @@ class SingleSourceScanTest(unittest.TestCase):
         self.actual = scan_repo()
 
     def test_scan_covers_three_roots(self) -> None:
+        """扫描面必须覆盖三个根：逐根枚举、逐个真扫（**不以「该根还有违规」为前提**）。
+
+        R40b 之后 `scripts/` 已清零（8 个脚本全部迁到 osnorm），「三个根都还剩存量违规」这条
+        旧前提永久失效；覆盖性改由「逐根枚举 + 真解析」证明，另两个根仍以「有登记违规」
+        作为扫描确实落地的旁证（那两处是本轮明令不动的存量）。
+        """
+        for prefix, root in SCAN_ROOTS:
+            files = sorted(root.glob("*.py"))
+            self.assertTrue(files, f"{prefix} 根下没有可扫描文件")
+            for path in files:
+                scan_file(path, f"{prefix}/{path.name}")   # 解析失败会直接抛
         seen = {key[0] for key in self.actual}
-        self.assertTrue(any(f.startswith("scripts/") for f in seen))
-        self.assertTrue(any(f.startswith(".workspace/hooks/") for f in seen))
-        self.assertTrue(any(f.startswith("tests/") for f in seen))
+        for prefix in (".workspace/hooks", "tests"):
+            self.assertTrue(any(f.startswith(prefix + "/") for f in seen),
+                            f"{prefix} 的存量违规没有被扫描到")
 
     def test_r6_normcase_stays_zero(self) -> None:
         hits = [key for key in self.actual if key[1] == "R6"]

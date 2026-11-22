@@ -5,27 +5,16 @@ import argparse, hashlib, json, os, re, shutil, subprocess, sys, tempfile
 from datetime import date
 from pathlib import Path
 
+# 文本 I/O、子进程解码与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）
+# 与被 importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
 def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
-
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
+    """stdio 契约的唯一实现在 osnorm（旧名保留：`tests/test_windows_compat` 直接调它）。"""
+    osnorm.configure_stdio()
 
 
 _utf8_stdio()
@@ -50,8 +39,7 @@ MUTABLE = ("AGENT_RULES.md", "CHANGELOG.md", ".workspace/bootstrap.json",
 class ReleaseError(RuntimeError): pass
 
 def run(cmd, root=ROOT):
-    p = subprocess.run(cmd, cwd=root, text=True, encoding="utf-8", errors="replace",
-                       capture_output=True, env=_child_env())
+    p = osnorm.run_text(cmd, cwd=root, errors="replace", env=_child_env())
     if p.returncode:
         raise ReleaseError(f"命令失败 ({p.returncode}): {' '.join(cmd)}\n{(p.stdout+p.stderr).strip()}")
     if p.stdout.strip(): print(p.stdout.rstrip())
@@ -63,7 +51,7 @@ def version_tuple(value):
     return tuple(map(int, m.groups()))
 
 def load_ledger(root=ROOT):
-    try: data = json.loads((root / LEDGER).read_text(encoding="utf-8"))
+    try: data = json.loads(osnorm.read_text(root / LEDGER))
     except (OSError, json.JSONDecodeError) as exc: raise ReleaseError(f"发版账本不可读: {exc}") from exc
     if not isinstance(data, list) or not data: raise ReleaseError("releases.json 必须是非空 JSON 数组")
     if any(not isinstance(x, dict) or not SEMVER.fullmatch(str(x.get("version", ""))) for x in data):
@@ -76,8 +64,8 @@ def require_upgrade(version, ledger):
         raise ReleaseError(f"版本必须严格升级: 请求 {version}，账本末条 {current}")
 
 def require_clean(root=ROOT):
-    p = subprocess.run(["git", "status", "--porcelain"], cwd=root, text=True,
-                       encoding="utf-8", errors="replace", capture_output=True, env=_child_env())
+    p = osnorm.run_text(["git", "status", "--porcelain"], cwd=root, errors="replace",
+                        env=_child_env())
     if p.returncode: raise ReleaseError("工作目录不是可用的 git 仓库")
     if p.stdout.strip(): raise ReleaseError("工作树不干净，拒绝发版:\n" + p.stdout.rstrip())
 
@@ -92,10 +80,10 @@ def plan(version, summary):
             "docs_index.py build: docs/.index.json", f".workspace/releases.json: 追加 {version}"]
 
 def update_changelog(path, version, summary):
-    text = path.read_text(encoding="utf-8"); m = re.search(r"(?m)^##\s+\d+\.\d+\.\d+", text)
+    text = osnorm.read_text(path); m = re.search(r"(?m)^##\s+\d+\.\d+\.\d+", text)
     if not m: raise ReleaseError("CHANGELOG.md 没有可定位的版本条目")
     entry = f"## {version}（{date.today().isoformat()}）\n\n{summary}\n\n"
-    path.write_text(text[:m.start()] + entry + text[m.start():], encoding="utf-8", newline="\n")
+    osnorm.write_text(path, text[:m.start()] + entry + text[m.start():], newline="lf")
 
 def backup(root, temp):
     existed = {}
@@ -143,7 +131,7 @@ def append_ledger(root, version, summary):
                  "commit": None, "tag": None, "files_sha256": {
                      "AGENT_RULES.md": sha16(root/"AGENT_RULES.md"),
                      "CHANGELOG.md": sha16(root/"CHANGELOG.md")}})
-    (root/LEDGER).write_text(json.dumps(data, ensure_ascii=False, indent=2)+"\n", encoding="utf-8", newline="\n")
+    osnorm.write_text(root/LEDGER, json.dumps(data, ensure_ascii=False, indent=2)+"\n", newline="lf")
 
 def checklist(version):
     rows = ["参数与版本升级校验", "工作树干净", "政策/CHANGELOG/bootstrap 同步", "policy facts 生成",
@@ -161,11 +149,11 @@ def apply_release(version, summary, root=ROOT):
     with tempfile.TemporaryDirectory(prefix="release-backup-") as raw:
         temp = Path(raw); existed = backup(root, temp)
         try:
-            p = root/"AGENT_RULES.md"; text, n = POLICY_RE.subn(f"模板政策版本：`{version}`", p.read_text(encoding="utf-8"), count=1)
+            p = root/"AGENT_RULES.md"; text, n = POLICY_RE.subn(f"模板政策版本：`{version}`", osnorm.read_text(p), count=1)
             if n != 1: raise ReleaseError("AGENT_RULES.md:4 政策版本定位失败")
-            p.write_text(text, encoding="utf-8", newline="\n"); update_changelog(root/"CHANGELOG.md", version, summary)
-            bp = root/".workspace/bootstrap.json"; b = json.loads(bp.read_text(encoding="utf-8")); b["template"]["current_policy_version"] = version
-            bp.write_text(json.dumps(b, ensure_ascii=False, indent=2)+"\n", encoding="utf-8", newline="\n")
+            osnorm.write_text(p, text, newline="lf"); update_changelog(root/"CHANGELOG.md", version, summary)
+            bp = root/".workspace/bootstrap.json"; b = json.loads(osnorm.read_text(bp)); b["template"]["current_policy_version"] = version
+            osnorm.write_text(bp, json.dumps(b, ensure_ascii=False, indent=2)+"\n", newline="lf")
             py = sys.executable
             run([py,"-B","scripts/policy_facts.py","--write"],root); run([py,"-B","scripts/mark_rules.py","registry","AGENT_RULES.md"],root)
             run([py,"-B","scripts/docs_index.py","build"],root); append_ledger(root, version, summary)

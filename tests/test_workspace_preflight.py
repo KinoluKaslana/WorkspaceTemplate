@@ -43,6 +43,8 @@ def base_ws(tmp: Path) -> Path:
     (ws / "notes").mkdir()
     shutil.copyfile(SRC / "scripts" / "workspace_preflight.py", ws / "scripts" / "workspace_preflight.py")
     shutil.copyfile(SRC / "scripts" / "repo_identity.py", ws / "scripts" / "repo_identity.py")
+    # R40b：workspace_preflight 的文本 I/O 走兄弟模块 osnorm，夹具必须一起分发
+    shutil.copyfile(SRC / "scripts" / "osnorm.py", ws / "scripts" / "osnorm.py")
     # 用桩代替真实 verify_rules，避免夹具依赖模板完整清单
     (ws / "scripts" / "verify_rules.py").write_text(
         'TEMPLATE_FILES = ["AGENT_RULES.md", ".workspace/skills/demo/SKILL.md"]\n', encoding="utf-8")

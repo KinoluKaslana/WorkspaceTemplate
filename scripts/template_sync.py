@@ -28,32 +28,28 @@ import subprocess
 import sys
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
-
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
-
 import tempfile
 from pathlib import Path
+
+# 文本 I/O 与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被
+# importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+osnorm.configure_stdio()
+
+
+def _append_text(path: Path, text: str) -> None:
+    """真追加（O_APPEND）：只补行，绝不改写用户既有内容。
+
+    这两个调用点（`.gitignore` 与本脚本 MANIFEST 的 `[pruned]` 段）要的是**追加**语义，
+    不能换成整文件原子覆盖；而行尾必须与文本模式 newline=None 等价（Windows 上把 LF
+    翻译成 CRLF），所以先按 os.linesep 翻译再走字节层追加——编码仍然只有 UTF-8 一处。
+    """
+    with open(os.fspath(path), "ab") as fh:
+        fh.write(text.replace("\n", os.linesep).encode("utf-8"))
 
 
 GIT_BIN = os.environ.get("GIT_BIN") or "git"
@@ -134,7 +130,7 @@ def previous_template_files(tpl: Path, prev_commit: str | None) -> list[str]:
 
 def policy_version(path: Path) -> str:
     try:
-        m = re.search(r"模板政策版本：`([0-9]+\.[0-9]+\.[0-9]+)`", path.read_text(encoding="utf-8"))
+        m = re.search(r"模板政策版本：`([0-9]+\.[0-9]+\.[0-9]+)`", osnorm.read_text(path))
         return m.group(1) if m else "unknown"
     except OSError:
         return "unknown"
@@ -142,7 +138,7 @@ def policy_version(path: Path) -> str:
 
 def clause_ids(registry: Path) -> set[str]:
     try:
-        data = json.loads(registry.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(registry))
     except Exception:
         return set()
     if isinstance(data, dict):
@@ -155,7 +151,7 @@ def clause_ids(registry: Path) -> set[str]:
 def dangling_custom(ws: Path, new_ids: set[str]) -> list[dict]:
     out = []
     for p in sorted(ws.glob("*.custom.md")):
-        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+        for i, line in enumerate(osnorm.read_text(p).splitlines(), 1):
             for m in re.finditer(r"(overrides|extends)\s*:\s*(R\d+)", line):
                 if m.group(2) not in new_ids:
                     out.append({"file": p.name, "line": i, "ref": m.group(2), "kind": m.group(1)})
@@ -173,7 +169,7 @@ def _registry_has_foreign_namespaces(path: Path) -> bool:
     所以只要表里还有 `| \\`other-ns\\` |` 这样的行，删掉这个文件就再也重建不出来。
     """
     try:
-        text = path.read_text(encoding="utf-8")
+        text = osnorm.read_text(path)
     except OSError:
         return False
     for line in text.splitlines():
@@ -198,7 +194,7 @@ def _rollback(ws: Path, backup: Path, purge_generated: bool = False) -> int:
         print(f"缺少 MANIFEST.txt：{man}", file=sys.stderr)
         return 2
     sec, buf = {}, []
-    for line in man.read_text(encoding="utf-8").splitlines():
+    for line in osnorm.read_text(man).splitlines():
         if line.startswith("[") and line.endswith("]"):
             if sec:
                 pass
@@ -283,7 +279,7 @@ def ensure_ignore_lines(ws: Path) -> list[str]:
     """
     path = Path(ws) / ".gitignore"
     try:
-        existing = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+        existing = osnorm.read_text(path, errors="replace") if path.is_file() else ""
     except OSError as exc:
         return [], f"读取失败：{exc}"
     lines = {ln.strip() for ln in existing.splitlines()}
@@ -292,8 +288,7 @@ def ensure_ignore_lines(ws: Path) -> list[str]:
         return [], None
     try:
         prefix = "" if (not existing or existing.endswith("\n")) else "\n"
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(prefix + "".join(ln + "\n" for ln in missing))
+        _append_text(path, prefix + "".join(ln + "\n" for ln in missing))
     except OSError as exc:
         return [], f"写入失败：{exc}"
     return missing, None
@@ -303,8 +298,9 @@ def encoding_report(ws: Path) -> dict | None:
     """同步收尾的编码自检：只**报告**，绝不改用户文件（一键命令交给用户）。
 
     `--check --json` 取机器可读结果；脚本不存在（旧工作区）或起不来就返回 None。
-    子进程只给 `capture_output`、自己按 UTF-8 解码字节——本脚本不 import osnorm
-    （旧工作区没有 `scripts/osnorm.py`），也不新增 text/encoding 关键字（R2 单一来源）。
+    子进程只给 `capture_output`、自己按 UTF-8 解码字节——被调的是**目标工作区**里那份
+    `encoding_guard.py`（旧工作区可能是旧版本，不一定接受 text/encoding 关键字），所以这里
+    刻意不借用本进程的 osnorm 子进程契约。
     """
     guard = ws / "scripts" / "encoding_guard.py"
     if not guard.is_file():
@@ -366,7 +362,7 @@ def main(argv: list[str]) -> int:
     if a.rollback:
         return _rollback(ws, Path(a.rollback).expanduser().resolve(), a.purge_generated)
 
-    boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
+    boot = json.loads(osnorm.read_text(boot_path, bom=True))
     tpl_sec = boot.get("template") or {}
 
     # 模板克隆：显式参数 > TEMPLATE_DIR > bootstrap 记录的本地克隆 > 默认路径
@@ -510,15 +506,16 @@ def main(argv: list[str]) -> int:
 
         preserved = [x for x in ("AGENT_RULES.custom.md", "HERMES.custom.md",
                                  ".workspace/bootstrap.json") if (backup / x).is_file()]
-        (backup / "MANIFEST.txt").write_text(
+        osnorm.write_text(
+            backup / "MANIFEST.txt",
             "# template_sync backup manifest\n"
             f"# ref={wanted} commit={commit} {before}->{after}\n"
             "[replaced]\n" + "\n".join(replaced) + "\n"
             "[added]\n" + "\n".join(added) + "\n"
-            "[preserved]\n" + "\n".join(preserved) + "\n", encoding="utf-8", newline="\n")
+            "[preserved]\n" + "\n".join(preserved) + "\n", newline="lf")
 
         boot_path = ws / ".workspace" / "bootstrap.json"
-        boot_before = json.loads(boot_path.read_text(encoding="utf-8-sig"))
+        boot_before = json.loads(osnorm.read_text(boot_path, bom=True))
         python_before = json.dumps(boot_before.get("python"), sort_keys=True)
         gate_before = json.dumps(boot_before.get("gate"), sort_keys=True)
 
@@ -555,10 +552,9 @@ def main(argv: list[str]) -> int:
                     dropped.append(rel)
                 report["pruned"] = dropped
                 if dropped:
-                    with (backup / "MANIFEST.txt").open("a", encoding="utf-8") as fh:
-                        fh.write("[pruned]\n" + "\n".join(dropped) + "\n")
+                    _append_text(backup / "MANIFEST.txt", "[pruned]\n" + "\n".join(dropped) + "\n")
 
-            boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
+            boot = json.loads(osnorm.read_text(boot_path, bom=True))
             tpl_sec = boot.setdefault("template", {})
             tpl_sec["current_policy_version"] = after
             tpl_sec["last_synced_at"] = dt.date.today().isoformat()
@@ -566,7 +562,8 @@ def main(argv: list[str]) -> int:
             if kind in ("commit", "tag"):             # 分支、标签或裸提交：记 requested ref
                 tpl_sec["last_synced_branch"] = wanted
             tpl_sec["last_synced_commit"] = commit
-            boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+            osnorm.write_text(boot_path, json.dumps(boot, ensure_ascii=False, indent=2) + "\n",
+                              newline="lf")
             return done
 
         try:
@@ -584,11 +581,11 @@ def main(argv: list[str]) -> int:
             print(f"已自动回滚（backup={backup}）", file=sys.stderr)
             return 3
 
-        python_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8-sig")).get("python"),
+        python_after = json.dumps(json.loads(osnorm.read_text(boot_path, bom=True)).get("python"),
                                   sort_keys=True)
         report["python_mode_preserved"] = (python_before == python_after)
         # §15：同步不得改写本机的 gate 接线结论（运行期事实不是模板事实）
-        gate_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8-sig")).get("gate"),
+        gate_after = json.dumps(json.loads(osnorm.read_text(boot_path, bom=True)).get("gate"),
                                 sort_keys=True)
         report["gate_preserved"] = (gate_before == gate_after)
         report.update({"backup": str(backup), "copied": copied,
@@ -608,10 +605,10 @@ def main(argv: list[str]) -> int:
         if a.verify:
             out_json = ws / ".workspace" / ".verify-tmp.json"
             try:
-                p = subprocess.run([sys.executable, str(ws / "scripts" / "verify_rules.py"),
-                                    "--workspace", str(ws), "--vs-template", str(wt),
-                                    "--json", str(out_json)],
-                                   cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+                p = osnorm.run_text([sys.executable, str(ws / "scripts" / "verify_rules.py"),
+                                     "--workspace", str(ws), "--vs-template", str(wt),
+                                     "--json", str(out_json)],
+                                    cwd=ws, errors="replace")
             except Exception as exc:  # noqa: BLE001 —— 校验器本身起不来也算同步失败
                 rb = _rollback(ws, backup)
                 report["auto_rollback"] = {"reason": f"verify-exception: {exc}", "rollback_rc": rb}
@@ -624,7 +621,7 @@ def main(argv: list[str]) -> int:
                 print(f"已自动回滚（backup={backup}）", file=sys.stderr)
                 return 3
             try:
-                verify = json.loads(out_json.read_text(encoding="utf-8"))
+                verify = json.loads(osnorm.read_text(out_json))
             except Exception:
                 verify = {"raw": (p.stdout or p.stderr)[:400]}
             finally:

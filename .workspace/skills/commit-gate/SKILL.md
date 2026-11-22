@@ -36,26 +36,26 @@ version: 1.0.0
 ### 第 1 步：自动修复（格式类）
 
 ```bash
-<venv-python> scripts/check_all.py --fix      # 阶段 1–4：encoding / registry / docs_index / notes
+<venv-python> scripts/check_all.py --fix      # 阶段 1–14：4 个修复（encoding / registry / docs_index / notes）+ 10 个检查
 ```
 
-期望：4 个修复阶段 `[ok]`，随后 10 个检查阶段全 `[ok]`，rc=0。修复阶段会**改文件**：跑完必须看一眼 `git diff`，确认改动只是格式/生成物（BOM、注册表哈希、索引），没有语义变化。
+期望：共 **14 个阶段**全 `[ok]`（`--fix` = 1–14：先 4 个修复阶段，再强制重跑 10 个检查阶段），rc=0。修复阶段会**改文件**：跑完必须看一眼 `git diff`，确认改动只是格式/生成物（BOM、注册表哈希、索引），没有语义变化；干净树上这一趟必须是**零 diff**。
 
 ### 第 2 步：只查不写
 
 ```bash
-<venv-python> scripts/check_all.py --check    # 阶段 5–14
+<venv-python> scripts/check_all.py --check    # 阶段 5–14：10 个检查阶段
 ```
 
-期望 rc=0。这一步证明「第 1 步修完之后，工作树是干净的」——只有它绿，才说明第 1 步的修复真的收敛了。
+期望：共 **10 个阶段**（5–14）全 `[ok]`，rc=0。这一步证明「第 1 步修完之后，工作树是干净的」——只有它绿，才说明第 1 步的修复真的收敛了。
 
 ### 第 3 步：全量（含单元测试）
 
 ```bash
-<venv-python> scripts/check_all.py --full     # 阶段 1–16（慢，约 2 分钟）
+<venv-python> scripts/check_all.py --fix --full   # 阶段 1–16：16 个阶段（慢，约 2 分钟）
 ```
 
-期望 rc=0（含 `tests` 与 `hooks-tests`）。**提交前必须跑过这一步**：`--check` 不覆盖测试，测试红却提交等于把红灯推给 CI。
+期望：共 **16 个阶段**（1–16，含 `tests` 与 `hooks-tests`）全 `[ok]`，rc=0。**提交前必须跑过这一步**：`--check` 不覆盖测试，测试红却提交等于把红灯推给 CI。
 
 CI 侧同一条命令：`.github/workflows/ci.yml` 的治理 job 跑 `scripts/check_all.py --check`；本地三步都要过，不是「CI 会兜」。
 
@@ -81,7 +81,7 @@ CI 侧同一条命令：`.github/workflows/ci.yml` 的治理 job 跑 `scripts/ch
 ```bash
 <venv-python> scripts/check_all.py --check; echo rc=$?        # 期望：全 [ok]，rc=0
 <venv-python> scripts/check_all.py --check --json | head -c 400  # 期望：{"ok": true, "stages": [...]
-<venv-python> scripts/check_all.py --full; echo rc=$?         # 期望：16 阶段全 [ok]，rc=0
+<venv-python> scripts/check_all.py --fix --full; echo rc=$?   # 期望：16 阶段（1–16）全 [ok]，rc=0
 ```
 
 负向自检（证明门禁真的抓得住）：给任一 `.md` 加 UTF-8 BOM → `--check` 必须 rc=1 且点名 `encoding_check`；`--fix` 后复跑必须 rc=0。

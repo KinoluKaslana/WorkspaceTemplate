@@ -29,29 +29,14 @@ from datetime import datetime
 from pathlib import Path
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+# 文本 I/O 与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被
+# importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
+osnorm.configure_stdio()
 
 
 STATE_DIR = Path(".workspace") / ".hook-state"
@@ -117,7 +102,7 @@ def collect(workspace: Path) -> dict:
 
     for gate_log in [d / "gate.log" for d in _state_dirs(workspace)]:
       if gate_log.is_file():
-        for line in gate_log.read_text(encoding="utf-8", errors="replace").splitlines()[-4000:]:
+        for line in osnorm.read_text(gate_log, errors="replace").splitlines()[-4000:]:
             m = GATE_LOG_RE.match(line)
             if not m:
                 continue
@@ -140,7 +125,7 @@ def collect(workspace: Path) -> dict:
     dsh_log = workspace / ".workspace" / ".dsh-gate.log"
     if dsh_log.is_file():
         newest = None
-        for line in dsh_log.read_text(encoding="utf-8", errors="replace").splitlines()[-2000:]:
+        for line in osnorm.read_text(dsh_log, errors="replace").splitlines()[-2000:]:
             try:
                 rec = json.loads(line)
             except ValueError:
@@ -162,7 +147,7 @@ def collect(workspace: Path) -> dict:
         # 文件 mtime 一律不算（touch 一下就把「很久以前」变成「刚刚」）。
         ts = None
         try:
-            rec = json.loads(p.read_text(encoding="utf-8"))
+            rec = json.loads(osnorm.read_text(p))
         except (ValueError, OSError):
             rec = {}
         for ev in (rec.get("events") or []):
@@ -193,7 +178,7 @@ def collect(workspace: Path) -> dict:
         try:
             # 「active」只在插件加载时写一次，后面全是逐次记账；所以取"最后一条带时间戳的行"求活跃度，
             # 而不是文件 mtime——mtime 会被后续无关写入（甚至 touch）刷新，那就不叫证据了。
-            text = hermes_log.read_text(encoding="utf-8", errors="replace")[-2_000_000:]
+            text = osnorm.read_text(hermes_log, errors="replace")[-2_000_000:]
         except OSError:
             text = ""
         last_ts = None
@@ -316,7 +301,7 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
             print("--force 记录 unconfigured 必须给 --user-decision（用户决定来源）", file=sys.stderr)
             return 2
     try:
-        boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
+        boot = json.loads(osnorm.read_text(boot_path, bom=True))
     except ValueError:
         print(f"{boot_path} 不是合法 JSON，不记录", file=sys.stderr)
         return 2
@@ -326,7 +311,7 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
     sp = ws / STATE_DIR / _machine_scope(ws) / GATE_STATE_FILE
     if sp.is_file():
         try:
-            old = json.loads(sp.read_text(encoding="utf-8")) or {}
+            old = json.loads(osnorm.read_text(sp)) or {}
         except ValueError:
             old = {}
     elif isinstance(boot.get("gate"), dict):
@@ -352,9 +337,8 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
         "machine_scope": _machine_scope(ws),
     }
     sp.parent.mkdir(parents=True, exist_ok=True)
-    tmp = sp.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    os.replace(tmp, sp)      # 原子替换：避免写一半的结论被别的工具读到
+    # 原子发布：避免写一半的结论被别的工具读到（临时文件同目录、写完 fsync 再 replace）
+    osnorm.write_text(sp, json.dumps(record, ensure_ascii=False, indent=2) + "\n", newline="lf")
     print(f"已记录 gate.status={status}（harness={','.join(required)}）→ {sp}")
     if isinstance(boot.get("gate"), dict) and boot["gate"].get("status"):
         print("注：bootstrap.json 的 gate 节是旧位置，已不再写入；以 gate.json 为准", file=sys.stderr)

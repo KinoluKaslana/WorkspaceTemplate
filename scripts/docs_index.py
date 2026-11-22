@@ -31,29 +31,14 @@ import time
 from pathlib import Path
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+# 文本 I/O 与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被
+# importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
+osnorm.configure_stdio()
 
 
 SCHEMA = 2
@@ -122,6 +107,26 @@ def _sections_for(path: Path, rel: str, fp: str) -> list[dict]:
     return out
 
 
+def _write_index(out: Path, idx: dict) -> bool:
+    """内容（除 `generated_at`）未变就**完全不写盘**（连 mtime 都不动）。
+
+    为什么不是「不刷新时间戳」：那样首次 `--fix` 仍会把旧时间戳换成当前值，干净树上照样出 diff。
+    判据只能落在内容上——时间戳只在内容真的变了时才有意义。
+    """
+    if out.is_file():
+        try:
+            old = json.loads(osnorm.read_text(out))
+        except (OSError, ValueError):
+            old = None
+        if isinstance(old, dict):
+            same = {k: v for k, v in old.items() if k != "generated_at"}
+            fresh = {k: v for k, v in idx.items() if k != "generated_at"}
+            if same == fresh:
+                return False
+    osnorm.write_text(out, json.dumps(idx, ensure_ascii=False), newline="lf")
+    return True
+
+
 def build(docs: Path, out: Path) -> dict:
     files = sorted(p for p in docs.glob("*.md") if not p.name.startswith("."))
     sections: list[dict] = []
@@ -138,9 +143,7 @@ def build(docs: Path, out: Path) -> dict:
             df[t] = df.get(t, 0) + 1
     idx = {"schema": SCHEMA, "docs": docs.name, "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
            "files": filemap, "sections": sections, "df": df, "n_sections": len(sections)}
-    tmp = out.with_suffix(out.suffix + ".tmp")      # 原子替换
-    tmp.write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8", newline="\n")
-    os.replace(tmp, out)
+    _write_index(out, idx)                          # 原子写；内容未变则不写盘
     return {"sections": len(sections), "files": len(files), "out": str(out)}
 
 
@@ -191,7 +194,7 @@ def _load_aliases(path: Path, idx: dict) -> list[dict]:
     if not path.is_file():
         return []
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(path))
     except Exception:
         return []
     out = []
@@ -211,7 +214,7 @@ def _load_aliases(path: Path, idx: dict) -> list[dict]:
 def query(index: Path, docs: Path, terms: list[str], top: int) -> dict:
     if not index.is_file():
         return {"error": "index-missing", "hint": "先跑 build"}
-    idx = json.loads(index.read_text(encoding="utf-8"))
+    idx = json.loads(osnorm.read_text(index))
     fresh = freshness(docs, idx)
     if not fresh["ok"]:                                  # fail-closed：不返回旧定位
         return {"error": "stale", "detail": fresh, "hint": "重建索引后重试"}
@@ -271,7 +274,7 @@ def main(argv: list[str]) -> int:
         if not index.is_file():
             print(json.dumps({"ok": False, "reason": "index-missing"}, ensure_ascii=False))
             return 1
-        res = freshness(docs, json.loads(index.read_text(encoding="utf-8")))
+        res = freshness(docs, json.loads(osnorm.read_text(index)))
         print(json.dumps(res, ensure_ascii=False))
         return 0 if res["ok"] else 1
     res = query(index, docs, a.terms, a.top)

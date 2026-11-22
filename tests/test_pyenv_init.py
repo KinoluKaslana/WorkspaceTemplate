@@ -34,6 +34,8 @@ def mkws(tmp: Path) -> Path:
     (ws / "scripts").mkdir()
     shutil.copyfile(SRC / SCRIPT, ws / SCRIPT)
     shutil.copyfile(SRC / "scripts" / "repo_identity.py", ws / "scripts" / "repo_identity.py")
+    # R40b：文本 I/O 与子进程解码走兄弟模块 osnorm，夹具必须一起分发
+    shutil.copyfile(SRC / "scripts" / "osnorm.py", ws / "scripts" / "osnorm.py")
     # 布局口径在 workspace_preflight.py 里，两脚本必须一起分发（真实工作区里都是 TEMPLATE_FILES）
     shutil.copyfile(SRC / "scripts" / "workspace_preflight.py", ws / "scripts" / "workspace_preflight.py")
     # 运行时模式写本机状态：local_state.py 必须一起分发

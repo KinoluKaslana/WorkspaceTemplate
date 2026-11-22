@@ -34,6 +34,25 @@ REQUIRED = ("name", "description", "category", "techniques")
 LIST_FIELDS = {"techniques", "related"}
 DEFAULT_THRESHOLD = 25
 DEFAULT_INTERVAL_DAYS = 90
+# 生成时刻只承载「谁在什么时候生成」，不承载语义；比对时必须先归一。
+STAMP = re.compile(r"(自动生成\*\*（)[^）]*(）)")
+
+
+def write_if_changed(path: Path, text: str) -> bool:
+    """内容（除生成时间戳）未变就**完全不写盘**（连 mtime 都不动）。
+
+    为什么不是「不刷新时间戳」：那样首次 `--fix` 仍会把旧时间戳换成当前值，干净树上照样出 diff。
+    判据只能落在内容上——时间戳只在内容真的变了时才有意义（与 `notes_index_check` 的归一一致）。
+    """
+    if path.is_file():
+        try:
+            old = path.read_text(encoding="utf-8")
+        except OSError:
+            old = None
+        if old is not None and STAMP.sub(r"\1<ts>\2", old) == STAMP.sub(r"\1<ts>\2", text):
+            return False
+    path.write_text(text, encoding="utf-8")
+    return True
 
 
 def scalar(value: str) -> str:
@@ -245,7 +264,7 @@ def main() -> int:
             )
             lines.append(f"| [{escape_table(note['name'])}]({note['file']}) | {target_link} |")
     lines.append("")
-    (NOTES_DIR / "INDEX.md").write_text("\n".join(lines), encoding="utf-8")
+    write_if_changed(NOTES_DIR / "INDEX.md", "\n".join(lines))
 
     # ---- _INVERTED.md: on-demand detail --------------------------------------
     detail = [
@@ -296,7 +315,7 @@ def main() -> int:
     if not edges:
         detail.append("- 暂无关联")
     detail.append("")
-    (NOTES_DIR / "_INVERTED.md").write_text("\n".join(detail), encoding="utf-8")
+    write_if_changed(NOTES_DIR / "_INVERTED.md", "\n".join(detail))
 
     print(
         f"OK: INDEX.md（路由）+ _INVERTED.md（详情）已生成 — "

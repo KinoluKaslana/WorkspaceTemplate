@@ -227,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{','.join(item['problems']):10s} {item['path']}")
         if findings:
             print(f"{len(findings)}/{len(scanned)} 个文件有 BOM/换行问题 → "
-                  f"python3 scripts/encoding_guard.py --fix"
+                  f"{sys.executable} scripts/encoding_guard.py --fix"
                   f"（改前备份到 .workspace/backup-encoding/<ts>/，保留相对路径与原始字节）")
         else:
             print(f"{len(scanned)} 个文件已是 UTF-8(no BOM) + LF")

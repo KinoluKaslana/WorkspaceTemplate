@@ -36,32 +36,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+# 文本 I/O、子进程解码与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）
+# 与被 importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
 from repo_identity import classify as classify_repo
 
-
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
-
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
+osnorm.configure_stdio()
 
 
 OK, WARN, BAD, NA = "ok", "warn", "mismatch", "n/a"
@@ -75,9 +59,7 @@ def sh(*args: str, cwd: Path | None = None) -> tuple[int, str]:
       或没有执行权限的普通文件）时，只应**降级**（版本未知），不该让整个预检崩掉。
     """
     try:
-        p = subprocess.run(list(args), cwd=str(cwd) if cwd else None,
-                           capture_output=True, text=True,
-                           encoding="utf-8", errors="replace")
+        p = osnorm.run_text(list(args), cwd=str(cwd) if cwd else None, errors="replace")
     except (OSError, subprocess.SubprocessError) as e:
         return 127, f"{type(e).__name__}: {e}"
     return p.returncode, (p.stdout or p.stderr or "").strip()
@@ -212,7 +194,7 @@ def _gate_record(ws: Path, boot: dict) -> dict:
     try:
         sp = Path(ws) / ".workspace" / ".hook-state" / scope / "gate.json"
         if sp.is_file():
-            data = json.loads(sp.read_text(encoding="utf-8"))
+            data = json.loads(osnorm.read_text(sp))
             if isinstance(data, dict):
                 return data
     except Exception:
@@ -239,7 +221,7 @@ def main(argv: list[str]) -> int:
     if not boot_p.is_file():
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
-    boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
+    boot = json.loads(osnorm.read_text(boot_p, bom=True))
     if a.record_readme:
         mode = a.record_readme.strip().lower()
         allowed = {"auto": "generated-auto", "provided": "generated-provided", "declined": "declined"}
@@ -249,7 +231,8 @@ def main(argv: list[str]) -> int:
         rd = boot.setdefault("readme", {})
         rd.update({"status": allowed[mode], "mode": mode,
                    "decided_at": dt.datetime.now().isoformat(timespec="seconds")})
-        boot_p.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+        osnorm.write_text(boot_p, json.dumps(boot, ensure_ascii=False, indent=2) + "\n",
+                          newline="lf")
         print(json.dumps({"readme": rd}, ensure_ascii=False))
         return 0
     if a.layout_only:
@@ -286,7 +269,7 @@ def main(argv: list[str]) -> int:
         print(json.dumps(info, ensure_ascii=False))
         return 0 if info["interpreter"] else 3
     tools_p = ws / "TOOLS.md"
-    tools = tools_p.read_text(encoding="utf-8") if tools_p.is_file() else ""
+    tools = osnorm.read_text(tools_p) if tools_p.is_file() else ""
     rows: list[dict] = []
 
     host = socket.gethostname() or platform.node()
@@ -467,7 +450,7 @@ def main(argv: list[str]) -> int:
     if not audited:
         disk = {p.parent.name for p in (ws / ".workspace" / "skills").glob("*/SKILL.md")}
         reg_p = ws / "skills" / "REGISTRY.md"
-        reg = reg_p.read_text(encoding="utf-8") if reg_p.is_file() else ""
+        reg = osnorm.read_text(reg_p) if reg_p.is_file() else ""
         reg_entries = set(re.findall(r"\.workspace/skills/([A-Za-z0-9_-]+)/SKILL\.md", reg))
         if disk != reg_entries:
             rows.append(item("skills", sorted(reg_entries), sorted(disk), BAD,

@@ -24,6 +24,7 @@ import hmac
 import json
 import os
 import re
+import sys
 import tempfile
 import time
 import uuid
@@ -32,6 +33,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Any, Iterator, Mapping
+
+# 文本 I/O 与子进程解码的单一实现：osnorm。本模块是库（被 import 与按文件加载两种入口），
+# 所以先把脚本目录钉进 sys.path 再 import 兄弟模块；stdio 不在这里重配（库不改全局输出）。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
 STATE_VERSION = "v1"
 _RUNTIME_FILE = "runtime.json"
@@ -92,8 +100,8 @@ def _require_bool(value: object, name: str) -> None:
 def workspace_id_of(workspace: Path) -> str | None:
     """只读：bootstrap 里的 workspace_id（不创建）。"""
     try:
-        data = json.loads((Path(workspace) / ".workspace" / "bootstrap.json")
-                          .read_text(encoding="utf-8-sig"))
+        data = json.loads(osnorm.read_text(Path(workspace) / ".workspace" / "bootstrap.json",
+                                           bom=True))
     except (OSError, ValueError):
         return None
     wid = data.get("workspace_id")
@@ -112,7 +120,7 @@ def ensure_workspace_id(workspace: Path) -> str | None:
 
     def _read_id() -> str | None:
         try:
-            data = json.loads(boot.read_text(encoding="utf-8-sig"))
+            data = json.loads(osnorm.read_text(boot, bom=True))
         except (OSError, ValueError):
             return None
         wid = data.get("workspace_id")
@@ -127,16 +135,15 @@ def ensure_workspace_id(workspace: Path) -> str | None:
         if wid:
             return wid
         try:
-            data = json.loads(boot.read_text(encoding="utf-8-sig"))
+            data = json.loads(osnorm.read_text(boot, bom=True))
         except (OSError, ValueError):
             return None
         if not isinstance(data, dict):
             return None
         wid = str(uuid.uuid4())
         data["workspace_id"] = wid
-        tmp = boot.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-        _replace_with_retry(tmp, boot)
+        # 发布语义不变（临时文件 + 原子替换），只是把原子写收进 osnorm 的唯一实现
+        osnorm.write_text(boot, json.dumps(data, ensure_ascii=False, indent=2) + "\n", newline="lf")
     return wid
 
 
@@ -520,9 +527,7 @@ _SID_RE = re.compile(r"\bS-\d+(?:-\d+){1,15}\b")
 def _windows_sid(runner=None) -> str | None:
     """取当前用户的 SID（Windows）。取不到返回 None，绝不回退成用户名。"""
     import subprocess
-    run = runner or (lambda: subprocess.run(["whoami", "/user"], capture_output=True,
-                                            text=True, encoding="utf-8",
-                                            errors="replace", timeout=5))
+    run = runner or (lambda: osnorm.run_text(["whoami", "/user"], errors="replace", timeout=5))
     try:
         proc = run()
     except Exception:                                  # noqa: BLE001 - 采集失败不抛
@@ -559,8 +564,8 @@ def _machine_material() -> bytes | None:
         if _platform.system().lower() == "darwin":      # pragma: no cover - macOS
             try:
                 import subprocess
-                out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5).stdout
+                out = osnorm.run_text(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                      errors="replace", timeout=5).stdout
                 match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
                 if match:
                     material = match.group(1).encode("utf-8")
@@ -569,7 +574,7 @@ def _machine_material() -> bytes | None:
         else:
             for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
                 try:
-                    text = Path(candidate).read_text(encoding="utf-8").strip()
+                    text = osnorm.read_text(Path(candidate)).strip()
                 except OSError:
                     continue
                 if text:
@@ -718,8 +723,8 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
             # macOS 的身份原料就是 IOPlatformUUID，不走 Linux 的 machine-id 文件
             try:
                 import subprocess
-                out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5).stdout
+                out = osnorm.run_text(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                      errors="replace", timeout=5).stdout
                 match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
                 if match:
                     info["machine_id"] = match.group(1).encode("utf-8")
@@ -729,7 +734,7 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
             info["realm"] = "wsl" if "microsoft" in _platform.release().lower() else "linux"
             for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
                 try:
-                    text = Path(candidate).read_text(encoding="utf-8").strip()
+                    text = osnorm.read_text(Path(candidate)).strip()
                 except OSError:
                     continue
                 if text:

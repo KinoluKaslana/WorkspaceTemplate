@@ -15,29 +15,14 @@ import sys
 from pathlib import Path
 
 
-def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+# 文本 I/O 与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被
+# importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
-    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
-    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
-    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
-    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
-    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
-
-
-_utf8_stdio()
+osnorm.configure_stdio()
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -69,7 +54,7 @@ def _ignores(root: Path) -> list[str]:
     if not f.is_file():
         return []
     out = []
-    for line in f.read_text(encoding="utf-8").splitlines():
+    for line in osnorm.read_text(f).splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
             out.append(line.rstrip("/"))
@@ -94,7 +79,8 @@ def scan(root: Path):
         if _skipped(rel, extra):
             continue
         try:
-            text = p.read_text(encoding="utf-8", errors="ignore")
+            # `errors="ignore"` 是调用点语义（二进制/混杂编码文件不参与扫描），不是默认策略
+            text = osnorm.read_text(p, errors="ignore")
         except OSError:
             continue
         if not text or len(text) > 2_000_000:
