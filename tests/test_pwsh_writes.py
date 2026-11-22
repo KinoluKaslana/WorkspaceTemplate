@@ -70,6 +70,9 @@ class PwshWrites(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
         shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
+        # R41：hooks 经装载器使用 scripts/osnorm.py —— 实例 fixture 必须带上，否则 fail-closed。
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         # 治理文件按 **LF** 落到 fixture：门禁的内容锚定是**字节级全等**，且政策明确
         # 「行尾规范化差异按不可判定处理，不做哈希前归一化」（gate_core.py 模块头）。
         # 仓库用 `.gitattributes: * text=auto eol=lf` 钉死 LF，所以 LF 才是被支持的

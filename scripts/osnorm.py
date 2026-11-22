@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """osnorm — 文件系统路径的交换格式与文本 I/O 的单一实现（纯 stdlib 叶子模块）。
 
-管：路径词法 canonical、路径族判定、文本/字节 I/O、子进程文本解码、原子发布、stdio 重配。
+管：路径词法 canonical、路径族判定、文本/字节 I/O（含并发追加）、子进程文本解码、原子发布、stdio 重配。
 不管：业务校验、git 语义、网络、锁与事务、身份派生、扫描范围、命令语义、权限与 ACL。
 
 设计约束：
@@ -15,8 +15,11 @@
 - **BOM 一处决定**（§3.1）：`BOM_POLICY` 决定 `read_text(bom=None)` 是否剥 BOM；写入侧永不产生 BOM，
   清理入口是 `scripts/encoding_guard.py`。
 
-`.workspace/hooks/*.py` **不得** import 本模块（实例可能没有 `scripts/`）：hooks 保留私有实现，
-但必须在声明子域上与本模块等价，并由 `tests/test_osnorm_single_source.py` 的 adapter oracle 钉住。
+`.workspace/hooks/*.py` **不得裸 import** 本模块（`python -I` 会把脚本目录移出 `sys.path`，
+实例也可能暂时没有 `scripts/`）。hooks 一律经 `.workspace/hooks/osnorm_loader.py` 装载本模块：
+装载器按候选顺序（hook 自身树 → 请求期 `ws_root` → fail-closed）解析，钉住进程内唯一版本
+（路径 + size + mtime_ns + sha256），并校验 `OSNORM_API`；任何一步不满足都按「不可用」拒绝。
+本模块保留 `OSNORM_API` 常量作为装载器的版本判据；`R1–R5` 的结构性豁免仍只针对本模块自身。
 """
 from __future__ import annotations
 
@@ -32,9 +35,15 @@ import time
 from collections.abc import Mapping, Sequence
 from urllib.parse import unquote, urlsplit
 
+# 版本契约（N2）：hooks 装载器在 `exec_module` 之后、**任何 API 调用之前**校验本常量。
+# 语义变化（不是「加函数」）才允许 +1；装载器只认它支持的值。
+OSNORM_API = 1
+
 __all__ = [
     "BOM_POLICY",
+    "OSNORM_API",
     "PathFormError",
+    "append_text",
     "atomic_write_text",
     "canonical_path",
     "configure_stdio",
@@ -367,6 +376,30 @@ def write_text(path: str | os.PathLike[str], text: str, *, atomic: bool = True,
         return
     with open(os.fspath(path), "wb") as fh:
         fh.write(data)
+
+
+def append_text(path: str | os.PathLike[str], text: str, *, newline: str = "lf") -> None:
+    """追加 UTF-8 文本（`O_APPEND` 单次续写，**不重写整个文件**）。
+
+    为什么不能拿 `write_text` 代替：日志与账本（`gate.log`、`audit-*.jsonl`、
+    `commits.jsonl`、委托账本）是**多进程并发追加**的；原子发布是「重建整文件」，
+    会把别的进程刚写的行覆盖掉。`O_APPEND` 让内核把一次写挂到文件尾，语义与
+    `open(path, "a", encoding="utf-8")` 对齐，但编码只在唯一实现里决定。
+    """
+    if not isinstance(text, str):
+        raise TypeError(f"append_text 只接受 str：{type(text).__name__}")
+    _newline_check(newline)
+    if newline == "lf":
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+    data = text.encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_BINARY", 0)
+    fd = os.open(os.fspath(path), flags, 0o666)
+    try:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(fd, view):]
+    finally:
+        os.close(fd)
 
 
 # ---------------------------------------------------------------- 原子发布

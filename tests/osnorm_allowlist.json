@@ -1,57 +1,7 @@
 {
  "version": 1,
- "baseline": {".workspace/hooks/authz.py":{"R4":2},".workspace/hooks/cc_transcript.py":{"R1":2,"R2":2,"R3":1,"R5":7},".workspace/hooks/delegations.py":{"R1":3},".workspace/hooks/gate_core.py":{"R1":15,"R2":10,"R3":4,"R5":6},".workspace/hooks/hook.py":{"R1":1,"R2":2,"R4":5},".workspace/hooks/template_anchor.py":{"R1":1,"R2":2,"R4":2},".workspace/hooks/wtarget.py":{"R5":2},"tests/test_alias_audit.py":{"R1":5,"R2":2},"tests/test_check_scripts.py":{"R1":13,"R2":4},"tests/test_clause_lint.py":{"R1":2,"R2":2},"tests/test_docs_consistency.py":{"R1":92,"R2":6},"tests/test_docs_index.py":{"R1":10,"R2":2},"tests/test_dsh_failure_paths.py":{"R1":4,"R2":4},"tests/test_dsh_wiring.py":{"R1":3,"R2":4},"tests/test_gate_status.py":{"R1":40,"R2":12},"tests/test_git_bin.py":{"R1":1,"R2":4},"tests/test_gitignore_ensure.py":{"R1":5},"tests/test_local_state.py":{"R1":23},"tests/test_policy_facts_single_read.py":{"R1":4},"tests/test_pwsh_writes.py":{"R1":2,"R2":4},"tests/test_pyenv_init.py":{"R1":8,"R2":8},"tests/test_pyenv_template_status.py":{"R1":18,"R2":4,"R5":1},"tests/test_readme_exemption.py":{"R1":4,"R2":6},"tests/test_registry_freshness.py":{"R1":2,"R2":2},"tests/test_regression_ledger.py":{"R1":11,"R2":4},"tests/test_release.py":{"R1":10,"R2":8},"tests/test_release_anchor_tag_identity.py":{"R1":4,"R2":4},"tests/test_repo_identity.py":{"R1":2,"R2":4},"tests/test_skill_audit.py":{"R1":23,"R2":4},"tests/test_skill_audit_hardening.py":{"R1":13},"tests/test_template_status_authority.py":{"R1":2,"R2":2},"tests/test_template_sync_rollback.py":{"R1":27,"R2":18},"tests/test_windows_compat.py":{"R1":10,"R2":2},"tests/test_workspace_preflight.py":{"R1":56,"R2":14}},
+ "baseline": {".workspace/hooks/cc_transcript.py":{"R5":7},".workspace/hooks/gate_core.py":{"R5":6},".workspace/hooks/hook.py":{"R4":3},".workspace/hooks/wtarget.py":{"R5":2},"tests/test_alias_audit.py":{"R1":5,"R2":2},"tests/test_check_scripts.py":{"R1":13,"R2":4},"tests/test_clause_lint.py":{"R1":2,"R2":2},"tests/test_docs_consistency.py":{"R1":92,"R2":6},"tests/test_docs_index.py":{"R1":10,"R2":2},"tests/test_dsh_failure_paths.py":{"R1":4,"R2":4},"tests/test_dsh_wiring.py":{"R1":3,"R2":4},"tests/test_gate_status.py":{"R1":40,"R2":12},"tests/test_git_bin.py":{"R1":1,"R2":4},"tests/test_gitignore_ensure.py":{"R1":5},"tests/test_local_state.py":{"R1":23},"tests/test_policy_facts_single_read.py":{"R1":4},"tests/test_pwsh_writes.py":{"R1":2,"R2":4},"tests/test_pyenv_init.py":{"R1":8,"R2":8},"tests/test_pyenv_template_status.py":{"R1":18,"R2":4,"R5":1},"tests/test_readme_exemption.py":{"R1":4,"R2":6},"tests/test_registry_freshness.py":{"R1":2,"R2":2},"tests/test_regression_ledger.py":{"R1":11,"R2":4},"tests/test_release.py":{"R1":10,"R2":8},"tests/test_release_anchor_tag_identity.py":{"R1":4,"R2":4},"tests/test_repo_identity.py":{"R1":2,"R2":4},"tests/test_skill_audit.py":{"R1":23,"R2":4},"tests/test_skill_audit_hardening.py":{"R1":13},"tests/test_template_status_authority.py":{"R1":2,"R2":2},"tests/test_template_sync_rollback.py":{"R1":27,"R2":18},"tests/test_windows_compat.py":{"R1":10,"R2":2},"tests/test_workspace_preflight.py":{"R1":56,"R2":14}},
  "entries": [
-  {
-   "file": ".workspace/hooks/authz.py",
-   "rule": "R4",
-   "kind": "call",
-   "target": ".reconfigure",
-   "line_kind": "call",
-   "count": 2,
-   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/cc_transcript.py",
-   "rule": "R1",
-   "kind": "call",
-   "target": "open",
-   "line_kind": "keyword:encoding=",
-   "count": 2,
-   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/cc_transcript.py",
-   "rule": "R2",
-   "kind": "call",
-   "target": "subprocess.run",
-   "line_kind": "keyword:encoding=",
-   "count": 1,
-   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/cc_transcript.py",
-   "rule": "R2",
-   "kind": "call",
-   "target": "subprocess.run",
-   "line_kind": "keyword:text=",
-   "count": 1,
-   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/cc_transcript.py",
-   "rule": "R3",
-   "kind": "call",
-   "target": "os.replace",
-   "line_kind": "call",
-   "count": 1,
-   "reason": "存量 os.replace：迁移到 osnorm.replace_retry / atomic_write_text / atomic_write_bytes",
-   "expires": "R39"
-  },
   {
    "file": ".workspace/hooks/cc_transcript.py",
    "rule": "R5",
@@ -73,86 +23,6 @@
    "expires": "R39"
   },
   {
-   "file": ".workspace/hooks/delegations.py",
-   "rule": "R1",
-   "kind": "call",
-   "target": ".read_text",
-   "line_kind": "keyword:encoding=",
-   "count": 2,
-   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/delegations.py",
-   "rule": "R1",
-   "kind": "call",
-   "target": "open",
-   "line_kind": "keyword:encoding=",
-   "count": 1,
-   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/gate_core.py",
-   "rule": "R1",
-   "kind": "call",
-   "target": ".read_text",
-   "line_kind": "keyword:encoding=",
-   "count": 9,
-   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/gate_core.py",
-   "rule": "R1",
-   "kind": "call",
-   "target": ".write_text",
-   "line_kind": "keyword:encoding=",
-   "count": 1,
-   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/gate_core.py",
-   "rule": "R1",
-   "kind": "call",
-   "target": "open",
-   "line_kind": "keyword:encoding=",
-   "count": 5,
-   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/gate_core.py",
-   "rule": "R2",
-   "kind": "call",
-   "target": "subprocess.run",
-   "line_kind": "keyword:encoding=",
-   "count": 5,
-   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/gate_core.py",
-   "rule": "R2",
-   "kind": "call",
-   "target": "subprocess.run",
-   "line_kind": "keyword:text=",
-   "count": 5,
-   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/gate_core.py",
-   "rule": "R3",
-   "kind": "call",
-   "target": "os.replace",
-   "line_kind": "call",
-   "count": 4,
-   "reason": "存量 os.replace：迁移到 osnorm.replace_retry / atomic_write_text / atomic_write_bytes",
-   "expires": "R39"
-  },
-  {
    "file": ".workspace/hooks/gate_core.py",
    "rule": "R5",
    "kind": "expr",
@@ -174,82 +44,12 @@
   },
   {
    "file": ".workspace/hooks/hook.py",
-   "rule": "R1",
-   "kind": "call",
-   "target": ".read_text",
-   "line_kind": "keyword:encoding=",
-   "count": 1,
-   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/hook.py",
-   "rule": "R2",
-   "kind": "call",
-   "target": "subprocess.run",
-   "line_kind": "keyword:encoding=",
-   "count": 1,
-   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/hook.py",
-   "rule": "R2",
-   "kind": "call",
-   "target": "subprocess.run",
-   "line_kind": "keyword:text=",
-   "count": 1,
-   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/hook.py",
    "rule": "R4",
    "kind": "call",
    "target": ".reconfigure",
    "line_kind": "call",
-   "count": 5,
-   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/template_anchor.py",
-   "rule": "R1",
-   "kind": "call",
-   "target": ".read_text",
-   "line_kind": "keyword:encoding=",
-   "count": 1,
-   "reason": "存量 encoding= 调用：按调用点迁移到 osnorm.read_text / write_text",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/template_anchor.py",
-   "rule": "R2",
-   "kind": "call",
-   "target": "subprocess.run",
-   "line_kind": "keyword:encoding=",
-   "count": 1,
-   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/template_anchor.py",
-   "rule": "R2",
-   "kind": "call",
-   "target": "subprocess.run",
-   "line_kind": "keyword:text=",
-   "count": 1,
-   "reason": "存量子进程文本/编码参数：迁移到 osnorm.run_text（hooks 侧不 import osnorm，见 R7 adapter）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/template_anchor.py",
-   "rule": "R4",
-   "kind": "call",
-   "target": ".reconfigure",
-   "line_kind": "call",
-   "count": 2,
-   "reason": "存量 stdio reconfigure：迁移到 osnorm.configure_stdio（hooks 侧保留私有实现）",
+   "count": 3,
+   "reason": "R4 残留 3 处：stdin `errors=\"strict\"` + stdout/stderr 两处（hook.py:941-943，`configure_stdio` 不碰 stdin、也不做 strict）",
    "expires": "R39"
   },
   {

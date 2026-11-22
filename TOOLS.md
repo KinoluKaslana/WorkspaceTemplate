@@ -31,12 +31,14 @@
 
 | 文件 | SHA-256 |
 |---|---|
-| `.workspace/hooks/hook.py` | `3c410f1b948b6152508e04bb478f50b8ad7e82c7f74fdca61d1ebc0b1cb7b704` |
-| `.workspace/hooks/gate_core.py` | `8da4614815ef3b54250b9fa8ce791b2da4ebd605f12bd50fc2d010b10fdaa8bb` |
-| `.workspace/hooks/wtarget.py` | `689672e6a96f28df9c486460766417567c505f11afc52c6db2b86fe719f97751` |
-| `.workspace/hooks/authz.py` | `2bf60ed12f50e845c087f8f6a7ae7089dfb5c24a1634f1525f85d3cc420a018a` |
-| `.workspace/hooks/cc_transcript.py` | `178cf53d025985281b3168e9c3d83ac50c6cbbf501f1235b0a53a396913dcf23` |
-| `.workspace/hooks/template_anchor.py` | `1e13a2d838a683037dfdf07c8f8e84c272d76286934738df4b4db2963218166d` |
+| `.workspace/hooks/osnorm_loader.py` | `3fddeeb3a955bda7b5ae5be229a1431f85386716ba50f1ed238ee9cf4e9d2f70` |
+| `.workspace/hooks/hook.py` | `522ba6a9b189b8500a1c65a4a925a167791cb10f9fd99f27cea9b0ecc92ed4f6` |
+| `.workspace/hooks/gate_core.py` | `98c4a068b2117b772bfabed1219fa6c37d1520a4214771e3fe8ea2f0b16ee9a4` |
+| `.workspace/hooks/wtarget.py` | `5dc87f762c08cb37546f2348056285f1908cf0d49174823274748305eec40b95` |
+| `.workspace/hooks/authz.py` | `6730e6be82b70ac73aedd383d7ecd2baf3272de4087f4e432864238ea3c3c6ab` |
+| `.workspace/hooks/cc_transcript.py` | `6226a2ee2e698576087d11f943262cab79144c6fdaf4dc14ead890716b57cffd` |
+| `.workspace/hooks/template_anchor.py` | `19cc3202f1fdd0de4c2b1c1cb987293e91f5c3b894bb5b4726ab5724373ec3d4` |
+| `.workspace/hooks/delegations.py` | `6c05c761fdf2a5e4d899c38dc80272b372fabdc1aa11a0f3fa9d8a942473613a` |
 | `.codex/hooks.json` | `0f5576327ed4373884115a9483d578283887894af391336a55d2744fc0972f68` |
 | `.claude/settings.json` | `dce37de09847d24e0e505146058726864281bfd9a30586d49183ced26329e7aa` |
 

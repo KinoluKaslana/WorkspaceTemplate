@@ -53,6 +53,10 @@ class GateStatus(unittest.TestCase):
         local_state = scripts / "local_state.py"
         shutil.copyfile(ROOT / "scripts" / "local_state.py", local_state)
         shutil.copyfile(ROOT / ".workspace" / "hooks" / "gate_core.py", hooks / "gate_core.py")
+        # R41：gate_core 经装载器使用 osnorm；单文件夹具也要补齐 loader + 配套 scripts/osnorm.py。
+        shutil.copyfile(ROOT / ".workspace" / "hooks" / "osnorm_loader.py", hooks / "osnorm_loader.py")
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         moved = scripts / "local_state.py.moved"
         local_state.rename(moved)
         code = (
@@ -161,6 +165,10 @@ class GateStatus(unittest.TestCase):
         hooks = self.ws / ".workspace" / "hooks"
         hooks.mkdir(parents=True)
         shutil.copyfile(ROOT / ".workspace" / "hooks" / "gate_core.py", hooks / "gate_core.py")
+        # R41：gate_core 经装载器使用 osnorm；单文件夹具也要补齐 loader + 配套 scripts/osnorm.py。
+        shutil.copyfile(ROOT / ".workspace" / "hooks" / "osnorm_loader.py", hooks / "osnorm_loader.py")
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         expected = subprocess.run(
             [sys.executable, "-B", "-c",
              "import sys;sys.path.insert(0,sys.argv[1]);import gate_core;print(gate_core._fallback_scope())",

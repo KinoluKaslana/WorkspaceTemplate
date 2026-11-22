@@ -34,12 +34,14 @@ import hmac
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import time
 import uuid
 from pathlib import Path
+from typing import Any
+
+import osnorm_loader as _osnorm_loader
 
 SCHEMA = 5
 BOOTSTRAP_REL = ".workspace/bootstrap.json"
@@ -49,6 +51,15 @@ _SCOPE_CACHE: dict[str, str] = {}
 # 平台开关：单独抽出来是为了能在非 Windows 上测 Windows 分支
 # （直接改 `os.name` 会让 pathlib 去实例化 WindowsPath，测试环境里直接崩）。
 _IS_WINDOWS = os.name == "nt"
+
+
+def _osn(ws_root: str | None = None) -> Any:
+    """经装载器取 osnorm（**禁止裸 import**）：进程内唯一版本 + N1 指纹复核。
+
+    不可用时抛 `osnorm_loader.OsnormUnavailable`——只由 `hook.py` 的 fail-closed
+    包络统一处理；这里的调用点不自行「降级成私有实现」（那会变成版本错配）。
+    """
+    return _osnorm_loader.load(ws_root)
 
 
 def _machine_scope(ws_root: str = "") -> str:
@@ -96,15 +107,16 @@ def _fallback_machine_material() -> bytes:
                 guid, _ = winreg.QueryValueEx(key, "MachineGuid")
             material = str(guid).encode("utf-8")
         elif sys.platform == "darwin":                        # pragma: no cover - macOS
-            out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5).stdout
+            out = _osn().run_text(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                  errors="replace", timeout=5).stdout
             match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
             if match:
                 material = match.group(1).encode("utf-8")
         else:
             for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
                 try:
-                    text = Path(candidate).read_text(encoding="utf-8").strip()
+                    # bom=False：与原 `Path.read_text(encoding="utf-8")` 一致（不剥 BOM）。
+                    text = _osn().read_text(candidate, bom=False).strip()
                 except OSError:
                     continue
                 if text:
@@ -210,7 +222,7 @@ def _fallback_seed() -> bytes:
                 fh.write(fresh + b"\n")
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(tmp, path)
+            _osn().replace_retry(tmp, path)
             _fsync_dir(path.parent)
         except OSError:
             pass
@@ -367,7 +379,7 @@ def load_conf(ws_root: str) -> dict:
     p = Path(ws_root) / CUSTOM_REL
     if p.is_file():
         try:
-            user = json.loads(p.read_text(encoding="utf-8"))
+            user = json.loads(_osn(ws_root).read_text(p, bom=False))
         except Exception:
             user = None  # 损坏 → 忽略，fail-safe 默认（调用方记日志）
         if isinstance(user, dict):
@@ -403,7 +415,7 @@ def load_authz(ws_root: str) -> dict:
     if not p.is_file():
         return {"schema": 1, "tokens": []}
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(_osn(ws_root).read_text(p, bom=False))
     except Exception:
         return {"schema": 1, "tokens": []}
     if not isinstance(data, dict) or not isinstance(data.get("tokens"), list):
@@ -418,7 +430,7 @@ def save_authz(ws_root: str, data: dict) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, p)
+        _osn(ws_root).replace_retry(tmp, p)
     except Exception:
         try:
             os.unlink(tmp)
@@ -530,8 +542,8 @@ def _git_ok(ws_root: str) -> bool:
     """工作区是不是 git 仓库。git 在模板里是可选初始化项（§0.3），必须能区分
     「不是仓库」和「是仓库但干净」——`git status` 两者都返回非空/空，靠 rc 判。"""
     try:
-        r = subprocess.run(["git", "-C", ws_root, "rev-parse", "--is-inside-work-tree"],
-                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+        r = _osn(ws_root).run_text(["git", "-C", ws_root, "rev-parse", "--is-inside-work-tree"],
+                                   errors="replace", timeout=5)
         return r.returncode == 0 and (r.stdout or "").strip() == "true"
     except Exception:
         return False
@@ -573,7 +585,7 @@ def _write_hash_baseline(ws_root: str, client: str, session_id: str, data: dict)
     """写哈希基线：**永远**落分片目录（旧根只读，绝不写回）。"""
     p = _hash_baseline_path(ws_root, client, session_id)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data), encoding="utf-8")
+    _osn(ws_root).write_text(p, json.dumps(data))
     return p
 
 
@@ -627,8 +639,8 @@ def worktree_snapshot(ws_root: str) -> dict[str, str | None]:
     """
     snap: dict[str, str | None] = {}
     try:
-        st = subprocess.run(["git", "-C", ws_root, "status", "--porcelain"],
-                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+        st = _osn(ws_root).run_text(["git", "-C", ws_root, "status", "--porcelain"],
+                                    errors="replace", timeout=5)
         if st.returncode != 0:
             return snap
         for line in (st.stdout or "").splitlines():
@@ -661,7 +673,7 @@ def sibling_commits(ws_root: str, client: str, session_id: str) -> set[str]:
                 if stem != base and not stem.startswith(base + AGENT_SCOPE_SEP):
                     continue
                 try:
-                    data = json.loads(path.read_text(encoding="utf-8"))
+                    data = json.loads(_osn(ws_root).read_text(path, bom=False))
                 except Exception:
                     continue
                 for e in (data.get("events") or []):
@@ -684,7 +696,7 @@ def _append_commit_ledger(ws_root: str, client: str, session_id: str, rec: dict)
             # 压缩而不是丢弃：按 target 只保留最新一条（体积按 target 数有界）。
             latest: dict[str, dict] = {}
             try:
-                for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                for line in _osn(ws_root).read_text(p, bom=False, errors="replace").splitlines():
                     try:
                         entry = json.loads(line)
                     except Exception:
@@ -694,12 +706,13 @@ def _append_commit_ledger(ws_root: str, client: str, session_id: str, rec: dict)
                         latest[t] = entry
             except Exception:
                 latest = {}
-            with open(p, "w", encoding="utf-8") as fh:
-                for entry in latest.values():
-                    fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        with open(p, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"client": client, "session_id": session_id, **rec},
-                                ensure_ascii=False) + "\n")
+            _osn(ws_root).write_text(
+                p, "".join(json.dumps(entry, ensure_ascii=False) + "\n"
+                           for entry in latest.values()))
+        # 追加语义原样保留（并发追加不能拿整文件重写代替）。
+        _osn(ws_root).append_text(
+            p, json.dumps({"client": client, "session_id": session_id, **rec},
+                          ensure_ascii=False) + "\n")
     except Exception as exc:
         log(ws_root, f"commit ledger append failed: {exc}")
 
@@ -713,7 +726,7 @@ def committed_targets(ws_root: str, current_sha: dict[str, str | None]) -> set[s
             p = _legacy_state_dir(ws_root) / "commits.jsonl"
         if not p.is_file():
             return out
-        text = p.read_text(encoding="utf-8", errors="replace")
+        text = _osn(ws_root).read_text(p, bom=False, errors="replace")
         lines = text.splitlines()
         # 压缩后体积按 target 数有界；这里不硬截行数，避免「轮转后判定不到」。
         if len(lines) > 50000:
@@ -783,7 +796,7 @@ def load_state(ws_root: str, client: str, session_id: str) -> dict:
     state: dict | None = None
     if sp.is_file():
         try:
-            loaded = json.loads(sp.read_text(encoding="utf-8"))
+            loaded = json.loads(_osn(ws_root).read_text(sp, bom=False))
             if isinstance(loaded, dict):
                 state = loaded
         except Exception:
@@ -847,7 +860,7 @@ def save_state(ws_root: str, client: str, session_id: str, state: dict) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, sp)
+        _osn(ws_root).replace_retry(tmp, sp)
     except Exception:
         try:
             os.unlink(tmp)
@@ -1090,7 +1103,8 @@ def workspace_is_taken_over(ws_root: str) -> bool:
     判定只读 bootstrap 的两个状态字段，读不出时保守当受管（fail-closed）。
     """
     try:
-        data = json.loads((Path(ws_root) / BOOTSTRAP_REL).read_text(encoding="utf-8-sig"))
+        # bom=True：与原 `read_text(encoding="utf-8-sig")` 一致（剥 BOM）。
+        data = json.loads(_osn(ws_root).read_text(Path(ws_root) / BOOTSTRAP_REL, bom=True))
     except Exception:
         return True
     if not isinstance(data, dict):
@@ -1618,8 +1632,7 @@ def log(ws_root: str, msg: str) -> None:
         lp = d / "gate.log"
         if lp.exists() and lp.stat().st_size > LOG_ROTATE_BYTES:
             lp.replace(lp.with_suffix(".log.1"))
-        with open(lp, "a", encoding="utf-8") as f:
-            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+        _osn(ws_root).append_text(lp, f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
     except Exception:
         pass
 
@@ -1631,8 +1644,7 @@ def _append_audit(ws_root: str, client: str, state: dict) -> None:
         events = state.get("events")
         if not isinstance(events, list):
             events = []
-        with open(d / f"audit-{client}.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps({
+        _osn(ws_root).append_text(d / f"audit-{client}.jsonl", json.dumps({
                 "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "session_id": state.get("session_id"),
                 "reads": {k: bool(v.get("complete")) for k, v in state.get("reads", {}).items()},
@@ -1658,10 +1670,9 @@ def _append_audit_jsonl(ws_root: str, client: str, rec: dict) -> None:
     try:
         path = _state_dir(ws_root) / ("audit-%s.jsonl" % client)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        _osn(ws_root).append_text(path, json.dumps(rec, ensure_ascii=False) + "\n")
         if path.stat().st_size > AUDIT_JSONL_MAX_BYTES:
-            os.replace(str(path), str(path) + ".1")
+            _osn(ws_root).replace_retry(str(path), str(path) + ".1")
     except Exception as exc:
         log(ws_root, f"audit jsonl failed: {exc}")
 
@@ -1706,10 +1717,10 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
     files: list[str] = []
     if is_git:
         try:
-            status = subprocess.run(["git", "-C", ws_root, "status", "--porcelain"],
-                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
-            diff = subprocess.run(["git", "-C", ws_root, "diff", "--stat"],
-                                  capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+            status = _osn(ws_root).run_text(["git", "-C", ws_root, "status", "--porcelain"],
+                                            errors="replace", timeout=5)
+            diff = _osn(ws_root).run_text(["git", "-C", ws_root, "diff", "--stat"],
+                                          errors="replace", timeout=5)
         except Exception as exc:
             log(ws_root, f"worktree_audit git failed: {exc}")
             status, diff = None, None
@@ -1739,7 +1750,7 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
             # 哈希兜底：覆盖"保留原 mtime"的写（cp -p / tar -x / rsync -t）。
             try:
                 hp = _hash_baseline_path(ws_root, client, session_id, read=True)
-                prev = json.loads(hp.read_text(encoding="utf-8")) if hp.is_file() else {}
+                prev = json.loads(_osn(ws_root).read_text(hp, bom=False)) if hp.is_file() else {}
                 cur, complete = _scan_hashes(ws_root)
                 if isinstance(prev, dict):
                     for rel, sha in cur.items():

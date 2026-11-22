@@ -7,7 +7,7 @@
 <!-- doc-fact:arch-template-files -->
 <!-- doc-fact:arch-skills -->
 <!-- doc-fact:arch-scripts -->
-> 当前对应：政策 **3.8.0** · 插件 **1.9.0** · `TEMPLATE_FILES` **103** 项 · skills **10** 个 · scripts **22** 个 · 条款 **R1..R136**。
+> 当前对应：政策 **3.8.0** · 插件 **1.9.0** · `TEMPLATE_FILES` **104** 项 · skills **10** 个 · scripts **22** 个 · 条款 **R1..R136**。
 <!-- gen:policy-facts:end -->
 
 ## 1. 四层模型
@@ -74,6 +74,13 @@ Agent 决定写 X
 | 钩子内部异常 | 写前钩子 fail-closed（拒）；观察型钩子（读后/收尾）fail-open（放，但记审计） |
 | 客户端不送达钩子 | **fail-open**：守门不生效，只能用 `unobserved` 事后暴露 → 所以整体口径是 **advisory**，不是安全边界 |
 | 同 uid 篡改 | 无防护：账本由同一用户在磁盘上，能改就能骗；防篡改属沙箱/权限层 |
+
+**唯一实现的装载（hooks ↔ osnorm）**：`.workspace/hooks/*.py` 不裸 import `scripts/osnorm.py`
+（`python -I` 会把脚本目录移出 `sys.path`），一律经 `.workspace/hooks/osnorm_loader.py`：
+候选 ① hook 自身配套树 → ② 请求期 `ws_root` → ③ fail-closed；进程内**只解析一次**并钉住
+指纹（路径 + size + mtime_ns + sha256），文件变化即拒绝（不换版本继续跑）；`OSNORM_API`
+在 `exec_module` 之后、任何 API 调用之前校验；① 存在但不可用一律拒绝，**不回退 ②**。
+装载不到时写前钩子按 §4 的 fail-closed 输出合法 deny 包络，生命周期钩子只 advisory。
 
 ## 5. 跨设备模型
 

@@ -203,7 +203,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "1c9635e27c4cf4ef6c0c078af6395800d3e2a0190fb203c922df8203e7f6463b",
+    "file_sha256": "c8f40c6b11b43ad7e6218e90cff976150debcd393e70e936fb3fe92cd44cc663",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -318,7 +318,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "dc47ba0599a67aa1b9e86a21904832e3b27c0f532c41e8e363382ec0fd5de47d",
+    "file_sha256": "b0690ce1ad18de24fad0a543062e779b5011bc2d808c2c7804562a9e62d9fc41",
     "marked": 0
   },
   "docs/skills.md": {
@@ -328,7 +328,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "cab38cadb47eff259a39970aea6233c75c6cb7a52cc283e1bf5c00070787a7f7",
+    "file_sha256": "fba6ca662e14701112c19c951e79a3f1976c3db9868966bf8e9bdbacd88f80d4",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -448,12 +448,12 @@
   },
   "tests/test_dsh_wiring.py": {
     "clauses": {},
-    "file_sha256": "528366f18e8a4e3c5b46d3ccfc6841831ef67d80e12618f6d53d0b00b0f07a83",
+    "file_sha256": "dba8738c5f7c5f403873db0fae1fdb5c34a94b2e698b61a423db1ddf37c1da31",
     "marked": 0
   },
   "tests/test_pwsh_writes.py": {
     "clauses": {},
-    "file_sha256": "8796e7872211735db35e47aeae95b66f5d27c73612bf8401ec7fecc067069679",
+    "file_sha256": "db41ad5f9cd7e5ef89a7cc3d8f31c968695d65c7595060ab31231cf1af6107a8",
     "marked": 0
   },
   "scripts/clause_lint.py": {
@@ -511,14 +511,24 @@
     "file_sha256": "1b02c4c780d4c550369ad2c427cb50b9e1ea4b1753abaa43d7e36a926619317b",
     "marked": 0
   },
+  "scripts/osnorm.py": {
+    "clauses": {},
+    "file_sha256": "922508f76505e62e1f0417cf428a1d392a5f5c61e6d01929ee1ff375be8c82ba",
+    "marked": 0
+  },
+  ".workspace/hooks/osnorm_loader.py": {
+    "clauses": {},
+    "file_sha256": "3fddeeb3a955bda7b5ae5be229a1431f85386716ba50f1ed238ee9cf4e9d2f70",
+    "marked": 0
+  },
   ".workspace/hooks/hook.py": {
     "clauses": {},
-    "file_sha256": "83175c49a5f9fd7f82c2741aaf8dda0d3be8b729ee9d4302e718692698dec039",
+    "file_sha256": "522ba6a9b189b8500a1c65a4a925a167791cb10f9fd99f27cea9b0ecc92ed4f6",
     "marked": 0
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "8b21fbc0cf5fd6fe54c3427ae71a1a44faf0d06b61d480a6baef3e0fccb18691",
+    "file_sha256": "98c4a068b2117b772bfabed1219fa6c37d1520a4214771e3fe8ea2f0b16ee9a4",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
@@ -528,22 +538,22 @@
   },
   ".workspace/hooks/authz.py": {
     "clauses": {},
-    "file_sha256": "fa8da8de19c0103bc660931c273ec51446da1bcf226af110e4d64f862fb1e804",
+    "file_sha256": "6730e6be82b70ac73aedd383d7ecd2baf3272de4087f4e432864238ea3c3c6ab",
     "marked": 0
   },
   ".workspace/hooks/cc_transcript.py": {
     "clauses": {},
-    "file_sha256": "8c9981c8f11ea26dab631cceda02c3d6fdc630441ed26b9e69436c08c2ef32b1",
+    "file_sha256": "6226a2ee2e698576087d11f943262cab79144c6fdaf4dc14ead890716b57cffd",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {
     "clauses": {},
-    "file_sha256": "bf5ca4a9b693151bb7d15690535c8a32f8d0222dd8de9ee45dbf48f3efb5510d",
+    "file_sha256": "19cc3202f1fdd0de4c2b1c1cb987293e91f5c3b894bb5b4726ab5724373ec3d4",
     "marked": 0
   },
   ".workspace/hooks/delegations.py": {
     "clauses": {},
-    "file_sha256": "d1b7f16453df43269e6fcd3f9a01b015efce78595b3104fd81a2fcb2a03e9f4c",
+    "file_sha256": "6c05c761fdf2a5e4d899c38dc80272b372fabdc1aa11a0f3fa9d8a942473613a",
     "marked": 0
   },
   ".codex/hooks.json": {
@@ -563,7 +573,7 @@
   },
   "tests/test_gate_status.py": {
     "clauses": {},
-    "file_sha256": "46b86a251acd6f713619c93ea83d684eb04e7875e851ad34547be914a12a4d2d",
+    "file_sha256": "835b0ed8c2c8648e8f5e8a8d90abfdf2c7defb6173bc66869c820b659315812b",
     "marked": 0
   },
   "tests/no_git_runner.py": {
@@ -601,11 +611,6 @@
     "file_sha256": "e6db7a5c07e5963ff5c03187c5645fe6bb00ef859f6155914efbfd943249aa55",
     "marked": 0
   },
-  "scripts/osnorm.py": {
-    "clauses": {},
-    "file_sha256": "385ebaf75602f3a387231a29160f927204a790f9f4caa2c19525a4c5780e0cf8",
-    "marked": 0
-  },
   "tests/test_osnorm_cases.json": {
     "clauses": {},
     "file_sha256": "dbbcd8460487cd01fe2277f4c567e0a567b0eca998ed5ff4ba01271207fcf1c0",
@@ -618,12 +623,12 @@
   },
   "tests/test_osnorm_single_source.py": {
     "clauses": {},
-    "file_sha256": "5f3c7be046f72600fdb801068522666d003f7792548256c259726d3e38e15e48",
+    "file_sha256": "c2984053b3341648277e007abaaaf506bfb3797ee942a6d3103399ac72c93052",
     "marked": 0
   },
   "tests/osnorm_allowlist.json": {
     "clauses": {},
-    "file_sha256": "893191e8951b6e9d7a1efb25a9f294600f0baa143ac1ccef54aa2b1d5d04aa85",
+    "file_sha256": "246e7957b47a0072db11b0407bc1593f148b736a0485462b34ce91dbd306904c",
     "marked": 0
   },
   "scripts/encoding_guard.py": {

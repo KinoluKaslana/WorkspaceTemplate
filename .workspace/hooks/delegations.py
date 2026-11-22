@@ -19,9 +19,17 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Any
+
+import osnorm_loader as _osnorm_loader
 
 LEDGER = "delegations.jsonl"
 DEFAULT_TTL = 1800
+
+
+def _osn(ws: str | Path | None = None) -> Any:
+    """经装载器取 osnorm（**禁止裸 import**）。"""
+    return _osnorm_loader.load(ws)
 
 
 def _state_dir(ws: str | Path) -> Path:
@@ -76,7 +84,7 @@ def read_evidence_ok(ws: str | Path, client: str, scope: str, gate_rel: str = "A
     if not p.is_file():
         return False
     try:
-        st = json.loads(p.read_text(encoding="utf-8"))
+        st = json.loads(_osn(ws).read_text(p, bom=False))
     except Exception:
         return False
     fp = gate_fingerprint(ws, gate_rel)
@@ -98,7 +106,7 @@ def _rows(ws: str | Path) -> list[dict]:
     if not p.is_file():
         return []
     out = []
-    for ln in p.read_text(encoding="utf-8", errors="replace").splitlines():
+    for ln in _osn(ws).read_text(p, bom=False, errors="replace").splitlines():
         ln = ln.strip()
         if not ln:
             continue
@@ -111,8 +119,8 @@ def _rows(ws: str | Path) -> list[dict]:
 
 def _append(ws: str | Path, row: dict) -> None:
     p = _state_dir(ws) / LEDGER
-    with open(p, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    # 追加语义原样保留（O_APPEND 单次续写，不重写整本账）。
+    _osn(ws).append_text(p, json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def mint(ws: str | Path, parent_scope: str, child_scope: str, targets: list[str],

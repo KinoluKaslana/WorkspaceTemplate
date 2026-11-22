@@ -49,10 +49,11 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import tempfile
+from typing import Any
 
 import wtarget
+import osnorm_loader as _osnorm_loader
 
 # 测试可用 CC_TRANSCRIPT_ROOT 指向临时目录；生产默认 CC 的 projects 根。
 PROJECTS_ROOT = os.path.expanduser(os.environ.get("CC_TRANSCRIPT_ROOT") or "~/.claude/projects")
@@ -66,6 +67,11 @@ _REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>\s*$", re.S)
 
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _osn(ws: str | None = None) -> Any:
+    """经装载器取 osnorm（**禁止裸 import**）。"""
+    return _osnorm_loader.load(ws)
 
 
 def digest_command(command: str) -> str:
@@ -416,8 +422,9 @@ def _adopt_post_write_revision(step: dict, book: dict) -> bool:
 def git_changed_files(ws: str) -> list[str] | None:
     """工作区未提交变更（含未跟踪）的绝对路径；非 git 仓返回 None。"""
     try:
-        out = subprocess.run(["git", "-C", ws, "status", "--porcelain", "-z"],
-                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
+        # 恒捕获 + UTF-8 由 osnorm.run_text 固定；`-z` 输出的 NUL 分隔原样保留。
+        out = _osn(ws).run_text(["git", "-C", ws, "status", "--porcelain", "-z"],
+                                errors="replace", timeout=10)
     except Exception:
         return None
     if out.returncode != 0:
@@ -438,8 +445,9 @@ def git_changed_files(ws: str) -> list[str] | None:
 
 def _custom_conf(ws: str) -> dict:
     try:
-        with open(os.path.join(ws, ".workspace", "gate.custom.json"), encoding="utf-8") as fh:
-            conf = json.load(fh)
+        # bom=False：与原 `open(..., encoding="utf-8")` 一致（不剥 BOM）。
+        conf = json.loads(_osn(ws).read_text(
+            os.path.join(ws, ".workspace", "gate.custom.json"), bom=False))
         return conf if isinstance(conf, dict) else {}
     except Exception:
         return {}
@@ -777,8 +785,7 @@ def load_state(ws: str, session_id: str) -> dict:
         if os.path.isfile(legacy):
             path = legacy
     try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
+        data = json.loads(_osn(ws).read_text(path, bom=False))
         if isinstance(data, dict):
             return {"offset": int(data.get("offset") or 0),
                     "pending": data.get("pending") if isinstance(data.get("pending"), dict) else {},
@@ -800,7 +807,7 @@ def save_state(ws: str, session_id: str, offset: int, stats: dict, pending: dict
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump({"offset": int(offset), "stats": stats, "pending": pending,
                        "books": keep}, fh, ensure_ascii=False)
-        os.replace(tmp, path)
+        _osn(ws).replace_retry(tmp, path)
     except Exception:
         pass
 

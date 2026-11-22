@@ -129,6 +129,10 @@ TEMPLATE_FILES = [
     ".hermes/plugins/workspace-gate/plugin.yaml",
     ".hermes/plugins/workspace-gate/__init__.py",
     ".hermes/plugins/workspace-gate/selfcheck.py",
+    # R41：osnorm 必须排在所有 hooks **之前**下发。同步是逐文件 copy2，先落 hooks
+    # 会造成「新 hooks + 旧/无 osnorm」的可见窗口（装载器会 fail-closed，但窗口不该存在）。
+    "scripts/osnorm.py",
+    ".workspace/hooks/osnorm_loader.py",
     ".workspace/hooks/hook.py",
     ".workspace/hooks/gate_core.py",
     ".workspace/hooks/wtarget.py",
@@ -148,8 +152,8 @@ TEMPLATE_FILES = [
     "tests/test_registry_freshness.py",
     "tests/test_gitignore_ensure.py",
     "tests/test_regression_ledger.py",
-    # R38a：osnorm 归一化层（R38e 起 10 个脚本已迁入为唯一实现）
-    "scripts/osnorm.py",
+    # R38a：osnorm 归一化层（R38e 起 10 个脚本已迁入为唯一实现；
+    # R41 起 `scripts/osnorm.py` 本体上移到 hooks 之前，理由见该处注释）
     "tests/test_osnorm_cases.json",
     "tests/test_osnorm_properties.py",
     "tests/test_osnorm_single_source.py",

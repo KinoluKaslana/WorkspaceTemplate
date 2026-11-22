@@ -10,14 +10,16 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import gate_core as core
 import wtarget
 import cc_transcript
+import osnorm_loader as _osnorm_loader
 
 
 def _utf8_stdio() -> None:
-    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）。
+    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）——单一实现是 osnorm。
 
     为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
     统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
@@ -25,17 +27,15 @@ def _utf8_stdio() -> None:
     console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
     Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
     """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-            if encoding == "utf8":
-                continue
-            if getattr(stream, "isatty", lambda: False)():
-                stream.reconfigure(errors="replace")                       # type: ignore[union-attr]
-            else:
-                stream.reconfigure(encoding="utf-8", errors="replace")     # type: ignore[union-attr]
-        except Exception:                                                   # noqa: BLE001 - 输出层不许抛
-            pass
+    module = _osnorm_loader.bootstrap_module()
+    if module is None:
+        # osnorm 不可用：本进程的输出只走 fail-closed 的 ASCII 字节路径（见 _osnorm_unavailable），
+        # 与 locale 编码无关，不需要重配。
+        return
+    try:
+        module.configure_stdio()
+    except Exception:                                                   # noqa: BLE001 - 输出层不许抛
+        pass
 
 
 _utf8_stdio()
@@ -87,6 +87,52 @@ def _context(text: str, event_name: str) -> None:
         "hookEventName": event_name,
         "additionalContext": text,
     }}, ensure_ascii=False))
+
+
+def _osn(ws_root=None) -> Any:
+    """经装载器取 osnorm（**禁止裸 import**）。已装载时只做 N1 指纹复核。"""
+    return _osnorm_loader.load(ws_root)
+
+
+def _payload_ws_root(data: dict) -> str | None:
+    """候选 ② 的 `ws_root`：payload 的 `cwd` 所属工作区根（找不到退回 cwd 本身）。
+
+    payload 解析（`main()` 里的 `json.load(sys.stdin)`）之后才有 cwd，所以 ② 只能在
+    请求期算——这是 v1 把「三级解析」写成 import 期一次性解决时踩的坑（E1）。
+    """
+    cwd = data.get("cwd")
+    if not isinstance(cwd, str) or not cwd.strip():
+        return None
+    try:
+        cwd = os.path.abspath(os.path.expanduser(cwd))
+    except (OSError, ValueError):
+        return None
+    try:
+        return core.find_workspace(cwd) or cwd
+    except Exception:  # 找根失败仍可用 cwd 试 ②
+        return cwd
+
+
+def _osnorm_unavailable(event: str, exc: "_osnorm_loader.OsnormUnavailable") -> None:
+    """fail-closed 包络（§2.3）：写前事件 deny，其余只 advisory；纯 ASCII + rc=0。
+
+    字段与 `_deny`（`hook.py` 顶部 PreToolUse 包络）逐字同构：`hookSpecificOutput` 下
+    `hookEventName="PreToolUse"` / `permissionDecision="deny"` / `permissionDecisionReason`。
+    `reason` 里的稳定标记（`osnorm-unavailable` + `<reason>`）是测试判死分支的依据。
+    """
+    detail = f"（{exc.reason}）" + (f"：{exc.detail}" if exc.detail else "")
+    reason = "[workspace-gate:osnorm-unavailable] hooks 无法装载 osnorm" + detail
+    if event in ("pre_write", "pre_bash"):
+        payload = {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }}
+    else:
+        payload = {"systemMessage": reason}
+    # 不经任何编码判断：ASCII 转义 + 字节写，rc 恒 0。
+    sys.stdout.buffer.write((json.dumps(payload, ensure_ascii=True) + "\n").encode("ascii"))
+    sys.stdout.buffer.flush()
 
 
 def _client(data: dict) -> str:
@@ -489,7 +535,9 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         body, inferred_start, inferred_end = parsed
         target = _absolute(path, cwd)
         try:
-            total = len(Path(target).read_text(encoding="utf-8", errors="replace").split("\n"))
+            # bom=False：与原 `Path.read_text(encoding="utf-8")` 一致（不剥 BOM）；
+            # newline 默认 "lf" 与 open() 的 universal newlines 等价。
+            total = len(_osn(target).read_text(target, bom=False, errors="replace").split("\n"))
         except OSError:
             return
         off = inp.get("offset", inferred_start)
@@ -659,9 +707,10 @@ def _template_anchor_gate(ws: str) -> dict:
     """W4：运行 template_anchor.py（timeout 10）。advisory，绝不产生 deny 决策。"""
     anchor_script = Path(__file__).resolve().parent / "template_anchor.py"
     try:
-        proc = subprocess.run(
+        # 恒捕获 + UTF-8 由 osnorm.run_text 固定；子进程 stderr 不参与判定（原逻辑只看 stdout）。
+        proc = _osn(ws).run_text(
             [sys.executable, "-B", str(anchor_script), "--workspace", ws, "--json"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
+            errors="replace", timeout=10)
     except subprocess.TimeoutExpired:
         return {"ok": False, "reason": "completion-gate 超时（10s）",
                 "systemMessage": "[workspace-gate] 完成声明门禁：template_anchor 超时（10s）"}
@@ -904,6 +953,13 @@ def main(argv: list[str] | None = None) -> int:
         env_client = os.environ.get("GATE_CLIENT")
         if env_client in ("cc", "codex", "dsh"):
             data["client"] = env_client
+        # 装载器（§2）：只要走到判定就必须有 osnorm。不可用 → fail-closed 包络后返回，
+        # 绝不落进 handle()（否则「缺 osnorm」会被写成「已通过」的证据）。
+        try:
+            _osn(_payload_ws_root(data))
+        except _osnorm_loader.OsnormUnavailable as exc:
+            _osnorm_unavailable(event, exc)
+            return 0
         handle(event, data)
     except _PatchParseError as exc:
         # 可读 deny 文案：apply_patch 形态无法静态确定，不包装成「内部错误」。

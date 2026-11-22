@@ -194,8 +194,8 @@ python3 scripts/pyenv_init.py --mode mcp --mcp-server s --mcp-tool t --apply
 它**不是**业务校验器：git 语义、身份派生、扫描范围、锁与事务、权限 ACL 都不在它里面。
 
 ```python
-from osnorm import (PathFormError, canonical_path, family, read_text, write_text,
-                    read_bytes, write_bytes, run_text, utf8_env,
+from osnorm import (OSNORM_API, PathFormError, canonical_path, family, read_text, write_text,
+                    read_bytes, write_bytes, append_text, run_text, utf8_env,
                     replace_retry, atomic_write_text, configure_stdio)
 
 canonical_path(r"\\?\UNC\host\share\x")        # '//host/share/x'
@@ -204,7 +204,9 @@ family("/mnt/c/Users")                        # 'wsl-mount'（≠ windows-drive�
 read_text(p, bom=True)                        # utf-8-sig（剥 BOM）；bom=False 保 BOM
 read_text(p)                                  # bom=None → 取 BOM_POLICY（默认 tolerate：剥 BOM）
 write_text(p, "a\r\nb")                       # 磁盘落 'a\nb'（newline='lf' 默认）
+append_text(p, "line\n")                      # O_APPEND 并发追加；不重写整文件
 run_text(["git", "-C", ws, "status"])         # proc.stdout 恒为 str，永不是 None
+OSNORM_API                                    # 1（hooks 装载器的版本判据）
 ```
 
 **canonical 判定（唯一判据表，全部由 `canonical_path` 实现）**
@@ -230,6 +232,10 @@ run_text(["git", "-C", ws, "status"])         # proc.stdout 恒为 str，永不�
 治理/JSON 用 `strict`，日志用 `replace`，`secret_scan` 用 `ignore`；**不猜编码**——
 UTF-16/GBK 在 `strict` 下上抛。
 
+**追加与原子发布**：日志/账本（`gate.log`、`audit-*.jsonl`、`commits.jsonl`、委托账本）是
+**多进程并发追加**的，`append_text` 用 `O_APPEND` 单次续写（语义等同 `open(..., "a")`），
+**不能**拿 `write_text` 代替——原子发布是「重建整个文件」，会覆盖别的进程刚写的行。
+
 **原子发布与子进程**：`atomic_write_text` 走「同目录临时文件 → fsync → `replace_retry`
 （有界退避，Windows 读侧持句柄时 `os.replace` 会失败）→ 目录 fsync」，读者看不到半截文件；
 预算耗尽时原样抛出，**绝不退化成非原子写**。`run_text` 固定 `capture_output=True` +
@@ -242,8 +248,12 @@ UTF-8 + `errors`，并把 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 注入子进�
 自带 `text=`/`encoding=` 的子进程（R2）、直接 `os.replace`（R3）、直接 `reconfigure`（R4）、
 自写归一化函数/内联键（R5）、`os.path.normcase`（R6）即红。结构性豁免只有 osnorm 自身、
 `local_state` 的 no-follow 发布路径、`skill_audit._utf8_stdio` 与两个 hooks adapter
-（hooks 实例可能没有 `scripts/`，所以 hooks **不 import** osnorm，只按 R7 的 adapter oracle
-钉在声明子域上）；其余存量违规只能进 `tests/osnorm_allowlist.json` 的
+（`hook._absolute` / `gate_core._norm_join` 是只剩 R5 语义的路径拼接，按 R7 的 adapter oracle
+钉在声明子域上）。**hooks 侧一律经装载器使用 osnorm，禁止裸 import**：
+`.workspace/hooks/osnorm_loader.py` 按「① hook 自身树 → ② 请求期 `ws_root` → ③ fail-closed」
+解析，进程内只解析一次并钉住指纹（路径 + size + mtime_ns + sha256），
+`OSNORM_API` 在 `exec_module` 之后、任何 API 调用之前校验；候选必须是非 symlink 的普通文件。
+hooks 侧剩下的存量违规只能进 `tests/osnorm_allowlist.json` 的
 `(file, rule, target, line_kind)` 节点级表项。账本口径三条：
 
 - `count` 必须**精确等于**实测（`>` 或 `<` 都红；归零必须删表项）。

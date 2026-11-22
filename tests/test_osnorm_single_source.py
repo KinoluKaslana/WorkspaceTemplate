@@ -10,8 +10,10 @@
 - 匹配粒度是 `(file, rule, target, line_kind)`，**不按行号**（行号会漂移）。
 - allowlist 的 `count` 必须精确等于实测；`baseline` 另钉住每个 `(file, rule)` 的历史最低值。
 - 每条规则都有正例/反例自检（R8），违规片段必须命中、合规片段必须不命中。
-- `osnorm.py` 是唯一实现，所以它是 R1–R5 的结构性豁免对象；hooks 不 import 它，
-  而是以 **adapter 等价**（R7）钉在声明子域上。
+- `osnorm.py` 是唯一实现，所以它是 R1–R5 的结构性豁免对象；hooks **不裸 import** 它，
+  而是经 `.workspace/hooks/osnorm_loader.py` 装载（R41）。装载器的候选顺序、指纹钉死与
+  `OSNORM_API` 校验由 `hooks-tests/test_osnorm_loader.py` 的 T1–T4 钉住；只剩下
+  纯路径拼接的 adapter（R7）仍按声明子域登记。
 """
 from __future__ import annotations
 
@@ -424,15 +426,39 @@ class SeamExamplesTest(unittest.TestCase):
     def _scan(self, rel: str) -> list[Violation]:
         return scan_source(osnorm.read_text(ROOT / rel), filename=rel)
 
-    def test_hooks_subprocess_calls_are_detected(self) -> None:
-        for rel in (".workspace/hooks/hook.py", ".workspace/hooks/cc_transcript.py",
-                    ".workspace/hooks/gate_core.py"):
-            hits = [v for v in self._scan(rel) if v.rule == "R2"]
-            self.assertTrue(hits, f"{rel} 的 subprocess 文本/编码未被检出")
+    def test_hooks_r2_is_fully_migrated(self) -> None:
+        """R41：hooks 的子进程一律走 `osnorm.run_text`，R2 必须保持 0 处。
 
-    def test_gate_core_os_replace_is_detected(self) -> None:
-        hits = [v for v in self._scan(".workspace/hooks/gate_core.py") if v.rule == "R3"]
-        self.assertGreaterEqual(len(hits), 4, "gate_core 的 os.replace 至少 4 处")
+        检出能力本身由 R8 的 `RULE_FIXTURES` 正例保证（违规片段必须命中），这里钉的是
+        迁移结果——不是把规则删掉。回归会立刻红：任何自带文本/编码参数的 subprocess 调用都算。
+        """
+        for rel in (".workspace/hooks/hook.py", ".workspace/hooks/cc_transcript.py",
+                    ".workspace/hooks/gate_core.py", ".workspace/hooks/template_anchor.py"):
+            hits = [v for v in self._scan(rel) if v.rule == "R2"]
+            self.assertEqual(hits, [], f"{rel} 仍有自带编码的子进程：{hits}")
+
+    def test_hooks_r1_r3_are_fully_migrated(self) -> None:
+        """R41：hooks 的文本 I/O 与原子发布一律走 osnorm，R1/R3 必须保持 0 处。"""
+        for rel in (".workspace/hooks/hook.py", ".workspace/hooks/cc_transcript.py",
+                    ".workspace/hooks/gate_core.py", ".workspace/hooks/template_anchor.py",
+                    ".workspace/hooks/delegations.py"):
+            for rule in ("R1", "R3"):
+                hits = [v for v in self._scan(rel) if v.rule == rule]
+                self.assertEqual(hits, [], f"{rel} 仍有 {rule} 违规：{hits}")
+
+    def test_hooks_stdlib_is_reached_only_through_the_loader(self) -> None:
+        """hooks 里不得出现裸 `import osnorm` / `from osnorm import`（必须经装载器）。"""
+        for path in sorted(HOOKS.glob("*.py")):
+            tree = ast.parse(osnorm.read_text(path), filename=path.name)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                else:
+                    continue
+                self.assertNotIn("osnorm", names,
+                                 f"{path.name}:{node.lineno} 出现裸 import osnorm（须经 osnorm_loader）")
 
     def test_gate_core_relpath_keys_are_detected(self) -> None:
         hits = [v for v in self._scan(".workspace/hooks/gate_core.py")

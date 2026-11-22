@@ -27,6 +27,9 @@ class PluginPythonMissing(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace" / "hooks").parent.mkdir(parents=True)
         shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
+        # R41：hooks 经装载器使用 scripts/osnorm.py —— 实例 fixture 必须带上，否则 fail-closed。
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         shutil.copytree(ROOT / ".dsh" / "workspace-gate", self.ws / ".dsh" / "workspace-gate")
         shutil.copy2(ROOT / "AGENT_RULES.md", self.ws / "AGENT_RULES.md")
         (self.ws / ".workspace" / "bootstrap.json").write_text(
@@ -79,6 +82,9 @@ class FailClosedKnob(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace" / "hooks").parent.mkdir(parents=True)
         shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
+        # R41：hooks 经装载器使用 scripts/osnorm.py —— 实例 fixture 必须带上，否则 fail-closed。
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         shutil.copytree(ROOT / ".dsh" / "workspace-gate", self.ws / ".dsh" / "workspace-gate")
         shutil.copy2(ROOT / "AGENT_RULES.md", self.ws / "AGENT_RULES.md")
         (self.ws / ".workspace" / "bootstrap.json").write_text(
@@ -122,6 +128,9 @@ class StdinStrictDecode(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
         shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
+        # R41：hooks 经装载器使用 scripts/osnorm.py —— 实例 fixture 必须带上，否则 fail-closed。
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         shutil.copy2(ROOT / "AGENT_RULES.md", self.ws / "AGENT_RULES.md")
         (self.ws / ".workspace" / "bootstrap.json").write_text(
             json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
