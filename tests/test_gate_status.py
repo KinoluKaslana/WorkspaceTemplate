@@ -19,15 +19,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "gate_status.py"
 
+# 文本 I/O 单一实现：osnorm（R1/R2 门禁的唯一入口）。夹具与被测产物都经它读写。
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
 
 def run(ws: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
     # HERMES_HOME 指向工作区内的空目录：否则本机真实插件日志会把 hermes 判成「有证据」
     base = {**os.environ, "HERMES_HOME": str(ws / "no-hermes-home")}
     if env:
         base.update(env)
-    return subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(ws), *args],
-                          capture_output=True, text=True, encoding="utf-8", timeout=60,
-                          env=base)
+    return osnorm.run_text([sys.executable, "-B", str(SCRIPT), "--workspace", str(ws), *args], timeout=60, env=base)
 
 
 class GateStatus(unittest.TestCase):
@@ -66,9 +69,7 @@ class GateStatus(unittest.TestCase):
             "sys.path.insert(0,str(ws/'.workspace/hooks'));import gate_core;"
             "print(json.dumps([gs._machine_scope(ws),gate_core._fallback_scope()]))"
         )
-        result = subprocess.run(
-            [sys.executable, "-B", "-c", code, str(self.ws), str(SCRIPT)],
-            capture_output=True, text=True, encoding="utf-8", check=True)
+        result = osnorm.run_text([sys.executable, "-B", "-c", code, str(self.ws), str(SCRIPT)], check=True)
         actual, expected = json.loads(result.stdout)
         self.assertRegex(actual, r"^[0-9a-f]{12}$")
         self.assertEqual(actual, expected)
@@ -81,12 +82,10 @@ class GateStatus(unittest.TestCase):
     def test_dsh_evidence_from_apply_log_and_ledger(self):
         state = self.ws / ".workspace" / ".hook-state"
         state.mkdir(parents=True)
-        (state / "dsh-session-abc.json").write_text(json.dumps(
-            {"events": [{"type": "gate-commit", "ts": time.strftime("%Y-%m-%d %H:%M:%S")}]}), encoding="utf-8")
-        (self.ws / ".workspace" / ".dsh-gate.log").write_text(
-            json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        "event": "apply", "pid": 1, "cwd": str(self.ws)}) + "\n",
-            encoding="utf-8")
+        osnorm.write_text(state / "dsh-session-abc.json", json.dumps(
+            {"events": [{"type": "gate-commit", "ts": time.strftime("%Y-%m-%d %H:%M:%S")}]}), newline="lf")
+        osnorm.write_text(self.ws / ".workspace" / ".dsh-gate.log", json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "event": "apply", "pid": 1, "cwd": str(self.ws)}) + "\n", newline="lf")
         r = run(self.ws, "--require", "dsh", "--json")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         data = json.loads(r.stdout)
@@ -98,14 +97,10 @@ class GateStatus(unittest.TestCase):
         home = self.ws / "hermes-home"
         (home / "logs").mkdir(parents=True)
         now = time.strftime("%Y-%m-%d %H:%M:%S")
-        (home / "logs" / "workspace-gate-plugin.log").write_text(
-            "2026-11-04 09:00:01 workspace-gate active (v1.9.0, hermes_home=%s)\n" % home +
-            f"{now} post_tool_call commit: {self.ws}/AGENT_RULES.md\n",
-            encoding="utf-8")
-        r = subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(self.ws),
-                            "--require", "hermes", "--json"],
-                           capture_output=True, text=True, encoding="utf-8", timeout=60,
-                           env={**os.environ, "HERMES_HOME": str(home)})
+        osnorm.write_text(home / "logs" / "workspace-gate-plugin.log", "2026-11-04 09:00:01 workspace-gate active (v1.9.0, hermes_home=%s)\n" % home +
+            f"{now} post_tool_call commit: {self.ws}/AGENT_RULES.md\n", newline="lf")
+        r = osnorm.run_text([sys.executable, "-B", str(SCRIPT), "--workspace", str(self.ws),
+                            "--require", "hermes", "--json"], timeout=60, env={**os.environ, "HERMES_HOME": str(home)})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(json.loads(r.stdout)["clients"]["hermes"]["active"])
 
@@ -114,11 +109,9 @@ class GateStatus(unittest.TestCase):
         ws_dsh = self.ws / ".workspace"
         ws_dsh.mkdir(parents=True, exist_ok=True)
         old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 7200))
-        (ws_dsh / ".dsh-gate.log").write_text(
-            json.dumps({"at": old, "event": "apply", "pid": 1, "cwd": str(self.ws)}) + "\n",
-            encoding="utf-8")
+        osnorm.write_text(ws_dsh / ".dsh-gate.log", json.dumps({"at": old, "event": "apply", "pid": 1, "cwd": str(self.ws)}) + "\n", newline="lf")
         (ws_dsh / ".hook-state").mkdir(parents=True, exist_ok=True)
-        (ws_dsh / ".hook-state" / "dsh-session-x.json").write_text("{}", encoding="utf-8")
+        osnorm.write_text(ws_dsh / ".hook-state" / "dsh-session-x.json", "{}", newline="lf")
         os.utime(ws_dsh / ".dsh-gate.log", None)          # mtime = 现在
         r = run(self.ws, "--require", "dsh", "--ttl-minutes", "30", "--json")
         self.assertEqual(r.returncode, 1, r.stdout)
@@ -129,18 +122,16 @@ class GateStatus(unittest.TestCase):
         (home / "logs").mkdir(parents=True)
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 7200))
         log = home / "logs" / "workspace-gate-plugin.log"
-        log.write_text(f"{stamp} workspace-gate active (v1.9.0)\n", encoding="utf-8")
+        osnorm.write_text(log, f"{stamp} workspace-gate active (v1.9.0)\n", newline="lf")
         os.utime(log, None)                               # mtime = 现在
-        r = subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(self.ws),
-                            "--require", "hermes", "--ttl-minutes", "30", "--json"],
-                           capture_output=True, text=True, encoding="utf-8", timeout=60,
-                           env={**os.environ, "HERMES_HOME": str(home)})
+        r = osnorm.run_text([sys.executable, "-B", str(SCRIPT), "--workspace", str(self.ws),
+                            "--require", "hermes", "--ttl-minutes", "30", "--json"], timeout=60, env={**os.environ, "HERMES_HOME": str(home)})
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertFalse(json.loads(r.stdout)["clients"]["hermes"]["active"])
 
     def test_template_repo_must_not_ship_configured(self):
         """模板仓提交的 bootstrap 不得带本机运行态（PRO R1-3：克隆会继承假证据）。"""
-        boot = json.loads((ROOT / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(ROOT / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         if boot.get("workspace_status") != "template":
             self.skipTest("派生工作区，允许记录本机 gate 结论")
         gate = boot.get("gate") or {}
@@ -153,15 +144,14 @@ class GateStatus(unittest.TestCase):
         state = self.ws / ".workspace" / ".hook-state" / scope
         state.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        (state / "gate.log").write_text(
-            f"{stamp} post_read client=cc session=s1 file=AGENT_RULES.md\n", encoding="utf-8")
+        osnorm.write_text(state / "gate.log", f"{stamp} post_read client=cc session=s1 file=AGENT_RULES.md\n", newline="lf")
         return state
 
     def test_record_writes_scoped_gate_json_not_bootstrap(self):
         """结论落本机分片 gate.json；bootstrap 不再被写。"""
         (self.ws / ".workspace").mkdir(parents=True, exist_ok=True)
         boot_path = self.ws / ".workspace" / "bootstrap.json"
-        boot_path.write_text(json.dumps({"workspace_status": "active"}), encoding="utf-8")
+        osnorm.write_text(boot_path, json.dumps({"workspace_status": "active"}), newline="lf")
         hooks = self.ws / ".workspace" / "hooks"
         hooks.mkdir(parents=True)
         shutil.copyfile(ROOT / ".workspace" / "hooks" / "gate_core.py", hooks / "gate_core.py")
@@ -169,29 +159,27 @@ class GateStatus(unittest.TestCase):
         shutil.copyfile(ROOT / ".workspace" / "hooks" / "osnorm_loader.py", hooks / "osnorm_loader.py")
         (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
-        expected = subprocess.run(
-            [sys.executable, "-B", "-c",
+        expected = osnorm.run_text([sys.executable, "-B", "-c",
              "import sys;sys.path.insert(0,sys.argv[1]);import gate_core;print(gate_core._fallback_scope())",
-             str(hooks)], capture_output=True, text=True, encoding="utf-8", errors="replace", check=True).stdout.strip()
+             str(hooks)], errors="replace", check=True).stdout.strip()
         self.assertRegex(expected, r"^[0-9a-f]{12}$")
         self._seed_cc_evidence(expected)
         r = run(self.ws, "--require", "cc", "--record", "--json")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         gj = self.ws / ".workspace" / ".hook-state" / expected / "gate.json"
         self.assertTrue(gj.is_file(), "gate.json 未写到本机作用域目录")
-        rec = json.loads(gj.read_text(encoding="utf-8"))
+        rec = json.loads(osnorm.read_text(gj, bom=False, newline="preserve"))
         self.assertEqual(rec["status"], "configured")
         self.assertEqual(rec["harness"], ["cc"])
         self.assertEqual(rec["machine_scope"], expected)
-        boot = json.loads(boot_path.read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(boot_path, bom=False, newline="preserve"))
         self.assertNotIn("gate", boot, "bootstrap 不得再被写入 gate 结论")
 
     def test_other_machine_scope_evidence_is_ignored(self):
         """别的机器同步过来的 gate.log 不算本机证据。"""
         scripts = self.ws / "scripts"
         scripts.mkdir(parents=True, exist_ok=True)
-        (scripts / "local_state.py").write_text(
-            (ROOT / "scripts" / "local_state.py").read_text(encoding="utf-8"), encoding="utf-8")
+        osnorm.write_text(scripts / "local_state.py", osnorm.read_text(ROOT / "scripts" / "local_state.py", bom=False, newline="preserve"), newline="lf")
         sys.path.insert(0, str(ROOT / "scripts"))
         import local_state
         other = local_state.machine_scope({"WORKSPACE_CONTEXT_SEED": "machine-A"})
@@ -207,8 +195,7 @@ class GateStatus(unittest.TestCase):
         state = self.ws / ".workspace" / ".hook-state"
         state.mkdir(parents=True)
         stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        (state / "gate.log").write_text(f"{stamp} post_read client=cc session=s1 file=AGENT_RULES.md\n",
-                                        encoding="utf-8")
+        osnorm.write_text(state / "gate.log", f"{stamp} post_read client=cc session=s1 file=AGENT_RULES.md\n", newline="lf")
         r = run(self.ws, "--require", "cc", "--json")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(json.loads(r.stdout)["clients"]["cc"]["active"])
@@ -217,8 +204,7 @@ class GateStatus(unittest.TestCase):
         state = self.ws / ".workspace" / ".hook-state"
         state.mkdir(parents=True)
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 7200))
-        (state / "gate.log").write_text(f"{stamp} post_read client=codex session=s1 file=x\n",
-                                        encoding="utf-8")
+        osnorm.write_text(state / "gate.log", f"{stamp} post_read client=codex session=s1 file=x\n", newline="lf")
         r = run(self.ws, "--require", "codex", "--ttl-minutes", "5", "--json")
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertFalse(json.loads(r.stdout)["clients"]["codex"]["active"])
@@ -227,24 +213,23 @@ class GateStatus(unittest.TestCase):
     def _boot(self):
         boot = self.ws / ".workspace" / "bootstrap.json"
         boot.parent.mkdir(parents=True, exist_ok=True)
-        boot.write_text(json.dumps({"workspace_status": "active"}, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(boot, json.dumps({"workspace_status": "active"}, ensure_ascii=False), newline="lf")
         return boot
 
     def test_record_configured_writes_local_gate_json(self):
         boot = self._boot()
         state = self.ws / ".workspace" / ".hook-state"
         state.mkdir(parents=True, exist_ok=True)
-        (state / "dsh-session-x.json").write_text(json.dumps(
-            {"events": [{"type": "gate-commit", "ts": time.strftime("%Y-%m-%d %H:%M:%S")}]}), encoding="utf-8")
-        (self.ws / ".workspace" / ".dsh-gate.log").write_text(
-            json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        "event": "apply", "pid": 1}) + "\n", encoding="utf-8")
+        osnorm.write_text(state / "dsh-session-x.json", json.dumps(
+            {"events": [{"type": "gate-commit", "ts": time.strftime("%Y-%m-%d %H:%M:%S")}]}), newline="lf")
+        osnorm.write_text(self.ws / ".workspace" / ".dsh-gate.log", json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "event": "apply", "pid": 1}) + "\n", newline="lf")
         r = run(self.ws, "--require", "dsh", "--ttl-minutes", "30", "--record")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         gj = self.ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
         self.assertTrue(gj.is_file(), "结论未落到本机作用域 gate.json")
-        gate = json.loads(gj.read_text(encoding="utf-8"))
-        self.assertNotIn("gate", json.loads(boot.read_text(encoding="utf-8")),
+        gate = json.loads(osnorm.read_text(gj, bom=False, newline="preserve"))
+        self.assertNotIn("gate", json.loads(osnorm.read_text(boot, bom=False, newline="preserve")),
                          "bootstrap 不得再被写入 gate 结论")
         self.assertEqual(gate["status"], "configured")
         self.assertEqual(gate["harness"], ["dsh"])
@@ -254,7 +239,7 @@ class GateStatus(unittest.TestCase):
         boot = self._boot()
         r = run(self.ws, "--require", "dsh", "--record")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertNotIn("gate", json.loads(boot.read_text(encoding="utf-8")),
+        self.assertNotIn("gate", json.loads(osnorm.read_text(boot, bom=False, newline="preserve")),
                          "无证据时不得写入任何 gate 结论")
 
     def test_record_unconfigured_requires_user_decision(self):
@@ -265,7 +250,7 @@ class GateStatus(unittest.TestCase):
                 "--user-decision", "用户明确接受本机无 gate")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         gj = self.ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
-        gate = json.loads(gj.read_text(encoding="utf-8"))
+        gate = json.loads(osnorm.read_text(gj, bom=False, newline="preserve"))
         self.assertEqual(gate["status"], "unconfigured")
         self.assertEqual(gate["decision_source"], "用户明确接受本机无 gate")
 
@@ -279,9 +264,8 @@ class GateStatus(unittest.TestCase):
         """只有 apply、没有账本 = 插件加载了但没处理过本工作区事件（SOL R1-4：双证缺一不算）。"""
         d = self.ws / ".workspace"
         d.mkdir(parents=True, exist_ok=True)
-        (d / ".dsh-gate.log").write_text(
-            json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        "event": "apply"}) + "\n", encoding="utf-8")
+        osnorm.write_text(d / ".dsh-gate.log", json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "event": "apply"}) + "\n", newline="lf")
         r = run(self.ws, "--require", "dsh", "--json")
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertFalse(json.loads(r.stdout)["clients"]["dsh"]["active"])
@@ -296,10 +280,9 @@ class GateStatus(unittest.TestCase):
         d = self.ws / ".workspace"
         d.mkdir(parents=True, exist_ok=True)
         future = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 7200))
-        (d / ".dsh-gate.log").write_text(json.dumps({"at": future, "event": "apply"}) + "\n",
-                                         encoding="utf-8")
+        osnorm.write_text(d / ".dsh-gate.log", json.dumps({"at": future, "event": "apply"}) + "\n", newline="lf")
         (d / ".hook-state").mkdir(parents=True, exist_ok=True)
-        (d / ".hook-state" / "dsh-session-x.json").write_text("{}", encoding="utf-8")
+        osnorm.write_text(d / ".hook-state" / "dsh-session-x.json", "{}", newline="lf")
         r = run(self.ws, "--require", "dsh", "--json")
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertFalse(json.loads(r.stdout)["clients"]["dsh"]["active"])
@@ -309,21 +292,19 @@ class GateStatus(unittest.TestCase):
         boot = self._boot()
         d = self.ws / ".workspace"
         (d / ".hook-state").mkdir(parents=True, exist_ok=True)
-        (d / ".hook-state" / "dsh-session-x.json").write_text(json.dumps(
-            {"events": [{"type": "gate-commit", "ts": time.strftime("%Y-%m-%d %H:%M:%S")}]}), encoding="utf-8")
-        (d / ".dsh-gate.log").write_text(
-            json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        "event": "apply"}) + "\n", encoding="utf-8")
-        boot.write_text(json.dumps({"workspace_status": "active",
-                                    "gate": {"status": "configured", "harness": ["cc", "dsh"]}}),
-                        encoding="utf-8")
+        osnorm.write_text(d / ".hook-state" / "dsh-session-x.json", json.dumps(
+            {"events": [{"type": "gate-commit", "ts": time.strftime("%Y-%m-%d %H:%M:%S")}]}), newline="lf")
+        osnorm.write_text(d / ".dsh-gate.log", json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "event": "apply"}) + "\n", newline="lf")
+        osnorm.write_text(boot, json.dumps({"workspace_status": "active",
+                                    "gate": {"status": "configured", "harness": ["cc", "dsh"]}}), newline="lf")
         r = run(self.ws, "--require", "dsh", "--record")
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
         r = run(self.ws, "--require", "dsh", "--record", "--user-decision", "用户：分析机不再用 cc")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         gj = self.ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
-        self.assertEqual(json.loads(gj.read_text(encoding="utf-8"))["harness"], ["dsh"])
-        self.assertEqual(json.loads(boot.read_text(encoding="utf-8"))["gate"]["harness"], ["cc", "dsh"],
+        self.assertEqual(json.loads(osnorm.read_text(gj, bom=False, newline="preserve"))["harness"], ["dsh"])
+        self.assertEqual(json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))["gate"]["harness"], ["cc", "dsh"],
                          "旧位置 bootstrap.gate 只读，不得被改写")
 
     def test_ledger_timestamp_beats_file_mtime(self):
@@ -331,11 +312,9 @@ class GateStatus(unittest.TestCase):
         d = self.ws / ".workspace"
         (d / ".hook-state").mkdir(parents=True, exist_ok=True)
         old_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 7200))
-        (d / ".hook-state" / "dsh-session-x.json").write_text(
-            json.dumps({"events": [{"type": "worktree-change", "ts": old_ts}]}), encoding="utf-8")
-        (d / ".dsh-gate.log").write_text(
-            json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        "event": "apply"}) + "\n", encoding="utf-8")
+        osnorm.write_text(d / ".hook-state" / "dsh-session-x.json", json.dumps({"events": [{"type": "worktree-change", "ts": old_ts}]}), newline="lf")
+        osnorm.write_text(d / ".dsh-gate.log", json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "event": "apply"}) + "\n", newline="lf")
         os.utime(d / ".hook-state" / "dsh-session-x.json", None)   # mtime = 现在
         r = run(self.ws, "--require", "dsh", "--json")
         self.assertEqual(r.returncode, 1, r.stdout)
@@ -344,15 +323,13 @@ class GateStatus(unittest.TestCase):
     def test_reverse_flip_requires_user_decision(self):
         """unconfigured → configured 也是翻转（R117），必须有人类决定。"""
         boot = self._boot()
-        boot.write_text(json.dumps({"workspace_status": "active",
-                                    "gate": {"status": "unconfigured", "harness": []}}), encoding="utf-8")
+        osnorm.write_text(boot, json.dumps({"workspace_status": "active",
+                                    "gate": {"status": "unconfigured", "harness": []}}), newline="lf")
         d = self.ws / ".workspace"
         (d / ".hook-state").mkdir(parents=True, exist_ok=True)
-        (d / ".hook-state" / "dsh-session-x.json").write_text(json.dumps(
-            {"events": [{"type": "gate-commit", "ts": time.strftime("%Y-%m-%d %H:%M:%S")}]}), encoding="utf-8")
-        (d / ".dsh-gate.log").write_text(
-            json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": "apply"}) + "\n",
-            encoding="utf-8")
+        osnorm.write_text(d / ".hook-state" / "dsh-session-x.json", json.dumps(
+            {"events": [{"type": "gate-commit", "ts": time.strftime("%Y-%m-%d %H:%M:%S")}]}), newline="lf")
+        osnorm.write_text(d / ".dsh-gate.log", json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": "apply"}) + "\n", newline="lf")
         r = run(self.ws, "--require", "dsh", "--record")
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
         r = run(self.ws, "--require", "dsh", "--record", "--user-decision", "用户：dsh 已接线")
@@ -364,13 +341,9 @@ class GateStatus(unittest.TestCase):
         (home / "logs").mkdir(parents=True)
         old = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 7200))
         new = time.strftime("%Y-%m-%d %H:%M:%S")
-        (home / "logs" / "workspace-gate-plugin.log").write_text(
-            f"{old} workspace-gate active (v1.9.0)\n{new} something unrelated happened\n",
-            encoding="utf-8")
-        r = subprocess.run([sys.executable, "-B", str(SCRIPT), "--workspace", str(self.ws),
-                            "--require", "hermes", "--json"],
-                           capture_output=True, text=True, encoding="utf-8", timeout=60,
-                           env={**os.environ, "HERMES_HOME": str(home)})
+        osnorm.write_text(home / "logs" / "workspace-gate-plugin.log", f"{old} workspace-gate active (v1.9.0)\n{new} something unrelated happened\n", newline="lf")
+        r = osnorm.run_text([sys.executable, "-B", str(SCRIPT), "--workspace", str(self.ws),
+                            "--require", "hermes", "--json"], timeout=60, env={**os.environ, "HERMES_HOME": str(home)})
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertFalse(json.loads(r.stdout)["clients"]["hermes"]["active"])
 
@@ -381,12 +354,8 @@ class GateStatus(unittest.TestCase):
         """
         d = self.ws / ".workspace"
         (d / ".hook-state").mkdir(parents=True, exist_ok=True)
-        (d / ".hook-state" / "dsh-session-x.json").write_text(
-            json.dumps({"events": [{"type": "gate-commit"}], "anchors": {"AGENT_RULES.md": {}}}),
-            encoding="utf-8")
-        (d / ".dsh-gate.log").write_text(
-            json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": "apply"}) + "\n",
-            encoding="utf-8")
+        osnorm.write_text(d / ".hook-state" / "dsh-session-x.json", json.dumps({"events": [{"type": "gate-commit"}], "anchors": {"AGENT_RULES.md": {}}}), newline="lf")
+        osnorm.write_text(d / ".dsh-gate.log", json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": "apply"}) + "\n", newline="lf")
         os.utime(d / ".hook-state" / "dsh-session-x.json", None)   # mtime = 现在
         r = run(self.ws, "--require", "dsh", "--json")
         self.assertEqual(r.returncode, 1, r.stdout)
@@ -395,10 +364,8 @@ class GateStatus(unittest.TestCase):
     def test_empty_ledger_object_is_not_evidence(self):
         d = self.ws / ".workspace"
         (d / ".hook-state").mkdir(parents=True, exist_ok=True)
-        (d / ".hook-state" / "dsh-session-empty.json").write_text("{}", encoding="utf-8")
-        (d / ".dsh-gate.log").write_text(
-            json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": "apply"}) + "\n",
-            encoding="utf-8")
+        osnorm.write_text(d / ".hook-state" / "dsh-session-empty.json", "{}", newline="lf")
+        osnorm.write_text(d / ".dsh-gate.log", json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": "apply"}) + "\n", newline="lf")
         os.utime(d / ".hook-state" / "dsh-session-empty.json", None)
         r = run(self.ws, "--require", "dsh", "--json")
         self.assertEqual(r.returncode, 1, r.stdout)

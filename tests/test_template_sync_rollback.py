@@ -13,6 +13,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SYNC = ROOT / "scripts" / "template_sync.py"
 
+# 文本 I/O 单一实现：osnorm（R1/R2 门禁的唯一入口）。夹具与被测产物都经它读写。
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
 
 def _source_ref() -> str:
     """同步来源 ref：优先 HEAD 的提交 sha。
@@ -23,8 +28,7 @@ def _source_ref() -> str:
     取 HEAD sha 在完整克隆、浅克隆、detached HEAD 三种形态下都成立。
     """
     try:
-        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
-                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        r = osnorm.run_text(["git", "-C", str(ROOT), "rev-parse", "HEAD"], errors="replace")
         sha = r.stdout.strip()
         if r.returncode == 0 and sha:
             return sha
@@ -39,28 +43,31 @@ class Rollback(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps({
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps({
             "workspace_status": "active",
             "python": {"mode": "local-venv", "runtime": {"identifier": "/x/.venv-312", "version": "3.12.0"}},
             "template": {"source_repo": str(ROOT)},
-        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        }, ensure_ascii=False, indent=2) + "\n", newline="lf")
         self.old_rules = "# 旧规则\n\n> **模板政策版本：`2.4.0`。**\n"
-        (self.ws / "AGENT_RULES.md").write_text(self.old_rules, encoding="utf-8")
-        (self.ws / "README.md").write_text("local home\n", encoding="utf-8")
+        osnorm.write_text(self.ws / "AGENT_RULES.md", self.old_rules, newline="lf")
+        osnorm.write_text(self.ws / "README.md", "local home\n", newline="lf")
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def run_sync(self, *args):
-        return subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                               "--template", str(ROOT), "--ref", _source_ref(), *args],
-                              capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        return osnorm.run_text([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                               "--template", str(ROOT), "--ref", _source_ref(), *args], cwd=ROOT)
 
     def test_apply_writes_manifest_sections(self):
         p = self.run_sync("--apply")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
-        man = (bk / "MANIFEST.txt").read_text(encoding="utf-8")
+        man = osnorm.read_text(bk / "MANIFEST.txt", bom=False, newline="preserve")
+        # 换行契约（写侧 `osnorm.write_text(newline="lf")` 的对外承诺）：MANIFEST 落盘必须是 LF。
+        # 严格读法（newline="preserve"）能看到 CRLF，归一读法看不到——所以这条只能在严格读上成立。
+        self.assertEqual(man.split("\n")[0], "# template_sync backup manifest")
+        self.assertNotIn("\r", man, "MANIFEST 落盘出现 CR：写侧换行契约被破坏")
         for sec in ("[replaced]", "[added]", "[preserved]"):
             self.assertIn(sec, man)
         replaced = man.split("[replaced]")[1].split("[added]")[0]
@@ -75,13 +82,13 @@ class Rollback(unittest.TestCase):
         只测 helper 不够：把 apply 里那行调用删掉，helper 测试照样绿。
         """
         gi = self.ws / ".gitignore"
-        gi.write_text("node_modules/\n", encoding="utf-8")
+        osnorm.write_text(gi, "node_modules/\n", newline="lf")
         p = self.run_sync("--apply", "--json")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         report = json.loads(p.stdout)
         self.assertEqual(report.get("gitignore_added"),
                          [".workspace/.hook-state/", ".workspace/.local/"], report)
-        text = gi.read_text(encoding="utf-8")
+        text = osnorm.read_text(gi, bom=False, newline="preserve")
         self.assertTrue(text.startswith("node_modules/\n"), "用户内容被改了")
         self.assertEqual(text.count(".workspace/.local/"), 1)
         # 第二次同步：已存在就不再追加，也不再回报
@@ -89,17 +96,17 @@ class Rollback(unittest.TestCase):
         self.assertEqual(p2.returncode, 0, p2.stdout + p2.stderr)
         self.assertNotIn("gitignore_added", json.loads(p2.stdout),
                          "重复同步又追加了一遍")
-        self.assertEqual(gi.read_text(encoding="utf-8").count(".workspace/.local/"), 1)
+        self.assertEqual(osnorm.read_text(gi, bom=False, newline="preserve").count(".workspace/.local/"), 1)
 
     def test_rollback_restores_and_deletes(self):
         self.assertEqual(self.run_sync("--apply").returncode, 0)
         self.assertTrue((self.ws / "UPGRADE.md").is_file())
         bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
-        p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                            "--rollback", str(bk)], capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        p = osnorm.run_text([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                            "--rollback", str(bk)], cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
-        self.assertEqual((self.ws / "README.md").read_text(encoding="utf-8"), "local home\n")
+        self.assertEqual(osnorm.read_text(self.ws / "AGENT_RULES.md", bom=False, newline="preserve"), self.old_rules)
+        self.assertEqual(osnorm.read_text(self.ws / "README.md", bom=False, newline="preserve"), "local home\n")
         self.assertFalse((self.ws / "UPGRADE.md").exists())
         self.assertFalse((self.ws / "docs").exists())
         self.assertFalse((self.ws / "scripts").exists())
@@ -110,13 +117,12 @@ class Rollback(unittest.TestCase):
         self.assertEqual(self.run_sync("--apply").returncode, 0)
         reg = self.ws / "skills" / "REGISTRY.md"
         reg.parent.mkdir(parents=True, exist_ok=True)
-        reg.write_text("# generated\n", encoding="utf-8")
+        osnorm.write_text(reg, "# generated\n", newline="lf")
         (self.ws / "notes").mkdir(exist_ok=True)
-        (self.ws / "notes" / "INDEX.md").write_text("# idx\n", encoding="utf-8")
+        osnorm.write_text(self.ws / "notes" / "INDEX.md", "# idx\n", newline="lf")
         bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
-        p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                            "--rollback", str(bk), "--purge-generated"],
-                           capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        p = osnorm.run_text([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                            "--rollback", str(bk), "--purge-generated"], cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertFalse(reg.exists())
         self.assertFalse((self.ws / "notes" / "INDEX.md").exists())
@@ -125,8 +131,8 @@ class Rollback(unittest.TestCase):
     def test_rollback_without_manifest_fails(self):
         bk = self.ws / ".workspace" / "backup-empty"
         bk.mkdir()
-        p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                            "--rollback", str(bk)], capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        p = osnorm.run_text([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                            "--rollback", str(bk)], cwd=ROOT)
         self.assertEqual(p.returncode, 2)
         self.assertIn("MANIFEST", p.stderr + p.stdout)
 
@@ -135,18 +141,16 @@ def _make_fixture_template(base: Path) -> Path:
     """最小的「模板仓」：两个 TEMPLATE_FILES + 一个永远 clean=false 的 verify_rules 桩。"""
     tpl = base / "tpl"
     (tpl / "scripts").mkdir(parents=True)
-    (tpl / "AGENT_RULES.md").write_text("# 模板\n\n> **模板政策版本：`9.9.9`。**\n", encoding="utf-8")
-    (tpl / "README.md").write_text("template readme\n", encoding="utf-8")
-    (tpl / "scripts" / "verify_rules.py").write_text(
-        'TEMPLATE_FILES = ["AGENT_RULES.md", "README.md"]\n'
+    osnorm.write_text(tpl / "AGENT_RULES.md", "# 模板\n\n> **模板政策版本：`9.9.9`。**\n", newline="lf")
+    osnorm.write_text(tpl / "README.md", "template readme\n", newline="lf")
+    osnorm.write_text(tpl / "scripts" / "verify_rules.py", 'TEMPLATE_FILES = ["AGENT_RULES.md", "README.md"]\n'
         "import json\n"
         "import sys\n"
         "if __name__ == '__main__':\n"
         "    data = {'clean': False, 'findings': ['forced-by-test']}\n"
         "    if '--json' in sys.argv:\n"
         "        open(sys.argv[sys.argv.index('--json') + 1], 'w', encoding='utf-8').write(json.dumps(data))\n"
-        "    print(json.dumps(data))\n",
-        encoding="utf-8")
+        "    print(json.dumps(data))\n", newline="lf")
     subprocess.run(["git", "init", "-q", str(tpl)], check=True)
     subprocess.run(["git", "-C", str(tpl), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tpl), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
@@ -164,39 +168,38 @@ class Transactional(unittest.TestCase):
         self.tpl = _make_fixture_template(base)
         self.ws = base / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps({
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps({
             "workspace_status": "active",
             "python": {"mode": "local-venv", "runtime": {"identifier": "/x/.venv-312", "version": "3.12.0"}},
             "template": {"source_repo": str(ROOT), "current_policy_version": "2.4.0"},
-        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        }, ensure_ascii=False, indent=2) + "\n", newline="lf")
         self.old_rules = "# 旧规则\n\n> **模板政策版本：`2.4.0`。**\n"
-        (self.ws / "AGENT_RULES.md").write_text(self.old_rules, encoding="utf-8")
+        osnorm.write_text(self.ws / "AGENT_RULES.md", self.old_rules, newline="lf")
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def run_sync(self, *args):
-        return subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                               "--template", str(self.tpl), "--ref", "HEAD", *args],
-                              capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        return osnorm.run_text([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                               "--template", str(self.tpl), "--ref", "HEAD", *args], cwd=ROOT)
 
     def test_verify_failure_rolls_back(self):
-        boot_before = (self.ws / ".workspace" / "bootstrap.json").read_bytes()
+        boot_before = osnorm.read_bytes(self.ws / ".workspace" / "bootstrap.json")
         p = self.run_sync("--apply", "--verify")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("自动回滚", p.stderr)
-        self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
+        self.assertEqual(osnorm.read_text(self.ws / "AGENT_RULES.md", bom=False, newline="preserve"), self.old_rules)
         # bootstrap 逐字节回到同步前（含 python/gate 段，不只是版本字段）
-        self.assertEqual((self.ws / ".workspace" / "bootstrap.json").read_bytes(), boot_before)
+        self.assertEqual(osnorm.read_bytes(self.ws / ".workspace" / "bootstrap.json"), boot_before)
         self.assertFalse((self.ws / "scripts").exists())      # 本次新增的目录被清掉
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         self.assertEqual((boot.get("template") or {}).get("current_policy_version"), "2.4.0")
 
     def test_verify_failure_keep_on_fail(self):
         p = self.run_sync("--apply", "--verify", "--keep-on-fail")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertNotIn("自动回滚", p.stderr)          # 明确要求保留：不回滚
-        self.assertIn("9.9.9", (self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"))
+        self.assertIn("9.9.9", osnorm.read_text(self.ws / "AGENT_RULES.md", bom=False, newline="preserve"))
 
     def test_verify_exception_rolls_back(self):
         """校验器本身抛异常（不是 clean:false）也要回滚，rc=3。"""
@@ -213,15 +216,15 @@ class Transactional(unittest.TestCase):
                 raise FileNotFoundError("injected: verify 起不来")
             return real_run(cmd, *a, **kw)
 
-        boot_before = (self.ws / ".workspace" / "bootstrap.json").read_bytes()
+        boot_before = osnorm.read_bytes(self.ws / ".workspace" / "bootstrap.json")
         # 就地调用会写真实 stdout/stderr：用 StringIO 兜住，避免终端编码（cp1252）影响断言
         with mock.patch.object(mod.subprocess, "run", side_effect=fake_run), \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             rc = mod.main(["--workspace", str(self.ws), "--template", str(self.tpl),
                            "--ref", "HEAD", "--apply", "--verify"])
         self.assertEqual(rc, 3)
-        self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
-        self.assertEqual((self.ws / ".workspace" / "bootstrap.json").read_bytes(), boot_before)
+        self.assertEqual(osnorm.read_text(self.ws / "AGENT_RULES.md", bom=False, newline="preserve"), self.old_rules)
+        self.assertEqual(osnorm.read_bytes(self.ws / ".workspace" / "bootstrap.json"), boot_before)
 
     def test_rollback_failure_returns_4(self):
         """回滚本身失败时返回 4（与「已回滚」的 2/3 区分），提示按 MANIFEST 手工恢复。"""
@@ -244,7 +247,7 @@ class Transactional(unittest.TestCase):
         p = self.run_sync("--apply")
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
         self.assertIn("自动回滚", p.stderr)
-        self.assertEqual((self.ws / "AGENT_RULES.md").read_text(encoding="utf-8"), self.old_rules)
+        self.assertEqual(osnorm.read_text(self.ws / "AGENT_RULES.md", bom=False, newline="preserve"), self.old_rules)
 
 
     def test_rollback_keeps_registry_with_foreign_namespace(self):
@@ -256,18 +259,16 @@ class Transactional(unittest.TestCase):
         self.assertEqual(self.run_sync("--apply").returncode, 0)
         reg = self.ws / "skills" / "REGISTRY.md"
         reg.parent.mkdir(parents=True, exist_ok=True)
-        reg.write_text(
-            "# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
+        osnorm.write_text(reg, "# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
             "| `workspace-skills` | `.workspace/skills/` | 无 | 已登记（0 入口） | TOOLS |\n"
-            "| `skills` | `/home/u/skills` | 根路由 | 已登记 | TOOLS |\n", encoding="utf-8")
+            "| `skills` | `/home/u/skills` | 根路由 | 已登记 | TOOLS |\n", newline="lf")
         bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
-        p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                            "--rollback", str(bk), "--purge-generated"],
-                           capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        p = osnorm.run_text([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                            "--rollback", str(bk), "--purge-generated"], cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertTrue(reg.is_file(), "含用户命名空间的 REGISTRY 被删掉了")
         self.assertIn("保留未清除", p.stdout)
-        self.assertIn("`skills`", reg.read_text(encoding="utf-8"))
+        self.assertIn("`skills`", osnorm.read_text(reg, bom=False, newline="preserve"))
 
     def test_rollback_keeps_registry_with_local_layer_namespace(self):
         """本地层命名空间 `workspace-skills-local` 也是用户数据：purge 不得删。
@@ -278,34 +279,30 @@ class Transactional(unittest.TestCase):
         self.assertEqual(self.run_sync("--apply").returncode, 0)
         reg = self.ws / "skills" / "REGISTRY.md"
         reg.parent.mkdir(parents=True, exist_ok=True)
-        reg.write_text(
-            "# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
+        osnorm.write_text(reg, "# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
             "| `workspace-skills` | `.workspace/skills/` | 无 | 已登记（0 入口） | TOOLS |\n"
-            "| `workspace-skills-local` | `.workspace/skills-local/` | 无 | 已登记（1 个本地 skill） | TOOLS |\n",
-            encoding="utf-8")
+            "| `workspace-skills-local` | `.workspace/skills-local/` | 无 | 已登记（1 个本地 skill） | TOOLS |\n", newline="lf")
         bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
-        p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                            "--rollback", str(bk), "--purge-generated"],
-                           capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        p = osnorm.run_text([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                            "--rollback", str(bk), "--purge-generated"], cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertTrue(reg.is_file(), "含本地层命名空间的 REGISTRY 被删掉了")
-        self.assertIn("workspace-skills-local", reg.read_text(encoding="utf-8"))
+        self.assertIn("workspace-skills-local", osnorm.read_text(reg, bom=False, newline="preserve"))
 
     def test_rollback_snapshots_purged_generated(self):
         """被清除的生成物必须先留快照，否则「清除」等于不可恢复。"""
         self.assertEqual(self.run_sync("--apply").returncode, 0)
         reg = self.ws / "skills" / "REGISTRY.md"
         reg.parent.mkdir(parents=True, exist_ok=True)
-        reg.write_text("# generated\n", encoding="utf-8")
+        osnorm.write_text(reg, "# generated\n", newline="lf")
         bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
-        p = subprocess.run([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                            "--rollback", str(bk), "--purge-generated"],
-                           capture_output=True, text=True, encoding="utf-8", cwd=ROOT)
+        p = osnorm.run_text([sys.executable, str(SYNC), "--workspace", str(self.ws),
+                            "--rollback", str(bk), "--purge-generated"], cwd=ROOT)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertFalse(reg.exists())
         snap = bk / "purged" / "skills" / "REGISTRY.md"
         self.assertTrue(snap.is_file(), "清除前没有留快照")
-        self.assertEqual(snap.read_text(encoding="utf-8"), "# generated\n")
+        self.assertEqual(osnorm.read_text(snap, bom=False, newline="preserve"), "# generated\n")
 
 
 if __name__ == "__main__":

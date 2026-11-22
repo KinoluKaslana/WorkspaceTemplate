@@ -293,7 +293,7 @@
   },
   "tests/test_workspace_preflight.py": {
     "clauses": {},
-    "file_sha256": "a10248467da291bebe55f5f99e1e946f7d0f41e359805a84d661e2078e718d9c",
+    "file_sha256": "553275e4b66b8165751e6dada0c3a2d5176e5df2b9f87933d343563fbc6de0fd",
     "marked": 0
   },
   "tests/test_skill_audit.py": {
@@ -358,12 +358,12 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "575fbbfd60a839eddce8478ba389e067a35a24036600562d2bb26a578dfb9700",
+    "file_sha256": "077130c656229e59d0e470e5308e300c07a3bba7712cfd396ee257090a50f834",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
     "clauses": {},
-    "file_sha256": "d8f3de04ff3989f12298669544136fa50b3ce07b1be6ef4a1122a02dcb964f4f",
+    "file_sha256": "568b8a21ae016bbd4414ad36311f281640e30ed6756059d5814f95a0be37ee1e",
     "marked": 0
   },
   "tests/test_clause_lint.py": {
@@ -573,7 +573,7 @@
   },
   "tests/test_gate_status.py": {
     "clauses": {},
-    "file_sha256": "835b0ed8c2c8648e8f5e8a8d90abfdf2c7defb6173bc66869c820b659315812b",
+    "file_sha256": "81bfdcab2972f0247cae40e857cdd33b5d0004b70ff05c45ac3d24f6959fc5f4",
     "marked": 0
   },
   "tests/no_git_runner.py": {
@@ -628,7 +628,7 @@
   },
   "tests/osnorm_allowlist.json": {
     "clauses": {},
-    "file_sha256": "246e7957b47a0072db11b0407bc1593f148b736a0485462b34ce91dbd306904c",
+    "file_sha256": "5c782d34cda8f953dd0b9b2f6aeb81384281636277d8d67d3605e8567a14f2c9",
     "marked": 0
   },
   "scripts/encoding_guard.py": {

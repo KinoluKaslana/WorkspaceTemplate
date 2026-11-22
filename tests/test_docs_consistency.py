@@ -103,6 +103,13 @@ _WIRING_ENV = "WS_DOCS_WIRING_CHILD"
 ROOT = Path(os.environ.get(_ROOT_ENV) or Path(__file__).resolve().parent.parent).resolve()
 LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 
+# 文本 I/O 单一实现：osnorm（R1/R2 门禁的唯一入口）。取的是**本文件所在树**的 scripts/，
+# 与 WS_DOCS_ROOT 指向的副本无关——副本只是被测对象，测试自己读产物一律走严格读法。
+_SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 冻结清单（测试席 2026-11-13，第 2 段；第 12 轮去掉 clause-range）：9 个事实位
 #
@@ -260,13 +267,13 @@ def _active_sites(root) -> tuple:
 
 
 def _upgrade_text() -> str:
-    return (Path(__file__).resolve().parent.parent / "UPGRADE.md").read_text(encoding="utf-8")
+    return osnorm.read_text(Path(__file__).resolve().parent.parent / "UPGRADE.md", bom=False, newline="preserve")
 
 
 def skills(root=ROOT) -> dict:
     out = {}
     for p in (Path(root) / ".workspace" / "skills").glob("*/SKILL.md"):
-        text = p.read_text(encoding="utf-8")
+        text = osnorm.read_text(p, bom=False, newline="preserve")
         m = re.search(r"^version:\s*(\S+)", text, re.M)
         out[p.parent.name] = m.group(1) if m else ""
     return out
@@ -275,7 +282,7 @@ def skills(root=ROOT) -> dict:
 # ── 权威源（现场取数，不存期望值）─────────────────────────────────────────────
 
 def _policy_version(root) -> str:
-    lines = (Path(root) / "AGENT_RULES.md").read_text(encoding="utf-8").split("\n")
+    lines = osnorm.read_text(Path(root) / "AGENT_RULES.md", bom=False, newline="preserve").split("\n")
     if len(lines) < 4:
         raise _AuthorityError("AGENT_RULES.md 不足 4 行")
     m = _POLICY_HEAD_RE.search(lines[3])
@@ -294,7 +301,7 @@ def _plugin_version(root) -> str:
     path = Path(root) / ".hermes" / "plugins" / "workspace-gate" / "plugin.yaml"
     if not path.is_file():
         raise _AuthorityError("plugin.yaml 不存在")
-    lines = path.read_text(encoding="utf-8").split("\n")
+    lines = osnorm.read_text(path, bom=False, newline="preserve").split("\n")
     if len(lines) < 2:
         raise _AuthorityError("plugin.yaml 不足 2 行")
     m = _PLUGIN_VERSION_RE.match(lines[1])
@@ -349,7 +356,7 @@ def _clause_entries(root) -> list:
     reg = root / ".workspace" / "rule-clauses.json"
     if reg.is_file():
         try:
-            data = json.loads(reg.read_text(encoding="utf-8"))
+            data = json.loads(osnorm.read_text(reg, bom=False, newline="preserve"))
         except (OSError, ValueError):
             data = {}
         if isinstance(data, dict):
@@ -362,7 +369,7 @@ def _clause_entries(root) -> list:
         if rel in seen or not path.is_file():
             continue
         seen.add(rel)
-        ids = [int(x) for x in _CLAUSE_ID_RE.findall(path.read_text(encoding="utf-8"))]
+        ids = [int(x) for x in _CLAUSE_ID_RE.findall(osnorm.read_text(path, bom=False, newline="preserve"))]
         if ids:
             out.append((rel, ids))
     return out
@@ -459,7 +466,7 @@ def _collect_markers(root):
     found, findings = {}, []
     for path in _iter_md(root):
         rel = path.relative_to(root).as_posix()
-        lines = path.read_text(encoding="utf-8").split("\n")
+        lines = osnorm.read_text(path, bom=False, newline="preserve").split("\n")
         fenced = _fenced_lines(lines)
         for i, line in enumerate(lines, 1):
             if "doc-fact:" not in line:
@@ -506,7 +513,7 @@ def scan(root=None) -> dict:
         if not path.is_file():
             findings.append(f"[{sid}] 声明文件不存在：{site['path']}")
             continue
-        lines = path.read_text(encoding="utf-8").split("\n")
+        lines = osnorm.read_text(path, bom=False, newline="preserve").split("\n")
         # 第 12 轮起没有免标记 kind：每个事实位都必须靠一个独立成行的 doc-fact 标记定位。
         if len(locs) != 1:
             findings.append(f"[{sid}] 标记出现 {len(locs)} 次（应恰好 1 次）：{locs or '未找到'}"
@@ -610,7 +617,7 @@ def _r_b_offenders(rel, text, root) -> list:
             if not target.is_file():
                 out.append(f"{rel}:{i}: 「第 {wanted} 行」指向不存在的文件 {ref}")
                 continue
-            tlines = target.read_text(encoding="utf-8").split("\n")
+            tlines = osnorm.read_text(target, bom=False, newline="preserve").split("\n")
             if not 1 <= wanted <= len(tlines) or "模板政策版本" not in tlines[wanted - 1]:
                 out.append(f"{rel}:{i}: 「{ref} 第 {wanted} 行」不是政策版本行"
                            f"（该行不含「模板政策版本」）")
@@ -623,7 +630,7 @@ def _r_c_offenders(root) -> list:
     path = Path(root) / rel
     if not path.is_file():
         return [f"{rel} 不存在（R-c 无法判定）"]
-    lines = path.read_text(encoding="utf-8").split("\n")
+    lines = osnorm.read_text(path, bom=False, newline="preserve").split("\n")
     target = [(i, line) for i, line in enumerate(lines) if _BASELINE_HEAD_RE.match(line)]
     if len(target) != 1:
         return [f"{rel}: 未找到唯一的 `## 5. 当前基线` 标题（命中 {len(target)}）"]
@@ -712,7 +719,7 @@ def _rule_offenders(root) -> list:
         if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
-        text = path.read_text(encoding="utf-8")
+        text = osnorm.read_text(path, bom=False, newline="preserve")
         out += _r_a_offenders(rel, text, policy, root)
         out += _r_b_offenders(rel, text, root)
     out += _r_c_offenders(root)
@@ -755,7 +762,7 @@ def _count_offenders(root, sites) -> list:
         rel = path.relative_to(root).as_posix()
         if instance and rel.startswith("README"):
             continue
-        out += _skill_count_offenders(rel, path.read_text(encoding="utf-8"), allowed)
+        out += _skill_count_offenders(rel, osnorm.read_text(path, bom=False, newline="preserve"), allowed)
     return out
 
 
@@ -850,16 +857,14 @@ def _child_env(root) -> dict:
 
 def _run_suite(root, *args) -> subprocess.CompletedProcess:
     """在副本里跑测试文件（=生产 `check()` 入口）。`args` 透传给 unittest（可只跑单个测试）。"""
-    return subprocess.run([sys.executable, "-B",
-                           str(Path(root) / "tests" / "test_docs_consistency.py"), *args],
-                          cwd=str(root), env=_child_env(root),
-                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
+    return osnorm.run_text([sys.executable, "-B",
+                           str(Path(root) / "tests" / "test_docs_consistency.py"), *args], cwd=str(root), env=_child_env(root), errors="replace", timeout=600)
 
 
 # ── 范围表镜像（docstring ↔ docs/policy-language.md §7，逐行同文）───────────────
 
 def _section7(root) -> str:
-    doc = (Path(root) / "docs" / "policy-language.md").read_text(encoding="utf-8")
+    doc = osnorm.read_text(Path(root) / "docs" / "policy-language.md", bom=False, newline="preserve")
     m = re.search(r"^## 7\..*?(?=^## |\Z)", doc, re.S | re.M)
     return m.group(0) if m else ""
 
@@ -925,7 +930,7 @@ class DocFactContract(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp(prefix="policy-facts-"))
         try:
             (tmp / "docs").mkdir()
-            (tmp / "docs" / "probe.md").write_text(text, encoding="utf-8")
+            osnorm.write_text(tmp / "docs" / "probe.md", text, newline="lf")
             mod = _policy_facts_module(ROOT)
             return list(mod.literal_offenders(
                 tmp, {"policy": policy or _policy_version(ROOT)}, list(ledger)))
@@ -1001,7 +1006,7 @@ class DocFactContract(unittest.TestCase):
         self.assertEqual(len(patterns), len(self._SHARED_RES),
                          "7 条 pattern 有重复：单一来源清单与实现不对齐")
         literals = set()
-        for node in ast.walk(ast.parse(Path(__file__).read_text(encoding="utf-8"))):
+        for node in ast.walk(ast.parse(osnorm.read_text(Path(__file__), bom=False, newline="preserve"))):
             func = getattr(node, "func", None)
             if (isinstance(node, ast.Call) and isinstance(func, ast.Attribute)
                     and isinstance(func.value, ast.Name) and func.value.id == "re"
@@ -1137,11 +1142,11 @@ class DocFactContract(unittest.TestCase):
         copy = _copy_repo()
         try:
             target = copy / "docs" / "policy-language.md"
-            lines = target.read_text(encoding="utf-8").split("\n")
+            lines = osnorm.read_text(target, bom=False, newline="preserve").split("\n")
             idx = next(i for i, line in enumerate(lines) if _BASELINE_HEAD_RE.match(line))
             end = next((j for j in range(idx + 1, len(lines)) if _H2_RE.match(lines[j])), len(lines))
             lines.insert(end, f"政策 {stale} 生效。")
-            target.write_text("\n".join(lines), encoding="utf-8")
+            osnorm.write_text(target, "\n".join(lines), newline="lf")
             self.assertTrue(any("§5 正文" in x for x in _r_c_offenders(copy)),
                             "R-c 漏报 §5 正文里的版本快照")
         finally:
@@ -1180,9 +1185,8 @@ class DocFactContract(unittest.TestCase):
         mod = _policy_facts_module(ROOT)
         tmp = Path(tempfile.mkdtemp(prefix="policy-facts-ledger-"))
         try:
-            (tmp / "CHANGELOG.md").write_text(
-                f"## {cur}（基线）\n\n## 3.6.1beta 坏标题\n\n## 3.6.1.1 也坏\n\n"
-                f"## 剩余风险处置：非版本条目\n", encoding="utf-8")
+            osnorm.write_text(tmp / "CHANGELOG.md", f"## {cur}（基线）\n\n## 3.6.1beta 坏标题\n\n## 3.6.1.1 也坏\n\n"
+                f"## 剩余风险处置：非版本条目\n", newline="lf")
             self.assertEqual(mod.changelog_versions(tmp), [cur],
                              "无右边界时 3.6.1beta/3.6.1.1 会被误收成账本条目")
             bad = mod.changelog_heading_offenders(tmp)
@@ -1328,7 +1332,7 @@ class DocFactContract(unittest.TestCase):
             if not path.is_file():
                 continue
             rel = path.relative_to(ROOT).as_posix()
-            bad += _skill_count_offenders(rel, path.read_text(encoding="utf-8"), allowed)
+            bad += _skill_count_offenders(rel, osnorm.read_text(path, bom=False, newline="preserve"), allowed)
         self.assertEqual(bad, [], "真文档里仍有未登记的 skill 计数：\n" + "\n".join(bad))
         # GREEN：允许的写法（指针 / 现场取数 / 事实行本身）
         for line in ("以 `skill_audit.py --strict` 为准",
@@ -1391,13 +1395,13 @@ class DocFactContract(unittest.TestCase):
         copy = _copy_repo()
         try:
             suite = copy / "tests" / "test_docs_consistency.py"
-            original = suite.read_text(encoding="utf-8")
+            original = osnorm.read_text(suite, bom=False, newline="preserve")
             before = "- G1 政策版本 token == `AGENT_RULES.md:4`"
             after = "- G1 政策版本 口径 == `AGENT_RULES.md:4`"
             self.assertEqual(original.count(before + "\n"), 1, "G1 变异锚点不存在或重复")
             baseline = _run_suite(copy, "DocFactContract.test_scope_table_ids_match_test_names")
             self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
-            suite.write_text(original.replace(before + "\n", after + "\n", 1), encoding="utf-8")
+            osnorm.write_text(suite, original.replace(before + "\n", after + "\n", 1), newline="lf")
             mutated = _run_suite(copy, "DocFactContract.test_scope_table_ids_match_test_names")
             self.assertNotEqual(mutated.returncode, 0, "只改 G1 文本但保留编号的变异漏检")
             self.assertIn("G1: 文本不一致", mutated.stdout + mutated.stderr)
@@ -1462,17 +1466,17 @@ class DocFactContract(unittest.TestCase):
         copy = _copy_repo()
         try:
             boot = copy / ".workspace" / "bootstrap.json"
-            data = json.loads(boot.read_text(encoding="utf-8"))
+            data = json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))
             data["workspace_status"] = "active"
-            boot.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            osnorm.write_text(boot, json.dumps(data, ensure_ascii=False, indent=2) + "\n", newline="lf")
             # 实例会改写首页：删掉生成块、徽章写成别的样子。G5 的生成块与字面量判据都
             # 必须跟着放手，否则「刚同步干净的实例」会因为用户首页而红。
             readme = copy / "README.md"
-            readme.write_text(readme.read_text(encoding="utf-8")
+            osnorm.write_text(readme, osnorm.read_text(readme, bom=False, newline="preserve")
                               .replace("<!-- gen:policy-facts:begin -->\n", "")
                               .replace("<!-- gen:policy-facts:end -->\n", "")
                               .replace("<!-- doc-fact:readme-policy-badge -->\n", "")
-                              .replace("policy-v", "my-own-badge-v"), encoding="utf-8")
+                              .replace("policy-v", "my-own-badge-v"), newline="lf")
             res = scan(copy)
             self.assertFalse([i for i in res["manifest_ids"] if "readme" in i],
                              "实例模式仍把 README 事实位算进契约")
@@ -1492,15 +1496,14 @@ class DocFactContract(unittest.TestCase):
                 try:
                     boot = copy / ".workspace" / "bootstrap.json"
                     if mutation == "bad-json":
-                        boot.write_text("{not-json\n", encoding="utf-8")
+                        osnorm.write_text(boot, "{not-json\n", newline="lf")
                     else:
-                        data = json.loads(boot.read_text(encoding="utf-8"))
+                        data = json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))
                         if mutation == "weird":
                             data["workspace_status"] = "weird"
                         else:
                             data.pop("workspace_status", None)
-                        boot.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-                                        encoding="utf-8")
+                        osnorm.write_text(boot, json.dumps(data, ensure_ascii=False, indent=2) + "\n", newline="lf")
                     prod = _policy_facts_module(copy)
                     self.assertEqual(prod.is_template(copy), "unknown")
                     self.assertEqual(_is_template_repo(copy), "unknown")
@@ -1508,9 +1511,7 @@ class DocFactContract(unittest.TestCase):
                     test_findings = check(copy)
                     self.assertTrue(any("workspace-status-unknown" in x for x in prod_findings))
                     self.assertTrue(any("workspace-status-unknown" in x for x in test_findings))
-                    proc = subprocess.run(
-                        [sys.executable, "-B", str(copy / "scripts" / "policy_facts.py"), "--check"],
-                        cwd=str(copy), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+                    proc = osnorm.run_text([sys.executable, "-B", str(copy / "scripts" / "policy_facts.py"), "--check"], cwd=str(copy), errors="replace", timeout=300)
                     self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 finally:
                     shutil.rmtree(copy, ignore_errors=True)
@@ -1523,9 +1524,9 @@ class DocFactContract(unittest.TestCase):
             readme = copy / "README.md"
             # 徽章版本从文件派生：写死 policy-v3.7.0 会让发版后的仓库永远测不到坏徽章
             text, n = re.subn(r"policy-v\d+\.\d+\.\d+", "policy-v0.0.1",
-                              readme.read_text(encoding="utf-8"), count=1)
+                              osnorm.read_text(readme, bom=False, newline="preserve"), count=1)
             self.assertEqual(n, 1, "README.md 政策徽章定位失败")
-            readme.write_text(text, encoding="utf-8")
+            osnorm.write_text(readme, text, newline="lf")
             prod_findings = _policy_facts_module(copy).check(copy)
             test_findings = check(copy)
             self.assertTrue(any("README.md" in x for x in prod_findings), prod_findings)
@@ -1549,9 +1550,9 @@ class DocFactContract(unittest.TestCase):
                              "副本基线不干净，T2 无效：\n" + (base.stdout + base.stderr)[-2000:])
             readme = copy / "README.md"
             old = _policy_version(copy)
-            text = readme.read_text(encoding="utf-8")
+            text = osnorm.read_text(readme, bom=False, newline="preserve")
             self.assertIn(f"policy-v{old}", text, "README 里没有政策徽章")
-            readme.write_text(text.replace(f"policy-v{old}", "policy-v3.6.1", 1), encoding="utf-8")
+            osnorm.write_text(readme, text.replace(f"policy-v{old}", "policy-v3.6.1", 1), newline="lf")
             bad = _run_suite(copy)
             out = bad.stdout + bad.stderr
             self.assertNotEqual(bad.returncode, 0, "改坏真实徽章后子进程仍绿：生产检查没接线")
@@ -1573,11 +1574,11 @@ class DocFactContract(unittest.TestCase):
         try:
             self.assertEqual(check(copy), [], "副本基线不干净，T3 无效")
             target = copy / "docs" / "policy-language.md"
-            lines = target.read_text(encoding="utf-8").split("\n")
+            lines = osnorm.read_text(target, bom=False, newline="preserve").split("\n")
             idx = next(i for i, line in enumerate(lines) if _BASELINE_HEAD_RE.match(line))
             end = next((j for j in range(idx + 1, len(lines)) if _H2_RE.match(lines[j])), len(lines))
             lines.insert(end, "政策 3.6.1 生效。")
-            target.write_text("\n".join(lines), encoding="utf-8")
+            osnorm.write_text(target, "\n".join(lines), newline="lf")
             findings = check(copy)
             self.assertTrue(any("§5 正文" in f for f in findings),
                             f"§5 追加「政策 3.6.1 生效。」后没红：{findings}")
@@ -1591,8 +1592,8 @@ class DocFactContract(unittest.TestCase):
         try:
             self.assertEqual(check(copy), [], "副本基线不干净，T4 无效")
             target = copy / "docs" / "tools.md"
-            text = target.read_text(encoding="utf-8")
-            target.write_text("<!-- doc-fact:not-registered -->\n" + text, encoding="utf-8")
+            text = osnorm.read_text(target, bom=False, newline="preserve")
+            osnorm.write_text(target, "<!-- doc-fact:not-registered -->\n" + text, newline="lf")
             findings = check(copy)
             self.assertTrue(any("not-registered" in f for f in findings),
                             f"未登记标记没红：{findings}")
@@ -1609,10 +1610,10 @@ class DocFactContract(unittest.TestCase):
             res = scan(copy)
             rec = res["sites"]["arch-template-files"]
             target = copy / "docs" / "architecture.md"
-            text = target.read_text(encoding="utf-8")
+            text = osnorm.read_text(target, bom=False, newline="preserve")
             wrong = int(rec["value"]) - 1
-            target.write_text(text.replace(f"`TEMPLATE_FILES` **{rec['value']}**",
-                                           f"`TEMPLATE_FILES` **{wrong}**", 1), encoding="utf-8")
+            osnorm.write_text(target, text.replace(f"`TEMPLATE_FILES` **{rec['value']}**",
+                                           f"`TEMPLATE_FILES` **{wrong}**", 1), newline="lf")
             findings = check(copy)
             self.assertTrue(any("arch-template-files" in f for f in findings),
                             f"计数漂移没红：{findings}")
@@ -1633,7 +1634,7 @@ class DocFactContract(unittest.TestCase):
             lo, hi = _clause_ids(copy)
             good = f"R{lo}..R{hi}"
             target = copy / "docs" / "architecture.md"
-            text = target.read_text(encoding="utf-8")
+            text = osnorm.read_text(target, bom=False, newline="preserve")
             self.assertEqual(text.count(good), 2,
                              f"architecture.md 应有两处 {good}（生成块渲染行 + 架构图），"
                              f"实际 {text.count(good)} 处")
@@ -1643,11 +1644,11 @@ class DocFactContract(unittest.TestCase):
             # ① 手改生成块里的渲染值 → G5 块比对必须红（人手改不到中间态）
             mutated = list(lines)
             mutated[gen] = mutated[gen].replace(good, f"R{lo}..R{hi + 1}")
-            target.write_text("\n".join(mutated), encoding="utf-8")
+            osnorm.write_text(target, "\n".join(mutated), newline="lf")
             out = check(copy)
             self.assertTrue(any("docs/architecture.md" in f and "生成块" in f for f in out),
                             f"手改渲染值后没红：{out}")
-            target.write_text(text, encoding="utf-8")
+            osnorm.write_text(target, text, newline="lf")
             # ② 架构图（散文）里的值/形态/连接符漂移 → G6 必须红
             for bad, why in ((f"R{lo}..R{hi - 1}", "写条款范围"),
                              (f"R{lo}..R{hi + 40}", "越界"),
@@ -1656,15 +1657,15 @@ class DocFactContract(unittest.TestCase):
                 with self.subTest(bad=bad):
                     mutated = list(lines)
                     mutated[fig] = mutated[fig].replace(good, bad)
-                    target.write_text("\n".join(mutated), encoding="utf-8")
+                    osnorm.write_text(target, "\n".join(mutated), newline="lf")
                     findings = check(copy)
                     self.assertTrue(any(why in f and bad in f for f in findings),
                                     f"架构图里的 {bad} 没红（应报「{why}」）：{findings}")
-            target.write_text(text, encoding="utf-8")
+            osnorm.write_text(target, text, newline="lf")
             # ③ 新增条款把高水位抬到 R{hi+1}，却没跑 --write → 渲染值落后，块比对必须红
             rules = copy / "AGENT_RULES.md"
-            rules.write_text(rules.read_text(encoding="utf-8")
-                             + f"\n<!-- id:R{hi + 1} --> 变异条款（T6）\n", encoding="utf-8")
+            osnorm.write_text(rules, osnorm.read_text(rules, bom=False, newline="preserve")
+                             + f"\n<!-- id:R{hi + 1} --> 变异条款（T6）\n", newline="lf")
             out = check(copy)
             self.assertTrue(any(f"R{lo}..R{hi + 1}" in f for f in out),
                             f"新增条款后渲染值没跟上（渲染值 == min..max 失效）：{out}")
@@ -1687,8 +1688,7 @@ class DocFactContract(unittest.TestCase):
                      # 第 11 轮 P2：完整中文数词（旧写法只认单字）
                      "一百个 skill 全在这里。", "十四个 skill 全在这里。")
             target = copy / "docs" / "skills.md"
-            target.write_text(target.read_text(encoding="utf-8") + "\n" + "\n".join(forms) + "\n",
-                              encoding="utf-8")
+            osnorm.write_text(target, osnorm.read_text(target, bom=False, newline="preserve") + "\n" + "\n".join(forms) + "\n", newline="lf")
             live = _run_suite(copy)
             out = live.stdout + live.stderr
             self.assertNotEqual(live.returncode, 0, "散文里的 skill 计数没红：G7 没接线")
@@ -1713,19 +1713,19 @@ class DocFactContract(unittest.TestCase):
             self.assertEqual(check(copy), [], "副本基线不干净，T8 无效")
             stale = _stale_version(copy)
             target = copy / "docs" / "tools.md"
-            original = target.read_text(encoding="utf-8")
-            target.write_text(original + f"\n## 政策 {stale} 的旧说明\n", encoding="utf-8")
+            original = osnorm.read_text(target, bom=False, newline="preserve")
+            osnorm.write_text(target, original + f"\n## 政策 {stale} 的旧说明\n", newline="lf")
             live = _run_suite(copy)
             out = live.stdout + live.stderr
             self.assertNotEqual(live.returncode, 0, "注入 R-a 违例后生产入口仍绿：规则没接线")
             self.assertIn("标题写旧政策版本", out, f"子进程红了但没报 R-a：\n{out[-1500:]}")
 
-            target.write_text(original, encoding="utf-8")
+            osnorm.write_text(target, original, newline="lf")
             suite = copy / "tests" / "test_docs_consistency.py"
-            src = suite.read_text(encoding="utf-8")
+            src = osnorm.read_text(suite, bom=False, newline="preserve")
             wired = "    findings += _rule_offenders(root)\n"
             self.assertIn(wired, src, "副本里找不到 `findings += _rule_offenders(root)` 接线点")
-            suite.write_text(src.replace(wired, "", 1), encoding="utf-8")
+            osnorm.write_text(suite, src.replace(wired, "", 1), newline="lf")
             cut = _run_suite(copy, "DocFactContract.test_t10_every_offender_function_is_wired_into_check")
             out = cut.stdout + cut.stderr
             self.assertNotEqual(cut.returncode, 0,
@@ -1742,19 +1742,19 @@ class DocFactContract(unittest.TestCase):
         try:
             self.assertEqual(check(copy), [], "副本基线不干净，T9 无效")
             target = copy / "docs" / "skills.md"
-            original = target.read_text(encoding="utf-8")
-            target.write_text(original + "\n八个 skill 全在这里。\n", encoding="utf-8")
+            original = osnorm.read_text(target, bom=False, newline="preserve")
+            osnorm.write_text(target, original + "\n八个 skill 全在这里。\n", newline="lf")
             live = _run_suite(copy)
             out = live.stdout + live.stderr
             self.assertNotEqual(live.returncode, 0, "注入未登记 skill 计数后生产入口仍绿：规则没接线")
             self.assertIn("skill 计数", out, f"子进程红了但没报 G7：\n{out[-1500:]}")
 
-            target.write_text(original, encoding="utf-8")
+            osnorm.write_text(target, original, newline="lf")
             suite = copy / "tests" / "test_docs_consistency.py"
-            src = suite.read_text(encoding="utf-8")
+            src = osnorm.read_text(suite, bom=False, newline="preserve")
             wired = "    findings += _count_offenders(root, sites)\n"
             self.assertIn(wired, src, "副本里找不到 `findings += _count_offenders(root, sites)` 接线点")
-            suite.write_text(src.replace(wired, "", 1), encoding="utf-8")
+            osnorm.write_text(suite, src.replace(wired, "", 1), newline="lf")
             cut = _run_suite(copy, "DocFactContract.test_t10_every_offender_function_is_wired_into_check")
             out = cut.stdout + cut.stderr
             self.assertNotEqual(cut.returncode, 0,
@@ -1791,17 +1791,17 @@ class DocFactContract(unittest.TestCase):
         try:
             self.assertEqual(check(copy), [], "副本基线不干净，T11 无效")
             readme = copy / "README.md"
-            lines = readme.read_text(encoding="utf-8").split("\n")
+            lines = osnorm.read_text(readme, bom=False, newline="preserve").split("\n")
             hits = [i for i, line in enumerate(lines) if "doc-fact:readme-policy-badge" in line]
             self.assertEqual(len(hits), 1, f"README 里 readme-policy-badge 标记应恰好 1 个：{hits}")
             idx = hits[0]
             marker = lines.pop(idx).strip()
             self.assertIsNotNone(_MARKER_ONLY_RE.match(marker), "夹具里的标记不是独立成行")
             lines[idx] = lines[idx] + " " + marker       # 挪到声明行行尾（inline）
-            readme.write_text("\n".join(lines), encoding="utf-8")
+            osnorm.write_text(readme, "\n".join(lines), newline="lf")
             tools = copy / "docs" / "tools.md"
-            tools.write_text(tools.read_text(encoding="utf-8") +
-                             "\n正文 <!-- doc-fact:x -->\n", encoding="utf-8")
+            osnorm.write_text(tools, osnorm.read_text(tools, bom=False, newline="preserve") +
+                             "\n正文 <!-- doc-fact:x -->\n", newline="lf")
             scanned = scan(copy)
             self.assertNotIn("readme-policy-badge", scanned["marker_ids"],
                              "行内标记不能充当已登记事实位的 locator")
@@ -1826,11 +1826,11 @@ class DocFactContract(unittest.TestCase):
         copy = _copy_repo()
         try:
             target = copy / "docs" / "tools.md"
-            original = target.read_text(encoding="utf-8")
+            original = osnorm.read_text(target, bom=False, newline="preserve")
             examples = ("这段政策的语义写得含糊，建议重写。",
                         "评审日期 2026-11-13，措辞待定。",
                         "对应实现见提交 3f2a1b9。")
-            target.write_text(original + "\n" + "\n".join(examples) + "\n", encoding="utf-8")
+            osnorm.write_text(target, original + "\n" + "\n".join(examples) + "\n", newline="lf")
             self.assertEqual(check(copy), [], "N2 的纯语义/日期/sha 散文不应被机械扫描判红")
         finally:
             shutil.rmtree(copy, ignore_errors=True)
@@ -1851,25 +1851,24 @@ class DocFactContract(unittest.TestCase):
         try:
             self.assertEqual(check(copy), [], "副本基线不干净，T12 无效")
             target = copy / "docs" / "tools.md"
-            original = target.read_text(encoding="utf-8")
+            original = osnorm.read_text(target, bom=False, newline="preserve")
             stale = _stale_version(copy)
             policy = _policy_version(copy)
             for bad in (f"当前政策版本：{policy}", f"当前对应：政策 {stale}",
                         f"## 政策 {stale} 的旧说明",
                         f"现行基线 9.9.9。<!-- history:{stale} -->"):
                 with self.subTest(bad=bad):
-                    target.write_text(original + "\n" + bad + "\n", encoding="utf-8")
+                    osnorm.write_text(target, original + "\n" + bad + "\n", newline="lf")
                     live = _run_suite(copy)
                     out = live.stdout + live.stderr
                     self.assertNotEqual(live.returncode, 0,
                                         f"注入 {bad!r} 后生产入口仍绿：G5 没接线")
                     self.assertIn(bad, out, f"子进程红了但没点名该行：\n{out[-2000:]}")
-            target.write_text(original + f"\n政策 {stale} 起引入本节。<!-- history:{stale} -->\n",
-                              encoding="utf-8")
+            osnorm.write_text(target, original + f"\n政策 {stale} 起引入本节。<!-- history:{stale} -->\n", newline="lf")
             self.assertEqual(check(copy), [], "已登记的沿革句被误判红（不能见版本号就红）")
             thin = ('工具版本 9.9.9；"当前政策版本"只是字段名，不表示该版本。\n'
                     "本模板现行治理基线为 9.9.9。\n")
-            target.write_text(original + "\n" + thin, encoding="utf-8")
+            osnorm.write_text(target, original + "\n" + thin, newline="lf")
             self.assertEqual(check(copy), [],
                              "纯散文断言（无结构标记）不该由 policy_facts 判：那是 N2")
         finally:
@@ -1889,12 +1888,12 @@ class DocFactContract(unittest.TestCase):
             self.assertEqual(check(copy), [], "副本基线不干净，T13 无效")
             lo, hi = _clause_ids(copy)
             target = copy / "docs" / "tools.md"
-            original = target.read_text(encoding="utf-8")
+            original = osnorm.read_text(target, bom=False, newline="preserve")
             missing_tail = f"R{lo}..{hi}"
             en_dash = f"R{lo}\u2013R{hi}"
             forms = (f"条款范围见 R{lo}..R{hi + 863}。", f"条款范围见 {missing_tail}。",
                      f"条款范围见 {en_dash}。")
-            target.write_text(original + "\n" + "\n".join(forms) + "\n", encoding="utf-8")
+            osnorm.write_text(target, original + "\n" + "\n".join(forms) + "\n", newline="lf")
             live = _run_suite(copy)
             out = live.stdout + live.stderr
             self.assertNotEqual(live.returncode, 0, "注入未登记条款范围后生产入口仍绿：G6 没接线")
@@ -1907,18 +1906,16 @@ class DocFactContract(unittest.TestCase):
             self.assertIn("连接符不合法", out, f"子进程红了但没报连接符：\n{out[-2000:]}")
             self.assertIn(en_dash, out, f"报错没点名 en dash 的串：\n{out[-2000:]}")
 
-            target.write_text(original + f"\n条款范围见 R{lo}..R{hi}（未登记散文）。\n",
-                              encoding="utf-8")
+            osnorm.write_text(target, original + f"\n条款范围见 R{lo}..R{hi}（未登记散文）。\n", newline="lf")
             self.assertEqual(check(copy), [], "值等于政策 min..max 的条款范围不该红")
             # 子集引用（README.md:80 的真实形态）任何连接符都不判：M10 必须绿。
-            target.write_text(original + "\nPython 三选一：R2\u2013R8。\nR120-R136 是子集引用。\n",
-                              encoding="utf-8")
+            osnorm.write_text(target, original + "\nPython 三选一：R2\u2013R8。\nR120-R136 是子集引用。\n", newline="lf")
             self.assertEqual(check(copy), [], "子集条款范围被误判红（功能引用不判值）")
 
             # 同一行两个范围：写对的那个不能给写错的当挡箭牌（第 11 轮 P3 的回归；
             # 第 12 轮起没有「登记行」这个概念，全部散文行一视同仁）。
             good, bad = f"R{lo}..R{hi}", f"R{lo}..{hi - 1}"
-            target.write_text(original + f"\n条款集见 {good}，旧写法 {bad}。\n", encoding="utf-8")
+            osnorm.write_text(target, original + f"\n条款集见 {good}，旧写法 {bad}。\n", newline="lf")
             findings = [f for f in check(copy) if bad in f]
             self.assertEqual(len(findings), 1,
                              f"同一行写对的 {good} 把写错的 {bad} 挡掉了：{check(copy)}")
@@ -1928,7 +1925,7 @@ class DocFactContract(unittest.TestCase):
             self.assertNotEqual(live.returncode, 0, f"同行坏范围没进生产入口：\n{out[-2000:]}")
             self.assertIn(bad, out, f"子进程没点名同行坏范围：\n{out[-2000:]}")
             self.assertIn("缺尾端 R", out, f"错因不是形态违规：\n{out[-2000:]}")
-            target.write_text(original, encoding="utf-8")
+            osnorm.write_text(target, original, newline="lf")
         finally:
             shutil.rmtree(copy, ignore_errors=True)
 
@@ -1950,15 +1947,15 @@ class DocFactContract(unittest.TestCase):
         try:
             self.assertEqual(check(copy), [], "副本基线不干净，T16 无效")
             readme = copy / "README.md"
-            lines = readme.read_text(encoding="utf-8").split("\n")
+            lines = osnorm.read_text(readme, bom=False, newline="preserve").split("\n")
             idx = next(i for i, ln in enumerate(lines) if "机械守门补强" in ln)
             lines[idx] = lines[idx] + " 插件 8.8.8"          # M6 同形：块外插件版本副本
-            readme.write_text("\n".join(lines), encoding="utf-8")
+            osnorm.write_text(readme, "\n".join(lines), newline="lf")
             arch = copy / "docs" / "architecture.md"
-            lines = arch.read_text(encoding="utf-8").split("\n")
+            lines = osnorm.read_text(arch, bom=False, newline="preserve").split("\n")
             idx = next(i for i, ln in enumerate(lines) if "工具层" in ln)
             lines.insert(idx + 1, "│    变异副本：scripts/（999 个）        │")   # M7 同形
-            arch.write_text("\n".join(lines), encoding="utf-8")
+            osnorm.write_text(arch, "\n".join(lines), newline="lf")
             single = [f for f in check(copy) if "派生事实副本" in f]
             self.assertTrue(any(f.startswith("README.md:") and "8.8.8" in f for f in single),
                             f"README 的插件版本副本没红（M6）：{single}")
@@ -1991,26 +1988,23 @@ class DocFactContract(unittest.TestCase):
             old = _policy_version(copy)
             bump = "9.9.8"
             rules = copy / "AGENT_RULES.md"
-            rules.write_text(rules.read_text(encoding="utf-8").replace(
-                f"模板政策版本：`{old}`", f"模板政策版本：`{bump}`", 1), encoding="utf-8")
+            osnorm.write_text(rules, osnorm.read_text(rules, bom=False, newline="preserve").replace(
+                f"模板政策版本：`{old}`", f"模板政策版本：`{bump}`", 1), newline="lf")
             log = copy / "CHANGELOG.md"
-            log.write_text(f"## {bump}（变异，无发布）\n\n测试用。\n\n"
-                           + log.read_text(encoding="utf-8"), encoding="utf-8")
+            osnorm.write_text(log, f"## {bump}（变异，无发布）\n\n测试用。\n\n"
+                           + osnorm.read_text(log, bom=False, newline="preserve"), newline="lf")
             boot = copy / ".workspace" / "bootstrap.json"
-            data = json.loads(boot.read_text(encoding="utf-8"))
+            data = json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))
             data["template"]["current_policy_version"] = bump
-            boot.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            osnorm.write_text(boot, json.dumps(data, ensure_ascii=False, indent=2) + "\n", newline="lf")
             releases = copy / ".workspace" / "releases.json"
-            release_data = json.loads(releases.read_text(encoding="utf-8"))
+            release_data = json.loads(osnorm.read_text(releases, bom=False, newline="preserve"))
             release_data.append({"version": bump, "date": "2099-01-01", "summary": "变异",
                                  "commit": None, "tag": None, "files_sha256": {}})
-            releases.write_text(json.dumps(release_data, ensure_ascii=False, indent=2) + "\n",
-                                encoding="utf-8")
+            osnorm.write_text(releases, json.dumps(release_data, ensure_ascii=False, indent=2) + "\n", newline="lf")
 
             def run(*args):
-                return subprocess.run(
-                    [sys.executable, "-B", str(copy / "scripts" / "policy_facts.py"), *args],
-                    cwd=str(copy), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+                return osnorm.run_text([sys.executable, "-B", str(copy / "scripts" / "policy_facts.py"), *args], cwd=str(copy), errors="replace", timeout=300)
 
             stale = run("--check")
             out = stale.stdout + stale.stderr
@@ -2022,7 +2016,7 @@ class DocFactContract(unittest.TestCase):
             wrote = run("--write")
             self.assertEqual(wrote.returncode, 0, wrote.stdout + wrote.stderr)
             self.assertEqual(run("--check").returncode, 0, "重新生成后 --check 仍红")
-            self.assertIn(f"policy-v{bump}", (copy / "README.md").read_text(encoding="utf-8"))
+            self.assertIn(f"policy-v{bump}", osnorm.read_text(copy / "README.md", bom=False, newline="preserve"))
         finally:
             shutil.rmtree(copy, ignore_errors=True)
 
@@ -2036,7 +2030,7 @@ class DocsConsistency(unittest.TestCase):
             if not md.is_file():
                 continue                     # README_EN 被用户删除时不该让文档检查崩
             base = md.parent
-            for target in LINK.findall(md.read_text(encoding="utf-8")):
+            for target in LINK.findall(osnorm.read_text(md, bom=False, newline="preserve")):
                 t = target.split("#")[0].strip()
                 if not t or t.startswith(("http://", "https://", "mailto:")):
                     continue
@@ -2045,7 +2039,7 @@ class DocsConsistency(unittest.TestCase):
         self.assertEqual(bad, [], "断链：\n" + "\n".join(bad))
 
     def test_d2_skills_doc_covers_all(self):
-        doc = (ROOT / "docs" / "skills.md").read_text(encoding="utf-8")
+        doc = osnorm.read_text(ROOT / "docs" / "skills.md", bom=False, newline="preserve")
         missing = [n for n in skills() if n not in doc]
         self.assertEqual(missing, [], f"docs/skills.md 未覆盖：{missing}")
         # 版本号一致（允许 3.2.1 这类点号版本直接出现）
@@ -2054,14 +2048,14 @@ class DocsConsistency(unittest.TestCase):
         self.assertEqual(wrong, [], "; ".join(wrong))
 
     def test_d3_tools_doc_covers_all_scripts(self):
-        doc = (ROOT / "docs" / "tools.md").read_text(encoding="utf-8")
+        doc = osnorm.read_text(ROOT / "docs" / "tools.md", bom=False, newline="preserve")
         missing = [p.name for p in (ROOT / "scripts").glob("*.py") if p.name not in doc]
         self.assertEqual(missing, [], f"docs/tools.md 未覆盖脚本：{missing}")
 
     def test_d5_readme_lists_all_skills(self):
         if _is_template_repo() == "instance":
             self.skipTest("派生实例的 README 是用户首页，不参与模板 skill 清单检查")
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        readme = osnorm.read_text(ROOT / "README.md", bom=False, newline="preserve")
         missing = [n for n in skills() if n not in readme]
         self.assertEqual(missing, [], f"README 未提到：{missing}")
 
@@ -2096,7 +2090,7 @@ class DocsConsistency(unittest.TestCase):
             path = ROOT / name
             if not path.exists():
                 continue
-            for raw in url_re.findall(path.read_text(encoding="utf-8")):
+            for raw in url_re.findall(osnorm.read_text(path, bom=False, newline="preserve")):
                 body = raw.split("?")[0].replace("--", "\x00")   # `--` = 合法的字面量连字符
                 parts = body.split("-")
                 if len(parts) != 3:
@@ -2122,7 +2116,7 @@ class DocsConsistency(unittest.TestCase):
             for md in DOCS:
                 if user_home and md.name.startswith("README"):
                     continue      # 实例的 README 是用户首页（同步豁免），版本列不归模板管
-                text = md.read_text(encoding="utf-8")
+                text = osnorm.read_text(md, bom=False, newline="preserve")
                 for m in row.finditer(text):
                     got = m.group(1).strip()
                     if got != ver:
