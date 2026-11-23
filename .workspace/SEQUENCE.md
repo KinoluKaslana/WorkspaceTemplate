@@ -118,8 +118,24 @@
 | S6 | 当前轮次集合必须包含 git 历史账本曾存在的全部轮次 | 历史轮次集合 ⊆ 当前 SEQUENCE；另做 landed 计数 | 成对删除 / 差值 |
 | S7 | 每条账本 `summary` == `git show <commit>:CHANGELOG_DEV.md` 对应段落；无 commit 时降级 | commit 历史正文逐字比较；未提交显式 DEGRADED working-tree 比较 | 自证漂移 / 降级提示 |
 | S8 | `release_dev.json` 只能 append，且版本严格递增 | `git log --format=%H -- .workspace/release_dev.json`；相邻历史与当前逐条前缀比较 | 历史条目改写/删除/回退 |
-| **S9** | **`landed` 轮次必须有三席确认记录**：`verified_by` 为 `[SOL, GPT-SOL-6, PRO]` 三席齐全、`verdict` 为 `pass`（或 `pass-with-notes` 且 `notes` 非空），且 `verified_at` 不晚于账本条目的 `date`。**`legacy` 轮次豁免，但必须在 `note` 写明原因**（R44/R45 属此列） | 字段存在性与取值校验 + 日期先后比较 | 哪轮缺哪一席 / 先记账后确认 |
-| **S10** | **`_DEV` 文件只属于 dev 分支**：当前分支为 `dev` 时 `CHANGELOG_DEV.md` 与 `.workspace/release_dev.json` 必须存在；为 `main` 时二者必须不存在（存在即红）；其他分支只做告警 | `git rev-parse --abbrev-ref HEAD` + 文件存在性 | 分支与 `_DEV` 文件不匹配 |
+| **S9** | **`landed` 轮次必须有三席确认记录**：`verified_by` 为 `[SOL, GPT-SOL-6, PRO]` 三席齐全、`verdict` 为 `pass`（或 `pass-with-notes` 且 `notes` 非空），且 `verified_at` 不晚于账本条目的 `date`。**`legacy` 轮次豁免，但必须在 `note` 写明原因**（R44/R45 属此列）；**只有 `legacy` 白名单里的轮次可用 `legacy`**，新轮次自称 `legacy` 一律红；`verified_by` 出现白名单外的席位名 → 红 | 字段存在性与取值校验 + 日期先后比较 + 白名单比对 | 哪轮缺哪一席 / 新轮次伪称 legacy / 未知席位 |
+| **S10** | **`_DEV` 文件只属于 dev 分支**：分支为 `dev` 时两文件必须存在；为 `main` 时**必须不存在**（存在即红）；其他分支告警。**无 `SEQUENCE.md` 时本条仍须执行**（main 的合法态正是没有计划文件） | `git rev-parse --abbrev-ref HEAD` + 文件存在性（不依赖计划文件） | 分支与 `_DEV` 文件不匹配 |
+| **S11** | **远端锚对账（增强层）**：`origin/<当前分支>` 存在且可读时，本地历史必须是它的**超集**（`origin/x` 是 HEAD 祖先）；否则红。远端不可用（离线/无远端）→ **WARN 并明示「仅有本地锚」**，不判红 | `git merge-base --is-ancestor origin/x HEAD`；失败分支区分「不是超集」与「远端不可用」 | 本地历史被重写而远端未同步 / 仅本地锚 |
+
+### 4.1 锚的分层与威胁模型（三席 2026-11-23 裁决）
+
+```
+主防线  本地 git 锚（账本 append-only 前缀 + changelog blob + 历史轮次集合）
+        能挡：误删、误改、三文本同步改写、landed 与账本脱钩、历史行被删
+        挡不住：蓄意重写**整条可达历史**（orphan 分支 / 全链 rebase / filter-branch）
+                —— 与 §12 R100 同类：守门防「无意识跳过」，不防「主动绕过」（属权限层）
+
+增强层  S11 远端锚：已推送的历史由远端固定；能挡住「本地重写但远端未变」
+        局限：离线 / 无远端 / 尚未推送 → 只能 WARN，输出必须**明示**当前只有本地锚
+
+结论    优先级是「本地锚为主 + 远端锚增强」，不是反过来：
+        远端经常不可用，不能当主防线；但一旦可用就必须用。
+```
 
 ## 5. 与 WORKLIST 的关系
 
