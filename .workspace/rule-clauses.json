@@ -413,7 +413,7 @@
   },
   ".workspace/release_dev.json": {
     "clauses": {},
-    "file_sha256": "983dbd48290a4c305a9ab402c38b4505f28adafc5c47b0dfe751ffc28afa1842",
+    "file_sha256": "52369ee967ead16b95693e07c0ad23d400200ad45944d80468c28aa17b5ce0d7",
     "marked": 0
   },
   "tests/test_release.py": {
