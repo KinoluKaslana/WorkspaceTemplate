@@ -3,7 +3,7 @@
 
 为什么要有它：交付顺序、dev 版本号、依赖关系写在计划里，实际落地写在账本里。两边靠人「记得
 同步」必然漂移（本轮已实发一次：账本 `summary` 与 `CHANGELOG_DEV.md` 正文差一个措辞）。这里把
-`SEQUENCE.md` §4 的 S1–S8 做成机械判据：**只判一致性，不判计划好坏**。
+`SEQUENCE.md` §4 的 S1–S10 做成机械判据：**只判一致性，不判计划好坏**。
 
 判据（逐条实现 `SEQUENCE.md` §4，编号与那里一致）：
 
@@ -14,8 +14,10 @@
   S4  `依赖` 必须存在且排在其前                  依赖号集合校验 + 文档位置比较（倒置/悬空）
   S5  范围引用的 WORKLIST 条目必须存在           读 `WORKLIST.md` 的 P/C/D 编号集合（缺文件 = 显式 SKIP）
   S6  计划 landed 数 == 账本条目数               计数比较
-  S7  账本末条 `summary` == CHANGELOG_DEV 段落   逐字比较（strip 后），漂移时给首个差异行
-  S8  `version` 严格递增且已落地版本不可变        与账本历史逐轮比对（篡改/回退）
+  S7  账本 summary == 对应 commit 的 CHANGELOG 段落；无 commit 时显式 DEGRADED
+  S8  git 历史账本逐条前缀延续                   历史条目不可改写/删除
+  S9  landed 三席确认完整且时序合法               legacy 仅带 note 时豁免
+  S10 `_DEV` 文件分支归属                         dev 必有、main 必无、其他分支 WARN
 
 实例侧行为：派生工作区**没有** `.workspace/SEQUENCE.md`（研发路线图是 dev 专用），这时**显式
 报告 skip、退出码 0**——不崩、不假红。`check_all.py` 会在实例侧照常调度本阶段。
@@ -34,6 +36,7 @@ import argparse
 import json
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 # 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
@@ -75,6 +78,8 @@ WORKLIST_CANDIDATES = ("WORKLIST.md", "../WORKLIST.md", "../../WORKLIST.md")
 LANDED = "landed"
 LANDED_NO_LEDGER = "landed-no-ledger"
 PLANNED = "planned"
+VALID_STATUSES = {PLANNED, LANDED, LANDED_NO_LEDGER}
+REQUIRED_REVIEWERS = {"SOL", "GPT-SOL-6", "PRO"}
 
 
 class Round:
@@ -91,6 +96,12 @@ class Round:
         self.deps: list[int] = []
         self.scope = ""
         self.criteria = ""
+        self.verified_by: str | list[str] | None = None
+        self.verdict: str | None = None
+        self.verified_at: str | None = None
+        self.notes: str | None = None
+        self.note: str | None = None
+        self.status_error: str | None = None
 
     def __repr__(self) -> str:                      # 调试用
         return f"<Round R{self.round} {self.status} {self.version}>"
@@ -143,6 +154,12 @@ def parse_sequence(text: str) -> list[Round]:
             commit = cells[2].strip("` ")
             r.commit = commit if commit else None
             r.scope = cells[3]
+            review = cells[4] if len(cells) > 4 else ""
+            if "legacy" in review:
+                r.verified_by = "legacy"
+                r.note = review
+            elif review:
+                r.verified_by = [x for x in REQUIRED_REVIEWERS if x in review]
             rounds.append(r)
             continue
 
@@ -182,11 +199,21 @@ def parse_sequence(text: str) -> list[Round]:
                 current.deps = [int(x) for x in ROUND_REF_RE.findall(value)]
             elif field in ("land_status", "land-status"):
                 status = value.strip().strip("`")
-                if status in (LANDED, LANDED_NO_LEDGER, PLANNED):
+                if status in VALID_STATUSES:
                     current.status = status
                 else:
-                    # 未知取值按计划态处理，但 S3 会因「landed 却无账本」暴露不出来 —— 记在 scope 里
-                    current.scope += f" [land_status 取值非法: {status}]"
+                    current.status_error = status
+            elif field == "verified_by":
+                raw = value.strip().strip("`")
+                current.verified_by = "legacy" if raw == "legacy" else re.findall(r"SOL|GPT-SOL-6|PRO", raw)
+            elif field == "verdict":
+                current.verdict = value.strip().strip("`")
+            elif field == "verified_at":
+                current.verified_at = value.strip().strip("`")
+            elif field == "notes":
+                current.notes = value.strip()
+            elif field == "note":
+                current.note = value.strip()
             continue
         if not line.strip():                       # 空行结束多行字段
             field = None
@@ -251,6 +278,38 @@ def _fail(msg: str, rnd: Round | None = None, line: int | None = None,
     return {"round": f"R{rnd.round}" if rnd else None, "line": line, "file": file, "message": msg}
 
 
+def git(root: Path, *args: str) -> tuple[int, str]:
+    p = osnorm.run_text(["git", *args], cwd=root, errors="replace")
+    return p.returncode, (p.stdout or "").strip()
+
+
+def git_json_at(root: Path, commit: str, rel: str) -> tuple[list[dict] | None, str | None]:
+    rc, out = git(root, "show", f"{commit}:{rel}")
+    if rc:
+        return None, f"git show {commit}:{rel} 失败"
+    try:
+        value = json.loads(out)
+    except json.JSONDecodeError as exc:
+        return None, f"历史账本 JSON 非法：{exc}"
+    if not isinstance(value, list) or not all(isinstance(x, dict) for x in value):
+        return None, "历史账本必须是对象数组"
+    return value, None
+
+
+def ledger_history(root: Path) -> tuple[list[tuple[str, list[dict]]], list[str]]:
+    rc, out = git(root, "log", "--format=%H", "--", LEDGER_REL)
+    if rc:
+        return [], ["无法读取 git 账本历史"]
+    history, errors = [], []
+    for sha in out.splitlines():
+        entries, err = git_json_at(root, sha, LEDGER_REL)
+        if err:
+            errors.append(err)
+        elif entries is not None:
+            history.append((sha, entries))
+    return history, errors
+
+
 def check_s1(rounds: list[Round]) -> tuple[str, str, list[dict]]:
     if not rounds:
         return "FAIL", "解析不出任何轮次", [_fail("SEQUENCE.md 解析出 0 个轮次（表格/小标题格式漂移？）")]
@@ -301,6 +360,8 @@ def check_s3(rounds: list[Round], ledger: list[dict], ledger_errs: list[str]) ->
             ledger_by_round[rnd] = e
 
     for r in rounds:
+        if r.status_error is not None:
+            findings.append(_fail(f"land_status 非法：{r.status_error!r}（只允许 planned|landed|landed-no-ledger）", r, r.line))
         if r.status == LANDED:
             if r.round not in ledger_by_round:
                 findings.append(_fail(f"R{r.round} 标 landed 但 {LEDGER_REL} 没有 round {r.round} 的条目"
@@ -324,6 +385,22 @@ def check_s3(rounds: list[Round], ledger: list[dict], ledger_errs: list[str]) ->
               f"{'双向一致' if not findings else '（不一致，见下）'}"
               f"；landed-no-ledger {sum(1 for r in rounds if r.status == LANDED_NO_LEDGER)} 条有提交号")
     return ("PASS" if not findings else "FAIL"), detail, findings
+
+
+def check_commits(rounds: list[Round], ledger: list[dict], root: Path) -> list[dict]:
+    findings: list[dict] = []
+    for r in rounds:
+        if r.status == LANDED_NO_LEDGER and r.commit and COMMIT_RE.match(r.commit):
+            rc, _ = git(root, "cat-file", "-e", f"{r.commit}^{{commit}}")
+            if rc:
+                findings.append(_fail(f"landed-no-ledger 提交 {r.commit} 不存在于 git 对象库", r, r.line))
+    for e in ledger:
+        commit = e.get("commit")
+        if commit:
+            rc, _ = git(root, "cat-file", "-e", f"{commit}^{{commit}}")
+            if rc:
+                findings.append(_fail(f"账本 R{e.get('round')} commit {commit!r} 不是 git commit"))
+    return findings
 
 
 def check_s4(rounds: list[Round]) -> tuple[str, str, list[dict]]:
@@ -358,47 +435,57 @@ def check_s5(rounds: list[Round], worklist: Path | None, tried: list[str]) -> tu
     return ("PASS" if not findings else "FAIL"), detail, findings, False
 
 
-def check_s6(rounds: list[Round], ledger: list[dict]) -> tuple[str, str, list[dict]]:
+def check_s6(rounds: list[Round], ledger: list[dict], history: list[tuple[str, list[dict]]]) -> tuple[str, str, list[dict]]:
     landed = [r.round for r in rounds if r.status == LANDED]
-    if len(landed) == len(ledger):
-        return "PASS", f"landed {len(landed)} 条 == 账本 {len(ledger)} 条", []
-    findings = [_fail(f"计划 landed {len(landed)} 条（R{', R'.join(str(x) for x in landed) or '—'}）"
-                      f"≠ 账本 {len(ledger)} 条，差 {abs(len(landed) - len(ledger))}")]
+    findings = []
+    if len(landed) != len(ledger):
+        findings.append(_fail(f"计划 landed {len(landed)} 条（R{', R'.join(str(x) for x in landed) or '—'}）"
+                              f"≠ 账本 {len(ledger)} 条，差 {abs(len(landed) - len(ledger))}"))
+    current = {r.round for r in rounds}
+    historical = {e.get("round") for _, entries in history for e in entries if isinstance(e.get("round"), int)}
+    missing = sorted(historical - current)
+    if missing:
+        findings.append(_fail("SEQUENCE 删除了 git 历史账本曾存在的轮次：" + ", ".join(f"R{x}" for x in missing)))
+    if not findings:
+        return "PASS", f"landed {len(landed)} 条 == 账本 {len(ledger)} 条；历史轮次集合只增不减", []
     return "FAIL", "计数不一致", findings
 
 
 def check_s7(ledger: list[dict], root: Path) -> tuple[str, str, list[dict]]:
-    if not ledger or not ledger[-1].get("version"):
+    if not ledger:
         return "PASS", "账本为空：无 summary 可比", []
-    last = ledger[-1]
-    version, summary = str(last["version"]), str(last.get("summary") or "")
-    path = root / CHANGELOG_REL
-    if not path.is_file():
-        return "FAIL", "缺 CHANGELOG_DEV.md", [_fail(f"{CHANGELOG_REL} 不存在（账本末条 {version} 无从比对）")]
-    text = osnorm.read_text(path)
-    start, body = section_body(text, version)
-    if body is None:
-        return "FAIL", f"缺 {version} 段", [_fail(f"{CHANGELOG_REL} 没有 `## {version}` 段落")]
+    findings, degraded = [], 0
+    for entry in ledger:
+        version, summary, commit = str(entry.get("version")), str(entry.get("summary") or ""), entry.get("commit")
+        if commit:
+            rc, text = git(root, "show", f"{commit}:{CHANGELOG_REL}")
+            if rc:
+                findings.append(_fail(f"git show {commit}:{CHANGELOG_REL} 失败（R{entry.get('round')}）")); continue
+        else:
+            degraded += 1
+            path = root / CHANGELOG_REL
+            if not path.is_file():
+                findings.append(_fail(f"{CHANGELOG_REL} 不存在（账本 {version} 无从比对）")); continue
+            text = osnorm.read_text(path)
+        start, body = section_body(text, version)
+        if body is None:
+            findings.append(_fail(f"{CHANGELOG_REL} 没有 `## {version}` 段落")); continue
+        if summary.strip() != body.strip():
+            want_lines, got_lines = summary.strip().splitlines(), body.strip().splitlines()
+            at = next((i for i, pair in enumerate(zip(want_lines, got_lines)) if pair[0] != pair[1]),
+                      min(len(want_lines), len(got_lines)))
+            want = want_lines[at] if at < len(want_lines) else "<账本到此结束>"
+            got = got_lines[at] if at < len(got_lines) else "<段落到此结束>"
+            findings.append(_fail(f"prose 漂移：账本 {version} summary ≠ {'git '+str(commit) if commit else 'working-tree'} 的 {CHANGELOG_REL} 段落\n        账本：{want[:160]}\n        段落：{got[:160]}", line=(start or 0)+1+at, file=CHANGELOG_REL))
+    detail = f"{len(ledger)} 条 summary 均与各自 commit 的 CHANGELOG 段落一致"
+    if degraded:
+        detail += f"；DEGRADED：{degraded} 条未提交，S7 降级为 working-tree 比较"
+    return ("PASS" if not findings else "FAIL"), detail, findings
 
-    want, got = summary.strip(), body.strip()
-    if want == got:
-        return "PASS", f"账本末条 {version} summary 与 {CHANGELOG_REL} 段落逐字一致（{len(want)} 字符）", []
 
-    want_lines, got_lines = want.split("\n"), got.split("\n")
-    at = next((i for i, (a, b) in enumerate(zip(want_lines, got_lines)) if a != b),
-              min(len(want_lines), len(got_lines)))
-    a = want_lines[at] if at < len(want_lines) else "<账本到此结束>"
-    b = got_lines[at] if at < len(got_lines) else "<段落到此结束>"
-    line_no = (start or 0) + 1 + at
-    msg = (f"prose 漂移：账本 {version} summary 与 {CHANGELOG_REL}:{line_no} 起不一致"
-           f"（段内第 {at + 1} 行，账本 {len(want_lines)} 行 / 段落 {len(got_lines)} 行）\n"
-           f"        账本：{a[:160]}\n        段落：{b[:160]}")
-    return "FAIL", f"账本末条 {version} summary ≠ 段落正文", [
-        _fail(msg, line=line_no, file=CHANGELOG_REL)]
-
-
-def check_s8(rounds: list[Round], ledger: list[dict]) -> tuple[str, str, list[dict]]:
+def check_s8(rounds: list[Round], ledger: list[dict], history: list[tuple[str, list[dict]]], history_errs: list[str]) -> tuple[str, str, list[dict]]:
     findings: list[dict] = []
+    findings.extend(_fail(e) for e in history_errs)
     versioned = [r for r in rounds if r.version]
     prev: Round | None = None
     for r in versioned:
@@ -437,8 +524,55 @@ def check_s8(rounds: list[Round], ledger: list[dict]) -> tuple[str, str, list[di
             findings.append(_fail(f"账本 round 字段 {e.get('round')!r} ≠ 版本首段 {tup[0]}（{v}）"))
         prev_tup = tup
 
+    # git 是 append-only 的信任锚：每个较旧快照必须是较新快照的逐条前缀，当前也必须延续最近快照。
+    chain = list(reversed(history)) + [("WORKTREE", ledger)]
+    for (old_sha, old), (new_sha, new) in zip(chain, chain[1:]):
+        if len(new) < len(old) or new[:len(old)] != old:
+            findings.append(_fail(f"git 历史锚失败：{new_sha[:12]} 不是 {old_sha[:12]} 账本的 append-only 前缀延续（历史条目被改写/删除）"))
+
     detail = f"{len(versioned)} 个版本严格递增；已落地 {len(ledger)} 条与账本逐轮同值"
     return ("PASS" if not findings else "FAIL"), detail, findings
+
+
+def check_s9(rounds: list[Round], ledger: list[dict]) -> tuple[str, str, list[dict]]:
+    findings, by_round = [], {e.get("round"): e for e in ledger}
+    for r in rounds:
+        if r.status != LANDED:
+            continue
+        if r.verified_by == "legacy":
+            if not (r.note or "").strip():
+                findings.append(_fail("legacy 豁免必须有 note", r, r.line))
+            continue
+        reviewers = set(r.verified_by or [])
+        if reviewers != REQUIRED_REVIEWERS:
+            findings.append(_fail(f"verified_by 必须三席齐全，当前缺 {sorted(REQUIRED_REVIEWERS-reviewers)}", r, r.line))
+        if r.verdict not in {"pass", "pass-with-notes"}:
+            findings.append(_fail(f"verdict 非法：{r.verdict!r}", r, r.line))
+        if r.verdict == "pass-with-notes" and not (r.notes or "").strip():
+            findings.append(_fail("pass-with-notes 的 notes 不得为空", r, r.line))
+        entry = by_round.get(r.round)
+        if entry and r.verified_at:
+            try:
+                if date.fromisoformat(r.verified_at) > date.fromisoformat(str(entry.get("date"))):
+                    findings.append(_fail("verified_at 晚于账本 date", r, r.line))
+            except ValueError:
+                findings.append(_fail("verified_at/date 必须是 ISO 日期", r, r.line))
+        elif entry:
+            findings.append(_fail("landed 缺 verified_at", r, r.line))
+    return ("PASS" if not findings else "FAIL"), "landed 三席确认/legacy 豁免均合规", findings
+
+
+def check_s10(root: Path) -> tuple[str, str, list[dict]]:
+    rc, branch = git(root, "branch", "--show-current")
+    if rc:
+        return "WARN", "非 git 工作树：无法判分支归属", []
+    present = [rel for rel in (CHANGELOG_REL, LEDGER_REL) if (root / rel).is_file()]
+    if branch == "dev":
+        missing = [rel for rel in (CHANGELOG_REL, LEDGER_REL) if rel not in present]
+        return ("FAIL", "dev 缺 _DEV 文件", [_fail("dev 分支缺：" + ", ".join(missing))]) if missing else ("PASS", "dev 分支两个 _DEV 文件均存在", [])
+    if branch == "main":
+        return ("FAIL", "main 不得含 _DEV 文件", [_fail("main 分支仍有：" + ", ".join(present))]) if present else ("PASS", "main 分支不存在 _DEV 文件", [])
+    return "WARN", f"分支 {branch or '<detached>'} 非 dev/main：只告警，不判红", []
 
 
 def run(root: Path, worklist_arg: str | None) -> dict:
@@ -453,6 +587,7 @@ def run(root: Path, worklist_arg: str | None) -> dict:
             parse_error = f"{SEQ_REL} 读取失败：{type(exc).__name__}: {exc}"
 
     worklist, tried = find_worklist(root, worklist_arg)
+    history, history_errs = ledger_history(root)
     s5_status, s5_detail, s5_findings, _skipped = check_s5(rounds, worklist, tried)
 
     checks: list[dict] = []
@@ -461,13 +596,19 @@ def run(root: Path, worklist_arg: str | None) -> dict:
         ("S2", check_s2(rounds)),
         ("S3", check_s3(rounds, ledger, ledger_errs)),
         ("S4", check_s4(rounds)),
-        ("S6", check_s6(rounds, ledger)),
+        ("S6", check_s6(rounds, ledger, history)),
         ("S7", check_s7(ledger, root)),
-        ("S8", check_s8(rounds, ledger)),
+        ("S8", check_s8(rounds, ledger, history, history_errs)),
+        ("S9", check_s9(rounds, ledger)),
+        ("S10", check_s10(root)),
     ):
         status, detail, findings = triple
         checks.append({"id": cid, "status": status, "detail": detail, "findings": findings})
     checks.insert(4, {"id": "S5", "status": s5_status, "detail": s5_detail, "findings": s5_findings})
+    commit_findings = check_commits(rounds, ledger, root)
+    if commit_findings:
+        checks[2]["status"] = "FAIL"
+        checks[2]["findings"].extend(commit_findings)
     if parse_error:
         checks.append({"id": "PARSE", "status": "FAIL", "detail": parse_error,
                        "findings": [_fail(parse_error)]})
@@ -505,7 +646,7 @@ def main(argv: list[str]) -> int:
                               "sequence": str(seq_path)}, ensure_ascii=False))
         else:
             print(f"sequence_check: SKIP —— 未找到 {SEQ_REL}（{seq_path}）")
-            print("  实例侧不继承研发路线图：S1–S8 全部跳过，rc=0")
+            print("  实例侧不继承研发路线图：S1–S10 全部跳过，rc=0")
         return 0
 
     try:

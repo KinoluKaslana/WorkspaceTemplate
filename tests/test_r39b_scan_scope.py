@@ -103,6 +103,9 @@ class CheckAllFixRecheck(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "repo"
             shutil.copytree(ROOT, root, ignore=_COPY_IGNORE, symlinks=True)
+            # 本用例是无 git 的派生实例，不携带 dev 路线图/账本；sequence 阶段应声明式 SKIP。
+            for rel in (".workspace/SEQUENCE.md", ".workspace/release_dev.json", "CHANGELOG_DEV.md"):
+                (root / rel).unlink(missing_ok=True)
             script = root / "scripts" / "check_all.py"
             target = root / "README_EN.md"
             original = osnorm.read_bytes(target)

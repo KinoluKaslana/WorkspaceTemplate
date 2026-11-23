@@ -418,7 +418,18 @@ def main(argv: list[str]) -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="tplsync-"))
     wt = tmp / "wt"
-    git(tpl, "worktree", "add", "--detach", str(wt), commit)
+    try:
+        git(tpl, "worktree", "add", "--detach", str(wt), commit)
+    except RuntimeError as exc:
+        # 受限沙箱可读模板对象库、但禁止写 `<tpl>/.git/worktrees`。这时在临时目录做
+        # 本地 clone 快照；仍只解析同一 commit，不联网，也不触碰模板工作树。
+        if "read-only file system" not in str(exc).lower():
+            raise
+        shutil.rmtree(wt, ignore_errors=True)
+        p = _run(["clone", "--quiet", "--no-checkout", str(tpl), str(wt)])
+        if p.returncode != 0:
+            raise _git_failure(f"git clone snapshot failed: {p.stderr}") from exc
+        git(wt, "checkout", "--quiet", "--detach", commit)
     try:
         files = template_files(wt)
         before = policy_version(ws / "AGENT_RULES.md")

@@ -12,7 +12,7 @@
 ② 三席确认（SOL / GPT-SOL-6 / PRO 各自给判定与证据；记录到本轮 verified_by / verdict）
 ③ 写 CHANGELOG_DEV.md 条目（按提交号归纳，不许凭记忆编排轮次）
 ④ release.py --dev --round <NN> --apply → 写 release_dev.json（append-only，含 summary 与 commit）
-⑤ sequence_check 全绿（计划 ↔ 账本 ↔ changelog 三者一致）
+⑤ dev 工作区显式传工作区级清单路径运行 `sequence_check.py --worklist <path>`，全绿后继续
 ⑥ 推送 dev 分支（推送由用户执行；脚本永不 push）
 ```
 
@@ -26,7 +26,7 @@
 | round | version | 提交 | 范围 | 确认（verified_by / verdict） | 备注 |
 |---|---|---|---|---|---|
 | 44 | `44.3.8.0` | `e3ec3a5` | R35–R44 全集（见 `CHANGELOG_DEV.md` §1–§10） | `legacy`（机制建立前，未做轮次级三席确认；R44a 为双修复席产出 + 控制席复验） | 首条 dev 版本；同时承接原 `CHANGELOG.md` 的 `## Unreleased` |
-| 45 | （并入 44 条） | `f0ed3fd` | dev 四段版本机制本身（`release.py --dev`、双账本、`policy_facts` dev 判据） | `legacy`（同上） | 机制轮不单独占版本号：它写的正是 `44.3.8.0` 这一条 |
+| 45 | （并入 44 条） | `f0ed3fd` | dev 四段版本机制本身（`release.py --dev`、双账本、`policy_facts` dev 判据） | `legacy`（机制建立前；本副本以完整树基线提交为 git 对象锚） | 机制轮不单独占版本号：它写的正是 `44.3.8.0` 这一条 |
 
 > **`verified_by` 取值**：`[SOL, GPT-SOL-6, PRO]`（三席轮次确认）或 `legacy`（机制建立前，S9 豁免但必须注明原因）。
 > 自 R46 起，所有 `landed` 轮次必须是前者。
@@ -112,12 +112,12 @@
 |---|---|---|---|
 | S1 | 轮次严格递增、无重复 | 解析表格 round 列，比较相邻 | 哪两轮冲突 |
 | S2 | `version` 首段 == round | 拆 `.` 取 [0] 与 round 比 | 哪轮版本与轮次脱钩 |
-| S3 | `landed` 必须在 dev 账本里有条目（`landed-no-ledger` 类除外，须有提交号） | 双向比对 SEQUENCE.landed ↔ `release_dev.json` | 缺账本 / 账本多出 |
+| S3 | `land_status` 只能是 `planned|landed|landed-no-ledger`；`landed` 必须在 dev 账本有条目；`landed-no-ledger` 的提交必须是 git commit | 双向比对 + `git cat-file -e <sha>^{commit}` | 非法状态 / 缺账本 / 假提交 |
 | S4 | `依赖` 必须在表中存在且排在其前 | 依赖号集合校验 + 位置比较 | 哪条依赖倒置或悬空 |
-| S5 | 范围引用的 WORKLIST 条目必须存在 | 读 `WORKLIST.md` 的 P/C/D 编号集合 | 悬空引用 |
-| S6 | 计划 landed 数 == 账本条目数 | 计数比较 | 差值 |
-| S7 | 账本末条 `summary` == `CHANGELOG_DEV.md` 对应段落正文 | 逐字比较（strip 后） | prose 漂移（本轮已实发一次） |
-| S8 | `version` 严格递增且已落地版本不可变 | 与账本历史比对 | 篡改/回退 |
+| S5 | 范围引用的 WORKLIST 条目必须存在；文件缺失时是已声明的 SKIP 豁免 | `--worklist <path>` 或候选查找；缺失显式输出 SKIP | 悬空引用 / 明示 SKIP |
+| S6 | 当前轮次集合必须包含 git 历史账本曾存在的全部轮次 | 历史轮次集合 ⊆ 当前 SEQUENCE；另做 landed 计数 | 成对删除 / 差值 |
+| S7 | 每条账本 `summary` == `git show <commit>:CHANGELOG_DEV.md` 对应段落；无 commit 时降级 | commit 历史正文逐字比较；未提交显式 DEGRADED working-tree 比较 | 自证漂移 / 降级提示 |
+| S8 | `release_dev.json` 只能 append，且版本严格递增 | `git log --format=%H -- .workspace/release_dev.json`；相邻历史与当前逐条前缀比较 | 历史条目改写/删除/回退 |
 | **S9** | **`landed` 轮次必须有三席确认记录**：`verified_by` 为 `[SOL, GPT-SOL-6, PRO]` 三席齐全、`verdict` 为 `pass`（或 `pass-with-notes` 且 `notes` 非空），且 `verified_at` 不晚于账本条目的 `date`。**`legacy` 轮次豁免，但必须在 `note` 写明原因**（R44/R45 属此列） | 字段存在性与取值校验 + 日期先后比较 | 哪轮缺哪一席 / 先记账后确认 |
 | **S10** | **`_DEV` 文件只属于 dev 分支**：当前分支为 `dev` 时 `CHANGELOG_DEV.md` 与 `.workspace/release_dev.json` 必须存在；为 `main` 时二者必须不存在（存在即红）；其他分支只做告警 | `git rev-parse --abbrev-ref HEAD` + 文件存在性 | 分支与 `_DEV` 文件不匹配 |
 

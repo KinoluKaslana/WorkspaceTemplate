@@ -31,8 +31,8 @@
 | `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_state` / `read_status` / `bind` / `resolve_identity` / `detect_platform_info` | `import local_state` | 库：不变量失败抛 `ValueError`/`TypeError`；判读结果在返回字典的 `status`/`reason` |
 | `osnorm.py` | 路径交换格式与文本 I/O 的**唯一实现**（库，无 CLI）：`canonical_path` / `family` / `read_text` / `write_text` / `run_text` / `atomic_write_text` / `replace_retry` / `configure_stdio` / `BOM_POLICY` | `import osnorm` | 库：路径形式不可接受抛 `PathFormError`（`ValueError` 子类） |
 | `encoding_guard.py` | 文本编码机械统一：扫模板层 + 用户可编辑清单的 BOM / 纯 CRLF / 混合换行；`--fix` 备份后剥 BOM + 统一 LF（幂等） | `--check [--json]`；`--fix`；`[--root PATH]` | `--check`：0 干净 / 1 有发现；`--fix`：0 全部修好 / 1 有文件修复失败 |
-| `sequence_check.py` | 计划侧 ↔ 事实侧互校：`.workspace/SEQUENCE.md` §4 的 S1–S8（轮次递增/版本首段==轮次/landed↔账本双向/依赖不倒置/范围引用 WORKLIST/计数/账本 summary 与 `CHANGELOG_DEV.md` 逐字/已落地版本不可变）。**无 `SEQUENCE.md` 时显式 skip 且 rc=0**（实例侧不继承研发路线图）；S5 找不到 `WORKLIST.md` 同样显式 skip 并列出候选路径 | `[--json] [--root DIR] [--worklist PATH]` | 0 全绿或显式 skip / 1 有 findings / 2 用法或 IO |
-| `check_all.py` | 提交前统一门禁：按**固定顺序**跑 4 个修复阶段 + 11 个检查阶段（`--full` 再加 tests / hooks-tests）；本地与 CI 治理 job 跑同一条命令 | `[--fix] [--check] [--full] [--json] [--only a,b]` | 0 全绿 / 1 任一阶段失败 / 2 用法错误 |
+| `sequence_check.py` | 计划侧 ↔ git 历史事实侧互校 S1–S10；S5 缺 WORKLIST 是声明式 SKIP，dev 工作区应显式传 `--worklist`；S10 非 dev/main 分支只 WARN。**无 `SEQUENCE.md` 时显式 skip 且 rc=0** | `[--json] [--root DIR] [--worklist PATH]` | 0 无 FAIL（可含 SKIP/WARN/DEGRADED）/ 1 有 findings / 2 用法或 IO |
+| `check_all.py` | 提交前统一门禁：check 模式 11 段（sequence 是第 10）；`--fix` 模式共 15 段（4 修复 + 11 检查；`--full` 再加 tests / hooks-tests） | `[--fix] [--check] [--full] [--json] [--only a,b]` | 0 全绿 / 1 任一阶段失败 / 2 用法错误 |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 

@@ -193,7 +193,7 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | 项 | 内容 |
 |---|---|
 | **类型** | Python 标准库 CLI |
-| **作用** | 判「计划写的」与「账本记的」是否互认：S1 轮次严格递增/无重复 · S2 版本首段 == 轮次 · S3 landed ↔ `.workspace/release_dev.json` 双向（`landed-no-ledger` 须有提交号）· S4 依赖不倒置/不悬空 · S5 范围引用的 WORKLIST 条目存在 · S6 landed 数 == 账本条目数 · S7 账本末条 `summary` 与 `CHANGELOG_DEV.md` 段落**逐字**一致 · S8 版本严格递增且已落地版本不可变 |
+| **作用** | S1–S10 计划/账本/git 历史互校：严格 land_status 与真实 commit、历史轮次只增、账本 git 前缀锚、commit 时点 CHANGELOG、三席确认、dev/main 分支归属 |
 | **位置** | `scripts/sequence_check.py`（计划侧 `.workspace/SEQUENCE.md` 是 dev 专用，**刻意不进** `TEMPLATE_FILES`：实例不该继承研发路线图） |
 | **用法** | `python3 scripts/sequence_check.py [--json] [--root DIR] [--worklist PATH]` |
 | **退出码** | 0 全绿**或显式 skip**（无 `SEQUENCE.md` / 无 `WORKLIST.md`）；1 有 findings；2 用法或 IO |

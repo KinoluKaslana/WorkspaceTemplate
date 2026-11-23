@@ -26,7 +26,7 @@ SEQ_TMPL = """# SEQUENCE — 夹具
 
 | round | version | 提交 | 范围 | 备注 |
 |---|---|---|---|---|
-| 44 | `44.3.8.0` | `e3ec3a5` | R35–R44 全集 | 首条 |
+| 44 | `44.3.8.0` | `e3ec3a5` | R35–R44 全集 | `legacy`（机制建立前） |
 
 ## 2. 计划（planned）
 
@@ -67,6 +67,12 @@ class Base(unittest.TestCase):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
         (self.root / ".workspace").mkdir()
         self.write_all()
+        for argv in (["init", "-q", "-b", "fixture"],
+                     ["config", "user.email", "fixture@example.invalid"],
+                     ["config", "user.name", "Fixture"], ["add", "."],
+                     ["commit", "-qm", "fixture baseline"]):
+            p = osnorm.run_text(["git", *argv], cwd=self.root)
+            self.assertEqual(p.returncode, 0, p.stderr)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -102,7 +108,7 @@ class Base(unittest.TestCase):
         out = {}
         for line in proc.stdout.splitlines():
             parts = line.split()
-            if len(parts) >= 2 and parts[0] in {f"S{i}" for i in range(1, 9)}:
+            if len(parts) >= 2 and parts[0] in {f"S{i}" for i in range(1, 11)}:
                 out[parts[0]] = parts[1]
         return out
 
@@ -112,7 +118,7 @@ class Green(Base):
         p = self.run_script()
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         st = self.status(p)
-        self.assertEqual(st, {f"S{i}": "PASS" for i in range(1, 9)}, p.stdout)
+        self.assertEqual(st, {**{f"S{i}": "PASS" for i in range(1, 10)}, "S10": "WARN"}, p.stdout)
         self.assertIn("→ OK", p.stdout)
 
     def test_json_shape(self):
@@ -122,7 +128,7 @@ class Green(Base):
         self.assertTrue(data["ok"])
         self.assertFalse(data["skipped"])
         self.assertEqual([c["id"] for c in data["checks"]],
-                         ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"])
+                         ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10"])
         self.assertEqual([r["round"] for r in data["rounds"]], [44, 45, 46])
         self.assertEqual(data["ledger_entries"], 1)
         self.assertTrue(data["worklist"].endswith("WORKLIST.md"))
@@ -188,6 +194,13 @@ class S2VersionRound(Base):
 
 
 class S3Ledger(Base):
+    def test_illegal_land_status(self):
+        self.write_all(seq=SEQ_TMPL.replace("- **依赖**：R45\n- **判据**：无",
+                                            "- **依赖**：R45\n- **land_status**：done\n- **判据**：无"))
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S3"], "FAIL")
+        self.assertIn("land_status 非法", p.stdout)
+
     def test_landed_without_ledger_names_round(self):
         self.write_all(seq=SEQ_TMPL.replace("- **依赖**：R45\n- **判据**：无",
                                             "- **依赖**：R45\n- **land_status**：landed\n- **判据**：无"))
@@ -205,6 +218,12 @@ class S3Ledger(Base):
         self.assertEqual(self.status(p)["S3"], "FAIL")
         self.assertIn("账本多出", p.stdout)
 
+    def test_landed_row_but_planned_block_is_inconsistent(self):
+        self.write_all(ledger=[ledger_entry(), ledger_entry("46.3.8.0", round_no=46)])
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S3"], "FAIL")
+        self.assertIn("账本多出", p.stdout)
+
     def test_landed_no_ledger_needs_commit(self):
         seq = SEQ_TMPL.replace("| 44 | `44.3.8.0` | `e3ec3a5` |", "| 44 | （并入上文） | （无） |")
         self.write_all(seq=seq)
@@ -213,7 +232,8 @@ class S3Ledger(Base):
         self.assertIn("landed-no-ledger 但提交列不是提交号", p.stdout)
 
     def test_landed_no_ledger_with_commit_ok(self):
-        seq = SEQ_TMPL.replace("| 44 | `44.3.8.0` | `e3ec3a5` |", "| 44 | （并入上文） | `e3ec3a5` |")
+        sha = osnorm.run_text(["git", "rev-parse", "--short", "HEAD"], cwd=self.root).stdout.strip()
+        seq = SEQ_TMPL.replace("| 44 | `44.3.8.0` | `e3ec3a5` |", f"| 44 | （并入上文） | `{sha}` |")
         self.write_all(seq=seq, ledger=[])
         p = self.run_script()
         self.assertEqual(self.status(p)["S3"], "PASS", p.stdout)
@@ -253,6 +273,13 @@ class S5Worklist(Base):
 
 
 class S7Prose(Base):
+    def test_worktree_ledger_and_changelog_cannot_self_certify_against_commit(self):
+        sha = osnorm.run_text(["git", "rev-parse", "HEAD"], cwd=self.root).stdout.strip()
+        forged = SUMMARY.replace("R35–R44", "伪造")
+        self.write_all(summary=forged, ledger=[dict(ledger_entry(summary=forged), commit=sha)])
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S7"], "FAIL")
+        self.assertIn("git " + sha, p.stdout)
     def test_one_char_drift(self):
         # 只让账本漂移一个字符，CHANGELOG_DEV.md 保持原文 —— 这正是 R46 之前真实发生过的那次
         self.write_all()
@@ -274,6 +301,19 @@ class S7Prose(Base):
 
 
 class S8Immutability(Base):
+    def test_git_anchor_rejects_deleted_historical_entry(self):
+        self.write_ledger([])
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S8"], "FAIL")
+        self.assertIn("git 历史锚失败", p.stdout)
+
+    def test_pair_deletion_is_rejected_by_historical_round_set(self):
+        seq = SEQ_TMPL.replace("| 44 | `44.3.8.0` | `e3ec3a5` | R35–R44 全集 | `legacy`（机制建立前） |\n", "")
+        self.write_all(seq=seq, ledger=[])
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S6"], "FAIL")
+        self.assertIn("git 历史账本曾存在", p.stdout)
+
     def test_landed_version_tampered(self):
         # 计划侧把已落地版本改掉、账本仍是事实侧的旧值 → S8 必须判「已落地版本不可变」
         self.write_all(seq=SEQ_TMPL.replace("| 44 | `44.3.8.0` |", "| 44 | `44.3.9.0` |"))
@@ -294,6 +334,25 @@ class S8Immutability(Base):
         self.assertIn("round 字段", p.stdout)
 
 
+class S9Review(Base):
+    def test_landed_requires_all_three_reviewers(self):
+        seq = SEQ_TMPL.replace("- **依赖**：R45\n- **判据**：无",
+            "- **依赖**：R45\n- **land_status**：landed\n- **verified_by**：[SOL, PRO]\n- **verdict**：pass\n- **verified_at**：2026-11-23\n- **判据**：无")
+        self.write_all(seq=seq, ledger=[ledger_entry(), ledger_entry("46.3.8.0", round_no=46)])
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S9"], "FAIL")
+        self.assertIn("GPT-SOL-6", p.stdout)
+
+
+class S10Branch(Base):
+    def test_main_rejects_dev_files(self):
+        p0 = osnorm.run_text(["git", "branch", "-m", "main"], cwd=self.root)
+        self.assertEqual(p0.returncode, 0, p0.stderr)
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S10"], "FAIL")
+        self.assertIn("main 分支仍有", p.stdout)
+
+
 class RealTree(unittest.TestCase):
     """真实树上的契约：有 SEQUENCE.md 必须全绿；没有必须显式 skip + rc=0。"""
 
@@ -302,9 +361,10 @@ class RealTree(unittest.TestCase):
                             cwd=ROOT, errors="replace")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         if (ROOT / SEQ_REL).is_file():
-            # S1–S8 里只有 S5 可能 SKIP（WORKLIST.md 是工作区级文件，裸克隆/临时副本里可能没有）
-            for i in range(1, 9):
-                self.assertTrue(f"S{i} PASS" in p.stdout or (i == 5 and f"S{i} SKIP" in p.stdout),
+            # S1–S10：S5 可声明式 SKIP；非 dev/main 分支的 S10 只 WARN。
+            for i in range(1, 11):
+                self.assertTrue(f"S{i} PASS" in p.stdout or (i == 5 and f"S{i} SKIP" in p.stdout)
+                                or (i == 10 and f"S{i} WARN" in p.stdout),
                                 f"S{i} 在真实树上既非 PASS 也非合法 SKIP：\n{p.stdout}")
             self.assertIn("→ OK", p.stdout)
         else:

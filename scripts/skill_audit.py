@@ -52,6 +52,8 @@ REGISTRY = ROOT / "skills" / "REGISTRY.md"
 TOOLS = ROOT / "TOOLS.md"
 CLAUSES = ROOT / ".workspace" / "rule-clauses.json"
 PATH_RE = re.compile(r"(?:\.workspace|scripts|notes|docs|tests|skills)/[A-Za-z0-9_./-]+")
+# R46 S10：dev 专属账本在 main/实例侧必须不存在；skill 文档仍可描述该条件路径。
+BRANCH_OPTIONAL_PATHS = {".workspace/release_dev.json"}
 
 # 目录名允许的字符：与 `*/SKILL.md` 的发现能力一致（不窄于发现，否则「磁盘有、正则匹配不到」
 # 会被报成集合不一致，且只能靠改名以外的手段缓解）。
@@ -161,6 +163,7 @@ def contract_findings(name: str, text: str, fm: dict, ids: set[str], require_io:
         p for p in (x.rstrip("/.-") for x in PATH_RE.findall(text))
         # 只把 `name.ext` 当文件；`.local` 这类点目录的 basename 以点开头，不是扩展名
         if re.search(r"[^/\\.]\.[A-Za-z0-9]{1,8}$", p) and not SKIP.search(p)
+        and p not in BRANCH_OPTIONAL_PATHS
         and not (ROOT / p).exists() and "$(" not in p and "<" not in p})
     if missing_paths:
         f.append(f"引用不存在的路径：{','.join(missing_paths[:4])}")

@@ -29,6 +29,9 @@ class ReleaseTests(unittest.TestCase):
         self.repo = Path(self.tmp.name) / "repo"
         shutil.copytree(ROOT, self.repo, ignore=shutil.ignore_patterns(
             ".git", ".venv", ".venv-*", "__pycache__", ".hook-state"))
+        # 正式发版夹具模拟 main：R46 S10 规定 main 不携带 dev 专属三文件。
+        for rel in (".workspace/SEQUENCE.md", ".workspace/release_dev.json", "CHANGELOG_DEV.md"):
+            (self.repo / rel).unlink(missing_ok=True)
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.name", "test")
         self.git("config", "user.email", "test@example.invalid")
@@ -197,7 +200,12 @@ class DevReleaseTests(unittest.TestCase):
         self.repo = Path(self.tmp.name) / "repo"
         shutil.copytree(ROOT, self.repo, ignore=shutil.ignore_patterns(
             ".git", ".venv", ".venv-*", "__pycache__", ".hook-state"))
-        self.git("init", "-q", "-b", "main")
+        # 嵌套的正式发布 verify 来源可能是 main（按 S10 不含 dev 两文件）；dev 夹具自行建最小事实位。
+        if not (self.repo / "CHANGELOG_DEV.md").is_file():
+            osnorm.write_text(self.repo / "CHANGELOG_DEV.md", "# CHANGELOG_DEV\n", newline="lf")
+        if not (self.repo / ".workspace/release_dev.json").is_file():
+            osnorm.write_text(self.repo / ".workspace/release_dev.json", "[]\n", newline="lf")
+        self.git("init", "-q", "-b", "dev")
         self.git("config", "user.name", "test")
         self.git("config", "user.email", "test@example.invalid")
         self.git("add", "-A")
@@ -226,7 +234,8 @@ class DevReleaseTests(unittest.TestCase):
         result = self.cli("--dev", "--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         # 不给参数时派生 `<账本末条轮次>.<政策版本>`：空账本才是 44，否则取末条轮次。
-        expected = f"{self.next_round - 1}.{self.policy}"
+        expected_round = self.next_round - 1 if self.ledger else release.DEV_ROUND_BASE
+        expected = f"{expected_round}.{self.policy}"
         self.assertIn(expected, result.stdout)
         self.assertIn("DRY-RUN", result.stdout)
         self.assertEqual(self.git("status", "--porcelain").stdout, before)

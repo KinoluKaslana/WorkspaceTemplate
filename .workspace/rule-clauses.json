@@ -258,12 +258,12 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "ea85a7d0ccff80dff91889bad66d5b7d7b7299217d1798d591192ddcfa169666",
+    "file_sha256": "f7e989f98b7acd6ea3048869f99d6709a3704af2a0b8969f46aaa5ce20a9993c",
     "marked": 0
   },
   "scripts/skill_audit.py": {
     "clauses": {},
-    "file_sha256": "aeb11f247ef43ef211b377e8ce23777ea9acadb3dd8820c16d60a929725496aa",
+    "file_sha256": "dedb282b2886d34267d1270f84e297e7d71615e4565d3f2e5ac70d9a2e4453a2",
     "marked": 0
   },
   "scripts/workspace_preflight.py": {
@@ -333,7 +333,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "564a25f660d2bbe385b65b1a131037605b4b9f57c9970cedfc057033b45a1edd",
+    "file_sha256": "587503f0bc5b7288bf74ca62a88fd6d07b81c3eec2a22f6c209425d4caaae17b",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -418,7 +418,7 @@
   },
   "tests/test_release.py": {
     "clauses": {},
-    "file_sha256": "e54bb4d41591784adfe7f2463fb75613a9ab94d424ed17a11e11ef3b47da915e",
+    "file_sha256": "c4e1cebee0db4e386fe8cab02fc72e0fc9656d84af8655854230e9b9c829f953",
     "marked": 0
   },
   "scripts/notes_index_check.py": {
@@ -663,12 +663,12 @@
   },
   "scripts/sequence_check.py": {
     "clauses": {},
-    "file_sha256": "21a548b1e949a326576a8ff75c44c7a07e15af40add9a082b05f419ecb48a565",
+    "file_sha256": "036b0f22f49e1d443db980d41ba41e2cd8c3a90affdcc4bff494456fe2bf7352",
     "marked": 0
   },
   "tests/test_sequence_check.py": {
     "clauses": {},
-    "file_sha256": "7fa0fbc6fed284ecb40d468ce96b45a27b1dcaf13c9d0d3d5086841c4470aa27",
+    "file_sha256": "726394160adb439abd5bfb4bba52b72cb8d9d28f940fb403219824b207a263f0",
     "marked": 0
   }
 }
