@@ -333,7 +333,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "587503f0bc5b7288bf74ca62a88fd6d07b81c3eec2a22f6c209425d4caaae17b",
+    "file_sha256": "802db4ab5e50fa7f1d33b412134ff602df08af295f3056a7f3531aed5de2e056",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -663,12 +663,12 @@
   },
   "scripts/sequence_check.py": {
     "clauses": {},
-    "file_sha256": "036b0f22f49e1d443db980d41ba41e2cd8c3a90affdcc4bff494456fe2bf7352",
+    "file_sha256": "3ee039efc4fc0d9de60c7d6195e1d8c64756ed5a9aabe7558ba339a9551f81f5",
     "marked": 0
   },
   "tests/test_sequence_check.py": {
     "clauses": {},
-    "file_sha256": "726394160adb439abd5bfb4bba52b72cb8d9d28f940fb403219824b207a263f0",
+    "file_sha256": "bb2a8edff2be6b6967107636fab8c0f245791fde19c25dd8154bd87c84a7467f",
     "marked": 0
   }
 }

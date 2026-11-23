@@ -1,7 +1,7 @@
 # SEQUENCE — 交付顺序与版本号（计划侧）
 
 > 本文件是**计划侧**事实源；**事实侧**是 `.workspace/release_dev.json` + `CHANGELOG_DEV.md` + git 提交。
-> 两者由 `scripts/sequence_check.py` 机械互校（S1–S8）。校验的是**一致性**，不是「计划不可改」。
+> 两者由 `scripts/sequence_check.py` 机械互校（S1–S11）。校验的是**一致性**，不是「计划不可改」。
 > 变更规则：改本文件必须在对应条目 `note` 写明「谁改的、为什么」；落地顺序与计划不同只有两条合法出路——
 > 改计划（并登记）或回退落地。**不允许「计划写 A、实际做 B、账本记 C」并存。**
 
@@ -12,7 +12,9 @@
 ② 三席确认（SOL / GPT-SOL-6 / PRO 各自给判定与证据；记录到本轮 verified_by / verdict）
 ③ 写 CHANGELOG_DEV.md 条目（按提交号归纳，不许凭记忆编排轮次）
 ④ release.py --dev --round <NN> --apply → 写 release_dev.json（append-only，含 summary 与 commit）
-⑤ dev 工作区显式传工作区级清单路径运行 `sequence_check.py --worklist <path>`，全绿后继续
+⑤ dev 工作区显式传工作区级清单路径运行 `python3 scripts/sequence_check.py --worklist <path>`，
+   全绿（或无 FAIL）后继续；**不传时脚本内置的 `WORKLIST.md` / `../WORKLIST.md` / `../../WORKLIST.md`
+   候选只作兜底**——换个目录层级就会静默变 SKIP，所以 dev 工作区一律显式传
 ⑥ 推送 dev 分支（推送由用户执行；脚本永不 push）
 ```
 
@@ -41,13 +43,18 @@
 > `land_status` 取值：`planned`（未做）/ `landed`（账本 + changelog + 三席确认齐全）/ `landed-no-ledger`（机制轮，见 R45）。
 
 ### R46 · `46.3.8.0` · 计划互校机制
-- **范围**：`scripts/sequence_check.py`（S1–S10；本文件先落 S1–S8，S9/S10 由同轮补丁 R46b 追加）
+- **范围**：`scripts/sequence_check.py`（S1–S11：R46 落 S1–S8；R46b 补 S9/S10；R46c 补 git 历史锚；
+  R46d 以第二实现为基线重做——补 A 无计划文件时仍判 S10、B 显式 `--worklist` 指错必红、
+  C `legacy` 白名单、D 未知席位必红、E S7 独立 `DEGRADED`、F 历史轮次集合收 `landed-no-ledger`，
+  并新增 S11 远端锚）
   + 本文件 + 登记（`TEMPLATE_FILES` / `TOOLS.md` / `check_all` 阶段）
   + 顺手：C11（`release_anchor.py` 进 `TEMPLATE_FILES`）、D5（`docs/tools.md` 补 `collapse_path`/`OSNORM_API`）、
   D6（台账 `R35-C1` 回写已修）
 - **依赖**：R45
-- **判据**：S1–S10 全绿；证伪必须红：①标 landed 但不写账本 ②依赖倒置 ③summary 改一字 ④删 SEQUENCE.md 应显式 skip
-  ⑤缺一席 verified_by ⑥main 分支上的 `_DEV` 文件
+- **判据**：S1–S11 全绿（S7 的 `DEGRADED`、S10/S11 的 `WARN` 不算失败，但必须在摘要里可见）；证伪必须红：
+  ①删 §1 landed 行 + 删账本条目（成对删除）②账本 summary 与 CHANGELOG 同步改写 ③新轮次写 `verified_by: legacy`
+  ④`verified_by` 含白名单外席位 ⑤`--worklist` 指向不存在路径 ⑥main 分支留 `_DEV` 文件（且无 `SEQUENCE.md`）
+  ⑦删历史 §1 的 R45（landed-no-ledger）行并把 R46 依赖改 R44 ⑧本地历史改写而 origin 未同步 ⑨无 origin 时只 WARN
 - **风险**：低（不改产品行为）
 
 ### R47 · `47.3.8.0` · stdio 三件套（R4 归零）
@@ -112,15 +119,21 @@
 |---|---|---|---|
 | S1 | 轮次严格递增、无重复 | 解析表格 round 列，比较相邻 | 哪两轮冲突 |
 | S2 | `version` 首段 == round | 拆 `.` 取 [0] 与 round 比 | 哪轮版本与轮次脱钩 |
-| S3 | `land_status` 只能是 `planned|landed|landed-no-ledger`；`landed` 必须在 dev 账本有条目；`landed-no-ledger` 的提交必须是 git commit | 双向比对 + `git cat-file -e <sha>^{commit}` | 非法状态 / 缺账本 / 假提交 |
+| S3 | `land_status` 只能是 `planned|landed|landed-no-ledger`；`landed` 必须在 dev 账本有条目；`landed-no-ledger` 的提交必须是 git commit；**历史锚**：历史账本 / 历史 SEQUENCE 里出现过的落地轮次必须仍在（`landed` 或 `landed-no-ledger`） | 双向比对 + `git cat-file -e <sha>^{commit}` + `git log -- .workspace/release_dev.json` / `-- .workspace/SEQUENCE.md` 的历史版本 | 非法状态 / 缺账本 / 假提交 / 成对删除 |
 | S4 | `依赖` 必须在表中存在且排在其前 | 依赖号集合校验 + 位置比较 | 哪条依赖倒置或悬空 |
-| S5 | 范围引用的 WORKLIST 条目必须存在；文件缺失时是已声明的 SKIP 豁免 | `--worklist <path>` 或候选查找；缺失显式输出 SKIP | 悬空引用 / 明示 SKIP |
-| S6 | 当前轮次集合必须包含 git 历史账本曾存在的全部轮次 | 历史轮次集合 ⊆ 当前 SEQUENCE；另做 landed 计数 | 成对删除 / 差值 |
-| S7 | 每条账本 `summary` == `git show <commit>:CHANGELOG_DEV.md` 对应段落；无 commit 时降级 | commit 历史正文逐字比较；未提交显式 DEGRADED working-tree 比较 | 自证漂移 / 降级提示 |
+| S5 | 范围引用的 WORKLIST 条目必须存在；**没传 `--worklist` 且无候选文件 = 声明过的 SKIP 豁免**；**显式传入不存在/不可读的路径 = 红**（拼错不许退化成 skip） | `--worklist <path>` 或候选查找；读取失败也判红 | 悬空引用 / 显式路径指错 |
+| S6 | 计划 `landed` 数 == 账本条目数，且两者都不得低于**历史最大值**（只增不减） | 计数比较 + `git log` 历史版本的最大计数 | 差值 / 成对删除 |
+| S7 | 每条账本 `summary` == `CHANGELOG_DEV.md` 对应段落；**工作区腿 + git 锚腿**（条目 `commit`）两腿逐字一致；`commit: null`（未提交）时状态为独立的 **`DEGRADED`** | 工作区段落逐字比较 + `git show <commit>:CHANGELOG_DEV.md` 逐字比较；无锚时降级但**显式报出来**（不算 FAIL，也不冒充 PASS） | 自证漂移 / 降级未声明 |
 | S8 | `release_dev.json` 只能 append，且版本严格递增 | `git log --format=%H -- .workspace/release_dev.json`；相邻历史与当前逐条前缀比较 | 历史条目改写/删除/回退 |
-| **S9** | **`landed` 轮次必须有三席确认记录**：`verified_by` 为 `[SOL, GPT-SOL-6, PRO]` 三席齐全、`verdict` 为 `pass`（或 `pass-with-notes` 且 `notes` 非空），且 `verified_at` 不晚于账本条目的 `date`。**`legacy` 轮次豁免，但必须在 `note` 写明原因**（R44/R45 属此列）；**只有 `legacy` 白名单里的轮次可用 `legacy`**，新轮次自称 `legacy` 一律红；`verified_by` 出现白名单外的席位名 → 红 | 字段存在性与取值校验 + 日期先后比较 + 白名单比对 | 哪轮缺哪一席 / 新轮次伪称 legacy / 未知席位 |
+| **S9** | **`landed` 轮次必须有三席确认记录**：`verified_by` 为 `[SOL, GPT-SOL-6, PRO]` 三席齐全、`verdict` 为 `pass`（或 `pass-with-notes` 且 `notes` 非空），且 `verified_at` 不晚于账本条目的 `date`。**`legacy` 轮次豁免，但必须在 `note` 写明原因**（R44/R45 属此列）；**只有 `legacy` 白名单里的轮次可用 `legacy`**（`LEGACY_ROUNDS = {44, 45}`，写死在脚本里：扩白名单必须改代码、在 diff 里留痕，不留可编辑的旁路），新轮次自称 `legacy` 一律红；`verified_by` 出现白名单外的席位名（如 `INTRUDER`）→ 红 | 字段存在性与取值校验 + 日期先后比较 + 白名单比对 | 哪轮缺哪一席 / 新轮次伪称 legacy / 未知席位 |
 | **S10** | **`_DEV` 文件只属于 dev 分支**：分支为 `dev` 时两文件必须存在；为 `main` 时**必须不存在**（存在即红）；其他分支告警。**无 `SEQUENCE.md` 时本条仍须执行**（main 的合法态正是没有计划文件） | `git rev-parse --abbrev-ref HEAD` + 文件存在性（不依赖计划文件） | 分支与 `_DEV` 文件不匹配 |
 | **S11** | **远端锚对账（增强层）**：`origin/<当前分支>` 存在且可读时，本地历史必须是它的**超集**（`origin/x` 是 HEAD 祖先）；否则红。远端不可用（离线/无远端）→ **WARN 并明示「仅有本地锚」**，不判红 | `git merge-base --is-ancestor origin/x HEAD`；失败分支区分「不是超集」与「远端不可用」 | 本地历史被重写而远端未同步 / 仅本地锚 |
+
+**状态与退出码**：`PASS` / `FAIL` / `SKIP`（声明过的豁免：实例侧无 `SEQUENCE.md`、候选路径无 `WORKLIST.md`、
+非 template 工作区的 S10）/ `DEGRADED`（锚不可用，已降级但**显式打印**：S7 的未提交条目、无 git 时的 S10）/
+`WARN`（不影响结论：非 dev/main 分支的 S10、远端不可用的 S11）。**只有 `FAIL` 影响退出码**；
+`DEGRADED` 与 `WARN` 在汇总行计数（`N DEGRADED(S7)` / `N WARN(S10, S11)`），并在 `--json` 的
+`degraded` / `warned` / `counts` 里逐项列出——降级可见，但不被静默当成通过。
 
 ### 4.1 锚的分层与威胁模型（三席 2026-11-23 裁决）
 
@@ -142,3 +155,7 @@
 `WORKLIST.md`（工作区级，`/home/kinolu/Workspaces/TemplateDev/`）是**待办全量清单**，含未进入本计划的项
 （C5 之外的可选维护项、D4 的其余 20 处 advisory 输出等）。本文件只承载**已排期的轮次**。
 两者关系：`WORKLIST` 记「有哪些事」，`SEQUENCE` 记「按什么顺序做、哪个版本」。
+
+运行时以 `--worklist <工作区根>/WORKLIST.md` 显式指路（§0 第⑤步）：脚本的候选路径只作兜底，
+找不到就报 SKIP（§4 声明过的豁免，不报红）；但**显式传了一个不存在或不可读的路径一定报红**
+——「拼错一个字母」不该等价于「关掉 S5」。
