@@ -111,6 +111,64 @@ class IdempotenceTest(PropertyCase):
                                  f"{key} 行的 family 与 family() 不一致：{row['input']!r}")
 
 
+# ---------------------------------------------------------------- 变换层：collapse_path
+
+
+class CollapsePathTest(PropertyCase):
+    """§2 契约：金表逐条 + 幂等 + 不抛 + 两条「三份规则不一致」的语义钉子。
+
+    这一层是**纯词法**：只认 '/'，不认 '\\'，不判越界，不查文件系统。判定层的平台语义
+    （盘符、UNC share 边界）由下面 `canonical_path` 的两条用例钉住。
+    """
+
+    def test_gold_table_rows(self) -> None:
+        self.assertGreaterEqual(len(CASES["collapse"]), 13, "§2 金表必须逐条落表")
+        for row in CASES["collapse"]:
+            self.assertEqual(osnorm.collapse_path(row["input"]), row["expected"],
+                             f"折叠金表不符：{row['input']!r}")
+
+    def test_idempotent(self) -> None:
+        values = [row["input"] for row in CASES["collapse"]]
+        values += ["a/../..", "../..", "a//b//", "/a/b/../../..", "//host/share/../x",
+                   "C:/a/../../x", "a\\..\\b", ".hidden", "a/./../b"]
+        for value in values:
+            once = osnorm.collapse_path(value)
+            self.assertEqual(osnorm.collapse_path(once), once, f"非幂等：{value!r}")
+
+    def test_never_raises_and_always_str(self) -> None:
+        """任意字符串都返回 str（含 NUL、超长、纯 '..'、非 ASCII）——折叠层不判错。"""
+        values = ["", ".", "..", "../..", "/", "//", "///", "\x00", "a\x00b",
+                  "..\\..\\..", "/..", "/../..", "a/" * 5000, ".." + "/.." * 2000,
+                  "中文/路径/../名字", "\ud7ff/../x", "/" + "a" * 10000]
+        for value in values:
+            got = osnorm.collapse_path(value)
+            self.assertIsInstance(got, str, f"折叠必须返回 str：{value[:20]!r}")
+
+    def test_backslash_is_an_ordinary_character(self) -> None:
+        """`\\` 不是分隔符：折叠层不碰它（Windows 语义只属于判定层）。"""
+        self.assertEqual(osnorm.collapse_path("a\\..\\b"), "a\\..\\b")
+        self.assertEqual(osnorm.collapse_path("./a\\b/"), "a\\b")
+
+    def test_no_boundary_check(self) -> None:
+        """不判越界：相对形态保留前导 '..'（这是错误留给判定层的边界）。"""
+        self.assertEqual(osnorm.collapse_path("../x"), "../x")
+        self.assertEqual(osnorm.collapse_path("../../x"), "../../x")
+        self.assertEqual(osnorm.collapse_path("/../x"), "/x")
+
+    # ---- 冻结要求 ②：两处「三份折叠规则不一致」的语义，各钉一条 ----
+
+    def test_drive_family_still_folds_silently_to_root(self) -> None:
+        """盘符族：越界 `..` 静默折到盘符根（原语义，保持；不改成抛错）。"""
+        self.assertEqual(_canon("C:/a/../../x"), "C:/x")
+        self.assertNotIn("..", _canon("C:/a/../../x"))
+
+    def test_unc_family_still_raises_at_share_boundary(self) -> None:
+        """UNC 族：`..` 折到 share 即逃出共享 → 抛 PathFormError（原语义，保持）。"""
+        with self.assertRaises(osnorm.PathFormError):
+            _canon("//h/s/../x")
+        self.assertEqual(_canon("//h/s/a/../x"), "//h/s/x")
+
+
 # ---------------------------------------------------------------- 性质 2：族收敛 / 不误合并
 
 

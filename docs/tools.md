@@ -195,19 +195,28 @@ python3 scripts/pyenv_init.py --mode mcp --mcp-server s --mcp-tool t --apply
 
 ```python
 from osnorm import (OSNORM_API, PathFormError, canonical_path, family, read_text, write_text,
-                    read_bytes, write_bytes, append_text, run_text, utf8_env,
+                    read_bytes, write_bytes, append_text, run_text, utf8_env, collapse_path,
                     replace_retry, atomic_write_text, configure_stdio)
 
 canonical_path(r"\\?\UNC\host\share\x")        # '//host/share/x'
 canonical_path("a/b", base="/r")               # '/r/a/b'（相对路径必须给 base）
+collapse_path("a//b/./c")                     # 'a/b/c'（变换层：纯词法，不抛、不知道平台）
 family("/mnt/c/Users")                        # 'wsl-mount'（≠ windows-drive）
 read_text(p, bom=True)                        # utf-8-sig（剥 BOM）；bom=False 保 BOM
 read_text(p)                                  # bom=None → 取 BOM_POLICY（默认 tolerate：剥 BOM）
 write_text(p, "a\r\nb")                       # 磁盘落 'a\nb'（newline='lf' 默认）
 append_text(p, "line\n")                      # O_APPEND 并发追加；不重写整文件
 run_text(["git", "-C", ws, "status"])         # proc.stdout 恒为 str，永不是 None
-OSNORM_API                                    # 1（hooks 装载器的版本判据）
+OSNORM_API                                    # 2（hooks 装载器的版本判据）
 ```
+
+**两层分工（`collapse_path` 与 `canonical_path`）**：路径写法的**裸折叠**只有一份实现——
+`collapse_path(p) -> str`（消 `''`/`.` 段、并多余 `/`、去尾斜杠；`..` 可消则消，绝对形态
+不可消即折到根、相对形态保留前导 `..`；不抛、不判越界、**不认 `\`**、不查文件系统）。
+`canonical_path` 内部**不再自己折叠**，只做形态判定 / 平台语义（反斜杠、盘符、UNC share
+边界）/ 组装 / 逃逸检查，全部折叠都委托 `collapse_path`。所以 `C:/a/../../x` → `C:/x`
+（盘符族越界静默折到盘符根），而 `//h/s/../x` → `PathFormError`（UNC 的 `..` 折到 share
+即逃出共享）——两处语义差异由各自的判定层保留，折叠层对两者一视同仁。
 
 **canonical 判定（唯一判据表，全部由 `canonical_path` 实现）**
 

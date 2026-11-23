@@ -202,7 +202,7 @@ class T2NormalTree(_EnvelopeAssertions):
             sys.path.pop(0)
         module = osnorm_loader.load(str(ROOT))
         self.assertEqual(Path(module.__file__).resolve(), (SCRIPTS / "osnorm.py").resolve())
-        self.assertEqual(module.OSNORM_API, 1)
+        self.assertEqual(module.OSNORM_API, 2)
         state = osnorm_loader.state()
         self.assertEqual(state["origin"], "A")
         fp = state["fingerprint"]
@@ -298,10 +298,10 @@ class T3FaultMatrix(_EnvelopeAssertions):
 
     def test_api_missing(self):
         # 只有版本常量、没有任何 API → api-missing，且列出缺的具体名字
-        self._deny_for(b"OSNORM_API = 1\n", "api-missing")
+        self._deny_for(b"OSNORM_API = 2\n", "api-missing")
         with tempfile.TemporaryDirectory(prefix="r41-t3a-") as tmp:
             ws, hooks = _make_ws(Path(tmp))
-            _put_osnorm(ws, b"OSNORM_API = 1\n")
+            _put_osnorm(ws, b"OSNORM_API = 2\n")
             reason = json.loads(_run_hook(hooks, ws).stdout)["hookSpecificOutput"][
                 "permissionDecisionReason"]
             self.assertIn("run_text", reason)
@@ -316,8 +316,8 @@ class T3FaultMatrix(_EnvelopeAssertions):
                               "permissionDecisionReason"])
 
     def test_api_version_mismatch(self):
-        """N2：`OSNORM_API` 不是 1 → 按不可用处理（不是「加载成功就凑合跑」）。"""
-        self._deny_for(b"OSNORM_API = 2\n", "api-version")
+        """N2：`OSNORM_API` 不是 2 → 按不可用处理（不是「加载成功就凑合跑」）。"""
+        self._deny_for(b"OSNORM_API = 3\n", "api-version")
 
     def test_unreadable(self):
         """不可读 → deny，**真子进程**断言，两条平台路径都必须真拦住读取。

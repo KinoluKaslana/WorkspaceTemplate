@@ -328,7 +328,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "860cce5542f164a46ad98da3ae0a9d3cfa0d8b9c750379471ee9243bbfcf93df",
+    "file_sha256": "dc143e66c33205aa4513b370c9f4dc0b4e80910268945042c536271f4ae3e5f0",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -513,12 +513,12 @@
   },
   "scripts/osnorm.py": {
     "clauses": {},
-    "file_sha256": "922508f76505e62e1f0417cf428a1d392a5f5c61e6d01929ee1ff375be8c82ba",
+    "file_sha256": "390c839ef6112c27b72799642f353302d35fea03b9955585172f7348b451fd34",
     "marked": 0
   },
   ".workspace/hooks/osnorm_loader.py": {
     "clauses": {},
-    "file_sha256": "3fddeeb3a955bda7b5ae5be229a1431f85386716ba50f1ed238ee9cf4e9d2f70",
+    "file_sha256": "251a9018e4d9c5ee64c91c045354b58d0d907956b87769e405faa73be3c76501",
     "marked": 0
   },
   ".workspace/hooks/hook.py": {
@@ -613,12 +613,12 @@
   },
   "tests/test_osnorm_cases.json": {
     "clauses": {},
-    "file_sha256": "dbbcd8460487cd01fe2277f4c567e0a567b0eca998ed5ff4ba01271207fcf1c0",
+    "file_sha256": "0328735eea7de97127cc67a20adb1f606a49ef8217bf43e91396d0a08009a0b4",
     "marked": 0
   },
   "tests/test_osnorm_properties.py": {
     "clauses": {},
-    "file_sha256": "e48d9601e0b28dc9fc6fdd8e6a1483c32aa7244d84ad4b9c658df40f87e0c31d",
+    "file_sha256": "d6337b0ee990269affeb8cad347fa1e9092afebd4108b696cf005d4ea64ee7ba",
     "marked": 0
   },
   "tests/test_osnorm_single_source.py": {

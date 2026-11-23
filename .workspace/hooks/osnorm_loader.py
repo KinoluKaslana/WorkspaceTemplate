@@ -34,7 +34,8 @@ import os
 from pathlib import Path
 
 # 装载器认的 osnorm 版本（N2）；与 `scripts/osnorm.py` 顶层的 `OSNORM_API` 配对。
-OSNORM_API_EXPECTED = 1
+# 2：路径词法拆成 collapse_path（变换层）+ canonical_path（判定层）。
+OSNORM_API_EXPECTED = 2
 
 # 装载器要求 osnorm 提供的 API（N2 的「所需 API 存在」）。
 # `append_text` 是 R41 新增的并发追加原语：hooks 的日志/账本不能拿整文件重写代替。

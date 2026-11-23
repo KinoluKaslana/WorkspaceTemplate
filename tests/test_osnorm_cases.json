@@ -171,7 +171,7 @@
    ]
   }
  ],
- "note": "osnorm 金表（规格 §4 + §5.1）。三类行：valid/invalid/contextual，每行带 family；invalid 行只断异常类型（raises），不比异常文案。adapters 段是 hooks adapter 的逐项 oracle：expected 可以是字面值、{\"formula\": ..} 宿主参数化表达式，或 {\"host\": {\"posix\": .., \"windows\": ..}} 分列（跨平台不取固定值）。",
+ "note": "osnorm 金表（规格 §4 + §5.1）。三类行：valid/invalid/contextual，每行带 family；invalid 行只断异常类型（raises），不比异常文案。`collapse` 段是**变换层** `collapse_path` 的金表（规格 §2，逐条 input/expected），不是 canonical 行（它不判 family、不抛）。adapters 段是 hooks adapter 的逐项 oracle：expected 可以是字面值、{\"formula\": ..} 宿主参数化表达式，或 {\"host\": {\"posix\": .., \"windows\": ..}} 分列（跨平台不取固定值）。",
  "valid": [
   {
    "input": "C:\\a\\b",
@@ -307,6 +307,11 @@
    "input": "/../x",
    "expected": "/x",
    "family": "posix"
+  },
+  {
+   "input": "C:/a/../../x",
+   "expected": "C:/x",
+   "family": "windows-drive"
   }
  ],
  "invalid": [
@@ -463,6 +468,11 @@
    "input": "\\\\host\\share\\..\\..\\x",
    "family": "unc",
    "raises": "PathFormError"
+  },
+  {
+   "input": "//h/s/../x",
+   "family": "unc",
+   "raises": "PathFormError"
   }
  ],
  "contextual": [
@@ -525,6 +535,60 @@
    "base": "/r",
    "expected": "C:/abs/x",
    "family": "windows-drive"
+  }
+ ],
+ "collapse": [
+  {
+   "input": "../a/../b/./a/../c",
+   "expected": "../b/c"
+  },
+  {
+   "input": "a/../../b",
+   "expected": "../b"
+  },
+  {
+   "input": "./a/./b/",
+   "expected": "a/b"
+  },
+  {
+   "input": "/a/../../b",
+   "expected": "/b"
+  },
+  {
+   "input": "a//b",
+   "expected": "a/b"
+  },
+  {
+   "input": "/",
+   "expected": "/"
+  },
+  {
+   "input": "//x",
+   "expected": "/x"
+  },
+  {
+   "input": "",
+   "expected": ""
+  },
+  {
+   "input": ".",
+   "expected": "."
+  },
+  {
+   "input": "..",
+   "expected": ".."
+  },
+  {
+   "input": "/ws/../shared/G.md",
+   "expected": "/shared/G.md"
+  },
+  {
+   "input": "docs/a.md",
+   "expected": "docs/a.md"
+  },
+  {
+   "input": "a\\b",
+   "expected": "a\\b"
   }
  ],
  "adapters": [

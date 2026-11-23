@@ -11,6 +11,8 @@
   不改任何全局状态。
 - **不折叠大小写**（D1）：`canonical_path` 保留路径段字面大小写，只把盘符大写；
   不提供 `path_key`/`rel_key` 之类的键（键口径仍是「工作区相对 POSIX 路径」）。
+- **折叠只有一份**：路径写法的裸折叠只在变换层 `collapse_path`（不抛、不知道平台）；
+  `canonical_path` 只做判定 / 平台语义 / 组装 / 逃逸，内部不再自己折叠。
 - **不猜编码**：一律 UTF-8；UTF-16/GBK 在 `strict` 下上抛，`ignore/replace` 只在调用点显式声明。
 - **BOM 一处决定**（§3.1）：`BOM_POLICY` 决定 `read_text(bom=None)` 是否剥 BOM；写入侧永不产生 BOM，
   清理入口是 `scripts/encoding_guard.py`。
@@ -37,7 +39,11 @@ from urllib.parse import unquote, urlsplit
 
 # 版本契约（N2）：hooks 装载器在 `exec_module` 之后、**任何 API 调用之前**校验本常量。
 # 语义变化（不是「加函数」）才允许 +1；装载器只认它支持的值。
-OSNORM_API = 1
+#
+# 2：路径词法拆成「变换层 collapse_path + 判定层 canonical_path」两层——`..` 折叠只剩
+#    一份实现（此前盘符族/UNC 族/POSIX 族各写一套、语义不一致）。canonical_path 的
+#    外部输出逐字不变，但可用的折叠原语变了，装载器必须与实现同版本。
+OSNORM_API = 2
 
 __all__ = [
     "BOM_POLICY",
@@ -46,6 +52,7 @@ __all__ = [
     "append_text",
     "atomic_write_text",
     "canonical_path",
+    "collapse_path",
     "configure_stdio",
     "family",
     "read_bytes",
@@ -180,15 +187,51 @@ def family(p: str | os.PathLike[str]) -> str:
     return "invalid" if _reserved_hit(_segments(s)) else "relative"
 
 
-# ---------------------------------------------------------------- canonical
+# ---------------------------------------------------------------- 路径词法：变换层 + 判定层
+#
+#   变换层  collapse_path(p) -> str      纯词法折叠：单入单出、不抛、不知道平台
+#   判定层  canonical_path(v, *, base)   形态判定 + 平台语义 + 组装 + 逃逸；
+#                                        其内部**不再做任何折叠**，一律委托上面这一层
+
+
+def collapse_path(p: str) -> str:
+    """按 '/' 分段折叠路径**写法**（单入单出、纯词法、不抛、不查文件系统）。
+
+    - 消掉 '' 与 '.' 段；连续分隔符合一；去掉尾部斜杠（根 '/' 除外）
+    - '..' 折叠：可消则消（与上一段配对）；不可消时
+        绝对形态 → 丢弃（折到根即停）
+        相对形态 → 保留（结果可含前导 '..'）
+    - 不抛异常、不做任何越界判断、不查文件系统
+    - 不知道盘符 / UNC / 设备前缀 / 保留名 —— 那些属于判定层
+    - 输入 '' 返回 ''；输入 '.' 返回 '.'
+
+    `'\\'` 在这层是**普通字符**，不是分隔符：反斜杠是 Windows 语义，由判定层按路径族
+    决定要不要先换成 '/'。折叠只该有这一份实现——`canonical_path` 的各族薄层一律调用它。
+    """
+    if p == "":
+        return ""
+    absolute = p.startswith("/")
+    out: list[str] = []
+    for seg in p.split("/"):
+        if seg in ("", "."):
+            continue
+        if seg == "..":
+            if out and out[-1] != "..":
+                out.pop()          # 与上一段配对消掉
+            elif not absolute:
+                out.append("..")   # 相对形态：保留前导 '..'
+            continue               # 绝对形态：折到根即停（丢弃）
+        out.append(seg)
+    body = "/".join(out)
+    return "/" + body if absolute else (body or ".")
+
+
+# ---------------------------------------------------------------- 判定层：形态判定 / 平台语义 / 组装 / 逃逸
 
 
 def _norm_posix_abs(s: str) -> str:
-    """纯 POSIX 绝对路径的词法归一（`\\` 在这族里是文件名字符，不是分隔符）。"""
-    normed = posixpath.normpath(s)
-    if normed.startswith("//"):  # normpath 保留 POSIX 实现定义的 `//` 前缀
-        normed = "/" + normed.lstrip("/")
-    return normed
+    """POSIX 绝对路径：`\\` 在这族里是文件名字符，折叠整段委托 `collapse_path`。"""
+    return collapse_path(s)
 
 
 def _norm_drive(s: str) -> str:
@@ -205,7 +248,7 @@ def _norm_drive(s: str) -> str:
     hit = _reserved_hit(segs)
     if hit:
         raise PathFormError(f"保留设备名 {hit!r}，不是文件路径：{s!r}")
-    normed = posixpath.normpath("/" + "/".join(segs))
+    normed = collapse_path(rest)       # rest 已带前导 '/'（绝对形态：越界折到盘符根）
     return f"{drive}:/" if normed == "/" else f"{drive}:{normed}"
 
 
@@ -218,19 +261,25 @@ def _norm_unc(s: str) -> str:
     hit = _reserved_hit([host, share])
     if hit:
         raise PathFormError(f"保留设备名 {hit!r}，不是文件路径：{s!r}")
-    rest: list[str] = []
-    for seg in parts[2:]:
+    tail = parts[2:]
+    # share 是 UNC 的根：'..' 折到 share 即越界 —— 这条判定只在这里出现一次（不交给折叠层）。
+    depth = 0
+    for seg in tail:
         if seg in ("", "."):
             continue
         if seg == "..":
-            if not rest:
+            if depth == 0:
                 raise PathFormError(f"UNC 路径逃出其 share：{s!r}")
-            rest.pop()
+            depth -= 1
             continue
         if _is_reserved(seg):
             raise PathFormError(f"保留设备名 {seg!r}，不是文件路径：{s!r}")
-        rest.append(seg)
-    return f"//{host}/{share}" + ("/" + "/".join(rest) if rest else "")
+        depth += 1
+    # share 之下的余下部分是**相对形态**（前导空段属于分隔符，不是根），折叠交给 collapse_path。
+    rest = collapse_path("/".join(tail).lstrip("/"))
+    if rest == ".":
+        rest = ""
+    return f"//{host}/{share}" + ("/" + rest if rest else "")
 
 
 def _from_file_url(s: str) -> str:
@@ -249,12 +298,20 @@ def _from_file_url(s: str) -> str:
 
 
 def _join_relative(base_canon: str, rel: str) -> str:
-    """把相对路径拼到 canonical base 上；分隔符语义跟随 base 的路径族。"""
+    """拼接到 canonical base 上：组装（`posixpath.join` 的「绝对 body 覆盖 base」）+ 折叠。
+
+    折叠委托 `collapse_path`；**越界判定在这里唯一出现一次**（判定层），折叠层不知道 base。
+    """
     windows_like = base_canon.startswith("//") or bool(_DRIVE.match(base_canon))
     body = rel.replace("\\", "/") if windows_like else rel
-    normed = posixpath.normpath(posixpath.join(base_canon, body))
-    if not base_canon.startswith("//") and normed.startswith("//"):
-        normed = "/" + normed.lstrip("/")
+    joined = posixpath.join(base_canon, body)     # 组装：不折叠
+    if base_canon.startswith("//") and joined.startswith("//"):
+        # UNC 的 `//host/share` 是根：`//` 前缀不能被折叠吃掉（折叠层只认 '/' 分段）。
+        # 余下部分按**绝对形态**折叠（折到根即停，与 POSIX normpath 的 `//` 语义一致），
+        # 再把 `//` 前缀接回去。
+        normed = "/" + collapse_path("/" + joined[2:])
+    else:
+        normed = collapse_path(joined)
     if base_canon.endswith("/"):
         inside = normed.startswith(base_canon)
     else:
