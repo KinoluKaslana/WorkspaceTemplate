@@ -1,47 +1,20 @@
 {
- "version": 1,
- "baseline": {".workspace/hooks/cc_transcript.py":{"R5":7},".workspace/hooks/gate_core.py":{"R5":6},".workspace/hooks/hook.py":{"R4":3},".workspace/hooks/wtarget.py":{"R5":2}},
+ "version": 2,
+ "doc": [
+  "R1–R6 存量违规账本。三节各有单一用途，不许互相顶替：",
+  "  baseline   每个 (file, rule) 的历史最低登记计数；只覆盖 entries 里的 (file, rule)。",
+  "  entries    「还没迁移、也没有 oracle」的存量违规（只许精确登记，count 必须等于实测）。",
+  "  structural 「结构性豁免」：位置永久保留，但理由由一条可执行 oracle 持续验证（S3）。",
+  "structural 的登记粒度是 (file, rule, target)，target = `函数名#序数`：序数是该函数内 R5 命中",
+  "按源码顺序的第几处（不写绝对行号——行号会漂移）。门禁对每条做四项机械校验：",
+  "  ① oracle 指向的用例真实存在且被 `unittest` 收集（Ran 1 test）；② 该用例当前通过（rc=0）；",
+  "  ③ 该 (file, rule) 的实测计数不得高于登记计数之和（count_baseline）；④ 目标能在真实代码里",
+  "定位到（函数存在且该序数处确实是声明的表达式类），且 15 条与实测 15 处严格一一对应。"
+ ],
+ "baseline": {
+  ".workspace/hooks/hook.py": {"R4": 3}
+ },
  "entries": [
-  {
-   "file": ".workspace/hooks/cc_transcript.py",
-   "rule": "R5",
-   "kind": "expr",
-   "target": "expr:normpath_join",
-   "line_kind": "expr",
-   "count": 6,
-   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/cc_transcript.py",
-   "rule": "R5",
-   "kind": "expr",
-   "target": "expr:relpath_sep_key",
-   "line_kind": "expr",
-   "count": 1,
-   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/gate_core.py",
-   "rule": "R5",
-   "kind": "expr",
-   "target": "expr:normpath_join",
-   "line_kind": "expr",
-   "count": 4,
-   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
-   "expires": "R39"
-  },
-  {
-   "file": ".workspace/hooks/gate_core.py",
-   "rule": "R5",
-   "kind": "expr",
-   "target": "expr:relpath_sep_key",
-   "line_kind": "expr",
-   "count": 2,
-   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
-   "expires": "R39"
-  },
   {
    "file": ".workspace/hooks/hook.py",
    "rule": "R4",
@@ -51,16 +24,158 @@
    "count": 3,
    "reason": "R4 残留 3 处：stdin `errors=\"strict\"` + stdout/stderr 两处（hook.py:941-943，`configure_stdio` 不碰 stdin、也不做 strict）",
    "expires": "R39"
+  }
+ ],
+ "structural": [
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R5",
+   "target": "gate_key#1",
+   "expr": "expr:relpath_sep_key",
+   "verdict": "b",
+   "count_baseline": 1,
+   "reason": "持久化读账的**相对键**（sidecar 不存绝对路径），且跨盘符必须回退成绝对键（ValueError 分支）而不是抛错：osnorm 没有 relpath 能力，canonical_path 只产绝对交换路径、对相对入参直接抛 PathFormError ⇒ 不同域，不能迁移。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_cc_gate_key_relative_key"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R5",
+   "target": "git_changed_files#1",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "git status -z 的相对段 → 宿主原生绝对路径，用于与 transcript 目标做**字符串相等**比较。子域：posix 族绝对 base + 不逃出 base、无盘符/设备名/反斜杠的相对段，且必须返回宿主原生串、绝不抛错；canonical_path 是交换格式（恒 `/`、盘符大写、逃逸/设备名抛 PathFormError）⇒ 子域内同标识，出界即分叉。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_cc_git_changed_files_join"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R5",
+   "target": "resolve_gate_files#1",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "显式 `gate_rel` 参数分支：join + normpath。子域同 `git_changed_files#1`；本函数不是安全围栏（`..` 由 normpath 收敛、不判逃逸），而 canonical_path 会对逃逸抛错 ⇒ 只在子域内等价。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_cc_resolve_gate_files_argument_join"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R5",
+   "target": "resolve_gate_files#2",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "`gate.custom.json.gate_files` 名单分支：同上，另含 `str(n)` 收敛（配置项可能是数字）。与 #1 分开登记：两处独立漂移，合并成一条会漏掉其中一处的新增。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_cc_resolve_gate_files_config_list_join"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R5",
+   "target": "_reference_revision#1",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "Read step 的 `file_path` → 原生绝对目标，用于与 gate 相等比较。子域同上；边界：`file_path` 缺失时 join(cwd, \"\") 落到 cwd，而 canonical_path 对空串抛 PathFormError ⇒ 出界分叉（hook 不得抛，只能降级）。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_cc_reference_revision_read_target_join"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R5",
+   "target": "analyze#1",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "写前读账：Read 目标与 gate 相等比较（`books_state` 的键口径）。子域同 `_reference_revision#1`。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_cc_analyze_pre_write_read_target_join"
+  },
+  {
+   "file": ".workspace/hooks/cc_transcript.py",
+   "rule": "R5",
+   "target": "analyze#2",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "写后重读：同一表达式在 `analyze` 里第二次出现（重建写后 coverage）。与 #1 分开登记：两处各自可能漂移。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_cc_analyze_post_write_read_target_join"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R5",
+   "target": "worktree_snapshot#1",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "git status 相对段 → 绝对路径求 sha。子域同 `git_changed_files#1`（posix 绝对 base、不逃逸段、原生串、不抛）。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_gate_core_worktree_snapshot_join"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R5",
+   "target": "worktree_audit#1",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "`abs_sha` 的键（git 分支）：与 `committed_targets` 的 commit 目标同口径比较。子域同上。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_gate_core_worktree_audit_abs_sha_git"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R5",
+   "target": "worktree_audit#2",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "`abs_sha` 的键（非 git 分支：水位线 + 哈希兜底得到的 changed 集合）。子域同上；与 #1 不同源，故分开登记。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_gate_core_worktree_audit_abs_sha_nongit"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R5",
+   "target": "worktree_audit#3",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "`pending` 判定里的 `abs_path`：与 `committed` / `gate_abs` 做相等比较（gate_abs 由 `_norm_join` 产出，同族）。子域同上。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_gate_core_worktree_audit_pending_abs_path"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R5",
+   "target": "_recent_files#1",
+   "expr": "expr:relpath_sep_key",
+   "verdict": "b",
+   "count_baseline": 1,
+   "reason": "非 git 差集的**相对键**（relpath + sep 折叠成 `/`），要落进 audit 事件并与 `changed` 集合求交：osnorm 无 relpath，canonical_path 只产绝对交换路径 ⇒ 不同域。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_gate_core_recent_files_relative_key"
+  },
+  {
+   "file": ".workspace/hooks/gate_core.py",
+   "rule": "R5",
+   "target": "_scan_hashes#1",
+   "expr": "expr:relpath_sep_key",
+   "verdict": "b",
+   "count_baseline": 1,
+   "reason": "哈希基线的**相对键**（与 `_recent_files` 同口径，跨版本可比）。osnorm 无 relpath；换成绝对 canonical 会让基线随工作区搬移失效 ⇒ 不同域。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_gate_core_scan_hashes_relative_key"
   },
   {
    "file": ".workspace/hooks/wtarget.py",
    "rule": "R5",
-   "kind": "expr",
-   "target": "expr:normpath_join",
-   "line_kind": "expr",
-   "count": 2,
-   "reason": "存量自写归一化函数/内联键：迁移到 osnorm.canonical_path / family，或登记为 adapter（R7）",
-   "expires": "R39"
+   "target": "_resolve_target#1",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "静态目标解析：相对 token 拼到 cwd 上并返回原生绝对路径（`~`/通配/绝对 token 在此之前已分流）。子域同上；不认盘符、不做安全围栏。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_wtarget_resolve_target_join"
+  },
+  {
+   "file": ".workspace/hooks/wtarget.py",
+   "rule": "R5",
+   "target": "absolute#1",
+   "expr": "expr:normpath_join",
+   "verdict": "a",
+   "count_baseline": 1,
+   "reason": "PowerShell 目标绝对化（非盘符/UNC 分支；盘符与 `\\\\host` 形态在前一行已直接 normpath 返回）。子域同上：只做 join+normpath，不认盘符、不做安全围栏。",
+   "oracle": "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_wtarget_absolute_join"
   }
  ]
 }

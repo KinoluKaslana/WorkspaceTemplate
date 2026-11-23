@@ -16,6 +16,16 @@
 - `encoding_guard.py --fix` 备份改到 `.workspace/backup-encoding/<ts>/`（旁路形态），`--check` 输出注明备份路径；
   修完立刻 `policy_facts --check` 必须绿（旧形态下备份副本会被判成未登记生成块）。
 - `check_all.py --fix` 收尾**强制复查**：修完再跑一遍全部检查阶段、单独打印复查段，末尾列「修复后仍有阶段未通过」；有失败即 rc=1。
+- **R43 结构性豁免落地（hooks R5 15 处）**：`tests/osnorm_allowlist.json` 升到 v2，新增 `structural` 段，
+  登记粒度 `(file, rule, target)`、`target` = `函数名#序数`（不写行号，避免行号漂移变噪音）；每条带
+  `verdict(a|b)` / `oracle` / `count_baseline` / `reason`（子域边界或为何不可迁移）。门禁对每条机械校验
+  四项：① oracle 指向的用例真实存在且被收集；② 该用例当前通过；③ 该 `(file, rule)` 实测计数不高于
+  `count_baseline` 之和；④ 目标能在真实代码里定位（函数存在 + 该序数处确是声明的表达式类）。15 条与实测
+  15 处严格一一对应。`entries` 只剩 `hook.py` 的 R4 3 处，账本总数守恒 3 + 15 = 18，不靠删条目清零。
+- 15 处逐条判定：12 处 (a) 可等价（`join` + `normpath`，子域 = host 原生 POSIX 绝对 base + 不逃逸段、
+  无盘符/设备名/反斜杠，出界即分叉并有 oracle 的 boundary 行钉住），3 处 (b) 不同域（`gate_key` /
+  `_recent_files` / `_scan_hashes` 产的是**相对键**：osnorm 没有 `relpath`，`canonical_path` 只产绝对交换
+  路径、对无 base 的相对路径直接抛 `PathFormError`）。hooks 行为零改动，只给测试加了 AST 节点追踪。
 
 ## 3.8.0（2026-11-16）
 

@@ -9,6 +9,10 @@
 关键约定：
 - 匹配粒度是 `(file, rule, target, line_kind)`，**不按行号**（行号会漂移）。
 - allowlist 的 `count` 必须精确等于实测；`baseline` 另钉住每个 `(file, rule)` 的历史最低值。
+- allowlist v2 的 `structural` 段是**结构性豁免**（R43）：位置永久保留，但每条必须带一条可执行
+  oracle，门禁真跑它（收集 + 通过）并核对 `(file, rule, target=函数名#序数)` 仍能在真实代码里
+  定位；判定要么 `(a)` 子域内与 osnorm 同一路径标识，要么 `(b)` 证明 osnorm 产不出该处产物。
+  豁免与实测**一一对应**：删条目、加一处 R5、改函数名、oracle 变红，四种情况都必红。
 - 每条规则都有正例/反例自检（R8），违规片段必须命中、合规片段必须不命中。
 - `osnorm.py` 是唯一实现，所以它是 R1–R5 的结构性豁免对象；hooks **不裸 import** 它，
   而是经 `.workspace/hooks/osnorm_loader.py` 装载（R41）。装载器的候选顺序、指纹钉死与
@@ -18,6 +22,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import importlib.util
 import json
 import os
@@ -105,13 +110,19 @@ def _is_getattr_os_replace(node: ast.AST) -> bool:
 
 
 class Violation:
-    """一条节点级违规记录（`line` 只用于报告，不参与匹配）。"""
+    """一条节点级违规记录（`line` 只用于报告，不参与匹配）。
 
-    __slots__ = ("rule", "target", "line_kind", "kind", "line")
+    `node` 是该违规对应的 AST 节点（只有 R5 的表达式类命中会带上它）：结构性豁免的
+    逐处 oracle 要**求值真实代码里的那个表达式**，而不是复制一份文本；复制会漂移成
+    第二份实现。
+    """
 
-    def __init__(self, rule: str, target: str, line_kind: str, kind: str, line: int) -> None:
+    __slots__ = ("rule", "target", "line_kind", "kind", "line", "node")
+
+    def __init__(self, rule: str, target: str, line_kind: str, kind: str, line: int,
+                 node: ast.AST | None = None) -> None:
         self.rule, self.target, self.line_kind = rule, target, line_kind
-        self.kind, self.line = kind, line
+        self.kind, self.line, self.node = kind, line, node
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -169,12 +180,12 @@ def scan_source(source: str, filename: str = "<snippet>") -> list[Violation]:
             inner = _dotted(node.func.value.func)
             if inner == "os.path.relpath":
                 found.append(Violation("R5", "expr:relpath_sep_key", "expr", "expr",
-                                       node.lineno))
+                                       node.lineno, node))
         if dotted == "os.path.normpath" and len(node.args) == 1:
             inner_arg = node.args[0]
             if isinstance(inner_arg, ast.Call) and _dotted(inner_arg.func) == "os.path.join":
                 found.append(Violation("R5", "expr:normpath_join", "expr", "expr",
-                                       node.lineno))
+                                       node.lineno, node))
 
         # R6：大小写折叠（全局禁止，当前 0 处）
         if dotted == "os.path.normcase":
@@ -203,29 +214,241 @@ STRUCTURAL_EXEMPT = (
 )
 
 
-def _exempted(rel: str, violation: Violation) -> dict | None:
+def _exempted(rel: str, violation: Violation, index: dict[tuple[str, int], dict] | None = None) -> dict | None:
+    """规则级结构性豁免（`STRUCTURAL_EXEMPT`，粒度 = (file, rule, target/表达式)）。"""
     for entry in STRUCTURAL_EXEMPT:
         if entry["rule"] != violation.rule or entry["file"] != rel:
             continue
         if entry["target"] is not None and entry["target"] != violation.target:
             continue
         return entry
+    if index:
+        hit = index.get((rel, violation.line))
+        if hit is not None and hit.get("rule") == violation.rule:
+            return hit
     return None
 
 
-def scan_file(path: Path, rel: str) -> list[Violation]:
+# ---------------------------------------------------------------- structural 段（S3 落地）
+
+STRUCTURAL_FIELDS = ("file", "rule", "target", "expr", "verdict", "count_baseline",
+                     "reason", "oracle")
+
+
+def load_structural() -> list[dict]:
+    """`tests/osnorm_allowlist.json` 的 `structural` 段：位置永久保留 + 理由由 oracle 持续验证。"""
+    return list(load_allowlist().get("structural") or [])
+
+
+def _split_target(target: object) -> tuple[str, int]:
+    """`函数名#序数` → (函数名, 序数)。
+
+    序数是**该函数内** R5 命中按源码顺序的第几处，不是绝对行号：行号会随上面任何一行
+    改动漂移，漂移即红会把门禁变成噪音；函数内序数只在「真的多了一处」时才变。
+    """
+    name, sep, ordinal = str(target).partition("#")
+    if not name or not sep or not ordinal.isdigit() or int(ordinal) < 1:
+        raise ValueError(f"structural target 必须是 `函数名#序数`：{target!r}")
+    return name, int(ordinal)
+
+
+@functools.lru_cache(maxsize=None)
+def _file_scan(rel: str) -> tuple[frozenset[str], tuple[dict, ...]]:
+    """(文件里的函数名集合, 每个 R5 命中的定位)。
+
+    定位 = `{function, expr, ordinal, line, node}`；`node` 供逐处 oracle 现场求值真实表达式。
+    """
+    source = osnorm.read_text(ROOT / rel)
+    tree = ast.parse(source, filename=rel)
+    defs = [(node.lineno, node.end_lineno or node.lineno, node.name)
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    sites: list[dict] = []
+    hits = [violation for violation in scan_source(source, filename=rel) if violation.rule == "R5"]
+    # `ast.walk` 是广度优先，命中顺序不是源码顺序；序数必须按行号排，否则「第几处」会随
+    # 节点层级而变（这就是第一次实现踩到的坑）。
+    seen: Counter = Counter()
+    for violation in sorted(hits, key=lambda item: item.line):
+        inner = [item for item in defs if item[0] <= violation.line <= item[1]]
+        function = min(inner, key=lambda item: item[1] - item[0])[2] if inner else "<module>"
+        seen[function] += 1
+        sites.append({"function": function, "expr": violation.target,
+                      "ordinal": seen[function], "line": violation.line,
+                      "node": violation.node})
+    return frozenset(name for _start, _end, name in defs), tuple(sites)
+
+
+def _site_map(entries: list[dict]) -> tuple[dict[tuple[str, int], dict], list[str]]:
+    """structural 条目 → {(file, line): 条目}；解析失败的条目进问题清单（不静默跳过）。"""
+    index: dict[tuple[str, int], dict] = {}
+    problems: list[str] = []
+    for entry in entries:
+        rel = str(entry.get("file") or "")
+        if not (ROOT / rel).is_file():
+            continue  # schema 阶段已单独报
+        try:
+            function, ordinal = _split_target(entry.get("target"))
+        except ValueError as exc:
+            problems.append(str(exc))
+            continue
+        names, sites = _file_scan(rel)
+        if function not in names:
+            problems.append(f"structural 目标函数不存在：{rel}::{function}"
+                            f"（改函数名/删函数即视为该豁免失效）")
+            continue
+        hits = [site for site in sites if site["function"] == function]
+        if ordinal > len(hits):
+            problems.append(f"structural 目标越界：{rel}::{entry.get('target')}"
+                            f" 在该函数里只有 {len(hits)} 处 R5 命中")
+            continue
+        site = hits[ordinal - 1]
+        if site["expr"] != entry.get("expr"):
+            problems.append(f"structural 序数处表达式类不符：{rel}::{entry.get('target')} "
+                            f"实测 {site['expr']} != 登记 {entry.get('expr')!r}")
+            continue
+        if (rel, site["line"]) in index:
+            problems.append(f"两条 structural 条目指向同一处：{rel}::{entry.get('target')}")
+            continue
+        index[(rel, site["line"])] = entry
+    return index, problems
+
+
+def _oracle_shape(entry: dict) -> str | None:
+    """oracle 引用的形态判据（① 的存在性部分；不跑用例）。"""
+    spec = str(entry.get("oracle") or "")
+    file_part, _sep, rest = spec.partition("::")
+    cls, _sep2, method = rest.partition("::")
+    if not file_part.endswith(".py") or not (ROOT / file_part).is_file():
+        return f"oracle 指向不存在的测试文件：{spec!r}"
+    if not cls.startswith("StructuralOracle"):
+        return (f"oracle 必须指向 StructuralOracle* 类里的专用站点用例"
+                f"（防止把门禁自身的审计用例当 oracle 造成递归）：{spec!r}")
+    if not method.startswith("test_oracle_"):
+        return f"oracle 方法名必须以 test_oracle_ 开头：{spec!r}"
+    return None
+
+
+def _run_oracle(entry: dict) -> list[str]:
+    """① 真被收集 + ② 当前通过：跑真实子进程 `unittest <module>.<Class>.<method>`。"""
+    spec = str(entry["oracle"])
+    file_part, _sep, rest = spec.partition("::")
+    cls, _sep2, method = rest.partition("::")
+    module = file_part[:-3].replace("/", ".").replace("\\", ".")
+    target = f"{module}.{cls}.{method}"
+    who = f"{entry.get('file')}::{entry.get('target')}"
+    proc = osnorm.run_text([sys.executable, "-B", "-m", "unittest", "-v", target],
+                           cwd=str(ROOT), timeout=300)
+    output = f"{proc.stdout}\n{proc.stderr}"
+    # `unittest` 对不存在的用例会造一个 `_FailedTest` 并照样打印 "Ran 1 test"，所以
+    # 「真被收集」不能只看计数：出现 `_FailedTest` 就是「查无此例」。
+    if "_FailedTest" in output or "Ran 0 tests" in output or "Ran 1 test" not in output:
+        return [f"structural 豁免 {who} 失效：oracle 未被收集"
+                f"（`unittest {target}` 没有跑起 1 个用例）：\n{output[-800:]}"]
+    if proc.returncode != 0:
+        return [f"structural 豁免 {who} 失效：oracle 当前未通过"
+                f"（rc={proc.returncode}）：{spec}\n{output[-1500:]}"]
+    return []
+
+
+def structural_problems(actual: Counter, entries: list[dict], *,
+                        check_oracles: bool = True) -> list[str]:
+    """S3 的四项机械校验 + 一一对应；`actual` 是**未套 structural** 的实测计数。"""
+    problems: list[str] = []
+    rules = {str(entry.get("rule")) for entry in entries}
+    for entry in entries:
+        for field in STRUCTURAL_FIELDS:
+            if field not in entry:
+                problems.append(f"structural 条目缺字段 {field}：{entry}")
+        if entry.get("rule") not in RULES:
+            problems.append(f"structural 条目规则不在 R1–R6：{entry.get('rule')!r}")
+        if entry.get("verdict") not in ("a", "b"):
+            problems.append(f"structural 条目必须声明判定 (a) 可等价 / (b) 不同域："
+                            f"{entry.get('target')!r}")
+        if not str(entry.get("reason") or "").strip():
+            problems.append(f"structural 条目缺 reason（子域边界/为何不可迁移）："
+                            f"{entry.get('target')!r}")
+        baseline = entry.get("count_baseline")
+        if not isinstance(baseline, int) or baseline <= 0:
+            problems.append(f"structural count_baseline 必须是正整数："
+                            f"{entry.get('target')!r}={baseline!r}")
+        if not (ROOT / str(entry.get("file") or "")).is_file():
+            problems.append(f"structural 条目指向不存在的文件：{entry.get('file')!r}")
+        shape = _oracle_shape(entry)
+        if shape:
+            problems.append(shape)
+
+    # ④ 目标必须能在真实代码里定位（函数存在 + 该序数处就是声明的表达式类）
+    index, target_problems = _site_map(entries)
+    problems.extend(target_problems)
+
+    # ③ 未覆盖即“计数增长”：structural 段声明了哪些规则由它兜，就必须兜满
+    for key, count in sorted(actual.items()):
+        rel, rule, expr, _line_kind = key
+        if rule not in rules:
+            continue
+        _names, sites = _file_scan(rel)
+        uncovered = [site for site in sites
+                     if site["expr"] == expr and (rel, site["line"]) not in index]
+        if uncovered:
+            problems.append(
+                f"structural 未覆盖的 {rule} 违规（要么迁移，要么补 oracle 条目）："
+                f"{rel} {expr} L{uncovered[0]['line']}"
+                f"（该键共 {len(uncovered)} 处未覆盖，实测 {count}）")
+
+    registered: Counter = Counter()
+    for entry in entries:
+        registered[(str(entry.get("file")), str(entry.get("rule")))] += int(
+            entry.get("count_baseline") or 0)
+    measured: Counter = Counter()
+    for (rel, rule, _expr, _line_kind), count in actual.items():
+        if rule in rules:
+            measured[(rel, rule)] += count
+    for key, count in sorted(measured.items()):
+        limit = registered.get(key)
+        if limit is None:
+            problems.append(f"structural 缺少该 (file, rule) 的登记：{key} 实测 {count}")
+        elif count > limit:
+            problems.append(f"实测计数高于 count_baseline：{key} 实测 {count} > 登记 {limit}")
+        elif count < limit:
+            problems.append(f"登记计数高于实测（条目指向已不存在的代码）：{key} "
+                            f"实测 {count} < 登记 {limit}")
+    for key in sorted(set(registered) - set(measured)):
+        problems.append(f"structural 登记项在实测里不存在：{key}")
+
+    # ①② oracle 必须真实存在、被收集、当前通过
+    if check_oracles:
+        for entry in entries:
+            if _oracle_shape(entry) is None:
+                problems.extend(_run_oracle(entry))
+    return problems
+
+
+def _site_index() -> dict[tuple[str, int], dict]:
+    index, _problems = _site_map(load_structural())
+    return index
+
+
+def scan_file(path: Path, rel: str,
+              index: dict[tuple[str, int], dict] | None = None) -> list[Violation]:
     source = osnorm.read_text(path)
     found = scan_source(source, filename=rel)
-    return [v for v in found if _exempted(rel, v) is None]
+    site_map = _site_index() if index is None else index
+    return [v for v in found if _exempted(rel, v, site_map) is None]
 
 
-def scan_repo() -> Counter:
-    """扫描全量扫描面（已套结构性豁免），返回 {(file, rule, target, line_kind): count}。"""
+def scan_repo(with_structural: bool = True, entries: list[dict] | None = None) -> Counter:
+    """扫描全量扫描面，返回 {(file, rule, target, line_kind): count}。
+
+    `with_structural=False` 只套规则级豁免（`STRUCTURAL_EXEMPT`），保留 structural 段覆盖的
+    那 15 处——登记审计必须看到它们，否则「豁免失效」无从证伪。
+    """
+    site_map = {} if not with_structural else _site_map(
+        load_structural() if entries is None else entries)[0]
     counts: Counter = Counter()
     for prefix, root in SCAN_ROOTS:
         for path in sorted(root.glob("*.py")):
             rel = f"{prefix}/{path.name}"
-            for violation in scan_file(path, rel):
+            for violation in scan_file(path, rel, site_map):
                 counts[(rel,) + violation.key] += 1
     return counts
 
@@ -477,9 +700,10 @@ class AllowlistTest(unittest.TestCase):
         self.doc = load_allowlist()
 
     def test_schema(self) -> None:
-        self.assertEqual(self.doc["version"], 1)
+        self.assertEqual(self.doc["version"], 2)
         self.assertIsInstance(self.doc["entries"], list)
         self.assertIsInstance(self.doc["baseline"], dict)
+        self.assertIsInstance(self.doc["structural"], list, "v2 起必须有 structural 段")
         self.assertTrue(self.doc["entries"], "第 0 步的存量基线不得为空")
 
     def test_counts_match_reality(self) -> None:
@@ -716,6 +940,303 @@ class AdapterOracleTest(unittest.TestCase):
                                  f"slug 含非法字符 {bad!r}：{value!r}（{row['args']}）")
             checked += 1
         self.assertGreaterEqual(checked, 2, "slug 行不足，形态判据没覆盖到")
+
+
+# ---------------------------------------------------------------- 测试：structural 段（R43）
+
+# 站点 oracle 的宿主自适基座：`(a)` 类站点只做 join+normpath，所以「同一路径标识」必须在
+# **本宿主**的原生形态与 canonical 的交换形态之间对账，不能把 `/ws` 这类字面量钉死——
+# Windows 上 canonical 给 `C:/ws`、原生给 `C:\ws`，写死任一侧在另一宿主上必错。
+BASE_NATIVE = "/ws" if os.name != "nt" else "C:\\ws"
+
+
+def _native_form(canonical: str) -> str:
+    """交换形态 → 本宿主原生写法。判据侧用，不参与被验证的实现。"""
+    return os.path.normpath(canonical)
+
+
+def _path_pair(rel: str, base: str | None = None) -> tuple[str, str]:
+    """(原生期望, 交换期望)：两个都从 canonical_path 现算，避免把宿主形态写成字面量。"""
+    want = osnorm.canonical_path(rel, base=BASE_NATIVE if base is None else base)
+    return _native_form(want), want
+
+
+class StructuralSiteMixin:
+    """逐处 oracle 的公共动作：**取真实代码里那个表达式节点**现场求值，再对账。
+
+    为什么求值 AST 而不是复制一份等价表达式：复制会变成第二份实现，改了 hooks 却不动
+    测试照样绿。这里取的是 `_file_scan()` 从 hooks 源码里解析出来的同一个节点，位置变了
+    `_split_target` 就定位不到（条目失效即红）。
+    """
+
+    def site(self, rel: str, target: str, env: dict):
+        function, ordinal = _split_target(target)
+        _names, sites = _file_scan(rel)
+        hits = [item for item in sites if item["function"] == function]
+        self.assertLessEqual(ordinal, len(hits),
+                             f"{rel}::{target} 处已没有那么多 R5 命中（{len(hits)} 处）")
+        node = hits[ordinal - 1]["node"]
+        self.assertIsNotNone(node, f"{rel}::{target} 的命中没带 AST 节点（规则实现可能变了）")
+        code = compile(ast.Expression(body=node), f"<{rel}:{hits[ordinal - 1]['line']}>", "eval")
+        return eval(code, {"os": os, "__builtins__": {"str": str, "int": int}}, dict(env))  # noqa: S307
+
+    def assert_same_path(self, got: object, expected: tuple[str, str], msg: str) -> None:
+        """同一路径标识：原生形态逐字相等 **且** 回喂 canonical 得同一交换形态。"""
+        native_expected, canonical_expected = expected
+        self.assertEqual(got, native_expected, f"{msg}：原生形态不等")
+        self.assertEqual(osnorm.canonical_path(got), canonical_expected,
+                         f"{msg}：回喂 canonical 后不是同一标识")
+
+    def assert_declared_divergence(self, got: object, rel: str, msg: str) -> None:
+        """出界分叉是被声明的：站点仍返回值（hook 不得抛），而 canonical_path 直接拒。"""
+        with self.assertRaises(osnorm.PathFormError, msg=f"{msg}：canonical 竟然接受了出界输入"):
+            osnorm.canonical_path(rel, base=BASE_NATIVE)
+        self.assertIsInstance(got, str, f"{msg}：站点在出界输入上必须返回字符串（fail-safe）")
+
+
+class StructuralOracleTest(StructuralSiteMixin, unittest.TestCase):
+    """R43：15 处 R5 的逐处 oracle。
+
+    判据分两半，和条目里的 `verdict` 一一对应：
+    - `(a)` 可等价：金表行在声明子域内与 `canonical_path` **同一路径标识**（原生形态 + 回喂
+      往返），另有 boundary 行证明「出界就分叉」——不是含糊的「差不多」。
+    - `(b)` 不同域：证明 osnorm 根本产不出该处的产物（相对键 / 无 relpath 能力），差异有意。
+    """
+
+    CT = ".workspace/hooks/cc_transcript.py"
+    CORE = ".workspace/hooks/gate_core.py"
+    WT = ".workspace/hooks/wtarget.py"
+
+    # ---- (b) 相对键：osnorm 没有 relpath 能力，canonical 只产绝对交换路径
+
+    def test_oracle_cc_gate_key_relative_key(self) -> None:
+        gate = os.path.join(BASE_NATIVE, "a", "b.md")
+        got = self.site(self.CT, "gate_key#1", {"ws": BASE_NATIVE, "gate": gate})
+        self.assertEqual(got, "a/b.md", "账本键必须是相对路径且用 '/' 分隔")
+        self.assertFalse(os.path.isabs(got))
+        self.assertNotEqual(got, osnorm.canonical_path(gate), "相对键与 canonical 不是同一个东西")
+        with self.assertRaises(osnorm.PathFormError):
+            osnorm.canonical_path("a/b.md")   # 无 base 的相对路径 canonical 直接拒 → 产不出相对键
+
+    def test_oracle_gate_core_recent_files_relative_key(self) -> None:
+        path = os.path.join(BASE_NATIVE, "sub", "a.md")
+        got = self.site(self.CORE, "_recent_files#1", {"p": path, "ws_root": BASE_NATIVE})
+        self.assertEqual(got, "sub/a.md")
+        self.assertNotEqual(got, osnorm.canonical_path(path))
+        with self.assertRaises(osnorm.PathFormError):
+            osnorm.canonical_path("sub/a.md")
+
+    def test_oracle_gate_core_scan_hashes_relative_key(self) -> None:
+        path = os.path.join(BASE_NATIVE, "sub", "a.md")
+        got = self.site(self.CORE, "_scan_hashes#1", {"p": path, "ws_root": BASE_NATIVE})
+        self.assertEqual(got, "sub/a.md", "哈希基线键必须与 _recent_files 同口径")
+        self.assertNotEqual(got, osnorm.canonical_path(path))
+        with self.assertRaises(osnorm.PathFormError):
+            osnorm.canonical_path("sub/a.md")
+
+    # ---- (a) join + normpath：子域内同一路径标识，出界分叉
+
+    def test_oracle_cc_git_changed_files_join(self) -> None:
+        got = self.site(self.CT, "git_changed_files#1", {"ws": BASE_NATIVE, "path": "a/b.md"})
+        self.assert_same_path(got, _path_pair("a/b.md"), "git_changed_files#1")
+        escaped = self.site(self.CT, "git_changed_files#1", {"ws": BASE_NATIVE, "path": "../x.md"})
+        self.assert_declared_divergence(escaped, "../x.md", "git_changed_files#1 逃逸")
+
+    def test_oracle_cc_resolve_gate_files_argument_join(self) -> None:
+        got = self.site(self.CT, "resolve_gate_files#1",
+                        {"ws": BASE_NATIVE, "gate_rel": "AGENT_RULES.md"})
+        self.assert_same_path(got, _path_pair("AGENT_RULES.md"), "resolve_gate_files#1")
+        escaped = self.site(self.CT, "resolve_gate_files#1",
+                            {"ws": BASE_NATIVE, "gate_rel": "../x.md"})
+        self.assert_declared_divergence(escaped, "../x.md", "resolve_gate_files#1 逃逸")
+
+    def test_oracle_cc_resolve_gate_files_config_list_join(self) -> None:
+        got = self.site(self.CT, "resolve_gate_files#2", {"ws": BASE_NATIVE, "n": "docs/x.md"})
+        self.assert_same_path(got, _path_pair("docs/x.md"), "resolve_gate_files#2")
+        numeric = self.site(self.CT, "resolve_gate_files#2", {"ws": BASE_NATIVE, "n": 3})
+        self.assert_same_path(numeric, _path_pair("3"), "resolve_gate_files#2 str(n)")
+
+    def test_oracle_cc_reference_revision_read_target_join(self) -> None:
+        env = {"cwd": BASE_NATIVE, "step": {"input": {"file_path": "g.md"}}}
+        got = self.site(self.CT, "_reference_revision#1", env)
+        self.assert_same_path(got, _path_pair("g.md"), "_reference_revision#1")
+        empty = self.site(self.CT, "_reference_revision#1",
+                          {"cwd": BASE_NATIVE, "step": {"input": {}}})
+        self.assert_declared_divergence(empty, "", "_reference_revision#1 空 file_path")
+
+    def test_oracle_cc_analyze_pre_write_read_target_join(self) -> None:
+        env = {"cwd": BASE_NATIVE, "step": {"input": {"file_path": "docs/g.md"}}}
+        got = self.site(self.CT, "analyze#1", env)
+        self.assert_same_path(got, _path_pair("docs/g.md"), "analyze#1")
+        empty = self.site(self.CT, "analyze#1", {"cwd": BASE_NATIVE, "step": {"input": {}}})
+        self.assert_declared_divergence(empty, "", "analyze#1 空 file_path")
+
+    def test_oracle_cc_analyze_post_write_read_target_join(self) -> None:
+        env = {"cwd": BASE_NATIVE, "step": {"input": {"file_path": "docs/g.md"}}}
+        got = self.site(self.CT, "analyze#2", env)
+        self.assert_same_path(got, _path_pair("docs/g.md"), "analyze#2")
+        empty = self.site(self.CT, "analyze#2", {"cwd": BASE_NATIVE, "step": {"input": {}}})
+        self.assert_declared_divergence(empty, "", "analyze#2 空 file_path")
+
+    def test_oracle_gate_core_worktree_snapshot_join(self) -> None:
+        got = self.site(self.CORE, "worktree_snapshot#1",
+                        {"ws_root": BASE_NATIVE, "rel": "a/b.md"})
+        self.assert_same_path(got, _path_pair("a/b.md"), "worktree_snapshot#1")
+        escaped = self.site(self.CORE, "worktree_snapshot#1",
+                            {"ws_root": BASE_NATIVE, "rel": "../x.md"})
+        self.assert_declared_divergence(escaped, "../x.md", "worktree_snapshot#1 逃逸")
+
+    def test_oracle_gate_core_worktree_audit_abs_sha_git(self) -> None:
+        got = self.site(self.CORE, "worktree_audit#1",
+                        {"ws_root": BASE_NATIVE, "rel": "a/b.md", "sha": "0" * 64})
+        self.assert_same_path(got, _path_pair("a/b.md"), "worktree_audit#1")
+
+    def test_oracle_gate_core_worktree_audit_abs_sha_nongit(self) -> None:
+        got = self.site(self.CORE, "worktree_audit#2",
+                        {"ws_root": BASE_NATIVE, "rel": "a/b.md"})
+        self.assert_same_path(got, _path_pair("a/b.md"), "worktree_audit#2")
+
+    def test_oracle_gate_core_worktree_audit_pending_abs_path(self) -> None:
+        got = self.site(self.CORE, "worktree_audit#3",
+                        {"ws_root": BASE_NATIVE, "rel": "a/b.md"})
+        self.assert_same_path(got, _path_pair("a/b.md"), "worktree_audit#3")
+
+    def test_oracle_wtarget_resolve_target_join(self) -> None:
+        got = self.site(self.WT, "_resolve_target#1", {"cwd": BASE_NATIVE, "token": "a/b.md"})
+        self.assert_same_path(got, _path_pair("a/b.md"), "_resolve_target#1")
+        escaped = self.site(self.WT, "_resolve_target#1", {"cwd": BASE_NATIVE, "token": "../x.md"})
+        self.assert_declared_divergence(escaped, "../x.md", "_resolve_target#1 逃逸")
+
+    def test_oracle_wtarget_absolute_join(self) -> None:
+        got = self.site(self.WT, "absolute#1", {"cwd": BASE_NATIVE, "v": "a/b.md"})
+        self.assert_same_path(got, _path_pair("a/b.md"), "absolute#1")
+
+
+class StructuralRealCallTest(StructuralSiteMixin, unittest.TestCase):
+    """oracle 不能只对着表达式求值：这几条走**真实函数**，证明站点在生产路径上真被执行。"""
+
+    def test_resolve_gate_files_returns_native_targets(self) -> None:
+        cc_transcript = _hook_module("cc_transcript")
+        got = cc_transcript.resolve_gate_files(BASE_NATIVE, "AGENT_RULES.md")
+        self.assertEqual(got, [os.path.join(BASE_NATIVE, "AGENT_RULES.md")])
+        self.assertEqual(osnorm.canonical_path(got[0]), osnorm.canonical_path("AGENT_RULES.md", base=BASE_NATIVE))
+
+    def test_gate_key_falls_back_when_relpath_cannot_relate(self) -> None:
+        """跨盘符（Windows）时 relpath 抛 ValueError：必须回退成绝对键，不能把 hook 打崩。"""
+        cc_transcript = _hook_module("cc_transcript")
+        gate = os.path.join(BASE_NATIVE, "a", "b.md")
+        self.assertEqual(cc_transcript.gate_key(BASE_NATIVE, gate), "a/b.md")
+        original = os.path.relpath
+        try:
+            def boom(*_args, **_kwargs):
+                raise ValueError("path is on mount 'D:', start on mount 'C:'")
+            os.path.relpath = boom
+            self.assertEqual(cc_transcript.gate_key(BASE_NATIVE, gate),
+                             os.path.normpath(gate).replace(os.sep, "/"))
+        finally:
+            os.path.relpath = original
+
+    def test_recent_files_keys_are_relative_and_posix(self) -> None:
+        gate_core = _hook_module("gate_core")
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            sub = Path(tmp) / "sub"
+            sub.mkdir()
+            (sub / "a.md").write_bytes(b"x")
+            (Path(tmp) / "b.md").write_bytes(b"y")
+            keys = set(gate_core._recent_files(tmp, 0))
+        self.assertEqual(keys, {"sub/a.md", "b.md"})
+
+    def test_resolve_target_returns_native_absolute(self) -> None:
+        wtarget = _hook_module("wtarget")
+        target, status = wtarget._resolve_target("a/b.md", BASE_NATIVE)
+        self.assertEqual(status, "static")
+        self.assert_same_path(target, _path_pair("a/b.md"), "_resolve_target 真实调用")
+
+
+class StructuralRegistryTest(unittest.TestCase):
+    """S3 门禁：①②③④ + 一一对应；每条判据都要能红（非空自检在下方各自的用例里）。"""
+
+    def setUp(self) -> None:
+        self.doc = load_allowlist()
+        self.entries = list(self.doc.get("structural") or [])
+        self.raw = scan_repo(with_structural=False)
+
+    def test_registry_satisfies_s3(self) -> None:
+        problems = structural_problems(self.raw, self.entries)
+        self.assertEqual(problems, [], "\n".join(problems))
+
+    def test_ledger_totals_are_conserved(self) -> None:
+        """18 = entries 3 + structural 15：不许靠删条目清零，也不许把 15 处藏进别的名下。"""
+        self.assertEqual(sum(entry["count"] for entry in self.doc["entries"]), 3)
+        self.assertEqual(len(self.entries), 15)
+        self.assertEqual(sum(entry["count_baseline"] for entry in self.entries), 15)
+        r5 = {key: count for key, count in self.raw.items() if key[1] == "R5"}
+        self.assertEqual(sum(r5.values()), 15, f"实测 R5 处数变了：{sorted(r5)}")
+        self.assertEqual({key[0] for key in r5},
+                         {".workspace/hooks/cc_transcript.py",
+                          ".workspace/hooks/gate_core.py",
+                          ".workspace/hooks/wtarget.py"},
+                         "这批 R5 仍然分布在 hook 的三个模块里")
+
+    def test_targets_are_unique_and_resolvable(self) -> None:
+        index, problems = _site_map(self.entries)
+        self.assertEqual(problems, [], "\n".join(problems))
+        self.assertEqual(len(index), 15, "15 条必须落在 15 个不同位置（不许一处登记两次）")
+
+    def test_target_out_of_range_is_red(self) -> None:
+        broken = [dict(item) for item in self.entries]
+        broken[0]["target"] = broken[0]["target"].split("#")[0] + "#9"
+        problems = structural_problems(self.raw, broken, check_oracles=False)
+        self.assertTrue(any("目标越界" in item for item in problems), problems)
+
+    def test_missing_function_is_red(self) -> None:
+        broken = [dict(self.entries[0], target="no_such_function#1")]
+        problems = structural_problems(self.raw, broken, check_oracles=False)
+        self.assertTrue(any("目标函数不存在" in item for item in problems), problems)
+
+    def test_removed_entry_leaves_violation_uncovered(self) -> None:
+        problems = structural_problems(self.raw, self.entries[1:], check_oracles=False)
+        self.assertTrue(any("未覆盖的 R5" in item for item in problems), problems)
+
+    def test_count_growth_is_red(self) -> None:
+        grown = Counter(self.raw)
+        key = next(key for key in grown if key[1] == "R5")
+        grown[key] += 1
+        problems = structural_problems(grown, self.entries, check_oracles=False)
+        self.assertTrue(any("高于 count_baseline" in item for item in problems), problems)
+
+    def test_expressed_class_mismatch_is_red(self) -> None:
+        broken = [dict(item) for item in self.entries]
+        broken[0]["expr"] = "expr:normpath_join"
+        problems = structural_problems(self.raw, broken, check_oracles=False)
+        self.assertTrue(any("表达式类不符" in item for item in problems), problems)
+
+    def test_verdict_and_reason_are_required(self) -> None:
+        for field, bad in (("verdict", "c"), ("reason", ""), ("count_baseline", 0)):
+            broken = [dict(self.entries[0], **{field: bad})]
+            problems = structural_problems(self.raw, broken, check_oracles=False)
+            self.assertTrue(problems, f"{field}={bad!r} 竟然没有报错")
+
+    def test_oracle_is_run_for_real(self) -> None:
+        """①② 走真实子进程：通过则无问题，改名后必须报「未被收集」。"""
+        first = self.entries[0]
+        self.assertEqual(_run_oracle(first), [], "oracle 引用的用例必须当前通过")
+        ghost = dict(first, oracle=first["oracle"].replace("test_oracle_", "test_oracle_ghost_"))
+        self.assertTrue(any("未被收集" in item for item in _run_oracle(ghost)))
+
+    def test_oracle_shape_rules(self) -> None:
+        first = self.entries[0]
+        cases = (
+            (dict(first, oracle="tests/nope.py::StructuralOracleTest::test_oracle_x"),
+             "不存在的测试文件"),
+            (dict(first, oracle="tests/test_osnorm_single_source.py::AllowlistTest::test_schema"),
+             "StructuralOracle*"),
+            (dict(first, oracle="tests/test_osnorm_single_source.py::StructuralOracleTest::test_x"),
+             "test_oracle_"),
+        )
+        for entry, needle in cases:
+            self.assertIn(needle, _oracle_shape(entry) or "", entry["oracle"])
 
 
 # ---------------------------------------------------------------- 测试：§5.2 repo_identity 矩阵

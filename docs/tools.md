@@ -246,18 +246,31 @@ UTF-8 + `errors`，并把 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 注入子进�
 **门禁（blocking）**：`tests/test_osnorm_single_source.py` 由 `tests/` discovery 与 CI 执行——
 `scripts/`、`.workspace/hooks/`、`tests/` 里再出现自带 `encoding=` 的文本 I/O（R1）、
 自带 `text=`/`encoding=` 的子进程（R2）、直接 `os.replace`（R3）、直接 `reconfigure`（R4）、
-自写归一化函数/内联键（R5）、`os.path.normcase`（R6）即红。结构性豁免只有 osnorm 自身、
-`local_state` 的 no-follow 发布路径、`skill_audit._utf8_stdio` 与两个 hooks adapter
-（`hook._absolute` / `gate_core._norm_join` 是只剩 R5 语义的路径拼接，按 R7 的 adapter oracle
-钉在声明子域上）。**hooks 侧一律经装载器使用 osnorm，禁止裸 import**：
+自写归一化函数/内联键（R5）、`os.path.normcase`（R6）即红。规则级结构性豁免只有 osnorm 自身
+（`canonical_path` / `run_text` / `replace_retry` / `configure_stdio`）与 `local_state` 的 no-follow
+发布路径；两个 hooks adapter 的**定义**（`hook._absolute` / `gate_core._norm_join`，只剩 R5 语义的
+路径拼接）按 R7 的 adapter oracle 钉在声明子域上；`release._utf8_stdio` 现在只是
+`osnorm.configure_stdio` 的转调，不再是豁免。**hooks 侧一律经装载器使用 osnorm，禁止裸 import**：
 `.workspace/hooks/osnorm_loader.py` 按「① hook 自身树 → ② 请求期 `ws_root` → ③ fail-closed」
 解析，进程内只解析一次并钉住指纹（路径 + size + mtime_ns + sha256），
 `OSNORM_API` 在 `exec_module` 之后、任何 API 调用之前校验；候选必须是非 symlink 的普通文件。
-hooks 侧剩下的存量违规只能进 `tests/osnorm_allowlist.json` 的
-`(file, rule, target, line_kind)` 节点级表项。账本口径三条：
+hooks 侧剩下的 R5 分两类落账，同一文件（`tests/osnorm_allowlist.json`）三个段，**不许互相顶替**：
 
-- `count` 必须**精确等于**实测（`>` 或 `<` 都红；归零必须删表项）。
-- `baseline` 记录每个 `(file, rule)` 的历史最低值，`count` 不得高于它。
+- `entries`（兜底存量）：`(file, rule, target, line_kind)` 节点级表项。`count` 必须**精确等于**
+  实测（`>` 或 `<` 都红；归零必须删表项）；`baseline` 记录每个 `(file, rule)` 的历史最低值，
+  `count` 不得高于它。R43 之后这里只剩 `hook.py` 的 R4 3 处（stdin strict + stdout/stderr
+  两处 `reconfigure`），因为 `configure_stdio` 既不碰 stdin 也不做 strict。
+- `structural`（结构性豁免，落 S3）：位置永久保留，但**理由由一条可执行 oracle 持续验证**。
+  登记粒度 `(file, rule, target)`，`target` = `函数名#序数`（序数 = 该函数内 R5 命中按源码顺序
+  的第几处，**不写行号**——行号会随上面任意一行改动漂移，漂移即红就把门禁变成噪音）。
+  每条至少含 `file / rule / target / expr / verdict(a|b) / count_baseline / reason / oracle`，
+  门禁机械校验四项：① `oracle` 指向的用例真实存在且被 `unittest` 收集（跑真实子进程，
+  出现 `_FailedTest` 即「查无此例」）；② 该用例当前通过（rc=0）；③ 该 `(file, rule)` 实测计数
+  不得高于 `count_baseline` 之和（未覆盖即红）；④ 目标能在真实代码里定位——函数存在、该序数处
+  确实是声明的表达式类。此外 15 条与实测 15 处**严格一一对应**：删条目或加一处 R5 都红。
+  判定的两个方向都有 oracle：`(a)` 可等价 = 在声明的子域内与 `canonical_path` 得出**同一路径
+  标识**（原生形态 + 回喂 canonical 往返）且出界就分叉；`(b)` 不同域 = 证明 osnorm 根本产不出
+  该处产物（例如相对键：osnorm 没有 `relpath`，`canonical_path` 对无 base 的相对路径直接拒）。
 - 账本本身进 `TEMPLATE_FILES` 哈希锁定：抬高账本会留下 `HASH-DIFF`，派生实例自行放宽会被
   `verify_rules --vs-template` 暴露。同仓内抬高要同时重建注册表，两次改动都留在 diff 与 CI 记录里。
 
