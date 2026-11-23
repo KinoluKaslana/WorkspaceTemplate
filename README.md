@@ -284,7 +284,7 @@ skill 随模板分发在 `.workspace/skills/`（workspace-skills 命名空间）
 | [workspace-init](.workspace/skills/workspace-init/SKILL.md) | 1.3.0 | "初始化/接管这个工作区"，或无可信血缘、无条款标记 | 盘点 → 差异判定 → pre-v2.0 迁移（本地语义进 custom）→ Python（已配置则不动）→ git 决策 → 登记 → 验证 |
 | [git-init](.workspace/skills/git-init/SKILL.md) | 1.2.0 | "建 git 仓库"，或 `git.status=declined` 后改主意 | init → .gitignore → 登记 → 审查暂存清单 → 提交 → 核提交树；含撤销建仓 |
 | [delivery-closure](.workspace/skills/delivery-closure/SKILL.md) | 1.1.0 | 任务模式产物落盘、准备声明完成 | 产物清点（无仓用时间戳列举）→ 查 INDEX → note 三选一 → 索引回写 → 外部动作验证 → 三档口径声明 |
-| [release](.workspace/skills/release/SKILL.md) | 1.0.0 | 升政策版本、打 tag、发版 | dry-run → apply 事务/回滚 → verify → tag；push 与实例同步人工执行 |
+| [release](.workspace/skills/release/SKILL.md) | 1.1.0 | 升政策版本、打 tag、发版、记 dev 四段版本（NN.X.Y.Z） | dry-run → apply 事务/回滚 → verify → tag；`--dev` 只写 `CHANGELOG_DEV.md` + `release_dev.json`；push 与实例同步人工执行 |
 | [commit-gate](.workspace/skills/commit-gate/SKILL.md) | 1.0.0 | 任何 `git commit` 之前、`release.py --apply` 之后、合并 main 之前 | 一条命令收敛全部质量门：`check_all.py --fix` → `--check` → `--full`；格式类回修，判据类必须人判 |
 | [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 工作区模板版本旧、缺现行 skill / 无 `template_sync.py` | 从模板快照自举 → `--apply` → `--sync-registry` + TOOLS 补登 → 四条验收 |
 | [workspace-skill-authoring](.workspace/skills/workspace-skill-authoring/SKILL.md) | 1.0.0 | 用户明确要求新建/修改**工作区级** skill | 缺口证据 → 重叠检查 → kebab 命名 → 草稿 → 8 维契约 → 转正与三处登记 → 审批/试用 |

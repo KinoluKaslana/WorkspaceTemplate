@@ -185,5 +185,122 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(any("policy_facts.py" in c for c in flat), flat)
 
 
+class DevReleaseTests(unittest.TestCase):
+    """dev 四段版本账本（`NN.X.Y.Z`）：只写两个 dev 事实位，政策版本链一点不碰。
+
+    用户裁决的硬约束在这里全部落成断言：同版本二次 apply 必须被拒、dev 版本的三段必须等于
+    当前政策版本、`AGENT_RULES.md` / `releases.json` 在 dev 发版后逐字节不变。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name) / "repo"
+        shutil.copytree(ROOT, self.repo, ignore=shutil.ignore_patterns(
+            ".git", ".venv", ".venv-*", "__pycache__", ".hook-state"))
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.name", "test")
+        self.git("config", "user.email", "test@example.invalid")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "baseline")
+        self.policy = release.policy_version(self.repo)
+        self.ledger = release.load_dev_ledger(self.repo)
+        self.last = str(self.ledger[-1]["version"]) if self.ledger else None
+        self.next_round = int(self.ledger[-1]["round"]) + 1 if self.ledger else release.DEV_ROUND_BASE
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def git(self, *args):
+        return osnorm.run_text(["git", *args], cwd=self.repo, check=True, errors="replace")
+
+    def cli(self, *args):
+        return osnorm.run_text([sys.executable, "-B", "scripts/release.py", *args],
+                               cwd=self.repo, errors="replace")
+
+    def facts(self):
+        return osnorm.run_text([sys.executable, "-B", "scripts/policy_facts.py", "--check"],
+                               cwd=self.repo, errors="replace")
+
+    def test_dry_run_derives_current_round_and_does_not_write(self):
+        before = self.git("status", "--porcelain").stdout
+        result = self.cli("--dev", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # 不给参数时派生 `<账本末条轮次>.<政策版本>`：空账本才是 44，否则取末条轮次。
+        expected = f"{self.next_round - 1}.{self.policy}"
+        self.assertIn(expected, result.stdout)
+        self.assertIn("DRY-RUN", result.stdout)
+        self.assertEqual(self.git("status", "--porcelain").stdout, before)
+
+    def test_apply_writes_only_dev_facts(self):
+        policy_before = (self.repo / "AGENT_RULES.md").read_bytes()
+        releases_before = osnorm.read_text(self.repo / ".workspace/releases.json",
+                                           bom=False, newline="preserve")
+        expected = f"{self.next_round}.{self.policy}"
+        result = self.cli("--dev", "--apply", "--round", str(self.next_round), "--summary", "测试 dev")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # ① 政策版本链逐字节不变
+        self.assertEqual((self.repo / "AGENT_RULES.md").read_bytes(), policy_before)
+        self.assertEqual(osnorm.read_text(self.repo / ".workspace/releases.json",
+                                          bom=False, newline="preserve"), releases_before)
+        # ② 两条 dev 事实位同步入账
+        self.assertEqual(release.dev_heading_versions(self.repo / "CHANGELOG_DEV.md")[0], expected)
+        ledger = json.loads(osnorm.read_text(self.repo / ".workspace/release_dev.json",
+                                             bom=False, newline="preserve"))
+        self.assertEqual(ledger[-1]["version"], expected)
+        self.assertEqual(ledger[-1]["round"], self.next_round)
+        self.assertIsNone(ledger[-1]["tag"])          # dev 永不打 tag
+        # ③ 判据自洽：四段版本不被三段判据误杀
+        facts = self.facts()
+        self.assertEqual(facts.returncode, 0, facts.stdout)
+
+    def test_same_round_second_apply_rejected(self):
+        first = self.cli("--dev", "--apply", "--round", str(self.next_round), "--summary", "首入")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        before = osnorm.read_text(self.repo / "CHANGELOG_DEV.md", bom=False, newline="preserve")
+        second = self.cli("--dev", "--apply", "--round", str(self.next_round), "--summary", "重复")
+        self.assertNotEqual(second.returncode, 0)
+        self.assertIn("严格升级", second.stderr)
+        # 无参 apply 派生同一轮次，同样被拒（版本只升不降）
+        third = self.cli("--dev", "--apply")
+        self.assertNotEqual(third.returncode, 0)
+        self.assertIn("严格升级", third.stderr)
+        self.assertEqual(osnorm.read_text(self.repo / "CHANGELOG_DEV.md",
+                                          bom=False, newline="preserve"), before)
+
+    def test_version_must_be_four_segments_and_match_policy(self):
+        wrong_policy = self.cli("--dev", "--version", f"{self.next_round}.9.9.9",
+                                "--apply", "--summary", "错政策号")
+        self.assertNotEqual(wrong_policy.returncode, 0)
+        self.assertIn("必须等于当前政策版本", wrong_policy.stderr)
+        three_seg = self.cli("--dev", "--version",
+                             f"{self.next_round}.{'.'.join(self.policy.split('.')[:2])}")
+        self.assertNotEqual(three_seg.returncode, 0)
+        self.assertIn("非法 dev 版本", three_seg.stderr)
+        tagged = self.cli("--dev", "--tag", f"{self.next_round}.{self.policy}")
+        self.assertNotEqual(tagged.returncode, 0)
+        self.assertIn("不打 tag", tagged.stderr)
+
+    def test_ledger_changelog_drift_is_red(self):
+        result = self.cli("--dev", "--apply", "--round", str(self.next_round), "--summary", "测试")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        path = self.repo / "CHANGELOG_DEV.md"
+        text = osnorm.read_text(path, bom=False, newline="preserve")
+        expected = f"{self.next_round}.{self.policy}"
+        # ① 手改变更日志标题（账本不动）→ 末条对首条必红，--dev --verify 也红
+        osnorm.write_text(path, text.replace(f"## {expected}", f"## {self.next_round + 1}.{self.policy}", 1),
+                          newline="lf")
+        drift = self.facts()
+        self.assertEqual(drift.returncode, 1, drift.stdout)
+        self.assertIn("末条版本", drift.stdout)
+        verify = self.cli("--dev", "--verify")
+        self.assertNotEqual(verify.returncode, 0)
+        self.assertIn("首个标题", verify.stderr)
+        # ② dev 文件里出现三段标题 → 四段格式判据必红（三段版本不得串进 dev 链）
+        osnorm.write_text(path, text.replace(f"## {expected}", f"## {self.policy}", 1), newline="lf")
+        three = self.facts()
+        self.assertEqual(three.returncode, 1, three.stdout)
+        self.assertIn("须四段", three.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

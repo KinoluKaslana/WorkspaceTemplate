@@ -141,6 +141,11 @@
     "file_sha256": "0ffb5264ca8382d1c8ccf15d3bf1d170f52b20d89c3d27b70773eb3d2015cfdc",
     "marked": 136
   },
+  "CHANGELOG_DEV.md": {
+    "clauses": {},
+    "file_sha256": "2054f994a36890f04b99fa9a34b9dd3b36c3c3a8f087045f32d44f21c0ea65b3",
+    "marked": 0
+  },
   "LICENSE": {
     "clauses": {},
     "file_sha256": "0455742b07053f2525c5540c53039f3a081d2b6de273792e538e220367bb1f0f",
@@ -173,7 +178,7 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "42a414358dc638cc68a559df1897e984c0d35d6464cc9ad0460c7c4ab075dd2a",
+    "file_sha256": "e3bd592f06e0ebbe458e21800b2549629f9f46b498de62a3f5cc9bfde61fbc30",
     "marked": 0
   },
   "README_EN.md": {
@@ -203,7 +208,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "c8f40c6b11b43ad7e6218e90cff976150debcd393e70e936fb3fe92cd44cc663",
+    "file_sha256": "895467a697c156ddf96862e48a4ace90bb9de61669da8b710814b5e4a9a508fe",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -318,17 +323,17 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "b0690ce1ad18de24fad0a543062e779b5011bc2d808c2c7804562a9e62d9fc41",
+    "file_sha256": "489b6dbb8ae6256b7f264210b1b29cd0ae386dfd15ff6cbe5789f7bb3e6c77ff",
     "marked": 0
   },
   "docs/skills.md": {
     "clauses": {},
-    "file_sha256": "c3ac72cdc15518f8cdeaf85949c494a60a7689c11490b75a0f180244a8b6501c",
+    "file_sha256": "68e983d68972fc76edc3ac659481de999b8ad12c5ede194827f66cc7c435f952",
     "marked": 0
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "dc143e66c33205aa4513b370c9f4dc0b4e80910268945042c536271f4ae3e5f0",
+    "file_sha256": "515ca1b905de21fc11233c6f5de89bab9c682e94328217432bc82f18ddc21f4b",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -388,17 +393,17 @@
   },
   "scripts/policy_facts.py": {
     "clauses": {},
-    "file_sha256": "524e188560701ffda9c99c5d9913b530d551b6089bbd36b09abf51b6fcfb38e8",
+    "file_sha256": "cea71ae702c4f7d860f79e21ad103b9857170c98611f16c23053e2ab842ef83d",
     "marked": 0
   },
   "scripts/release.py": {
     "clauses": {},
-    "file_sha256": "6c73748e5ec36f45c4c4d424b5d818776f823fd40d6b42c6c2fe10342cd1bdf1",
+    "file_sha256": "3fec287350c5de453d3c791bb3b630edd5a21a4591c3105119c15bbe1528f31b",
     "marked": 0
   },
   ".workspace/skills/release/SKILL.md": {
     "clauses": {},
-    "file_sha256": "142156704a8bccc565b134202528e76fe1f8ff04baae0ca4d6e89b8bd682fb4f",
+    "file_sha256": "66d23e302e78ea9e670a45bb732bb3e1ddc752712f323349f86df2048a60e1bd",
     "marked": 0
   },
   ".workspace/releases.json": {
@@ -406,9 +411,14 @@
     "file_sha256": "dd008e14858cc39fc3cbe69b49bf4557c82d4258cd6b7e5fdb929674cdac753a",
     "marked": 0
   },
+  ".workspace/release_dev.json": {
+    "clauses": {},
+    "file_sha256": "983dbd48290a4c305a9ab402c38b4505f28adafc5c47b0dfe751ffc28afa1842",
+    "marked": 0
+  },
   "tests/test_release.py": {
     "clauses": {},
-    "file_sha256": "3f818328917d3867f3938ec82a92e61f7b0061205b937d4d7317804cc944a8d9",
+    "file_sha256": "e54bb4d41591784adfe7f2463fb75613a9ab94d424ed17a11e11ef3b47da915e",
     "marked": 0
   },
   "scripts/notes_index_check.py": {

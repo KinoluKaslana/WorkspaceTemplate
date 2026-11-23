@@ -69,6 +69,19 @@ _CHANGELOG_HEADING_RE = re.compile(r"^##\s+(\S.*?)\s*$")
 # 只有「看起来是版本号」的标题才算格式候选（`## 1. 概述` 这种编号小节不受约束），
 # 但候选比条目宽：`3.6` / `3.6.1beta` / `v3.6.1` 都得被抓住，否则它们静默退出账本。
 _CHANGELOG_VERSIONISH_RE = re.compile(r"^v?\d+\.\d")
+# dev 版本链（四段 `NN.X.Y.Z`）与政策版本链（三段 `X.Y.Z`）**物理分文件**：
+# 政策链 = `AGENT_RULES.md:4` ↔ `CHANGELOG.md` ↔ `bootstrap.json` ↔ `releases.json`；
+# dev 链 = `CHANGELOG_DEV.md` ↔ `.workspace/release_dev.json`。两链只共享一件事实：
+# dev 版本的后三段必须等于当前政策版本（由 `scripts/release.py --dev` 保证）。
+# 因此 `CHANGELOG_DEV.md` **不进** `_doc_files()`：三段判据（当前政策版本字面量、
+# 历史标记、标题版本）套上去会把合法的 `## 44.3.8.0` 判成 `## 3.8.0` 而误杀。
+DEV_CHANGELOG = "CHANGELOG_DEV.md"
+DEV_LEDGER = Path(".workspace") / "release_dev.json"
+_DEV_ENTRY_RE = re.compile(r"^##[ \t]+(\d+\.\d+\.\d+\.\d+)(?![\dA-Za-z.\-])")
+_DEV_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+# 候选比条目宽一档（同三段侧口径）：`44.3` / `v44.3.8.0` 这类标题也必须被抓住，
+# 否则它们静默退出 dev 账本，末条对首条那条判据就失去了牙齿。
+_DEV_VERSIONISH_RE = re.compile(r"^v?\d+\.\d")
 _SEMVER_RE = re.compile(r"(?<![\d.])(\d+\.\d+\.\d+)(?![\d.])")
 # 空白用 `[ \t]`、不用 `\s`（第 32 轮 P1）：`\s` 会吃换行/CR/VT/全角空格/NBSP，跨行匹配是
 # bug 温床，也会把 `##　标题`（全角空格分隔）当成标题。测试侧按名导入**同一对象**
@@ -445,6 +458,110 @@ def releases_versions(root=ROOT):
     return versions
 
 
+def dev_changelog_versions(root=ROOT):
+    """`CHANGELOG_DEV.md` 里所有四段条目标题 `## NN.X.Y.Z`（按文件顺序）。
+
+    dev 版本是四段：`NN` = 迭代轮次，`X.Y.Z` = 预计发布的正式版本。它**不是**政策版本，
+    所以本文件只走 dev_* 判据，三段判据（`changelog_versions` / `literal_offenders` /
+    `heading_offenders` / `changelog_heading_offenders`）一律不套到它上面——
+    套上去会把合法的 `## 44.3.8.0` 当成格式不合规的 `## 3.8.0` 误杀。
+
+    返回 None 表示文件不存在（旧模板工作区 / 尚未建立 dev 账本）。
+    """
+    path = Path(root) / DEV_CHANGELOG
+    if not path.is_file():
+        return None
+    versions = [m.group(1) for m in
+                (_DEV_ENTRY_RE.match(line) for line in
+                 osnorm.read_text(path).split("\n")) if m]
+    return versions or None
+
+
+def dev_ledger_versions(root=ROOT):
+    """`.workspace/release_dev.json` 的版本序列；格式非法时抛 ValueError（fail-closed）。"""
+    path = Path(root) / DEV_LEDGER
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(osnorm.read_text(path))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"dev 账本不可读：{exc}") from exc
+    if not isinstance(data, list) or not data:
+        raise ValueError("dev 账本必须是非空 JSON 数组（append-only）")
+    out = []
+    for item in data:
+        if not isinstance(item, dict):
+            raise ValueError("dev 账本含非对象条目")
+        version = str(item.get("version", ""))
+        m = _DEV_VERSION_RE.match(version)
+        if not m:
+            raise ValueError(f"dev 账本条目版本非法：{version!r}（须四段 NN.X.Y.Z）")
+        head = int(version.split(".")[0])
+        if item.get("round") != head:
+            raise ValueError(f"dev 账本条目 {version} 的 round={item.get('round')!r} ≠ 版本首段 {head}")
+        out.append(version)
+    return out
+
+
+def dev_heading_offenders(root=ROOT):
+    """`CHANGELOG_DEV.md` 的标题格式契约：版本型标题必须是四段 `NN.X.Y.Z`。
+
+    三段标题（`## 3.8.0`）出现在 dev 文件里意味着把政策版本写进了 dev 账本 —— 那是
+    两条版本链串味，必须红；`## 1. 概述` 这类编号小节不受约束。
+    """
+    path = Path(root) / DEV_CHANGELOG
+    if not path.is_file():
+        return []
+    out = []
+    for i, line in enumerate(osnorm.read_text(path).split("\n"), 1):
+        m = _CHANGELOG_HEADING_RE.match(line)
+        if not m or not _DEV_VERSIONISH_RE.match(m.group(1)):
+            continue
+        if _DEV_ENTRY_RE.match(line):
+            continue
+        out.append(
+            f"{DEV_CHANGELOG}:{i}: dev 条目标题格式不符（须四段 `## NN.X.Y.Z`）：{line.strip()[:80]}"
+            f"\n    → dev 版本不是政策版本；三段版本号只许出现在 CHANGELOG.md")
+    return out
+
+
+def dev_offenders(root=ROOT):
+    """dev 双账本判据：`release_dev.json` 末条 == `CHANGELOG_DEV.md` 首个标题。
+
+    一个文件有、另一个没有 → 红（账本与变更日志必须成对存在，否则「末条对首条」
+    这条判据会被静默跳过）；dev 版本允许高于政策版本（它是预期发布版本），
+    但**不允许**回退或重复（版本只升不降）。
+    """
+    out = dev_heading_offenders(root)
+    changelog = dev_changelog_versions(root)
+    try:
+        ledger = dev_ledger_versions(root)
+    except ValueError as exc:
+        return out + [f".workspace/release_dev.json: {exc}"]
+    if changelog is None and ledger is None:
+        return out                    # 没有 dev 账本（旧工作区）：不判
+    if changelog is None:
+        reason = ("没有任何四段条目（`## NN.X.Y.Z`）"
+                  if (Path(root) / DEV_CHANGELOG).is_file() else "缺失")
+        return out + [f"{DEV_CHANGELOG}: {reason}，但 .workspace/release_dev.json 存在"
+                      "（dev 账本必须有一份变更日志与之对账）"]
+    if ledger is None:
+        return out + [".workspace/release_dev.json: 缺失，但 CHANGELOG_DEV.md 存在"
+                      "（dev 版本必须经 `release.py --dev --apply` 入账）"]
+    if ledger[-1] != changelog[0]:
+        out.append(f".workspace/release_dev.json: 末条版本 {ledger[-1]} ≠ "
+                   f"{DEV_CHANGELOG} 首个标题 {changelog[0]}"
+                   "（dev 版本必须经 `release.py --dev --apply` 写入，不许手改其中一处）")
+    prev = None
+    for version in ledger:
+        tup = tuple(int(x) for x in version.split("."))
+        if prev is not None and tup <= prev:
+            out.append(f".workspace/release_dev.json: dev 版本必须严格递增（{version} 未高于前一条）")
+            break
+        prev = tup
+    return out
+
+
 def changelog_heading_offenders(root=ROOT):
     """`CHANGELOG.md` 条目标题格式契约：`## x.y.z`，版本号后不得紧跟字母/数字/点。
 
@@ -482,6 +599,11 @@ def _registered_lines(lines):
 
 
 def _doc_files(root):
+    """政策版本链的**文档扫描面**：`CHANGELOG_DEV.md` 故意不在其中。
+
+    dev 四段版本走 `dev_offenders()` 自己的判据；把它并进来会让三段判据误杀 dev 标题
+    （详见 `DEV_CHANGELOG` 附近的注释）。
+    """
     root = Path(root)
     names = ("README.md", "README_EN.md", "CONTRIBUTING.md", "SECURITY.md", "UPGRADE.md")
     paths = [root / n for n in names] + sorted((root / "docs").glob("*.md"))
@@ -705,6 +827,9 @@ def check(root=ROOT):
     elif releases[-1] != facts["policy"]:
         findings.append(f".workspace/releases.json: 末条版本 {releases[-1]} ≠ 政策头 {facts['policy']}"
                         "（版本升级必须经 release.py）")
+    # dev 账本（四段版本）与政策账本互不影响：dev 判据只要求「账本末条 == CHANGELOG_DEV 首个标题」，
+    # 不要求 dev 版本等于政策版本——dev 的 X.Y.Z 是**预期发布版本**，可以高于当前政策版本。
+    findings += dev_offenders(root)
     return findings
 
 

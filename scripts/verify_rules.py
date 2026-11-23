@@ -55,6 +55,7 @@ EXTENDS_RE = re.compile(r"extends:\s*(R\d+)")
 # user homepage (reported as REPLACED, not TAMPERED).
 TEMPLATE_FILES = [
     "AGENT_RULES.md",
+    "CHANGELOG_DEV.md",
     "LICENSE",
     "SECURITY.md",
     "CONTRIBUTING.md",
@@ -108,6 +109,7 @@ TEMPLATE_FILES = [
     "scripts/release.py",
     ".workspace/skills/release/SKILL.md",
     ".workspace/releases.json",
+    ".workspace/release_dev.json",
     "tests/test_release.py",
     "scripts/notes_index_check.py",
     "scripts/secret_scan.py",

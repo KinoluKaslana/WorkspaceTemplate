@@ -13,8 +13,8 @@
 | `mark_rules.py` | 给条款打稳定 ID（`<!-- id:Rn -->`）并重建注册表 | `registry AGENT_RULES.md` | 0 / 1 |
 | `inspect_skills.py` | 只读盘点 skills 目录（入口、name/description、嵌套） | `<skills-dir> [--include-nested]` | 0 / 1 |
 | `version_check.py` | 版本三元组：政策 ↔ CHANGELOG ↔ bootstrap | `[--json]` | 0 / 1 |
-| `policy_facts.py` | 政策事实生成器：从权威源渲染「生成块」（政策/插件版本、`TEMPLATE_FILES`/skills/scripts 计数、条款范围），并判「未登记的政策版本文面量」（历史标记只豁免它声明的版本、不得登记当前版本；`CHANGELOG` 条目须为 `## x.y.z`） | `[--check] \| [--write] \| [--print]` | 0 一致 / 1 有 finding（`--write` 缺标记时为 2） |
-| `release.py` | 发版事务：版本/CHANGELOG/bootstrap/生成块/账本同步，失败整体回滚；tag 单独执行，绝不 push | `--version X.Y.Z --summary "…" [--dry-run\|--apply]`；`--verify`；`--tag X.Y.Z --apply` | 0 / 1 |
+| `policy_facts.py` | 政策事实生成器：从权威源渲染「生成块」（政策/插件版本、`TEMPLATE_FILES`/skills/scripts 计数、条款范围），并判「未登记的政策版本文面量」（历史标记只豁免它声明的版本、不得登记当前版本；`CHANGELOG` 条目须为 `## x.y.z`）。另有 dev 双账本判据：`.workspace/release_dev.json` 末条 == `CHANGELOG_DEV.md` 首个四段标题、两文件必须成对、dev 版本严格递增；**三段判据不套 `CHANGELOG_DEV.md`**（否则四段版本被误杀） | `[--check] \| [--write] \| [--print]` | 0 一致 / 1 有 finding（`--write` 缺标记时为 2） |
+| `release.py` | 发版事务：版本/CHANGELOG/bootstrap/生成块/账本同步，失败整体回滚；tag 单独执行，绝不 push。`--dev` 走**四段 dev 账本**（`NN.X.Y.Z`）：只写 `CHANGELOG_DEV.md` + `.workspace/release_dev.json`，不写 `releases.json`、不改政策头、不 tag/push | `--version X.Y.Z --summary "…" [--dry-run\|--apply]`；`--verify`；`--tag X.Y.Z --apply`；`--dev [--round NN\|--version NN.X.Y.Z] [--dry-run\|--apply]`；`--dev --verify`；`--dev --list` | 0 / 1 |
 | `notes_index_check.py` | notes 索引与重建结果一致（防手改/过期） | `[--json]` | 0 / 1 |
 | `secret_scan.py` | 高置信度明文凭据扫描（只打印脱敏片段） | `[--root PATH] [--json]` | 0 / 1 |
 | `clause_lint.py` | 条款属性门：正文用词 ↔ `clauses.meta.json` 声明一致 | `[--strict] [--report] [--json]` | 0 / 1 |
@@ -111,6 +111,25 @@ python3 scripts/workspace_preflight.py  # R11：MCP 模式不得同时存在本�
 
 各自的「能证明/不能证明」写在 [`policy-language.md`](policy-language.md) §7；
 新检查必须带**会变红的负例**（`tests/test_check_scripts.py`）。
+
+## 4.7 dev 四段版本账本（`CHANGELOG_DEV.md` + `.workspace/release_dev.json`）
+
+政策版本（`X.Y.Z`）只在正式发布时变；dev 迭代用**四段** `NN.X.Y.Z`，两条版本链物理分文件：
+
+| 链 | 事实位 | 写入者 | 对账 |
+|---|---|---|---|
+| 政策 | `AGENT_RULES.md:4` / `CHANGELOG.md` 顶层 / `bootstrap.current_policy_version` / `.workspace/releases.json` 末条 | `release.py --apply`（事务） | `version_check.py`、`policy_facts.py --check` |
+| dev | `CHANGELOG_DEV.md` 首个四段标题 / `.workspace/release_dev.json` 末条 | `release.py --dev --apply`（事务） | `release.py --dev --verify`、`policy_facts.py --check` 的 `dev_offenders()` |
+
+- `NN` = 迭代轮次，`X.Y.Z` = 本轮预计发布的正式版本，必须等于当前政策版本的后三段；
+  **dev 版本不改政策版本**——头部、徽章、`version_check` 仍只认三段号。
+- 判据（`policy_facts.dev_offenders()`）：两文件必须成对存在；账本末条 == 变更日志首个四段标题；
+  账本版本严格递增；`round` 字段必须等于版本首段；dev 文件的版本型标题必须是四段。
+- `CHANGELOG_DEV.md` **不在** `_doc_files()` 扫描面内：三段判据（当前政策版本字面量、历史标记、
+  标题版本）套上去会把合法的四段标题判成三段而误杀——这条边界的唯一出口是 `dev_offenders()`。
+- **已知边界（未在本轮改动）**：CI 的 `.github/scripts/release_anchor.py` 仍只认 `CHANGELOG.md`
+  作为「模板层改动必须进账本」的合法落点，因此 dev 分支上「只写 `CHANGELOG_DEV.md`」的提交会被它判红。
+  dev 合流到 main 前必须先按 `release.py --apply` 正式发版（写 `CHANGELOG.md`），否则该 CI job 不会放过。
 
 ## 5. 跨设备：`workspace_preflight.py`
 
