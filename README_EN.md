@@ -216,7 +216,7 @@ Skills ship with the template in `.workspace/skills/` (workspace-skills namespac
 | [legacy-workspace-upgrade](.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | workspace built from an old template, missing current skills / `template_sync.py` | clone snapshot → `--apply` → `--sync-registry` + TOOLS rows → four acceptances |
 | [docs-retrieval-maintenance](.workspace/skills/docs-retrieval-maintenance/SKILL.md) | 1.3.0 | docs changed, index stale, hit rate dropped | build/check → hit report → aliases only from real miss logs (cap 8, leave-one-out) → five acceptances |
 | [workspace-skill-authoring](.workspace/skills/workspace-skill-authoring/SKILL.md) | 1.0.0 | user explicitly asks to create or modify a **workspace-local** skill | gap evidence → overlap check → kebab naming → draft → 8-dimension contract → activation and three registrations → approval / trial |
-| [commit-gate](.workspace/skills/commit-gate/SKILL.md) | 1.0.0 | before any `git commit`, after `release.py --apply`, or before merging into main | one command runs every gate: `check_all.py --fix` → `--check` → `--full`; format findings are auto-fixed, judgment findings must be fixed by a human |
+| [commit-gate](.workspace/skills/commit-gate/SKILL.md) | 1.1.0 | before any `git commit`, after `release.py --apply`, or before merging into main | one command runs every gate: `check_all.py --fix` → `--check` → `--full` (stages 1–17); format findings are auto-fixed, judgment findings must be fixed by a human |
 
 ## How It Works
 

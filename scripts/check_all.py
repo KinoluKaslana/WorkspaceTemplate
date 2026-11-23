@@ -5,7 +5,7 @@
 Agent「记得逐个跑」必然漏；CI 与本地各跑一套还会漂移。这里把**顺序固定**的阶段表
 收敛成一条命令，本地提交前与 CI 治理 job 跑同一条。
 
-阶段顺序（1..16）是判据的一部分，**不得重排**：
+阶段顺序（1..17）是判据的一部分，**不得重排**：
 
   1 encoding          encoding_guard.py --fix            （仅 --fix）
   2 registry          mark_rules.py registry AGENT_RULES.md（仅 --fix）
@@ -20,16 +20,17 @@ Agent「记得逐个跑」必然漏；CI 与本地各跑一套还会漂移。这
  11 docs_index_check  docs_index.py check
  12 notes_check       notes_index_check.py
  13 version           version_check.py
- 14 osnorm_gate       python -m unittest tests.test_osnorm_single_source
- 15 tests             python -m unittest discover -s tests -p 'test_*.py'   （仅 --full）
- 16 hooks             python -m unittest discover -s hooks-tests -p 'test_*.py'（仅 --full）
+ 14 sequence          sequence_check.py            （计划侧 SEQUENCE.md ↔ dev 账本；实例侧天然 skip）
+ 15 osnorm_gate       python -m unittest tests.test_osnorm_single_source
+ 16 tests             python -m unittest discover -s tests -p 'test_*.py'   （仅 --full）
+ 17 hooks             python -m unittest discover -s hooks-tests -p 'test_*.py'（仅 --full）
 
 设计约束：
 - **只调度，不改判据**：每个阶段就是它自己的脚本，参数固定；本脚本不解释 findings、
   不自动 commit / push、不把失败改判成通过。
 - **修复阶段失败不短路**：`--fix` 里某个修复阶段红了，后面的检查照跑（一次跑完看到全貌），
   最终 rc 仍为 1。
-- **`--fix` 强制收尾复查**：修复阶段跑完后**再跑一遍全部检查阶段**（1–4 → 5–14），
+- **`--fix` 强制收尾复查**：修复阶段跑完后**再跑一遍全部检查阶段**（1–4 → 5–15），
   并单独打印 `修复后复查` 段与"仍失败的阶段"清单；有任何阶段红（含修复阶段自身红）
   → rc=1。修复是否真的收口只由这次复查回答，不能从"修复阶段 ok"推断。
 - **子进程恒捕获 + utf-8**：一律走 `osnorm.run_text`，不自己拼 `subprocess.run` 的编码参数。
@@ -37,7 +38,7 @@ Agent「记得逐个跑」必然漏；CI 与本地各跑一套还会漂移。这
 
 用法：
   python3 scripts/check_all.py             # = --check：只跑检查阶段
-  python3 scripts/check_all.py --fix       # 先修复（1–4），再全部检查（5–16 中非 full 的）
+  python3 scripts/check_all.py --fix       # 先修复（1–4），再全部检查（5–17 中非 full 的）
   python3 scripts/check_all.py --full      # 额外跑 tests + hooks-tests（慢，约 2 分钟）
   python3 scripts/check_all.py --json      # 机器可读汇总（stdout 只有 JSON，进度走 stderr）
   python3 scripts/check_all.py --only a,b  # 只跑指定阶段（按阶段表顺序；调试用）
@@ -99,6 +100,10 @@ STAGES: tuple[Stage, ...] = (
     Stage("docs_index_check", KIND_CHECK, (PY, "scripts/docs_index.py", "check")),
     Stage("notes_check", KIND_CHECK, (PY, "scripts/notes_index_check.py")),
     Stage("version", KIND_CHECK, (PY, "scripts/version_check.py")),
+    # R46：计划侧（SEQUENCE.md）↔ 事实侧（dev 账本 + CHANGELOG_DEV）互校。排在 version 之后
+    # （先确认版本三元组自洽，再问「计划与账本是否互认」），osnorm_gate 之前（仍是判据检查，
+    # 不该排到全量 unittest 派发之后）。实例侧没有 SEQUENCE.md → 该阶段显式 skip 且 rc=0。
+    Stage("sequence", KIND_CHECK, (PY, "scripts/sequence_check.py")),
     Stage("osnorm_gate", KIND_CHECK, (PY, "-m", "unittest", "tests.test_osnorm_single_source")),
     Stage("tests", KIND_FULL, (PY, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py")),
     Stage("hooks", KIND_FULL, (PY, "-m", "unittest", "discover", "-s", "hooks-tests", "-p", "test_*.py")),

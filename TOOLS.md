@@ -150,7 +150,7 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | **workspace-repo-sync** | 跨设备同步工作区自身仓库。入口 `.workspace/skills/workspace-repo-sync/SKILL.md`（v1.1.2）；机械入口 `python3 scripts/workspace_preflight.py [--json] [--strict]` 核验登记项（host/bootstrap_schema/根路径/python/gate/template_clone/skills/template_files/notes_index/docs_index/git/readme，条目以 `--json` 为准）。触发：换设备、另端改了 notes/TOOLS、疑似工具失效 |
 | **workspace-skill-authoring** | 把用户要的能力落成**工作区级（本地）skill**：缺口证据 → 重叠检查 → kebab 命名 → `_drafts/` 草稿 → 8 维契约 → 三处登记（REGISTRY 本地表 / TOOLS / bootstrap）→ 审批与试用。入口 `.workspace/skills/workspace-skill-authoring/SKILL.md`（v1.0.0）。触发：用户明确要求新建/修改本地 skill |
 | **release** | 模板发版机械闭环：dry-run → apply 事务/回滚 → verify → tag；入口 `.workspace/skills/release/SKILL.md`（v1.1.0），机械入口 `scripts/release.py`（纯 stdlib，默认 dry-run，绝不 push）。**dev 四段版本账本**：`--dev [--round NN\|--version NN.X.Y.Z] [--dry-run\|--apply]` 只写 `CHANGELOG_DEV.md` + `.workspace/release_dev.json`（不写 `releases.json`、不改政策头、不 tag/push）；`--dev --verify` 对账「账本末条 == CHANGELOG_DEV 首条」。触发：升政策版本、打 tag、发版、记 dev 迭代版本 |
-| **commit-gate** | 提交前质量门：入口 `.workspace/skills/commit-gate/SKILL.md`（v1.0.0），机械入口 `scripts/check_all.py`（纯 stdlib，阶段表固定 1–16；`--fix` / `--check` / `--full` / `--json` / `--only`；只调度，不 commit/push、不改判据）。强制顺序：`--fix` → `--check` → `--full`。触发：任何 `git commit` 之前、`release.py --apply` 之后、合并 main 之前 |
+| **commit-gate** | 提交前质量门：入口 `.workspace/skills/commit-gate/SKILL.md`（v1.1.0），机械入口 `scripts/check_all.py`（纯 stdlib，阶段表固定 1–17；`--fix` / `--check` / `--full` / `--json` / `--only`；只调度，不 commit/push、不改判据）。强制顺序：`--fix` → `--check` → `--full`。触发：任何 `git commit` 之前、`release.py --apply` 之后、合并 main 之前 |
 | **skills 健康检查** | `python3 scripts/skill_audit.py [--strict]`：检查**模板层** `.workspace/skills/*` 与**本地层** `.workspace/skills-local/*` 的 frontmatter、触发语、semver、条款 ID 与路径引用、8 维契约、状态机（draft/approved/deprecated/removed）、审批证据（`approved_skill_sha256`）与 `REGISTRY.md`/`TOOLS.md` 双登记；维护节奏见 `skills/REGISTRY.md`「维护节奏」 |
 | **template-update（分支同步）** | v2.1.0 起支持指定模板分支：入口仍是 `.workspace/skills/template-update/SKILL.md`；机械入口 `scripts/template_sync.py --workspace . --branch <main|dev|alpha> [--apply --verify]`（dry-run 默认；用 `git worktree` 取目标提交快照，不动模板克隆工作树） |
 | **check_template.py SHA-256** | `bbfa379269a3a3982a3d65997f9dac31f30b0cb939167e98cdc09959bfccd489` |
@@ -187,6 +187,20 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 <configured-python> scripts/gate_status.py --ttl-minutes 30
 <configured-python> scripts/gate_status.py --require dsh,cc --ttl-minutes 30 --json
 ```
+
+### 4.6 `sequence_check.py` — 计划侧 ↔ 账本互校（只读）
+
+| 项 | 内容 |
+|---|---|
+| **类型** | Python 标准库 CLI |
+| **作用** | 判「计划写的」与「账本记的」是否互认：S1 轮次严格递增/无重复 · S2 版本首段 == 轮次 · S3 landed ↔ `.workspace/release_dev.json` 双向（`landed-no-ledger` 须有提交号）· S4 依赖不倒置/不悬空 · S5 范围引用的 WORKLIST 条目存在 · S6 landed 数 == 账本条目数 · S7 账本末条 `summary` 与 `CHANGELOG_DEV.md` 段落**逐字**一致 · S8 版本严格递增且已落地版本不可变 |
+| **位置** | `scripts/sequence_check.py`（计划侧 `.workspace/SEQUENCE.md` 是 dev 专用，**刻意不进** `TEMPLATE_FILES`：实例不该继承研发路线图） |
+| **用法** | `python3 scripts/sequence_check.py [--json] [--root DIR] [--worklist PATH]` |
+| **退出码** | 0 全绿**或显式 skip**（无 `SEQUENCE.md` / 无 `WORKLIST.md`）；1 有 findings；2 用法或 IO |
+| **来源与信任边界** | 模板内置；只读 SEQUENCE.md / dev 账本 / `CHANGELOG_DEV.md` / `WORKLIST.md`，不写盘、不联网 |
+| **副作用/数据外发** | 无：只输出 stdout；`--json` = 「打印 JSON 到 stdout」（不是文件路径） |
+
+实例侧行为：派生工作区没有 `.workspace/SEQUENCE.md`，本脚本**显式报告 skip 并 rc=0**——`check_all` 的阶段 `sequence` 因此不会把实例判红。
 
 ## 5. Notes 索引
 

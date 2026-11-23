@@ -1,7 +1,7 @@
 ---
 name: commit-gate
 description: "Use when a git commit is imminent — before committing, right after `release.py --apply`, before merging into main, or whenever 「提交前检查」 comes up；不用于发版版本记录（那是 release）。提交前质量门：一条命令跑完全部格式修复与判据检查。"
-version: 1.0.0
+version: 1.1.0
 ---
 
 # commit-gate — 提交前质量门
@@ -36,26 +36,26 @@ version: 1.0.0
 ### 第 1 步：自动修复（格式类）
 
 ```bash
-<venv-python> scripts/check_all.py --fix      # 阶段 1–14：4 个修复（encoding / registry / docs_index / notes）+ 10 个检查
+<venv-python> scripts/check_all.py --fix      # 阶段 1–15：4 个修复（encoding / registry / docs_index / notes）+ 11 个检查
 ```
 
-期望：共 **14 个阶段**全 `[ok]`（`--fix` = 1–14：先 4 个修复阶段，再强制重跑 10 个检查阶段），rc=0。修复阶段会**改文件**：跑完必须看一眼 `git diff`，确认改动只是格式/生成物（BOM、注册表哈希、索引），没有语义变化；干净树上这一趟必须是**零 diff**。
+期望：共 **15 个阶段**全 `[ok]`（`--fix` = 1–15：先 4 个修复阶段，再强制重跑 11 个检查阶段），rc=0。修复阶段会**改文件**：跑完必须看一眼 `git diff`，确认改动只是格式/生成物（BOM、注册表哈希、索引），没有语义变化；干净树上这一趟必须是**零 diff**。
 
 ### 第 2 步：只查不写
 
 ```bash
-<venv-python> scripts/check_all.py --check    # 阶段 5–14：10 个检查阶段
+<venv-python> scripts/check_all.py --check    # 阶段 5–15：11 个检查阶段
 ```
 
-期望：共 **10 个阶段**（5–14）全 `[ok]`，rc=0。这一步证明「第 1 步修完之后，工作树是干净的」——只有它绿，才说明第 1 步的修复真的收敛了。
+期望：共 **11 个阶段**（5–15）全 `[ok]`，rc=0。这一步证明「第 1 步修完之后，工作树是干净的」——只有它绿，才说明第 1 步的修复真的收敛了。
 
 ### 第 3 步：全量（含单元测试）
 
 ```bash
-<venv-python> scripts/check_all.py --fix --full   # 阶段 1–16：16 个阶段（慢，约 2 分钟）
+<venv-python> scripts/check_all.py --fix --full   # 阶段 1–17：17 个阶段（慢，约 2 分钟）
 ```
 
-期望：共 **16 个阶段**（1–16，含 `tests` 与 `hooks-tests`）全 `[ok]`，rc=0。**提交前必须跑过这一步**：`--check` 不覆盖测试，测试红却提交等于把红灯推给 CI。
+期望：共 **17 个阶段**（1–17，含 `tests` 与 `hooks-tests`）全 `[ok]`，rc=0。**提交前必须跑过这一步**：`--check` 不覆盖测试，测试红却提交等于把红灯推给 CI。
 
 CI 侧同一条命令：`.github/workflows/ci.yml` 的治理 job 跑 `scripts/check_all.py --check`；本地三步都要过，不是「CI 会兜」。
 
@@ -64,7 +64,7 @@ CI 侧同一条命令：`.github/workflows/ci.yml` 的治理 job 跑 `scripts/ch
 | 失败特征（exit code / 输出特征） | 处置 |
 |---|---|
 | rc=1 且失败阶段 ∈ {`encoding`, `encoding_check`, `docs_index_fix`, `docs_index_check`, `notes_fix`, `notes_check`, `registry`, `registry_check`} | **格式类**：先跑 `--fix` 再复查 `--check`；仍未收敛说明有阶段互相打架（例如手改了生成块），按失败阶段名去读对应脚本 docstring |
-| rc=1 且失败阶段 ∈ {`verify_rules`, `clause_lint`, `policy_facts`, `osnorm_gate`, `skill_audit`} | **判据类**：禁止用 `--fix` 蒙混（这些阶段本来就不在修复段）。读 findings 原文，由人/AI 判断后改正文/注册表/调用点，再整轮重跑 |
+| rc=1 且失败阶段 ∈ {`verify_rules`, `clause_lint`, `policy_facts`, `sequence`, `osnorm_gate`, `skill_audit`} | **判据类**：禁止用 `--fix` 蒙混（这些阶段本来就不在修复段）。读 findings 原文，由人/AI 判断后改正文/注册表/调用点，再整轮重跑。`sequence` 红 = 计划侧（`SEQUENCE.md`）与账本/`CHANGELOG_DEV.md` 不互认：改计划并登记，或回退落地，**不许**改判据迁就现状 |
 | rc=1 且失败阶段 ∈ {`tests`, `hooks`} | 单个测试红：先看尾部 20 行里的 `FAIL:`/`ERROR:` 行名，再单跑该用例定位；**不得**把测试改绿当修复 |
 | rc=2 | 用法错误（`--only` 里有未知阶段等）：改命令行，不是改判据 |
 | `--fix` 改出意外 diff（语义变化） | `git checkout -- <path>` 回到提交前状态，再查是哪个阶段的生成逻辑出了问题；回滚自验 = 重跑 `--check` 必须复现同样的红 |
@@ -81,7 +81,7 @@ CI 侧同一条命令：`.github/workflows/ci.yml` 的治理 job 跑 `scripts/ch
 ```bash
 <venv-python> scripts/check_all.py --check; echo rc=$?        # 期望：全 [ok]，rc=0
 <venv-python> scripts/check_all.py --check --json | head -c 400  # 期望：{"ok": true, "stages": [...]
-<venv-python> scripts/check_all.py --fix --full; echo rc=$?   # 期望：16 阶段（1–16）全 [ok]，rc=0
+<venv-python> scripts/check_all.py --fix --full; echo rc=$?   # 期望：17 阶段（1–17）全 [ok]，rc=0
 ```
 
 负向自检（证明门禁真的抓得住）：给任一 `.md` 加 UTF-8 BOM → `--check` 必须 rc=1 且点名 `encoding_check`；`--fix` 后复跑必须 rc=0。

@@ -30,7 +30,7 @@ jobs:
       - name: tag 身份（同名 tag 必须与 HEAD 同树：改内容必须升版本）
         if: github.ref == 'refs/heads/main'
         run: python3 .github/scripts/release_anchor.py --assert-tag-identity
-      - name: 提交前统一门禁（check_all.py --check：阶段 5–14；本地提交前跑同一条命令）
+      - name: 提交前统一门禁（check_all.py --check：阶段 5–15；本地提交前跑同一条命令）
         run: python3 scripts/check_all.py --check
       - name: docs 判据集命中率（不在 check_all 阶段表内：判据集与阈值是独立口径）
         run: python3 scripts/docs_hit_report.py --mode both --min 10

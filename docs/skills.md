@@ -18,7 +18,7 @@
 | [`workspace-skill-authoring`](../.workspace/skills/workspace-skill-authoring/SKILL.md) | 1.0.0 | 把用户要的能力落成**工作区级** skill（含 kebab 命名、审批证据、三处登记） | 用户明确要求新建/修改本地 skill |
 | [`legacy-workspace-upgrade`](../.workspace/skills/legacy-workspace-upgrade/SKILL.md) | 1.0.0 | 旧版本工作区**自举**升级（缺现行 skill 时） | 工作区模板版本落后且没有 `template-update` 3.x / `template_sync.py` |
 | [`release`](../.workspace/skills/release/SKILL.md) | 1.1.0 | 发版事务、tag 身份闭环与 dev 四段版本账本 | 升政策版本、打 tag、发版、记 dev 迭代版本（NN.X.Y.Z） |
-| [`commit-gate`](../.workspace/skills/commit-gate/SKILL.md) | 1.0.0 | 提交前质量门（一条命令跑完全部格式修复与判据检查） | 任何 `git commit` 之前、`release.py --apply` 之后、合并 main 之前 |
+| [`commit-gate`](../.workspace/skills/commit-gate/SKILL.md) | 1.1.0 | 提交前质量门（一条命令跑完全部格式修复与判据检查；阶段表 1–17，含 `sequence`） | 任何 `git commit` 之前、`release.py --apply` 之后、合并 main 之前 |
 
 **职责边界口诀**：`template-update` 管模板文件；`workspace-repo-sync` 管工作区仓库；`workspace-init`/`git-init` 管从零落地；`delivery-closure` 管收尾；`docs-retrieval-maintenance` 管检索。工作区自身仓库的**分支切换、迁移、历史改写**不在任何 skill 里——**用户自管**。
 

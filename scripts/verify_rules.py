@@ -167,6 +167,10 @@ TEMPLATE_FILES = [
     # 提交前统一门禁：单一入口（阶段顺序固定），CI 治理 job 跑同一条命令
     "scripts/check_all.py",
     ".workspace/skills/commit-gate/SKILL.md",
+    # R46：计划侧 ↔ 事实侧互校（S1–S8）。依赖 osnorm（本表中已在其前）；`.workspace/SEQUENCE.md`
+    # **刻意不进**本表 —— 研发路线图是 dev 专用，实例不该继承。
+    "scripts/sequence_check.py",
+    "tests/test_sequence_check.py",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.

@@ -1,6 +1,6 @@
 <!-- gen:policy-facts:begin -->
 <!-- doc-fact:tools-md-heading -->
-# 工具（scripts/，22 个）
+# 工具（scripts/，23 个）
 <!-- gen:policy-facts:end -->
 
 > 实现说明，不构成政策。所有脚本只依赖标准库，要求 Python ≥ 3.10。**`--json` 语义各脚本不同**：`verify_rules.py` 的 `--json` 是**输出文件路径**，`skill_audit.py`/`workspace_preflight.py`/`docs_*.py`/`template_sync.py`/`pyenv_init.py` 的 `--json` 是「打印 JSON 到 stdout」，`check_all.py --json` 同样是「stdout 只放 JSON，人读进度走 stderr」，`mark_rules.py` 无此参数——以各条示例与 `--help` 为准。
@@ -31,7 +31,8 @@
 | `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_state` / `read_status` / `bind` / `resolve_identity` / `detect_platform_info` | `import local_state` | 库：不变量失败抛 `ValueError`/`TypeError`；判读结果在返回字典的 `status`/`reason` |
 | `osnorm.py` | 路径交换格式与文本 I/O 的**唯一实现**（库，无 CLI）：`canonical_path` / `family` / `read_text` / `write_text` / `run_text` / `atomic_write_text` / `replace_retry` / `configure_stdio` / `BOM_POLICY` | `import osnorm` | 库：路径形式不可接受抛 `PathFormError`（`ValueError` 子类） |
 | `encoding_guard.py` | 文本编码机械统一：扫模板层 + 用户可编辑清单的 BOM / 纯 CRLF / 混合换行；`--fix` 备份后剥 BOM + 统一 LF（幂等） | `--check [--json]`；`--fix`；`[--root PATH]` | `--check`：0 干净 / 1 有发现；`--fix`：0 全部修好 / 1 有文件修复失败 |
-| `check_all.py` | 提交前统一门禁：按**固定顺序**跑 4 个修复阶段 + 10 个检查阶段（`--full` 再加 tests / hooks-tests）；本地与 CI 治理 job 跑同一条命令 | `[--fix] [--check] [--full] [--json] [--only a,b]` | 0 全绿 / 1 任一阶段失败 / 2 用法错误 |
+| `sequence_check.py` | 计划侧 ↔ 事实侧互校：`.workspace/SEQUENCE.md` §4 的 S1–S8（轮次递增/版本首段==轮次/landed↔账本双向/依赖不倒置/范围引用 WORKLIST/计数/账本 summary 与 `CHANGELOG_DEV.md` 逐字/已落地版本不可变）。**无 `SEQUENCE.md` 时显式 skip 且 rc=0**（实例侧不继承研发路线图）；S5 找不到 `WORKLIST.md` 同样显式 skip 并列出候选路径 | `[--json] [--root DIR] [--worklist PATH]` | 0 全绿或显式 skip / 1 有 findings / 2 用法或 IO |
+| `check_all.py` | 提交前统一门禁：按**固定顺序**跑 4 个修复阶段 + 11 个检查阶段（`--full` 再加 tests / hooks-tests）；本地与 CI 治理 job 跑同一条命令 | `[--fix] [--check] [--full] [--json] [--only a,b]` | 0 全绿 / 1 任一阶段失败 / 2 用法错误 |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 
@@ -338,9 +339,9 @@ python3 scripts/encoding_guard.py --check --root /path/to/ws   # 诊断别的树
 ## 6.7 提交前统一门禁：`check_all.py`
 
 ```bash
-<venv-python> scripts/check_all.py            # = --check：只跑检查（阶段 5–14）
-<venv-python> scripts/check_all.py --fix      # 先修（1–4），再查（5–14）
-<venv-python> scripts/check_all.py --full     # 再加 tests + hooks-tests（15–16，约 2 分钟）
+<venv-python> scripts/check_all.py            # = --check：只跑检查（阶段 5–15）
+<venv-python> scripts/check_all.py --fix      # 先修（1–4），再查（5–15）
+<venv-python> scripts/check_all.py --full     # 再加 tests + hooks-tests（16–17，约 2 分钟）
 <venv-python> scripts/check_all.py --check --json | head -c 400
 <venv-python> scripts/check_all.py --only encoding_check,version   # 调试单点，不是提交门
 ```
@@ -364,12 +365,16 @@ CI 治理 job 跑**同一条命令**。
 | 11 | `docs_index_check` | `scripts/docs_index.py check` | 检查 |
 | 12 | `notes_check` | `scripts/notes_index_check.py` | 检查 |
 | 13 | `version` | `scripts/version_check.py` | 检查 |
-| 14 | `osnorm_gate` | `python -m unittest tests.test_osnorm_single_source` | 检查 |
-| 15 | `tests` | `python -m unittest discover -s tests -p 'test_*.py'` | 仅 `--full` |
-| 16 | `hooks` | `python -m unittest discover -s hooks-tests -p 'test_*.py'` | 仅 `--full` |
+| 14 | `sequence` | `scripts/sequence_check.py` | 检查 |
+| 15 | `osnorm_gate` | `python -m unittest tests.test_osnorm_single_source` | 检查 |
+| 16 | `tests` | `python -m unittest discover -s tests -p 'test_*.py'` | 仅 `--full` |
+| 17 | `hooks` | `python -m unittest discover -s hooks-tests -p 'test_*.py'` | 仅 `--full` |
 
 **为什么顺序不能重排**：修复阶段必须在检查阶段之前（否则查的是修之前的状态）；`osnorm_gate`
 在 unittest 派发之前（它的职责是钉住「唯一实现」这条约束，红了就不该再往下跑全量测试）。
+`sequence` 排在 `version` 之后：先确认政策/CHANGELOG/bootstrap 三元组自洽，再问「计划（`SEQUENCE.md`）
+与账本是否互认」；它仍是判据检查，所以在 `osnorm_gate` 之前。实例侧没有 `.workspace/SEQUENCE.md`
+（研发路线图不随模板下发），该阶段**显式 skip 且 rc=0**。
 
 **行为契约**（机械可判）：
 

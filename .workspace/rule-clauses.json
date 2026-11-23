@@ -178,12 +178,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "e3bd592f06e0ebbe458e21800b2549629f9f46b498de62a3f5cc9bfde61fbc30",
+    "file_sha256": "3516f35283e16211af25d696fa7427c4ff00d76591ea1a67d2ecf508c79c48c0",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "7a7df5b48c6abf8315e9c33a6308a96b8626923deb0bbb180c92b894d4bef93f",
+    "file_sha256": "8f9fa6db08c62ab2cda90046150ec62997336de91dc82783dc09c66d93d2cd48",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -208,7 +208,7 @@
   },
   "scripts/verify_rules.py": {
     "clauses": {},
-    "file_sha256": "895467a697c156ddf96862e48a4ace90bb9de61669da8b710814b5e4a9a508fe",
+    "file_sha256": "3737bf56e3b2907a988cd1b75321f58f80da33eb7da52aac28ed8222add75000",
     "marked": 0
   },
   ".workspace/skills/template-update/SKILL.md": {
@@ -323,17 +323,17 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "489b6dbb8ae6256b7f264210b1b29cd0ae386dfd15ff6cbe5789f7bb3e6c77ff",
+    "file_sha256": "1a75319072a9450e4ca27e69d785184deef7993f124aa72153eec5d6eab11c4c",
     "marked": 0
   },
   "docs/skills.md": {
     "clauses": {},
-    "file_sha256": "68e983d68972fc76edc3ac659481de999b8ad12c5ede194827f66cc7c435f952",
+    "file_sha256": "a1454d593a37e589175144af0e5eccb8482b17ebb4b16d03373b0d5eb4693780",
     "marked": 0
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "515ca1b905de21fc11233c6f5de89bab9c682e94328217432bc82f18ddc21f4b",
+    "file_sha256": "564a25f660d2bbe385b65b1a131037605b4b9f57c9970cedfc057033b45a1edd",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -653,12 +653,22 @@
   },
   "scripts/check_all.py": {
     "clauses": {},
-    "file_sha256": "3574734ca7a90c9e5a393f9f8924180268838a4c0631186e88f6d9c76fcf5d70",
+    "file_sha256": "7b847e046329991f943a814d5f207ed6f14bb3e12e953a75f3f4d4088c90b4c6",
     "marked": 0
   },
   ".workspace/skills/commit-gate/SKILL.md": {
     "clauses": {},
-    "file_sha256": "e013b4add74115204b51454445684534ca5e2f43d7ddbc2a4c53931abaa80cc9",
+    "file_sha256": "85e8849a6c07b273810664b47a7701d4a05c766f16678fb2d73c227d5f882103",
+    "marked": 0
+  },
+  "scripts/sequence_check.py": {
+    "clauses": {},
+    "file_sha256": "21a548b1e949a326576a8ff75c44c7a07e15af40add9a082b05f419ecb48a565",
+    "marked": 0
+  },
+  "tests/test_sequence_check.py": {
+    "clauses": {},
+    "file_sha256": "7fa0fbc6fed284ecb40d468ce96b45a27b1dcaf13c9d0d3d5086841c4470aa27",
     "marked": 0
   }
 }
