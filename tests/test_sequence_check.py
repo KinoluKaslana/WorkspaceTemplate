@@ -14,6 +14,17 @@ R46d 补的六条缺口各自有对抗测试（注释里标 A–F）：
   F 历史轮次集合 = 历史账本轮次 ∪ 历史 SEQUENCE 曾标 landed / landed-no-ledger 的轮次
 S11（远端锚）另有三条：`origin/x` 是祖先 → PASS；不是超集 → 红；无远端 → WARN + 「仅有本地锚」。
 
+R46e 再修的三席九条（A–I，与 R46d 的 A–F 同名不同义）：
+  A S10 的模板身份只由 git 锚判定，改 `bootstrap.workspace_status` 关不掉它
+  B dev 分支删 `SEQUENCE.md` = FAIL（S10/S11 无论 skip 与否都执行）
+  C 已提交历史版本之间是**全字段**严格前缀比较（summary 改写 + 普通 commit = 红）
+  D `landed-no-ledger` 也必须有三席确认
+  E §2 的 `verified_by: [...]` 中英文方括号/全角逗号/空格都解析
+  F `--json` 在任何结局（含 S10 FAIL / SKIP）都只输出一个 JSON 对象
+  G SEQUENCE §4.1 的「能挡/不能挡」清单与实跑能力一致（机械断言在 DocsCapabilityList）
+  H 落地即入账：首次标 landed 的提交必须已含该轮账本条目
+  I §0 的 `TEMPLATE_FILES` 口径与 `verify_rules.TEMPLATE_FILES` 不再分叉
+
 最后一条跑真实树：有 `SEQUENCE.md` 就必须全绿，没有就必须显式 skip 且 rc=0
 （这条把「判据文档」与「实现」钉在一起——文档改了实现跟不上，这里先红）。
 """
@@ -27,6 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import osnorm  # noqa: E402
+import sequence_check as sc  # noqa: E402 - 单测解析器/单条判据（不跑子进程）
 
 ROOT = Path(__file__).resolve().parents[1]
 SEQ_REL = Path(".workspace") / "SEQUENCE.md"
@@ -116,14 +128,20 @@ class Base(unittest.TestCase):
         self.origin_tmp = tempfile.TemporaryDirectory()
         self.origin = Path(self.origin_tmp.name) / "origin.git"
         self.sha = self.restart_history(keep_files=False)
-        # 两阶段落账（照真实流水线：先提交计划 + CHANGELOG → 账本条目的 commit 就是那次提交）：
-        # 这样账本的**唯一历史版本**里 commit 已是非空值，S7 有 git 腿可对、S8 也不会把
-        # 「补 commit」看成历史条目被改写。
-        self.write_all(ledger=[])
-        self.commit_all("plan")
+        # 三阶段落账，刻意让「计划首次标 landed」与「账本条目」同批（H 的历史锚）：
+        #   D 事实侧先行：CHANGELOG + WORKLIST 入历史（此时还没有计划文件 / 账本）
+        #   L 账本入历史：条目 commit 指向 D（D 里确有 `## 44.3.8.0` 段落，S7 有锚）
+        #   C 计划首版：§1 首次标 R44 landed —— 该提交的账本已含 round 44（H 通过）
+        osnorm.write_text(self.root / "CHANGELOG_DEV.md",
+                          f"# CHANGELOG_DEV\n\n## 44.3.8.0（2026-11-23）\n\n{SUMMARY}\n",
+                          newline="lf")
+        osnorm.write_text(self.root / "WORKLIST.md", WORKLIST_TMPL, newline="lf")
+        self.commit_all("facts")
         self.plan_sha = self.head()
-        self.write_all(ledger=[ledger_entry(commit=self.plan_sha)])
+        self.write_ledger([ledger_entry(commit=self.plan_sha)])
         self.commit_all("ledger")
+        self.write_all(ledger=[ledger_entry(commit=self.plan_sha)])
+        self.commit_all("plan")
         self.add_origin()
 
     def tearDown(self):
@@ -244,8 +262,16 @@ class Green(Base):
 
 
 class Instance(Base):
+    """实例侧 = 非模板仓（git 历史里从未出现 _DEV 文件）：缺计划文件才是合法 SKIP。"""
+
+    def _make_instance(self):
+        # 重建一个没有 _DEV 文件历史的仓（restart_history 会删掉事实文件再 init）
+        self.sha = self.restart_history(keep_files=False)
+        self.drop_origin()                          # 新历史与旧 origin/dev 无关：别让 S11 判红
+        (self.root / LEDGER_REL).unlink(missing_ok=True)
+
     def test_missing_sequence_is_skip_rc0(self):
-        self.write_all(seq=None)
+        self._make_instance()
         for extra in ((), ("--json",)):
             p = self.run_script(*extra)
             self.assertEqual(p.returncode, 0, "实例侧缺 SEQUENCE.md 必须 rc=0：" + p.stdout + p.stderr)
@@ -254,6 +280,8 @@ class Instance(Base):
         self.assertTrue(data["skipped"])
         self.assertIn(".workspace/SEQUENCE.md", data["reason"])
         self.assertIn("S10", json.dumps(data, ensure_ascii=False))   # S10 不随计划侧一起跳过
+        self.assertEqual(data["counts"]["SKIP"], 9)                  # S1–S9 声明式 SKIP
+        self.assertEqual(data["counts"]["FAIL"], 0)
         self.assertIn("SKIP", self.run_script().stdout)
 
     def test_missing_everything_but_sequence_still_reports(self):
@@ -263,6 +291,35 @@ class Instance(Base):
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertEqual(self.status(p)["S3"], "FAIL")
         self.assertIn("不存在", p.stdout)
+
+
+class PlanFileDeleted(Base):
+    """B：dev 分支删计划文件 = FAIL，且 S10/S11 无论 skip 与否都要执行。"""
+
+    def test_dev_without_sequence_is_fail_even_with_empty_ledger(self):
+        self.write_ledger([])                       # 账本写 [] 也关不掉判据
+        (self.root / SEQ_REL).unlink()
+        p = self.run_script()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        st = self.status(p)
+        self.assertEqual(st["S1"], "FAIL", p.stdout)
+        self.assertIn("dev 分支缺", p.stdout)
+        self.assertIn("删掉计划文件不能把 S1–S9", p.stdout)
+        # S10/S11 照常执行（不是整条 skip）
+        self.assertEqual(st["S10"], "PASS", p.stdout)
+        self.assertEqual(st["S11"], "PASS", p.stdout)
+        self.assertIn("S10 PASS", p.stdout)
+        self.assertIn("S11 PASS", p.stdout)
+
+    def test_dev_without_sequence_json_is_single_object(self):
+        (self.root / SEQ_REL).unlink()
+        p = self.run_script("--json")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        data = json.loads(p.stdout)                  # 不是人读文本
+        self.assertFalse(data["ok"])
+        self.assertTrue(data["skipped"])
+        self.assertEqual(next(c for c in data["checks"] if c["id"] == "S1")["status"], "FAIL")
+        self.assertEqual(data["counts"]["FAIL"], 1)
 
 
 class S1Rounds(Base):
@@ -602,6 +659,22 @@ class S8Immutability(Base):
         self.assertEqual(self.status(p)["S8"], "FAIL", p.stdout)
         self.assertIn("账本历史条目被改写", p.stdout)
 
+    def test_committed_summary_rewrite_with_synced_changelog_is_red(self):
+        """C：改旧 R44 的 ledger summary + 同步改 CHANGELOG → **普通 commit**（不 amend）仍须红。
+
+        R46d 的 `strict=False` 把已提交历史版本之间的 summary 差异降级成 prose_note，
+        于是这条路径 rc=0 / S8 PASS。现在已提交条目之间也是全字段前缀比较。
+        """
+        new = SUMMARY.replace("R35–R44", "R35–R45")
+        self.write_ledger([ledger_entry(summary=new, commit=self.plan_sha)])
+        self.write_changelog(f"# CHANGELOG_DEV\n\n## 44.3.8.0（2026-11-23）\n\n{new}\n")
+        self.commit_all("prose rewrite without amend")
+        p = self.run_script()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertEqual(self.status(p)["S8"], "FAIL", p.stdout)
+        self.assertIn("账本历史条目被改写", p.stdout)
+        self.assertIn("append-only 覆盖全部字段", p.stdout)
+
     def test_no_git_is_red_not_silently_green(self):
         """没有 git = 锚不可用：不许退化成「当前文件自证」的绿。"""
         shutil.rmtree(self.root / ".git")
@@ -636,6 +709,33 @@ class S9Seats(Base):
         p = self.run_script()
         self.assertEqual(self.status(p)["S9"], "PASS", p.stdout)
         self.assertIn("三席确认 1 轮齐全", p.stdout)
+
+    def test_fullwidth_bracket_seats_are_green(self):
+        """E：`verified_by：【SOL、GPT-SOL-6、PRO】`（全角括号/顿号）曾被解析成空名单误红。"""
+        self._landed_with("verified_by：【SOL、GPT-SOL-6、PRO】；verdict=pass；verified_at=2026-11-23")
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S9"], "PASS", p.stdout)
+        self.assertIn("三席确认 1 轮齐全", p.stdout)
+
+    def test_landed_no_ledger_without_seats_is_red(self):
+        """D：§1 插一行 landed-no-ledger（真 sha、无三席字段）不再能跳过 S9。"""
+        row44 = ("| 44 | `44.3.8.0` | `{sha}` | R35–R44 全集 | "
+                 "`legacy`（机制建立前） | 首条 |").format(sha=self.sha)
+        row47 = ("| 47 | （并入 44 条） | `{sha}` | 机制轮 | （无） | 想蒙混 |").format(sha=self.sha)
+        seq = SEQ_TMPL.format(commit=self.sha).replace(row44, row44 + "\n" + row47)
+        self.write_all(seq=seq)
+        p = self.run_script()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertEqual(self.status(p)["S9"], "FAIL", p.stdout)
+        self.assertIn("没有任何 verified_by", p.stdout)
+
+    def test_landed_no_ledger_with_legacy_note_stays_green(self):
+        """D 的对照：R45 是白名单 legacy 轮次且写了 note → 仍豁免（不误伤机制轮）。"""
+        text = SEQ_TMPL_45.replace("@SHA@", self.plan_sha).replace("@DEP@", "R45")
+        self.write_all(seq=text)
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S9"], "PASS", p.stdout)
+
 
     def test_only_two_seats_is_red(self):
         """⑤ landed 但 verified_by 只有两席。"""
@@ -710,6 +810,76 @@ class S9Seats(Base):
         self.assertIn("没有写原因", p.stdout)
 
 
+class SeatsParsing(unittest.TestCase):
+    """E：§2 的 `verified_by: [...]` 必须解析出三个席位名（多种写法都合法）。"""
+
+    def test_parse_seats_variants(self):
+        for raw in ("[SOL, GPT-SOL-6, PRO]", "【SOL、GPT-SOL-6、PRO】",
+                    "[SOL,GPT-SOL-6,PRO]", " SOL ， GPT-SOL-6 、 PRO "):
+            self.assertEqual(sc._parse_seats(raw), ["SOL", "GPT-SOL-6", "PRO"], raw)
+
+    def test_section2_bracket_fields_parse_and_pass_s9(self):
+        text = """# SEQUENCE — 夹具
+
+## 2. 计划（planned）
+
+### R47 · `47.3.8.0` · 新轮
+- **范围**：x
+- **依赖**：R44
+- **land_status**：landed
+- **verified_by**：[SOL, GPT-SOL-6, PRO]
+- **verdict**：pass
+- **verified_at**：2026-11-23
+"""
+        rounds = sc.parse_sequence(text)
+        self.assertEqual(len(rounds), 1)
+        self.assertEqual(rounds[0].verified_by, ["SOL", "GPT-SOL-6", "PRO"])
+        status, detail, findings = sc.check_s9(rounds, [])
+        self.assertEqual(status, "PASS", detail + repr(findings))
+
+
+class LandedImpliesLedger(Base):
+    """H：某轮首次在历史 SEQUENCE 里标成 landed 的提交，账本必须同时已含该轮。"""
+
+    def test_flip_to_landed_without_ledger_is_red(self):
+        seq = SEQ_TMPL.format(commit=self.sha).replace(
+            "- **依赖**：R45\n- **判据**：无",
+            "- **依赖**：R45\n- **land_status**：landed\n"
+            "- **verified_by**：[SOL, GPT-SOL-6, PRO]\n- **verdict**：pass\n"
+            "- **verified_at**：2026-11-23\n- **判据**：无")
+        self.write_all(seq=seq)
+        self.commit_all("flip R46 to landed without ledger")
+        p = self.run_script()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertEqual(self.status(p)["S3"], "FAIL", p.stdout)
+        self.assertIn("落地必须与入账同批", p.stdout)
+
+    def test_first_landed_with_ledger_in_same_commit_passes(self):
+        """H 的对照：fixture 的 R44 首次落地提交已含账本条目 → S3 不因 H 误红。"""
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S3"], "PASS", p.stdout)
+        self.assertIn("落地即入账 1 轮同批", p.stdout)
+
+
+class JsonEverywhere(Base):
+    """F：`--json` 在任何结局都只输出一个 JSON 对象（含 S10 FAIL / 计划侧 SKIP）。"""
+
+    def test_json_on_s10_fail_path(self):
+        self.git("checkout", "-q", "-b", "main")
+        (self.root / SEQ_REL).unlink()              # 计划侧缺失，走曾经的「人读文本」分支
+        p = self.run_script("--json")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        data = json.loads(p.stdout)                  # 不是人读文本
+        self.assertFalse(data["ok"])
+        self.assertTrue(data["skipped"])
+        for key in ("ok", "checks", "counts", "degraded", "warned", "skipped", "skipped_checks"):
+            self.assertIn(key, data)
+        s10 = next(c for c in data["checks"] if c["id"] == "S10")
+        self.assertEqual(s10["status"], "FAIL")
+        self.assertEqual(data["counts"]["FAIL"], 1)
+        self.assertEqual(data["counts"]["SKIP"], 8)          # S2–S9；S1 在 main 上是 WARN
+
+
 class S10Branch(Base):
     def test_dev_branch_with_both_files_pass(self):
         p = self.run_script()
@@ -780,12 +950,38 @@ class S10Branch(Base):
         self.assertEqual(self.status(p)["S10"], "FAIL", p.stdout)
         self.assertIn("dev 分支缺 _DEV 文件", p.stdout)
 
-    def test_non_template_workspace_skips_s10(self):
+    def test_bootstrap_json_cannot_disable_s10(self):
+        """A：把 bootstrap.workspace_status 改成 active 也关不掉 S10（身份只看 git 锚）。"""
+        self.git("checkout", "-q", "-b", "main")
         osnorm.write_text(self.root / TL_REL,
                           json.dumps({"schema_version": 1, "workspace_status": "active"}),
                           newline="lf")
         p = self.run_script()
-        self.assertEqual(self.status(p)["S10"], "SKIP", p.stdout)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertEqual(self.status(p)["S10"], "FAIL", p.stdout)
+        self.assertIn("main 分支上存在 _DEV 文件", p.stdout)
+
+    def test_bootstrap_json_active_on_dev_still_judges(self):
+        """A：JSON 同样不能把 S10 变成「不判」——dev 上两文件齐 → PASS 仍然判。"""
+        osnorm.write_text(self.root / TL_REL,
+                          json.dumps({"schema_version": 1, "workspace_status": "active"}),
+                          newline="lf")
+        p = self.run_script()
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertEqual(self.status(p)["S10"], "PASS", p.stdout)
+
+    def test_non_template_repo_warns_even_with_template_status(self):
+        """A：非模板仓（历史里没有 _DEV 文件）只 WARN；JSON 写 template 也变不成模板仓。"""
+        self.sha = self.restart_history(keep_files=False)   # 历史里没有 _DEV 文件
+        self.drop_origin()
+        osnorm.write_text(self.root / TL_REL,
+                          json.dumps({"schema_version": 1, "workspace_status": "template"}),
+                          newline="lf")
+        self.commit_all("non-template")
+        p = self.run_script()
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertEqual(self.status(p)["S10"], "WARN", p.stdout)
+        self.assertIn("非模板仓", p.stdout)
 
 
 class S11RemoteAnchor(Base):
@@ -827,6 +1023,58 @@ class S11RemoteAnchor(Base):
         self.assertEqual(self.status(p)["S11"], "WARN", p.stdout)
         self.assertIn("origin/dev-next", p.stdout)
         self.assertIn("仅有本地锚", p.stdout)
+
+
+class DocsCapabilityList(unittest.TestCase):
+    """G：SEQUENCE.md §4.1 的「能挡 / 不能挡」清单必须与机械判据的实际能力一致。
+
+    这条是**文档口径的机械断言**，不是实现断言：R46d 写了「能挡三文本同步改写」，
+    而 PRO 实跑「同步改写后普通提交」全绿 —— 过度承诺本身就是缺陷（读者会据此少设防）。
+    清单里的每一项都对应一个真有构造测试的 S 判据；「不能挡」必须点名主体边界。
+    """
+
+    def _block(self) -> str:
+        if not (ROOT / SEQ_REL).is_file():
+            self.skipTest("当前树没有 SEQUENCE.md（实例侧/发布夹具）：文档口径不归这里管")
+        text = osnorm.read_text(ROOT / SEQ_REL)
+        start = text.index("### 4.1")
+        end = text.index("\n## ", start) if "\n## " in text[start:] else len(text)
+        return text[start:end]
+
+    def test_can_block_list_is_grounded(self):
+        block = self._block()
+        for item in ("能挡", "误删", "误改已提交的历史条目", "成对删除", "依赖倒置",
+                     "landed 与账本脱钩", "计划文件缺失"):
+            self.assertIn(item, block)
+
+    def test_cannot_block_list_names_the_boundary(self):
+        block = self._block()
+        for item in ("不能挡", "追加伪造的轮次", "伪造三席确认", "重写整条可达历史",
+                     "本地改写而远端同谋"):
+            self.assertIn(item, block)
+        self.assertIn("AGENT_RULES.md §12 R100", block)      # 主体边界必须指向政策条款
+        self.assertIn("仓内判据防漂移", block)
+        self.assertIn("不防主动伪造", block)
+
+
+class DocsTemplateFilesClaim(unittest.TestCase):
+    """I：§0 的「在 / 不在 TEMPLATE_FILES」口径必须与 verify_rules.TEMPLATE_FILES 实际内容一致。"""
+
+    def test_dev_file_claim_matches_template_files(self):
+        import verify_rules
+        if not (ROOT / SEQ_REL).is_file():
+            self.skipTest("当前树没有 SEQUENCE.md（实例侧/发布夹具）：无 §0 边界段可对")
+        text = osnorm.read_text(ROOT / SEQ_REL)
+        start = text.index("**边界**")
+        para = text[start:text.index("\n\n", start)]
+        # 两份 _DEV 文件确实在清单里（:58 / :112 一类的事实由这里现场取，不写死数字）
+        for rel in ("CHANGELOG_DEV.md", ".workspace/release_dev.json"):
+            self.assertIn(rel, verify_rules.TEMPLATE_FILES, rel)
+            self.assertIn(rel.split("/")[-1], para, rel)
+        # 文档口径：在清单内、但只存在于 dev 分支（旧措辞「不进 TEMPLATE_FILES」= 分叉）
+        self.assertIn("在 `TEMPLATE_FILES` 清单内", para)
+        self.assertNotIn("不进 `TEMPLATE_FILES`", para)
+        self.assertIn("只存在于 dev 分支", para)
 
 
 class RealTree(unittest.TestCase):

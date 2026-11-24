@@ -31,7 +31,7 @@
 | `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_state` / `read_status` / `bind` / `resolve_identity` / `detect_platform_info` | `import local_state` | 库：不变量失败抛 `ValueError`/`TypeError`；判读结果在返回字典的 `status`/`reason` |
 | `osnorm.py` | 路径交换格式与文本 I/O 的**唯一实现**（库，无 CLI）：`canonical_path` / `family` / `read_text` / `write_text` / `run_text` / `atomic_write_text` / `replace_retry` / `configure_stdio` / `BOM_POLICY` | `import osnorm` | 库：路径形式不可接受抛 `PathFormError`（`ValueError` 子类） |
 | `encoding_guard.py` | 文本编码机械统一：扫模板层 + 用户可编辑清单的 BOM / 纯 CRLF / 混合换行；`--fix` 备份后剥 BOM + 统一 LF（幂等） | `--check [--json]`；`--fix`；`[--root PATH]` | `--check`：0 干净 / 1 有发现；`--fix`：0 全部修好 / 1 有文件修复失败 |
-| `sequence_check.py` | 计划侧 ↔ 事实侧互校：`.workspace/SEQUENCE.md` §4 的 S1–S11（轮次递增 / 版本首段==轮次 / landed↔账本双向+`land_status` 三值+§1↔§2 一致+**历史锚**（含 `landed-no-ledger` 轮次）/ 依赖不倒置 / 范围引用 WORKLIST（无文件 = 声明过的 SKIP；**显式 `--worklist` 指错/不可读 = 红**）/ 计数+历史下界 / 每条账本 summary 与 `CHANGELOG_DEV.md` 逐字**且**与 git 锚一致（`commit: null` → 独立 `DEGRADED`）/ 已落地版本不可变（与 **git 历史账本版本**比对）/ 三席确认+`legacy` 白名单+未知席位必红 / `_DEV` 文件分支归属 / **S11 远端锚**：`origin/<分支>` 是 HEAD 祖先，不可用时 WARN 并明示「仅有本地锚」）。**无 `SEQUENCE.md` 时显式 skip 且 rc=0**（实例侧不继承研发路线图），但 template 工作区的 S10 仍要判（main 的合法态正是没有计划文件） | `[--json] [--root DIR] [--worklist PATH]` | 0 全绿或显式 skip（可含 DEGRADED/WARN）/ 1 有 findings / 2 用法或 IO |
+| `sequence_check.py` | 计划侧 ↔ 事实侧互校：`.workspace/SEQUENCE.md` §4 的 S1–S11（轮次递增；**模板仓 dev 缺计划文件 = 红**（SKIP 只留给实例侧/非模板仓）/ 版本首段==轮次 / landed↔账本双向+`land_status` 三值+§1↔§2 一致+**历史锚**（含 `landed-no-ledger` 轮次）+**落地即入账**（首次标 landed 的提交必须已含该轮账本）/ 依赖不倒置 / 范围引用 WORKLIST（无文件 = 声明过的 SKIP；**显式 `--worklist` 指错/不可读 = 红**）/ 计数+历史下界 / 每条账本 summary 与 `CHANGELOG_DEV.md` 逐字**且**与 git 锚一致（`commit: null` → 独立 `DEGRADED`）/ 已落地版本不可变 + **已提交历史版本全字段严格 append-only**（summary 改写也红）/ **`landed` 与 `landed-no-ledger` 都要三席确认**（`legacy` 白名单 + 未知席位必红；中英文方括号/全角逗号都解析）/ `_DEV` 文件分支归属（**模板身份只用 git 锚**，改 `bootstrap.json` 关不掉；非模板仓只 WARN）/ **S11 远端锚**：`origin/<分支>` 是 HEAD 祖先，不可用时 WARN 并明示「仅有本地锚」）。**S10/S11 无论是否 skip 都执行**；`--json` 在任何结局都只输出一个 JSON 对象（`ok`/`checks[]`/`counts`/`degraded`/`warned`/`skipped`） | `[--json] [--root DIR] [--worklist PATH]` | 0 全绿或显式 skip（可含 DEGRADED/WARN）/ 1 有 findings / 2 用法或 IO |
 | `check_all.py` | 提交前统一门禁：check 模式 11 段（sequence 是第 10）；`--fix` 模式共 15 段（4 修复 + 11 检查；`--full` 再加 tests / hooks-tests） | `[--fix] [--check] [--full] [--json] [--only a,b]` | 0 全绿 / 1 任一阶段失败 / 2 用法错误 |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
@@ -373,8 +373,9 @@ CI 治理 job 跑**同一条命令**。
 **为什么顺序不能重排**：修复阶段必须在检查阶段之前（否则查的是修之前的状态）；`osnorm_gate`
 在 unittest 派发之前（它的职责是钉住「唯一实现」这条约束，红了就不该再往下跑全量测试）。
 `sequence` 排在 `version` 之后：先确认政策/CHANGELOG/bootstrap 三元组自洽，再问「计划（`SEQUENCE.md`）
-与账本是否互认」；它仍是判据检查，所以在 `osnorm_gate` 之前。实例侧没有 `.workspace/SEQUENCE.md`
-（研发路线图不随模板下发），该阶段**显式 skip 且 rc=0**。
+与账本是否互认」；它仍是判据检查，所以在 `osnorm_gate` 之前。实例侧 / 非模板仓没有 `.workspace/SEQUENCE.md`
+（研发路线图不随模板下发），该阶段**显式 skip 且 rc=0**；但模板仓的 dev 分支删掉计划文件是 **FAIL**，
+且 S10/S11 无论是否 skip 都执行。
 
 **行为契约**（机械可判）：
 

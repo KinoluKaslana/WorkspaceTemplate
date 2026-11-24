@@ -193,14 +193,14 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | 项 | 内容 |
 |---|---|
 | **类型** | Python 标准库 CLI |
-| **作用** | S1–S11 计划/账本/git 历史/远端 互校：S1 轮次严格递增/无重复 · S2 版本首段 == 轮次 · S3 landed ↔ `.workspace/release_dev.json` 双向（`landed-no-ledger` 须有**真在 git 里**的提交号；`land_status` 只认三值；§1 ↔ §2 一致；**历史锚**：历史账本/SEQUENCE 里出现过的落地轮次必须仍在，`landed-no-ledger` 也算） · S4 依赖不倒置/不悬空 · S5 范围引用的 WORKLIST 条目存在（**无文件 = 声明过的 SKIP；显式 `--worklist` 指错或不可读 = 红**） · S6 landed 数 == 账本条目数（另加历史下界，只增不减） · S7 **每条**账本 `summary` 与 `CHANGELOG_DEV.md` 段落逐字一致，**工作区 + git 锚两腿**（`commit: null` 时状态是独立的 `DEGRADED`，不算 FAIL 但显式打印） · S8 版本严格递增且已落地版本不可变（与 **git 历史里的账本版本**比对） · S9 `landed` 轮次三席确认齐全（`legacy` 只许 `LEGACY_ROUNDS = {44, 45}`；白名单外席位名如 `INTRUDER` → 红） · S10 `_DEV` 文件分支归属（dev 必须有 / main 必须没有 / 其它分支告警；**无 `SEQUENCE.md` 时仍执行**） · S11 远端锚（`origin/<分支>` 是 HEAD 祖先；不可用 → WARN + 「仅有本地锚」） |
+| **作用** | S1–S11 计划/账本/git 历史/远端 互校：S1 轮次严格递增/无重复（**模板仓 dev 缺 `SEQUENCE.md` = 红**，SKIP 只留给实例侧/非模板仓） · S2 版本首段 == 轮次 · S3 landed ↔ `.workspace/release_dev.json` 双向（`landed-no-ledger` 须有**真在 git 里**的提交号；`land_status` 只认三值；§1 ↔ §2 一致；**历史锚**：历史账本/SEQUENCE 里出现过的落地轮次必须仍在，`landed-no-ledger` 也算；**落地即入账**：首次标 landed 的提交必须已含该轮账本条目） · S4 依赖不倒置/不悬空 · S5 范围引用的 WORKLIST 条目存在（**无文件 = 声明过的 SKIP；显式 `--worklist` 指错或不可读 = 红**） · S6 landed 数 == 账本条目数（另加历史下界，只增不减） · S7 **每条**账本 `summary` 与 `CHANGELOG_DEV.md` 段落逐字一致，**工作区 + git 锚两腿**（`commit: null` 时状态是独立的 `DEGRADED`，不算 FAIL 但显式打印） · S8 版本严格递增且已落地版本不可变 + **已提交历史版本全字段严格 append-only**（summary 改写/删除 = 红，无 prose_note 放行） · S9 **`landed` 与 `landed-no-ledger`** 三席确认齐全（`legacy` 只许 `LEGACY_ROUNDS = {44, 45}`；白名单外席位名如 `INTRUDER` → 红；`verified_by` 中英文方括号/全角逗号都解析） · S10 `_DEV` 文件分支归属（**模板身份只用 git 锚**，改 `.workspace/bootstrap.json` 关不掉；dev 必须有 / main 必须没有 / 其它分支与非模板仓告警；**无 `SEQUENCE.md` 时仍执行**） · S11 远端锚（`origin/<分支>` 是 HEAD 祖先；不可用 → WARN + 「仅有本地锚」） |
 | **位置** | `scripts/sequence_check.py`（计划侧 `.workspace/SEQUENCE.md` 是 dev 专用，**刻意不进** `TEMPLATE_FILES`：实例不该继承研发路线图） |
 | **用法** | `python3 scripts/sequence_check.py [--json] [--root DIR] [--worklist PATH]` |
-| **退出码** | 0 全绿**或显式 skip**（无 `SEQUENCE.md` / 候选无 `WORKLIST.md` / 非 template 工作区的 S10），可含 `DEGRADED` / `WARN`；1 有 findings；2 用法或 IO |
+| **退出码** | 0 全绿**或显式 skip**（实例侧 / 非模板仓无 `SEQUENCE.md`、候选无 `WORKLIST.md`），可含 `DEGRADED` / `WARN`；1 有 findings（含模板仓 dev 缺计划文件、`--json` 下同样是 JSON 对象）；2 用法或 IO |
 | **来源与信任边界** | 模板内置；只读 SEQUENCE.md / dev 账本 / `CHANGELOG_DEV.md` / `WORKLIST.md`，不写盘、不联网 |
-| **副作用/数据外发** | 无：只输出 stdout；`--json` = 「打印 JSON 到 stdout」（不是文件路径） |
+| **副作用/数据外发** | 无：只输出 stdout；`--json` = 「打印 JSON 到 stdout」（不是文件路径），任何结局都只输出一个 JSON 对象 |
 
-实例侧行为：派生工作区没有 `.workspace/SEQUENCE.md`，本脚本**显式报告 skip 并 rc=0**——`check_all` 的阶段 `sequence` 因此不会把实例判红。例外是 S10：它只依赖当前分支与两份 `_DEV` 文件，**没有计划文件时仍执行**（template 工作区的 `main` 上没有 `SEQUENCE.md` 是合法态，删计划不能用来绕过「main 不得留 `_DEV` 文件」）。
+实例侧行为：派生工作区（非模板仓，git 历史里从未出现 `_DEV` 文件）没有 `.workspace/SEQUENCE.md`，本脚本**显式报告 skip 并 rc=0**——`check_all` 的阶段 `sequence` 因此不会把实例判红。例外有两处：① S10/S11 只依赖当前分支、git 历史与两份 `_DEV` 文件，**没有计划文件时仍执行**（template 工作区的 `main` 上没有 `SEQUENCE.md` 是合法态，删计划不能用来绕过「main 不得留 `_DEV` 文件」）；② 模板仓的 **dev 分支删掉计划文件是 FAIL**（删计划 + 账本写 `[]` 不能把 S1–S9 关成 SKIP）。
 
 ## 5. Notes 索引
 

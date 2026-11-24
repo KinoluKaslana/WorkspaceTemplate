@@ -7,13 +7,17 @@
 
 判据（逐条实现 `SEQUENCE.md` §4，编号与那里一致）：
 
-  S1  轮次严格递增、无重复                     解析表格 round 列 + `### RN` 小标题，比较相邻
+  S1  轮次严格递增、无重复                     解析表格 round 列 + `### RN` 小标题，比较相邻；
+                                                **dev 分支缺 SEQUENCE.md = 红**（历史里有计划/_DEV 文件时，
+                                                删计划不能把整条判据关掉；SKIP 只留给实例侧/非模板仓）
   S2  `version` 首段 == round                   拆 `.` 取 [0] 与 round 比（非 dev 轮次可不带版本）
   S3  landed 必须在 dev 账本有条目               双向：landed→账本 / 账本→landed；
                                                 `landed-no-ledger` 须有提交号且**该提交真在 git 里**；
                                                 `land_status` 只接受 planned|landed|landed-no-ledger，
                                                 §1 行与 §2 声明必须一致；
-                                                **历史锚**：git 历史里的轮次集合必须被当前集合覆盖（只增不减）
+                                                **历史锚**：git 历史里的轮次集合必须被当前集合覆盖（只增不减）；
+                                                **落地即入账**：某轮首次在历史 SEQUENCE 里标成 landed 的那个提交，
+                                                账本必须同时已含该轮条目（planned→landed 的提交必须带账本）
   S4  `依赖` 必须存在且排在其前                  依赖号集合校验 + 文档位置比较（倒置/悬空）
   S5  范围引用的 WORKLIST 条目必须存在           读 `WORKLIST.md` 的 P/C/D 编号集合；
                                                 无文件 = **声明过的** SKIP（不是静默放宽）；显式 `--worklist`
@@ -21,14 +25,21 @@
   S6  计划 landed 数 == 账本条目数               计数比较；**另加历史下界**（不得低于历史最大值）
   S7  每条账本 `summary` == CHANGELOG_DEV 段落   逐字比较（工作区腿）+ **git 锚腿**（`commit` 的历史 blob）；
                                                 无锚（`commit: null` / 浅克隆）→ 状态码 DEGRADED（不算 FAIL，但显式报）
-  S8  `version` 严格递增且已落地版本不可变        与 git 历史里的账本版本逐条比对（前缀一致、条目指纹不可改写、
-                                                条目 `commit` 必须 `git cat-file -e` 通过）
-  S9  `landed` 轮次必须有三席确认                `verified_by` = [SOL, GPT-SOL-6, PRO] 齐全、
+  S8  `version` 严格递增且已落地版本不可变        与 git 历史里的账本版本**全字段严格前缀**比对（summary/files_sha256
+                                                也在 append-only 范围内：任何改写/删除 = FAIL，不给 prose_note 放行）；
+                                                条目 `commit` 必须 `git cat-file -e` 通过
+  S9  `landed` 轮次必须有三席确认                **`landed` 与 `landed-no-ledger` 都要**（后者只是不占账本条目，
+                                                不等于免确认）；`verified_by` = [SOL, GPT-SOL-6, PRO] 齐全
+                                                （中英文方括号、全角逗号、有无空格都解析）、
                                                 `verdict ∈ {pass, pass-with-notes(notes 非空)}`、
                                                 `verified_at ≤ 账本条目 date`；`legacy` 轮次豁免但须有 note，
                                                 且**只有白名单轮次（LEGACY_ROUNDS = R44/R45）可自称 legacy**；
                                                 `verified_by` 里出现白名单外的席位名 → 红
-  S10 `_DEV` 文件只属于 dev 分支                 dev 上必须存在、main 上必须不存在、其它分支只告警；
+  S10 `_DEV` 文件只属于 dev 分支                 **判 template 身份只用 git 锚**（`git log -- _DEV 文件` 非空），
+                                                不看 `.workspace/bootstrap.json` 等可编辑 JSON
+                                                （否则把 workspace_status 改成 active 就能关掉本条）；
+                                                dev 上必须存在、main 上必须不存在、其它分支只告警；
+                                                非模板仓（历史里从未出现 _DEV 文件）只 WARN，不判红；
                                                 **没有 SEQUENCE.md 时仍要执行**（main 的合法态正是没有计划文件）
   S11 远端锚（增强层）                          `origin/<当前分支>` 可用 → 本地历史必须是它的超集
                                                 （`merge-base --is-ancestor origin/x HEAD`）；
@@ -42,8 +53,9 @@
 
 实例侧行为：派生工作区**没有** `.workspace/SEQUENCE.md`（研发路线图是 dev 专用），这时**显式
 报告 skip、退出码 0**——不崩、不假红。`check_all.py` 会在实例侧照常调度本阶段。
-例外：S10 只依赖当前分支与两份 `_DEV` 文件，**没有计划文件时仍执行**（template 工作区的 main
-上本来就没有 `SEQUENCE.md`，删计划不能用来绕过「main 不得留 `_DEV` 文件」）。
+例外有两处：① S10/S11 只依赖当前分支、git 历史与两份 `_DEV` 文件，**没有计划文件时仍执行**；
+② 模板仓的 **dev 分支**缺 `SEQUENCE.md` 是**红**（历史里出现过计划文件或 `_DEV` 文件），
+删计划不能把 S1–S9 的判据整条关掉——SKIP 只留给实例侧 / 非模板仓。
 
 用法：
   python3 scripts/sequence_check.py                 # 人读
@@ -206,13 +218,16 @@ def _parse_confirm(cell: str) -> dict:
     合法形态（两种都收）：
       `legacy`（机制建立前…）                                   → legacy 轮次
       verified_by=[SOL, GPT-SOL-6, PRO]；verdict=pass；verified_at=2026-11-23
+
+    方括号中英文都收（`[]` / `【】`）：文档席用全角括号写三席是合法写法，
+    解析器不认就等于把合法记录判红。
     """
     out = {"verified_by": [], "verdict": None, "verified_at": None, "notes": ""}
     if not cell:
         return out
-    m = re.search(r"verified_by\s*[=:：]\s*\[([^\]]*)\]", cell)
+    m = re.search(r"verified_by\s*[=:：]\s*[\[【]([^\]】]*)[\]】]", cell)
     if m:
-        out["verified_by"] = [x.strip().strip("`") for x in re.split(r"[,，、]", m.group(1)) if x.strip()]
+        out["verified_by"] = _parse_seats(m.group(1))
     m = re.search(r"verdict\s*[=:：]\s*([A-Za-z][\w-]*)", cell)
     if m:
         out["verdict"] = m.group(1)
@@ -225,8 +240,25 @@ def _parse_confirm(cell: str) -> dict:
     return out
 
 
+# 席位分隔符：半角/全角逗号、顿号、分号（文档席混用是常态）
+_SEAT_SPLIT_RE = re.compile(r"[,，、;；]+")
+# 席位名两侧允许的包装：反引号 + 中英文方括号/圆括号
+_SEAT_WRAP = "`[]【】()（）"
+
+
 def _parse_seats(value: str) -> list[str]:
-    return [x.strip().strip("`") for x in re.split(r"[,，、]", value) if x.strip()]
+    """把 `[SOL, GPT-SOL-6, PRO]` / `【SOL、GPT-SOL-6、PRO】` / `SOL,GPT-SOL-6,PRO` 解析成三个席位名。
+
+    R46d 前这里直接对整串 split，`[SOL` / `PRO]` 带着方括号进名单，三席判据把**合法记录**判红。
+    方括号、括号、反引号与空格都是包装而不是席位名的一部分，统一在解析时剥掉。
+    """
+    v = value.strip().strip(_SEAT_WRAP).strip()
+    seats: list[str] = []
+    for part in _SEAT_SPLIT_RE.split(v):
+        name = part.strip().strip(_SEAT_WRAP).strip()
+        if name:
+            seats.append(name)
+    return seats
 
 
 def parse_sequence(text: str) -> list[Round]:
@@ -486,6 +518,20 @@ def ever_seq_landed(history: dict) -> dict[int, str]:
     return seen
 
 
+def first_landed_commits(history: dict) -> dict[int, str]:
+    """每轮**首次**在历史 SEQUENCE 里被标成 `landed` 的那个提交（旧→新扫，取最早）。
+
+    H「落地即入账」的输入：landed 的**首次出现**必须与账本条目同批。`landed-no-ledger`
+    明确不占账本条目，不在此列（它由 S3 的提交号 + S9 的三席确认各自把关）。
+    """
+    seen: dict[int, str] = {}
+    for sha, rounds in reversed(history["seq_versions"]):
+        for r in rounds:
+            if r.status == LANDED:
+                seen.setdefault(r.round, sha)
+    return seen
+
+
 def history_bounds(history: dict) -> tuple[int, int]:
     """历史下界（账本条目数 / SEQUENCE landed 数）：只增不减。"""
     max_ledger = max((len(e) for _, e in history["ledger_versions"]), default=0)
@@ -494,9 +540,7 @@ def history_bounds(history: dict) -> tuple[int, int]:
     return max_ledger, max_landed
 
 
-# 账本条目的「结构性事实」：哪一轮、什么版本、哪一天、对应哪个提交/标签。一旦提交就不许再变。
-# 刻意不含 summary 与 files_sha256：两者都是**内容**（files_sha256 是写入时按当时文件现算的，
-# 任何散文改写都会连带变），把它们当结构事实会把「已经发生过的合法 prose 对齐提交」判成红。
+# 账本条目的结构性事实：哪一轮、什么版本、哪一天、对应哪个提交/标签。一旦提交就不许再变。
 STRUCT_FIELDS = ("round", "version", "date", "commit", "tag")
 
 
@@ -504,17 +548,17 @@ def _struct_view(entry: dict) -> str:
     return json.dumps({k: entry.get(k) for k in STRUCT_FIELDS}, sort_keys=True, ensure_ascii=False)
 
 
-def compare_append_only(older: list[dict], newer: list[dict], older_ref: str, newer_ref: str,
-                        strict: bool) -> tuple[list[dict], list[str]]:
-    """旧版本必须是新版本的前缀（同序、同内容），新版本只多不少。返回 (findings, prose_notes)。
+def compare_append_only(older: list[dict], newer: list[dict], older_ref: str,
+                        newer_ref: str) -> list[dict]:
+    """旧版本必须是新版本的前缀（同序、同内容），新版本只多不少。
 
-    - 结构性事实（round/version/date/commit/tag/files_sha256）任何情况下被改 → finding。
-    - `strict=True`（最新历史版本 ↔ 当前工作区）时 summary 也被改写 → finding；
-      `strict=False`（两个历史提交之间）summary 变化只记为 prose_note：那是一次**已提交**的
-      改写，要伪造它得改写 git 历史本身，脚本只能逐条列出交给人裁决，不能假装没看见。
+    比较是**全字段**的：summary / files_sha256 与 round/version/date/commit/tag 一样属于
+    append-only 范围。R46d 曾把两个**已提交**历史版本之间的 summary 差异降级成 prose_note
+    （`strict=False`），结果是「改旧条目 summary + 同步改 CHANGELOG + 普通 commit」全绿——
+    那正是 append-only 要挡的改写。已提交的历史条目之间没有任何「未提交末条」的豁免理由：
+    真要做到同步改写就得重写 git 历史，属于 S11/权限层的事，不由这里放行。
     """
     findings: list[dict] = []
-    prose: list[str] = []
     for i, old in enumerate(older):
         if i >= len(newer):
             findings.append(_fail(f"账本历史条目被删除：{older_ref} 有 {old.get('round')} 轮"
@@ -528,13 +572,11 @@ def compare_append_only(older: list[dict], newer: list[dict], older_ref: str, ne
                                   f"{new.get('round')} / {new.get('version')} / date={new.get('date')}"
                                   f" / commit={new.get('commit')}——账本 append-only，历史条目不可改"))
         elif _entries_fingerprint(old) != _entries_fingerprint(new):
-            if strict:
-                findings.append(_fail(f"账本历史条目被改写：{older_ref} 的 round {old.get('round')} 内容"
-                                      f"与 {newer_ref} 不同（指纹 {_entries_fingerprint(old)} → "
-                                      f"{_entries_fingerprint(new)}）——summary 也在 append-only 范围内"))
-            else:
-                prose.append(f"{old.get('round')}（{older_ref}→{newer_ref}）")
-    return findings, prose
+            findings.append(_fail(f"账本历史条目被改写：{older_ref} 的 round {old.get('round')} 内容"
+                                  f"与 {newer_ref} 不同（指纹 {_entries_fingerprint(old)} → "
+                                  f"{_entries_fingerprint(new)}）——append-only 覆盖全部字段"
+                                  f"（summary / files_sha256 也在内）"))
+    return findings
 
 
 def section_body(text: str, version: str) -> tuple[int | None, str | None]:
@@ -706,12 +748,33 @@ def check_s3(rounds: list[Round], ledger: list[dict], ledger_errs: list[str],
                                   f"（{ever_landed[rnd][:7]}），但当前不再有落地行"
                                   f"——历史锚：落地不可撤销/降级（删行、改回 planned 都算）"))
 
+    # (f) 落地即入账：某轮**首次**在历史 SEQUENCE 里被标成 landed 的那个提交，账本必须同时已含该轮。
+    #     这条与 (e) 的历史锚互补：(e) 只看「现在还在不在」，(f) 钉「落地那一刻账本是不是已经在了」。
+    #     只改计划（planned→landed）并提交、账本不动 → 首次落地提交里的账本缺条目 → 红。
+    sync_checked = 0
+    if history["is_repo"] and history["seq_versions"]:
+        cache: dict[str, tuple[list[dict] | None, str | None]] = {}
+        for rnd, sha in sorted(first_landed_commits(history).items()):
+            if sha not in cache:
+                cache[sha] = _ledger_at(root, sha)
+            entries, err = cache[sha]
+            has = entries is not None and any(
+                isinstance(e.get("round"), int) and e["round"] == rnd for e in entries)
+            if not has:
+                findings.append(_fail(f"R{rnd} 在 {sha[:7]}:{SEQ_REL} 首次标为 landed，"
+                                      f"但该提交的 {LEDGER_REL} 没有该轮条目"
+                                      f"（{err or '缺该轮条目'}）——落地必须与入账同批："
+                                      f"把 planned 改成 landed 的提交必须同时带上账本条目"))
+            else:
+                sync_checked += 1
+
     detail = (f"landed {sum(1 for r in rounds if r.status == LANDED)} ↔ 账本 {len(ledger)} 条"
               f"{'双向一致' if not findings else '（不一致，见下）'}"
               f"；landed-no-ledger {sum(1 for r in rounds if r.status == LANDED_NO_LEDGER)} 条有提交号"
               f"（{git_checked} 个提交经 git 校验）"
               f"；历史锚 账本 {len(ever_ledger)} 轮 / landed {len(ever_landed)} 轮"
-              f"{'⊆ 当前' if history['is_repo'] else '（无 git，未校验）'}")
+              f"{'⊆ 当前' if history['is_repo'] else '（无 git，未校验）'}"
+              f"；落地即入账 {sync_checked} 轮同批")
     if shallow_skipped:
         detail += f"；浅克隆：{shallow_skipped} 个提交对象不在本地（未校验，git fetch --unshallow 可补）"
         if not findings:
@@ -911,7 +974,6 @@ def check_s8(rounds: list[Round], ledger: list[dict], history: dict) -> tuple[st
 
     # (e) git 锚：账本 append-only 由历史证明，不由两个同样可改的当前文件互相证明
     anchor_note = ""
-    prose_notes: list[str] = []
     if not history["is_repo"]:
         findings.append(_fail("git 锚不可用：不是 git 仓库（或缺 git）——"
                               "账本 append-only 无法证明，不接受「当前文件自证」"))
@@ -923,21 +985,17 @@ def check_s8(rounds: list[Round], ledger: list[dict], history: dict) -> tuple[st
             newest_sha, newest = versions[0]
             # 1) 当前工作区必须是**最新历史版本**的逐条前缀扩展（删/改/插/重排全红）
             findings.extend(compare_append_only(
-                newest, ledger, f"{newest_sha[:7]}:{LEDGER_REL}", "当前工作区", strict=True)[0])
-            # 2) 历史自身 append-only：相邻版本之间结构性事实不得变（summary 变化只逐条列出）
+                newest, ledger, f"{newest_sha[:7]}:{LEDGER_REL}", "当前工作区"))
+            # 2) 历史自身 append-only：相邻已提交版本之间同样是**全字段**严格前缀比较
+            #    （summary / files_sha256 被改写也是 FAIL —— C 判据）
             for older, newer in zip(versions[1:], versions):
-                f2, prose = compare_append_only(older[1], newer[1],
-                                                f"{older[0][:7]}:{LEDGER_REL}",
-                                                f"{newer[0][:7]}:{LEDGER_REL}", strict=False)
-                findings.extend(f2)
-                prose_notes.extend(prose)
+                findings.extend(compare_append_only(
+                    older[1], newer[1], f"{older[0][:7]}:{LEDGER_REL}",
+                    f"{newer[0][:7]}:{LEDGER_REL}"))
             anchor_note = (f"；git 锚 {len(versions)} 个历史版本（{versions[0][0][:7]} 前缀一致，"
                            f"{len(ledger) - len(newest)} 条新增）")
             if len(versions) == 1:
                 anchor_note += "（历史仅 1 个版本，跨提交 append-only 未观测）"
-            if prose_notes:
-                anchor_note += (f"；历史内 summary 变更 {len(prose_notes)} 处（"
-                                + "、".join(prose_notes[:3]) + "）——已提交的散文改写需人工裁决")
 
     committed = 0
     shallow_commits = 0
@@ -960,12 +1018,17 @@ def check_s8(rounds: list[Round], ledger: list[dict], history: dict) -> tuple[st
 
 
 def check_s9(rounds: list[Round], ledger: list[dict]) -> tuple[str, str, list[dict]]:
-    """三席确认：landed 轮次必须有 SOL / GPT-SOL-6 / PRO 的判定与证据；legacy 豁免但须有 note。"""
+    """三席确认：`landed` 与 `landed-no-ledger` 轮次都必须有 SOL / GPT-SOL-6 / PRO 的判定与证据。
+
+    `landed-no-ledger` 只表示「不占账本条目」（机制轮），**不是**三席确认的豁免——
+    R46d 前 §1 插一行 landed-no-ledger 就能把 S9 整条跳过，而 S3 只验提交号存在，等于全绿。
+    legacy 仍豁免，但只有白名单轮次可自称且必须写原因。
+    """
     findings: list[dict] = []
     ledger_by_round = {e.get("round"): e for e in ledger if isinstance(e.get("round"), int)}
     seats_ok = legacy_ok = 0
     for r in rounds:
-        if r.status != LANDED or r.status_invalid is not None:
+        if r.status not in (LANDED, LANDED_NO_LEDGER) or r.status_invalid is not None:
             continue
         if r.legacy:
             if r.round not in LEGACY_ROUNDS:
@@ -983,7 +1046,7 @@ def check_s9(rounds: list[Round], ledger: list[dict]) -> tuple[str, str, list[di
         missing = [s for s in SEATS if s.casefold() not in got]
         unknown = [s for s in r.verified_by if s.casefold() not in {x.casefold() for x in SEATS}]
         if not r.verified_by:
-            findings.append(_fail(f"R{r.round} 标 landed 但没有任何 verified_by 记录"
+            findings.append(_fail(f"R{r.round} 标 {r.status} 但没有任何 verified_by 记录"
                                   f"（§1 确认列 / §2 verified_by 为空）", r, r.line))
         elif missing:
             findings.append(_fail(f"R{r.round} 三席不全：缺 {', '.join(missing)}"
@@ -1016,10 +1079,19 @@ def check_s9(rounds: list[Round], ledger: list[dict]) -> tuple[str, str, list[di
     return (PASS if not findings else FAIL), detail, findings
 
 
-def check_s10(root: Path, is_template: bool) -> tuple[str, str, list[dict]]:
-    """_DEV 文件的分支归属：dev 必须有、main 必须没有、其它分支只告警。"""
+def check_s10(root: Path, is_template: bool | None) -> tuple[str, str, list[dict]]:
+    """_DEV 文件的分支归属：dev 必须有、main 必须没有、其它分支只告警。
+
+    `is_template` 来自 `template_repo()` 的 **git 锚**（历史里是否出现过 _DEV 文件），
+    不读 `.workspace/bootstrap.json`：那份 JSON 是工作区里可编辑的文件，把它当判据输入
+    等于允许「改一个 JSON 字段就关掉 S10」（A 判据的三席实跑 rc=0 就是这么来的）。
+    `None` = 无法判定（缺 git / 没有历史），按 DEGRADED 报，不冒充 PASS。
+    """
+    if is_template is None:
+        return DEGRADED, "无法判定模板身份（不是 git 仓库 / 缺 git / 无提交历史）：_DEV 文件归属未判", []
     if not is_template:
-        return SKIP, "非 template 工作区（bootstrap.workspace_status ≠ template）：无 dev/main 边界", []
+        return WARN, ("非模板仓（git 历史里从未出现 _DEV 文件）：无 dev/main 边界，"
+                      "_DEV 文件归属未判（不判红）"), []
     branch = git_branch(root)
     if branch is None:
         return DEGRADED, "无法判定分支（不是 git 仓库 / 缺 git / 游离 HEAD）：_DEV 文件归属未判", []
@@ -1073,24 +1145,53 @@ def _history_root(history: dict) -> Path:
     return history["root"]
 
 
-def _template_workspace(root: Path) -> bool:
-    """bootstrap.workspace_status == template：只有模板工作区才有 dev/main 的 _DEV 边界。"""
-    path = root / BOOTSTRAP_REL
-    if not path.is_file():
-        return False
-    try:
-        data = json.loads(osnorm.read_text(path, bom=True))
-    except (OSError, json.JSONDecodeError):
-        return False
-    return isinstance(data, dict) and data.get("workspace_status") == "template"
+def template_repo(root: Path) -> bool | None:
+    """模板身份的**唯一**判据：git 历史里是否出现过 `_DEV` 文件（不看工作区 JSON）。
+
+    `git log --oneline -- CHANGELOG_DEV.md`（或 release_dev.json）非空 ⇒ 这是模板仓的开发历史。
+    为什么不用 `.workspace/bootstrap.json`：那份 JSON 就在工作区里、谁都能改，把它当判据输入
+    等于把 S10 的开关交给被检查方（三席实跑：改成 `workspace_status=active` 后 S10 SKIP、rc=0）。
+    返回 None = 没有 git / 没有历史，无法判定（S10 按 DEGRADED 报，不冒充通过）。
+    """
+    rc, _ = _git(root, "rev-parse", "--git-dir")
+    if rc != 0:
+        return None
+    for rel in DEV_FILES:
+        if git_log_path(root, rel):
+            return True
+    return False
+
+
+def check_plan_missing(history: dict) -> tuple[str, str, list[dict]]:
+    """没有 `SEQUENCE.md` 时的计划侧结论（B）：dev 分支缺计划文件 = FAIL，不是 SKIP。
+
+    实例侧确实没有研发路线图 → 声明式 SKIP；但模板仓的 dev 分支曾经有计划文件（或至少有
+    `_DEV` 文件历史），删掉计划再让账本写 `[]` 不能让 S1–S9 读不到东西就整条跳过——
+    「当前缺 SEQUENCE.md ⇒ FAIL」正是 R46d 要堵的那条绕过路径。
+    """
+    root = _history_root(history)
+    branch = history["branch"]
+    if branch is None:
+        return SKIP, (f"未找到 {SEQ_REL}，且无法判定分支（非 git 仓库 / 游离 HEAD）："
+                      f"计划侧未校验"), []
+    if template_repo(root) is not True:
+        return (SKIP, f"未找到 {SEQ_REL}：非模板仓（git 历史里从未出现 _DEV 文件），"
+                      f"按实例侧声明跳过", [])
+    if branch == "dev":
+        return FAIL, f"dev 分支缺 {SEQ_REL}（删计划不能关掉判据）", [
+            _fail(f"当前分支 dev 且 git 历史里有计划文件 / _DEV 文件，但工作区没有 {SEQ_REL}"
+                  f"——删掉计划文件不能把 S1–S9 变成 SKIP；补回计划侧或走回退落地")]
+    return WARN, (f"未找到 {SEQ_REL}（分支 {branch} 不是 dev：计划文件只在 dev 上强制）："
+                  f"计划侧未判红，但也没有计划可校验"), []
 
 
 def run(root: Path, worklist_arg: str | None) -> dict:
     seq_path = root / SEQ_REL
+    seq_exists = seq_path.is_file()
     ledger, ledger_errs = load_ledger(root)
     rounds: list[Round] = []
     parse_error: str | None = None
-    if seq_path.is_file():
+    if seq_exists:
         try:
             rounds = parse_sequence(osnorm.read_text(seq_path))
         except OSError as exc:
@@ -1099,26 +1200,43 @@ def run(root: Path, worklist_arg: str | None) -> dict:
     worklist, tried, explicit_missing = find_worklist(root, worklist_arg)
     history = collect_history(root)
     history["root"] = root
+    template = template_repo(root)
 
+    # S10/S11 不依赖计划文件：两条都无条件执行（main 的合法态正是没有 SEQUENCE.md；
+    # 删计划不能用来绕过 _DEV 文件归属或远端锚）。
+    s10 = check_s10(root, template)
+    s11 = check_s11(root, history["branch"])
     checks: list[dict] = []
-    for cid, triple in (
-        ("S1", check_s1(rounds)),
-        ("S2", check_s2(rounds)),
-        ("S3", check_s3(rounds, ledger, ledger_errs, history)),
-        ("S4", check_s4(rounds)),
-        ("S5", check_s5(rounds, worklist, tried, explicit_missing)),
-        ("S6", check_s6(rounds, ledger, history)),
-        ("S7", check_s7(ledger, root, history)),
-        ("S8", check_s8(rounds, ledger, history)),
-        ("S9", check_s9(rounds, ledger)),
-        ("S10", check_s10(root, _template_workspace(root))),
-        ("S11", check_s11(root, history["branch"])),
-    ):
-        status, detail, findings = triple
-        checks.append({"id": cid, "status": status, "detail": detail, "findings": findings})
-    if parse_error:
-        checks.append({"id": "PARSE", "status": FAIL, "detail": parse_error,
-                       "findings": [_fail(parse_error)]})
+    reason = ""
+    if seq_exists:
+        for cid, triple in (
+            ("S1", check_s1(rounds)),
+            ("S2", check_s2(rounds)),
+            ("S3", check_s3(rounds, ledger, ledger_errs, history)),
+            ("S4", check_s4(rounds)),
+            ("S5", check_s5(rounds, worklist, tried, explicit_missing)),
+            ("S6", check_s6(rounds, ledger, history)),
+            ("S7", check_s7(ledger, root, history)),
+            ("S8", check_s8(rounds, ledger, history)),
+            ("S9", check_s9(rounds, ledger)),
+            ("S10", s10),
+            ("S11", s11),
+        ):
+            status, detail, findings = triple
+            checks.append({"id": cid, "status": status, "detail": detail, "findings": findings})
+        if parse_error:
+            checks.append({"id": "PARSE", "status": FAIL, "detail": parse_error,
+                           "findings": [_fail(parse_error)]})
+    else:
+        plan_status, plan_detail, plan_findings = check_plan_missing(history)
+        checks.append({"id": "S1", "status": plan_status, "detail": plan_detail,
+                       "findings": plan_findings})
+        for cid in ("S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9"):
+            checks.append({"id": cid, "status": SKIP, "detail": f"未找到 {SEQ_REL}：计划侧检查不适用",
+                           "findings": []})
+        checks.append({"id": "S10", "status": s10[0], "detail": s10[1], "findings": s10[2]})
+        checks.append({"id": "S11", "status": s11[0], "detail": s11[1], "findings": s11[2]})
+        reason = plan_detail
 
     failed = [c for c in checks if c["status"] == FAIL]
     status_by_id = {c["id"]: c["status"] for c in checks}
@@ -1127,7 +1245,8 @@ def run(root: Path, worklist_arg: str | None) -> dict:
     skipped = [c["id"] for c in checks if c["status"] == SKIP]
     return {
         "ok": not failed,
-        "skipped": False,
+        "skipped": not seq_exists,
+        "reason": reason,
         "sequence": str(seq_path),
         "ledger": str(root / LEDGER_REL),
         "worklist": str(worklist) if worklist else None,
@@ -1151,53 +1270,14 @@ def run(root: Path, worklist_arg: str | None) -> dict:
     }
 
 
-def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="SEQUENCE.md（计划）↔ dev 账本/CHANGELOG_DEV/git 历史（事实）互校")
-    ap.add_argument("--json", action="store_true", help="stdout 只输出机器可读 JSON")
-    ap.add_argument("--root", metavar="DIR", help="树根（默认 = 本脚本所在仓）")
-    ap.add_argument("--worklist", metavar="PATH", help="WORKLIST.md 路径（默认按候选路径查找）")
-    a = ap.parse_args(argv)
-
-    root = Path(a.root).resolve() if a.root else ROOT
-    seq_path = root / SEQ_REL
-
-    # 实例侧：没有研发路线图。显式 skip，rc=0（不是失败，也不静默假装通过）。
-    # 但 S10（_DEV 文件的分支归属）不依赖 SEQUENCE.md：template 工作区上即使计划侧缺失也要判，
-    # 否则「把 SEQUENCE.md 删掉」就成了绕过 S10 的办法。
-    s10_status, s10_detail, s10_findings = check_s10(root, _template_workspace(root))
-    if not seq_path.is_file():
-        if s10_status == FAIL:
-            print(f"sequence_check: {SEQ_REL} 不存在，但 S10 判红")
-            print(f"S10 {s10_status:<4} {s10_detail}")
-            for f in s10_findings:
-                print(f"    - {f['message']}")
-            return 1
-        if a.json:
-            print(json.dumps({"ok": True, "skipped": True,
-                              "reason": f"{SEQ_REL} 不存在：实例侧无计划侧文件，S1–S9/S11 全部跳过"
-                                        f"（S10 与计划侧无关，仍已执行）",
-                              "sequence": str(seq_path),
-                              "anchor": {"local": True, "remote_ref": None, "only_local": None},
-                              "checks": [{"id": "S10", "status": s10_status,
-                                          "detail": s10_detail, "findings": s10_findings}]},
-                             ensure_ascii=False))
-        else:
-            print(f"sequence_check: SKIP —— 未找到 {SEQ_REL}（{seq_path}）")
-            print(f"  实例侧不继承研发路线图：S1–S9/S11 跳过，rc=0")
-            # S10 照样打印（main 的合法态正是没有计划文件，删计划不能绕过它）
-            print(f"S10 {s10_status:<8} {s10_detail}")
-            for f in s10_findings:
-                print(f"    - {f['message']}")
-        return 0
-
-    try:
-        result = run(root, a.worklist)
-    except OSError as exc:                          # IO 异常不崩：按用法/IO 退出
-        print(f"sequence_check: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 2
-
-    if a.json:
-        print(json.dumps(result, ensure_ascii=False))
+def _print_human(result: dict) -> None:
+    """人读输出。所有结局（含 SKIP / FAIL / DEGRADED）都走这一条路径，
+    保证 `--json` 与 `--root` 之外的差异只落在渲染层，不会漏掉某项判据。"""
+    if result["skipped"]:
+        # 计划侧缺失：只有整份结果没有 FAIL 时才是真正的 SKIP（实例侧）；dev 缺计划是 FAIL。
+        head = "SKIP" if result["ok"] else "FAIL"
+        print(f"sequence_check: {head} —— 未找到 {SEQ_REL}（{result['sequence']}）")
+        print(f"  {result['reason']}")
     else:
         counts = {s: sum(1 for r in result["rounds"] if r["status"] == s)
                   for s in (LANDED, LANDED_NO_LEDGER, PLANNED)}
@@ -1209,29 +1289,52 @@ def main(argv: list[str]) -> int:
               f"（landed {counts[LANDED]} / landed-no-ledger {counts[LANDED_NO_LEDGER]} / "
               f"planned {counts[PLANNED]}）· 账本 {result['ledger_entries']} 条"
               f" · 分支 {result['branch'] or '?'} · 锚 {anchor}")
-        for c in result["checks"]:
-            print(f"{c['id']} {c['status']:<8} {c['detail']}")
-            for f in c["findings"]:
-                tag = f"[{f['round']}] " if f.get("round") else ""
-                if f.get("line") and f.get("file"):
-                    where = f"{f['file']}:{f['line']}: "
-                elif f.get("line"):
-                    where = f"line {f['line']}: "
-                else:
-                    where = ""
-                print(f"    - {tag}{where}{f['message']}")
-        ok_n = sum(1 for c in result["checks"] if c["status"] == PASS)
-        skip_n = sum(1 for c in result["checks"] if c["status"] == SKIP)
-        degraded = [c["id"] for c in result["checks"] if c["status"] == DEGRADED]
-        warned = [c["id"] for c in result["checks"] if c["status"] == WARN]
-        bad = [c["id"] for c in result["checks"] if c["status"] == FAIL]
-        extra = ""
-        if degraded:
-            extra += f" / {len(degraded)} DEGRADED({', '.join(degraded)})"
-        if warned:
-            extra += f" / {len(warned)} WARN({', '.join(warned)})"
-        print(f"→ {'OK' if result['ok'] else 'FAIL(' + ', '.join(bad) + ')'}"
-              f"（{len(result['checks'])} 项：{ok_n} PASS / {len(bad)} FAIL / {skip_n} SKIP{extra}）")
+    for c in result["checks"]:
+        print(f"{c['id']} {c['status']:<8} {c['detail']}")
+        for f in c["findings"]:
+            tag = f"[{f['round']}] " if f.get("round") else ""
+            if f.get("line") and f.get("file"):
+                where = f"{f['file']}:{f['line']}: "
+            elif f.get("line"):
+                where = f"line {f['line']}: "
+            else:
+                where = ""
+            print(f"    - {tag}{where}{f['message']}")
+    bad = [c["id"] for c in result["checks"] if c["status"] == FAIL]
+    extra = ""
+    if result["degraded"]:
+        extra += f" / {len(result['degraded'])} DEGRADED({', '.join(result['degraded'])})"
+    if result["warned"]:
+        extra += f" / {len(result['warned'])} WARN({', '.join(result['warned'])})"
+    print(f"→ {'OK' if result['ok'] else 'FAIL(' + ', '.join(bad) + ')'}"
+          f"（{len(result['checks'])} 项：{result['counts'][PASS]} PASS / "
+          f"{len(bad)} FAIL / {result['counts'][SKIP]} SKIP{extra}）")
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description="SEQUENCE.md（计划）↔ dev 账本/CHANGELOG_DEV/git 历史（事实）互校")
+    ap.add_argument("--json", action="store_true", help="stdout 只输出机器可读 JSON（任何结局）")
+    ap.add_argument("--root", metavar="DIR", help="树根（默认 = 本脚本所在仓）")
+    ap.add_argument("--worklist", metavar="PATH", help="WORKLIST.md 路径（默认按候选路径查找）")
+    a = ap.parse_args(argv)
+
+    root = Path(a.root).resolve() if a.root else ROOT
+    try:
+        result = run(root, a.worklist)
+    except OSError as exc:                          # IO 异常不崩：按用法/IO 退出
+        if a.json:
+            print(json.dumps({"ok": False, "skipped": True, "reason": f"{type(exc).__name__}: {exc}",
+                              "sequence": str(root / SEQ_REL), "checks": [], "counts": {},
+                              "degraded": [], "warned": [], "skipped_checks": []},
+                             ensure_ascii=False))
+        else:
+            print(f"sequence_check: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+
+    if a.json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        _print_human(result)
     return 0 if result["ok"] else 1
 
 
