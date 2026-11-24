@@ -40,6 +40,7 @@
 |---|---|---|---|---|---|
 | 44 | `44.3.8.0` | `e3ec3a5` | R35–R44 全集（见 `CHANGELOG_DEV.md` §1–§10） | `legacy`（机制建立前，未做轮次级三席确认；R44a 为双修复席产出 + 控制席复验） | 首条 dev 版本；同时承接原 `CHANGELOG.md` 的 `## Unreleased` |
 | 45 | （并入 44 条） | `f0ed3fd` | dev 四段版本机制本身（`release.py --dev`、双账本、`policy_facts` dev 判据） | `legacy`（机制建立前；本副本以完整树基线提交为 git 对象锚） | 机制轮不单独占版本号：它写的正是 `44.3.8.0` 这一条 |
+| 46 | `46.3.8.0` | `0d3185d` | R46 计划互校机制：S1–S13（R46a–R46g；含 S12 迭代日志冻结锚、S13 §1 行冻结与建前改写白名单、放行 WARN） | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass verified_at=2026-11-24 | 迭代粒度机制：每轮一次尝试一节（it1–it7）；v54 三席唯一必修已修 `0d3185d` + v54b 复核通过 |
 
 > **`verified_by` 取值**：`[SOL, GPT-SOL-6, PRO]`（三席轮次确认）或 `legacy`（机制建立前，S9 豁免但必须注明原因）。
 > 自 R46 起，所有 `landed` 轮次必须是前者。
@@ -53,27 +54,6 @@
 > 落地时追加：`land_status` / `verified_by` / `verdict` / `verified_at`（三席确认后填写，见 §0 第②步）。
 > `land_status` 取值：`planned`（未做）/ `landed`（账本 + changelog + 三席确认齐全）/ `landed-no-ledger`（机制轮，见 R45）。
 
-### R46 · `46.3.8.0` · 计划互校机制
-- **范围**：`scripts/sequence_check.py`（S1–S13：R46 落 S1–S8；R46b 补 S9/S10；R46c 补 git 历史锚；
-  R46d 以第二实现为基线重做——补 A 无计划文件时仍判 S10、B 显式 `--worklist` 指错必红、
-  C `legacy` 白名单、D 未知席位必红、E S7 独立 `DEGRADED`、F 历史轮次集合收 `landed-no-ledger`，
-  并新增 S11 远端锚；R46e 修三席九条 A–I；R46f 新增 S12 迭代日志冻结锚；
-  R46g 新增 S13 §1 landed 行整行冻结——历史 §1 数据行逐字仍在，当前追加新行不红）
-  + 迭代日志机制（`.workspace/iterations/R<round>.md` + `release.py --dev` 冻结 `iterations` /
-  `iterations_sha256`；日志属 dev 专属，不随模板同步）
-  + 本文件 + 登记（`TEMPLATE_FILES` / `TOOLS.md` / `check_all` 阶段）
-  + 顺手：C11（`release_anchor.py` 进 `TEMPLATE_FILES`）、D5（`docs/tools.md` 补 `collapse_path`/`OSNORM_API`）、
-  D6（台账 `R35-C1` 回写已修）
-- **依赖**：R45
-- **判据**：S1–S13 全绿（S7 的 `DEGRADED`、S10/S11 的 `WARN` 不算失败，但必须在摘要里可见）；证伪必须红：
-  ①删 §1 landed 行 + 删账本条目（成对删除）②账本 summary 与 CHANGELOG 同步改写 ③新轮次写 `verified_by: legacy`
-  ④`verified_by` 含白名单外席位 ⑤`--worklist` 指向不存在路径 ⑥main 分支留 `_DEV` 文件（且无 `SEQUENCE.md`）
-  ⑦删历史 §1 的 R45（landed-no-ledger）行并把 R46 依赖改 R44 ⑧本地历史改写而 origin 未同步 ⑨无 origin 时只 WARN
-  ⑩落地后改 `.workspace/iterations/R<round>.md` 一个字节（S12 红）⑪账本 `iterations` 与文件节数不符（S12 红）
-  ⑫账本有 `iterations_sha256` 但日志被删（S12 红）；未落地轮次无日志文件 → 不判（豁免）
-  ⑬改历史 §1 landed 行的 `范围` / `备注` / `确认` 说明文字，或把 `提交` 换成另一真实提交（S13 红）；
-  正常追加新 landed 行 / planned→landed 合法升级 → S13 不红
-- **风险**：低（不改产品行为）
 
 ### R47 · `47.3.8.0` · stdio 三件套（R4 归零）
 - **范围**：`osnorm.read_stdin_text` / `emit_stdout` / `emit_stderr`；删 `hook.py:941-943` 三处 `reconfigure`；

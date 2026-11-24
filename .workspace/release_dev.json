@@ -10,5 +10,19 @@
       "CHANGELOG_DEV.md": "2054f994a36890f0",
       "AGENT_RULES.md": "0ffb5264ca8382d1"
     }
+  },
+  {
+    "version": "46.3.8.0",
+    "round": 46,
+    "date": "2026-11-24",
+    "summary": "R46 计划↔账本互校机制（S1–S13，R46a–R46g）：sequence_check.py 以第二实现为基线重做 S1–S11（git 历史锚、三席确认、_DEV 分支归属、远端锚）；新增 S12 迭代日志冻结锚（release.py --dev 写 iterations/iterations_sha256，落地后回改=红；未入账轮次豁免）与 S13 §1 landed 行整行冻结（append-only rows，含 S13 建前合法改写的代码白名单）；check_all 收尾打印「三席放行 ≠ 用户放行」WARN（不改退出码）；SEQUENCE.md 补 §4.1 锚分层威胁模型与迭代日志边界。三席核验 v54 + v54b 轻量复核通过。",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "CHANGELOG_DEV.md": "a59ba0f035eab01a",
+      "AGENT_RULES.md": "0ffb5264ca8382d1"
+    },
+    "iterations": 7,
+    "iterations_sha256": "06d002bec3e198a23e30362a8b3aadaedafa8faaac96dc2bf464f652fbbf6a46"
   }
 ]
