@@ -236,6 +236,29 @@ def require_dev_upgrade(version, ledger):
 
 DEV_ENTRY_RE = re.compile(r"(?m)^##[ \t]+(\d+\.\d+\.\d+\.\d+)(?![\dA-Za-z.\-])")
 
+# ── 迭代日志冻结锚（S12）──────────────────────────────────────────────────────
+# `.workspace/iterations/R<round>.md` 是 dev 专属的尝试日志（append-only，一次尝试一节）。
+# 账本落条时把「节数 + 文件 sha256」一起冻结，`sequence_check.py` 的 S12 逐条对账：
+# 日志在落地后被改一个字节、或节数/编号对不上，都要红。
+ITER_DIR = Path(".workspace/iterations")
+# 节标题 `## it<N> · YYYY-MM-DD`。本正则与 sequence_check.ITER_HEAD_RE **必须同形**：
+# 两处各数一遍会分叉，分叉时合法记录被 S12 判红或漂移被放过——一致性由 tests/test_release.py 交叉断言。
+ITER_HEAD_RE = re.compile(r"^##\s+it(\d+)\b")
+
+
+def dev_iterations(root, round_no):
+    """迭代日志的冻结锚：(节数, sha256 十六进制) ；文件不存在返回 None（旧轮次无日志）。
+
+    只读：本函数不写日志、不创建目录。日志由人/Agent 追加，脚本只在入账时快照。
+    """
+    path = Path(root) / ITER_DIR / f"R{round_no}.md"
+    if not path.is_file():
+        return None
+    text = osnorm.read_text(path)
+    count = sum(1 for line in text.split("\n") if ITER_HEAD_RE.match(line))
+    return count, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def dev_heading_versions(path):
     """`CHANGELOG_DEV.md` 里的四段条目标题（按文件顺序）。"""
     try:
@@ -244,13 +267,20 @@ def dev_heading_versions(path):
         return []
     return [m.group(1) for m in DEV_ENTRY_RE.finditer(text)]
 
-def dev_plan(version, ledger, summary):
+def dev_plan(version, ledger, summary, root=ROOT):
     rows = [f"CHANGELOG_DEV.md: 首个 `## NN.X.Y.Z` 条目前插入 ## {version}（{date.today().isoformat()}）",
             f".workspace/release_dev.json: 追加 {version}（round {dev_version_tuple(version)[0]}）",
             "policy_facts.py --write / docs_index.py build: 只刷新计数类生成块与索引（通常无变化）",
             "mark_rules.py registry: .workspace/rule-clauses.json（CHANGELOG_DEV.md 与 dev 账本在 TEMPLATE_FILES 里）",
             "**不写** .workspace/releases.json / AGENT_RULES.md / .workspace/bootstrap.json",
             "**不** 打 tag、**不** push"]
+    anchor = dev_iterations(root, dev_version_tuple(version)[0])
+    if anchor is None:
+        rows.append(f"迭代日志：.workspace/iterations/R{dev_version_tuple(version)[0]}.md 不存在 → 账本不写 "
+                    "iterations / iterations_sha256（S12 对本条不判）")
+    else:
+        rows.append(f"迭代日志：.workspace/iterations/R{dev_version_tuple(version)[0]}.md 存在 → 账本记 "
+                    f"iterations={anchor[0]} / iterations_sha256={anchor[1]}（S12 冻结锚）")
     if ledger and dev_version_tuple(version) <= dev_version_tuple(str(ledger[-1]["version"])):
         rows.append(f"!! 账本末条已是 {ledger[-1]['version']}：--apply 会被拒（版本必须严格升级）")
     print(f"DRY-RUN（不写盘）：dev 版本 {version}\n" + "\n".join("- " + x for x in rows))
@@ -268,11 +298,19 @@ def insert_dev_entry(path, version, summary):
 
 def append_dev_ledger(root, version, summary):
     data = load_dev_ledger(root)
-    data.append({"version": version, "round": dev_version_tuple(version)[0],
-                 "date": date.today().isoformat(), "summary": summary,
-                 "commit": None, "tag": None,
-                 "files_sha256": {"CHANGELOG_DEV.md": sha16(root / DEV_CHANGELOG),
-                                  "AGENT_RULES.md": sha16(root / "AGENT_RULES.md")}})
+    round_no = dev_version_tuple(version)[0]
+    entry = {"version": version, "round": round_no,
+             "date": date.today().isoformat(), "summary": summary,
+             "commit": None, "tag": None,
+             "files_sha256": {"CHANGELOG_DEV.md": sha16(root / DEV_CHANGELOG),
+                              "AGENT_RULES.md": sha16(root / "AGENT_RULES.md")}}
+    # 只在日志存在时**追加**两个字段（不改既有字段的含义与顺序）：有 `iterations` 就写节数，
+    # 有 `iterations_sha256` 就写文件 sha256——它们是 S12 的冻结锚，landed 后回改日志即红。
+    anchor = dev_iterations(root, round_no)
+    if anchor is not None:
+        entry["iterations"] = anchor[0]
+        entry["iterations_sha256"] = anchor[1]
+    data.append(entry)
     osnorm.write_text(root / DEV_LEDGER, json.dumps(data, ensure_ascii=False, indent=2) + "\n",
                       newline="lf")
 

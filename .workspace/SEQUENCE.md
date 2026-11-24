@@ -1,7 +1,7 @@
 # SEQUENCE — 交付顺序与版本号（计划侧）
 
 > 本文件是**计划侧**事实源；**事实侧**是 `.workspace/release_dev.json` + `CHANGELOG_DEV.md` + git 提交。
-> 两者由 `scripts/sequence_check.py` 机械互校（S1–S11）。校验的是**一致性**，不是「计划不可改」。
+> 两者由 `scripts/sequence_check.py` 机械互校（S1–S12）。校验的是**一致性**，不是「计划不可改」。
 > 变更规则：改本文件必须在对应条目 `note` 写明「谁改的、为什么」；落地顺序与计划不同只有两条合法出路——
 > 改计划（并登记）或回退落地。**不允许「计划写 A、实际做 B、账本记 C」并存。**
 
@@ -21,6 +21,16 @@
 **边界**：`CHANGELOG_DEV.md` 与 `.workspace/release_dev.json` **在 `TEMPLATE_FILES` 清单内**（模板同步会分发它们），
 但**只存在于 dev 分支**；main 分支上必须删除，由 S10 校验。`SEQUENCE.md` 是计划侧文件，不在同步清单里，
 也不随模板同步到用户实例。
+
+**迭代日志**：`.workspace/iterations/R<round>.md` 每轮一个文件、append-only，一次尝试追加一节
+（`## it<N> · YYYY-MM-DD` + 触发 / 改动 / 证伪 / 结论 / 遗留）。它承载每次尝试的设计取舍与遗留项，
+不替代本文件的轮次计划。`.workspace/iterations/` **不进 `TEMPLATE_FILES`**（dev 专属：实例不需要研发日志，
+它只解释「这一轮为什么这样改、哪条判据把它挡住了」）。
+`release.py --dev` 写账本时若该文件存在，会把 `iterations`（节数）与 `iterations_sha256`（文件 sha256）
+冻结进条目，由 S12 对账：landed 后回改日志 = 红。
+
+每轮的**每次尝试**（含被三席否决的）都要追加一节——否决理由与遗留编号是下一轮设计的输入，
+只留一行 planned 块会在上下文压缩后丢掉它们。
 
 > 顺序不可颠倒：②在③之前，③在④之前。先记账后确认 = 账本记录了自己没验过的事。
 
@@ -44,18 +54,22 @@
 > `land_status` 取值：`planned`（未做）/ `landed`（账本 + changelog + 三席确认齐全）/ `landed-no-ledger`（机制轮，见 R45）。
 
 ### R46 · `46.3.8.0` · 计划互校机制
-- **范围**：`scripts/sequence_check.py`（S1–S11：R46 落 S1–S8；R46b 补 S9/S10；R46c 补 git 历史锚；
+- **范围**：`scripts/sequence_check.py`（S1–S12：R46 落 S1–S8；R46b 补 S9/S10；R46c 补 git 历史锚；
   R46d 以第二实现为基线重做——补 A 无计划文件时仍判 S10、B 显式 `--worklist` 指错必红、
   C `legacy` 白名单、D 未知席位必红、E S7 独立 `DEGRADED`、F 历史轮次集合收 `landed-no-ledger`，
-  并新增 S11 远端锚）
+  并新增 S11 远端锚；R46e 修三席九条 A–I；R46f 新增 S12 迭代日志冻结锚）
+  + 迭代日志机制（`.workspace/iterations/R<round>.md` + `release.py --dev` 冻结 `iterations` /
+  `iterations_sha256`；日志属 dev 专属，不随模板同步）
   + 本文件 + 登记（`TEMPLATE_FILES` / `TOOLS.md` / `check_all` 阶段）
   + 顺手：C11（`release_anchor.py` 进 `TEMPLATE_FILES`）、D5（`docs/tools.md` 补 `collapse_path`/`OSNORM_API`）、
   D6（台账 `R35-C1` 回写已修）
 - **依赖**：R45
-- **判据**：S1–S11 全绿（S7 的 `DEGRADED`、S10/S11 的 `WARN` 不算失败，但必须在摘要里可见）；证伪必须红：
+- **判据**：S1–S12 全绿（S7 的 `DEGRADED`、S10/S11 的 `WARN` 不算失败，但必须在摘要里可见）；证伪必须红：
   ①删 §1 landed 行 + 删账本条目（成对删除）②账本 summary 与 CHANGELOG 同步改写 ③新轮次写 `verified_by: legacy`
   ④`verified_by` 含白名单外席位 ⑤`--worklist` 指向不存在路径 ⑥main 分支留 `_DEV` 文件（且无 `SEQUENCE.md`）
   ⑦删历史 §1 的 R45（landed-no-ledger）行并把 R46 依赖改 R44 ⑧本地历史改写而 origin 未同步 ⑨无 origin 时只 WARN
+  ⑩落地后改 `.workspace/iterations/R<round>.md` 一个字节（S12 红）⑪账本 `iterations` 与文件节数不符（S12 红）
+  ⑫账本有 `iterations_sha256` 但日志被删（S12 红）；未落地轮次无日志文件 → 不判（豁免）
 - **风险**：低（不改产品行为）
 
 ### R47 · `47.3.8.0` · stdio 三件套（R4 归零）
@@ -129,6 +143,7 @@
 | **S9** | **`landed` 与 `landed-no-ledger` 轮次都必须有三席确认记录**：`verified_by` 为 `[SOL, GPT-SOL-6, PRO]` 三席齐全（中英文方括号、全角逗号、有无空格都解析）、`verdict` 为 `pass`（或 `pass-with-notes` 且 `notes` 非空），且 `verified_at` 不晚于账本条目的 `date`。**`legacy` 轮次豁免，但必须在 `note` 写明原因**（R44/R45 属此列）；**只有 `legacy` 白名单里的轮次可用 `legacy`**（`LEGACY_ROUNDS = {44, 45}`，写死在脚本里：扩白名单必须改代码、在 diff 里留痕，不留可编辑的旁路），新轮次自称 `legacy` 一律红；`verified_by` 出现白名单外的席位名（如 `INTRUDER`）→ 红 | 字段存在性与取值校验 + 日期先后比较 + 白名单比对 | 哪轮缺哪一席 / 新轮次伪称 legacy / 未知席位 |
 | **S10** | **`_DEV` 文件只属于 dev 分支**：模板身份**只用 git 锚判定**（`git log -- _DEV 文件` 非空），**不读** `.workspace/bootstrap.json` 等可编辑 JSON；分支为 `dev` 时两文件必须存在；为 `main` 时**必须不存在**（存在即红）；其他分支告警；非模板仓（历史里从未出现 `_DEV` 文件）只 WARN，不判红。**无 `SEQUENCE.md` 时本条仍须执行**（main 的合法态正是没有计划文件） | `git log --oneline -- CHANGELOG_DEV.md` / `-- .workspace/release_dev.json` + `git rev-parse --abbrev-ref HEAD` + 文件存在性 | 分支与 `_DEV` 文件不匹配 / 靠改 JSON 关判据 |
 | **S11** | **远端锚对账（增强层）**：`origin/<当前分支>` 存在且可读时，本地历史必须是它的**超集**（`origin/x` 是 HEAD 祖先）；否则红。远端不可用（离线/无远端）→ **WARN 并明示「仅有本地锚」**，不判红 | `git merge-base --is-ancestor origin/x HEAD`；失败分支区分「不是超集」与「远端不可用」 | 本地历史被重写而远端未同步 / 仅本地锚 |
+| **S12** | **迭代日志冻结锚**：`.workspace/iterations/R<round>.md` 每轮一个、append-only。账本条目带 `iterations_sha256` ⇒ 当前文件 sha256 必须一致（**landed 后回改日志 = 红**）；带 `iterations` ⇒ 文件必须存在、`## it<N>` 节数一致、编号 **1..N 连续**（缺节/跳号/乱序都红）；**两者都没有 ⇒ 不判**（历史条目 legacy 豁免，不回填） | `hashlib.sha256(读字节)` 与账本 `iterations_sha256` 比对 + 逐行解析 `## it<N>` 得节数与编号序列，与 `iterations` 比对 | 日志落地后被改/被删、节数或编号漂移 |
 
 **状态与退出码**：`PASS` / `FAIL` / `SKIP`（声明过的豁免：实例侧 / 非模板仓无 `SEQUENCE.md`、
 候选路径无 `WORKLIST.md`）/ `DEGRADED`（锚不可用，已降级但**显式打印**：S7 的未提交条目、无 git 时的 S10）/

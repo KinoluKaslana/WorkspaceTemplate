@@ -3,7 +3,7 @@
 
 为什么要有它：交付顺序、dev 版本号、依赖关系写在计划里，实际落地写在账本里。两边靠人「记得
 同步」必然漂移（本轮已实发一次：账本 `summary` 与 `CHANGELOG_DEV.md` 正文差一个措辞）。这里把
-`SEQUENCE.md` §4 的 S1–S11 做成机械判据：**只判一致性，不判计划好坏**。
+`SEQUENCE.md` §4 的 S1–S12 做成机械判据：**只判一致性，不判计划好坏**。
 
 判据（逐条实现 `SEQUENCE.md` §4，编号与那里一致）：
 
@@ -44,6 +44,11 @@
   S11 远端锚（增强层）                          `origin/<当前分支>` 可用 → 本地历史必须是它的超集
                                                 （`merge-base --is-ancestor origin/x HEAD`）；
                                                 远端不可用（无远端 / 离线 / 未推送）→ WARN 且**明示「仅有本地锚」**
+  S12 迭代日志冻结锚                            `.workspace/iterations/R<round>.md`（每轮一个、append-only）：
+                                                账本条目带 `iterations_sha256` ⇒ 当前文件 sha256 必须一致
+                                                （landed 后回改日志 = 红）；带 `iterations` ⇒ 文件必须存在、
+                                                `## it<N>` 节数一致、编号 1..N 连续；
+                                                两者都没有 ⇒ **不判**（历史条目 legacy 豁免，不回填）
 
 状态取值：`PASS` / `FAIL` / `SKIP`（声明过的豁免）/ `DEGRADED`（锚不可用，已降级但可见）/ `WARN`
 （不构成失败）。**只有 FAIL 影响退出码**；DEGRADED 与 WARN 会逐行打印并在汇总里计数。
@@ -89,6 +94,9 @@ SEQ_REL = ".workspace/SEQUENCE.md"
 LEDGER_REL = ".workspace/release_dev.json"
 CHANGELOG_REL = "CHANGELOG_DEV.md"
 BOOTSTRAP_REL = ".workspace/bootstrap.json"
+# 迭代日志（S12）：dev 专属，**不进** TEMPLATE_FILES。每轮一个文件、append-only，一次尝试一节
+# （`## it<N> · YYYY-MM-DD`）。它承载「这一轮每次尝试的设计取舍与遗留项」，不替代 SEQUENCE 的轮次计划。
+ITER_DIR_REL = ".workspace/iterations"
 
 # 四段 dev 版本：NN.X.Y.Z，无前导零（与 release.py 的 dev_version_tuple 同形）
 VER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
@@ -1140,6 +1148,92 @@ def check_s11(root: Path, branch: str | None) -> tuple[str, str, list[dict]]:
     return WARN, f"{ref} 存在但无法比较（git 退出码 {rc}）：仅有本地锚，未做远端对账", []
 
 
+def iterations_path(root: Path, round_no: int) -> Path:
+    """`R<round>` 的迭代日志路径（`.workspace/iterations/R<round>.md`）。"""
+    return root / ITER_DIR_REL / f"R{round_no}.md"
+
+
+# 节标题：`## it3 · 2026-11-24`。只认这一种形态（键名/编号是判据的一部分，不是散文）。
+ITER_HEAD_RE = re.compile(r"^##\s+it(\d+)\b")
+
+
+def count_iterations(text: str) -> tuple[int, list[int]]:
+    """数 `## it<N>` 小节：返回 (节数, 按文件顺序的编号列表)。
+
+    与 `release.py` 写账本时的计数**同形**（`tests/test_release.py` 有交叉断言钉住两边一致）：
+    两处各数一遍就会分叉，分叉时 S12 会把合法记录判红或把漂移放过。
+    """
+    nums = []
+    for line in text.split("\n"):
+        m = ITER_HEAD_RE.match(line)
+        if m:
+            nums.append(int(m.group(1)))
+    return len(nums), nums
+
+
+def check_s12(ledger: list[dict], root: Path) -> tuple[str, str, list[dict]]:
+    """迭代日志冻结锚：账本条目里 `iterations` / `iterations_sha256`（存在才判）。
+
+    为什么要有它：SEQUENCE 每轮只有一行 planned 块，装不下 n 次尝试的设计取舍；
+    `.workspace/iterations/R<round>.md` 是 append-only 的尝试日志。日志落盘后如果还能改，
+    「事后把当时的结论/证伪改写成通过」就没有任何判据会响——回填历史比编造更难分辨。
+    所以 `release.py --dev` 落账本时把**节数**与**文件 sha256** 一起冻结进条目，这里逐条对账：
+
+      · 有 `iterations_sha256` ⇒ 当前文件 sha256 必须相等（landed 后回改一个字节 = 红）；
+      · 有 `iterations` ⇒ 文件必须存在、节数相等、`it` 编号必须 1..N 连续（缺节/乱序/跳号都红）；
+      · 两者都没有 ⇒ **不判**（历史条目 legacy 豁免：44.3.8.0 早于本判据，不回填）。
+
+    文件被删同样红：账本已经声明了「这一轮的日志长这样」，删掉就没有东西可对账。
+    """
+    findings: list[dict] = []
+    sha_ok = cnt_ok = exempt = 0
+    for entry in ledger:
+        rnd = entry.get("round")
+        if not isinstance(rnd, int) or isinstance(rnd, bool):
+            continue
+        recorded_sha = entry.get("iterations_sha256")
+        recorded_cnt = entry.get("iterations")
+        has_sha = recorded_sha is not None and recorded_sha != ""
+        has_cnt = recorded_cnt is not None
+        if not has_sha and not has_cnt:
+            exempt += 1                       # legacy 条目：不判、不回填
+            continue
+        path = iterations_path(root, rnd)
+        rel = f"{ITER_DIR_REL}/R{rnd}.md"
+        if not path.is_file():
+            findings.append(_fail(f"账本 R{rnd} 记了迭代日志锚"
+                                  f"（{'iterations_sha256' if has_sha else 'iterations'}），但 {rel} 不存在"
+                                  f"——日志被删或从未提交，冻结锚无从对账", file=rel))
+            continue
+        data = osnorm.read_bytes(path)
+        if has_sha:
+            actual = hashlib.sha256(data).hexdigest()
+            if not isinstance(recorded_sha, str):
+                findings.append(_fail(f"账本 R{rnd} 的 iterations_sha256 不是字符串：{recorded_sha!r}", file=rel))
+            elif actual != recorded_sha.strip().lower():
+                findings.append(_fail(f"R{rnd} 的迭代日志在落地后被改：账本 iterations_sha256="
+                                      f"{str(recorded_sha).strip().lower()}，当前 {rel} 实为 {actual}"
+                                      f"——landed 后回改日志 = 红（append-only）", file=rel))
+            else:
+                sha_ok += 1
+        if has_cnt:
+            if not isinstance(recorded_cnt, int) or isinstance(recorded_cnt, bool):
+                findings.append(_fail(f"账本 R{rnd} 的 iterations 不是整数：{recorded_cnt!r}", file=rel))
+            else:
+                count, nums = count_iterations(data.decode("utf-8", errors="replace"))
+                if count != recorded_cnt:
+                    findings.append(_fail(f"账本 R{rnd} 记 iterations={recorded_cnt}，但 {rel} 实有 "
+                                          f"{count} 节（`## it<N>`）——节数对不上", file=rel))
+                elif nums != list(range(1, count + 1)):
+                    findings.append(_fail(f"{rel} 的 it 编号不是 1..{count} 连续：实测 {nums}"
+                                          f"（缺节/跳号/乱序都算）", file=rel))
+                else:
+                    cnt_ok += 1
+    detail = (f"迭代日志锚 {sha_ok} 条 sha256 一致 / {cnt_ok} 条节数连续；"
+              f"legacy 无锚条目 {exempt} 条（不判）")
+    return (PASS if not findings else FAIL), detail, findings
+
+
 def _history_root(history: dict) -> Path:
     """history 里存的仓库根（避免把 root 串在每个 check 签名里多传一个参数）。"""
     return history["root"]
@@ -1221,6 +1315,7 @@ def run(root: Path, worklist_arg: str | None) -> dict:
             ("S9", check_s9(rounds, ledger)),
             ("S10", s10),
             ("S11", s11),
+            ("S12", check_s12(ledger, root)),
         ):
             status, detail, findings = triple
             checks.append({"id": cid, "status": status, "detail": detail, "findings": findings})
@@ -1231,7 +1326,7 @@ def run(root: Path, worklist_arg: str | None) -> dict:
         plan_status, plan_detail, plan_findings = check_plan_missing(history)
         checks.append({"id": "S1", "status": plan_status, "detail": plan_detail,
                        "findings": plan_findings})
-        for cid in ("S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9"):
+        for cid in ("S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S12"):
             checks.append({"id": cid, "status": SKIP, "detail": f"未找到 {SEQ_REL}：计划侧检查不适用",
                            "findings": []})
         checks.append({"id": "S10", "status": s10[0], "detail": s10[1], "findings": s10[2]})

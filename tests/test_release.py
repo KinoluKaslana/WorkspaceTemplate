@@ -258,9 +258,40 @@ class DevReleaseTests(unittest.TestCase):
         self.assertEqual(ledger[-1]["version"], expected)
         self.assertEqual(ledger[-1]["round"], self.next_round)
         self.assertIsNone(ledger[-1]["tag"])          # dev 永不打 tag
+        # 本轮没有 `.workspace/iterations/R<round>.md` → 两个冻结锚字段都不写（S12 对这条不判）
+        self.assertNotIn("iterations", ledger[-1])
+        self.assertNotIn("iterations_sha256", ledger[-1])
         # ③ 判据自洽：四段版本不被三段判据误杀
         facts = self.facts()
         self.assertEqual(facts.returncode, 0, facts.stdout)
+
+    # ---- S12：迭代日志存在时，账本必须冻结「节数 + sha256」 ----
+    def test_apply_freezes_iterations_anchor(self):
+        import hashlib
+        numbers = (1, 2)
+        body = (f"# R{self.next_round} 迭代日志\n\n" + "".join(
+            f"## it{n} · 2026-11-24\n\n- 触发：夹具\n- 改动：夹具\n- 证伪：夹具\n"
+            f"- 结论：pending\n- 遗留：L{n}\n\n" for n in numbers))
+        iter_dir = self.repo / ".workspace" / "iterations"
+        iter_dir.mkdir(parents=True, exist_ok=True)
+        iter_path = iter_dir / f"R{self.next_round}.md"
+        osnorm.write_text(iter_path, body, newline="lf")
+        result = self.cli("--dev", "--apply", "--round", str(self.next_round), "--summary", "带迭代日志")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        entry = json.loads(osnorm.read_text(self.repo / ".workspace/release_dev.json",
+                                            bom=False, newline="preserve"))[-1]
+        self.assertEqual(entry["iterations"], len(numbers))
+        self.assertEqual(entry["iterations_sha256"],
+                         hashlib.sha256(iter_path.read_bytes()).hexdigest())
+        # 既有字段的顺序与含义不变：两个新字段追加在 files_sha256 之后
+        self.assertEqual(list(entry)[:7], ["version", "round", "date", "summary", "commit", "tag",
+                                           "files_sha256"])
+        # 交叉断言：release.py 与 sequence_check.py 必须按同一形态数节（两处各数一遍会分叉）
+        import sequence_check as sc
+        self.assertEqual(sc.count_iterations(osnorm.read_text(iter_path))[0], entry["iterations"])
+        # 写盘后 S12 直接判绿（冻结值与当前文件一致）
+        status, detail, findings = sc.check_s12([entry], self.repo)
+        self.assertEqual(status, "PASS", (detail, findings))
 
     def test_same_round_second_apply_rejected(self):
         first = self.cli("--dev", "--apply", "--round", str(self.next_round), "--summary", "首入")

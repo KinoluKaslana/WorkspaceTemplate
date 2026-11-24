@@ -25,11 +25,18 @@ R46e 再修的三席九条（A–I，与 R46d 的 A–F 同名不同义）：
   H 落地即入账：首次标 landed 的提交必须已含该轮账本条目
   I §0 的 `TEMPLATE_FILES` 口径与 `verify_rules.TEMPLATE_FILES` 不再分叉
 
+R46f 补的两件：
+  S12 迭代日志冻结锚：`.workspace/iterations/R<round>.md` 的 sha256 / 节数必须与账本一致
+      （落地后改一个字节、少一节、删文件都要红；账本无这两个字段 = legacy 不判）
+  I 的补完：§0 里**每一条**「`<path>` 在 / 不在 `TEMPLATE_FILES`」断言都按
+      `verify_rules.TEMPLATE_FILES` 现场解析比对（原来只覆盖两份 `_DEV` 文件与一句措辞）
+
 最后一条跑真实树：有 `SEQUENCE.md` 就必须全绿，没有就必须显式 skip 且 rc=0
 （这条把「判据文档」与「实现」钉在一起——文档改了实现跟不上，这里先红）。
 """
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -251,7 +258,8 @@ class Green(Base):
         self.assertTrue(data["ok"])
         self.assertFalse(data["skipped"])
         self.assertEqual([c["id"] for c in data["checks"]],
-                         ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11"])
+                         ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11",
+                          "S12"])
         self.assertEqual([r["round"] for r in data["rounds"]], [44, 45, 46])
         self.assertEqual(data["ledger_entries"], 1)
         self.assertEqual(data["branch"], "dev")
@@ -280,7 +288,7 @@ class Instance(Base):
         self.assertTrue(data["skipped"])
         self.assertIn(".workspace/SEQUENCE.md", data["reason"])
         self.assertIn("S10", json.dumps(data, ensure_ascii=False))   # S10 不随计划侧一起跳过
-        self.assertEqual(data["counts"]["SKIP"], 9)                  # S1–S9 声明式 SKIP
+        self.assertEqual(data["counts"]["SKIP"], 10)                 # S1–S9 + S12 声明式 SKIP
         self.assertEqual(data["counts"]["FAIL"], 0)
         self.assertIn("SKIP", self.run_script().stdout)
 
@@ -877,7 +885,7 @@ class JsonEverywhere(Base):
         s10 = next(c for c in data["checks"] if c["id"] == "S10")
         self.assertEqual(s10["status"], "FAIL")
         self.assertEqual(data["counts"]["FAIL"], 1)
-        self.assertEqual(data["counts"]["SKIP"], 8)          # S2–S9；S1 在 main 上是 WARN
+        self.assertEqual(data["counts"]["SKIP"], 9)          # S2–S9 + S12；S1 在 main 上是 WARN
 
 
 class S10Branch(Base):
@@ -1057,24 +1065,172 @@ class DocsCapabilityList(unittest.TestCase):
         self.assertIn("不防主动伪造", block)
 
 
-class DocsTemplateFilesClaim(unittest.TestCase):
-    """I：§0 的「在 / 不在 TEMPLATE_FILES」口径必须与 verify_rules.TEMPLATE_FILES 实际内容一致。"""
+_TF_NAME = "TEMPLATE_FILES"
+# 反向措辞：出现任一即视为「不在清单 / 不随同步」。正向句里不会同时出现这些词。
+_TF_NEGATIVE = ("不在", "不进", "不随", "不属于", "不在同步")
 
-    def test_dev_file_claim_matches_template_files(self):
-        import verify_rules
+
+def template_files_claims(block: str) -> list[tuple[str, bool]]:
+    """从 §0 抽出「`<path>` 在 / 不在 `TEMPLATE_FILES`」断言：[(path, expected_in)]。
+
+    为什么按**句子**而不是按整段：一句话里可以并列两个文件、一处极性；跨句混读会把
+    「`SEQUENCE.md` 不在同步清单里」的负极性套到上一句的两个 `_DEV` 文件上。
+    只收像路径的 code span（含 `/` 或以 `.` 结尾的扩展名，或本身就是清单成员）：
+    `日志` / `--worklist` / `release.py --dev` 这类不是路径的 span 不参与断言。
+    """
+    out: list[tuple[str, bool]] = []
+    for sentence in re.split(r"[。；\n]", block):
+        if _TF_NAME not in sentence and "同步清单" not in sentence:
+            continue
+        positive = not any(word in sentence for word in _TF_NEGATIVE)
+        for span in re.findall(r"`([^`]+)`", sentence):
+            path = span.strip()
+            if not path or path == _TF_NAME or not re.fullmatch(r"[\w./<>-]+", path):
+                continue
+            if "/" not in path and "." not in path:
+                continue                      # 不是路径形态（`日志` / `TEMPLATE_FILES`）
+            out.append((path.rstrip("/"), positive))
+    return out
+
+
+class DocsTemplateFilesClaim(unittest.TestCase):
+    """I：§0 的「在 / 不在 TEMPLATE_FILES」口径必须与 verify_rules.TEMPLATE_FILES 实际内容一致。
+
+    R46e 只钉了「两份 `_DEV` 文件在清单内」与一句措辞；同段的 `SEQUENCE.md 不在同步清单里`
+    没有任何机械断言，R46f 新加的 `iterations/` 边界说明同样只能靠人读。这里改成**逐条解析
+    §0 的全部成员断言**，现场与 `verify_rules.TEMPLATE_FILES` 比对——文档改了实现没跟上，
+    或实现加了文件而文档口径没改，都先在这里红。
+    """
+
+    def block(self) -> str:
         if not (ROOT / SEQ_REL).is_file():
             self.skipTest("当前树没有 SEQUENCE.md（实例侧/发布夹具）：无 §0 边界段可对")
         text = osnorm.read_text(ROOT / SEQ_REL)
-        start = text.index("**边界**")
-        para = text[start:text.index("\n\n", start)]
-        # 两份 _DEV 文件确实在清单里（:58 / :112 一类的事实由这里现场取，不写死数字）
+        start = text.index("## 0.")
+        end = text.index("\n## 1.", start)
+        return text[start:end]
+
+    def test_every_membership_claim_matches_template_files(self):
+        import verify_rules
+        claims = template_files_claims(self.block())
+        paths = {p for p, _ in claims}
+        # 反向断言：解析退化成空转时这条先红（下面四条是文档里真实存在的断言）
+        for must in ("CHANGELOG_DEV.md", ".workspace/release_dev.json", "SEQUENCE.md"):
+            self.assertIn(must, paths, f"§0 里的 `{must}` 成员断言没被解析出来：{claims}")
+        self.assertTrue(any(p.startswith(".workspace/iterations") for p in paths),
+                        f"§0 缺 `iterations/` 不进 TEMPLATE_FILES 的边界说明：{claims}")
+        for path, expected_in in claims:
+            actual = path in verify_rules.TEMPLATE_FILES
+            self.assertEqual(
+                actual, expected_in,
+                f"§0 声称 `{path}` {'在' if expected_in else '不在'} `TEMPLATE_FILES`，"
+                f"但 verify_rules.TEMPLATE_FILES 里实际{'在' if actual else '不在'}")
+        # 目录型断言：iterations/ 下不得有任何文件进清单（dev 专属，实例不该继承研发日志）
+        leaked = [f for f in verify_rules.TEMPLATE_FILES if f.startswith(".workspace/iterations/")]
+        self.assertEqual(leaked, [], f"迭代日志目录混进了 TEMPLATE_FILES：{leaked}")
+
+    def test_dev_files_stay_only_on_dev_branch_wording(self):
+        """两份 `_DEV` 文件的口径：在清单内、但只存在于 dev 分支（S10 依赖这句话）。"""
+        block = self.block()
+        start = block.index("**边界**")
+        para = block[start:block.index("\n\n", start)]
         for rel in ("CHANGELOG_DEV.md", ".workspace/release_dev.json"):
-            self.assertIn(rel, verify_rules.TEMPLATE_FILES, rel)
             self.assertIn(rel.split("/")[-1], para, rel)
-        # 文档口径：在清单内、但只存在于 dev 分支（旧措辞「不进 TEMPLATE_FILES」= 分叉）
         self.assertIn("在 `TEMPLATE_FILES` 清单内", para)
-        self.assertNotIn("不进 `TEMPLATE_FILES`", para)
         self.assertIn("只存在于 dev 分支", para)
+
+
+class S12Iterations(unittest.TestCase):
+    """S12：迭代日志冻结锚（`.workspace/iterations/R<round>.md`）。
+
+    六条覆盖物：sha 一致 → PASS；落地后改一个字节 → 红；节数不符 → 红；编号不连续 → 红；
+    有 sha 但文件被删 → 红；账本两个字段都没有 → 不判（legacy 豁免，历史条目 44.3.8.0 属此列）。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "repo"
+        (self.root / ".workspace" / "iterations").mkdir(parents=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write_iter(self, nums=(1, 2, 3), round_no=46, extra=""):
+        body = f"# R{round_no} 迭代日志\n\n" + "".join(
+            f"## it{n} · 2026-11-24\n\n- 触发：夹具\n- 改动：夹具\n- 证伪：夹具\n"
+            f"- 结论：pending\n- 遗留：无\n\n" for n in nums) + extra
+        path = self.root / ".workspace" / "iterations" / f"R{round_no}.md"
+        osnorm.write_text(path, body, newline="lf")
+        return path
+
+    def entry(self, **kw):
+        base = {"version": "46.3.8.0", "round": 46, "date": "2026-11-24", "summary": "夹具",
+                "commit": None, "tag": None, "files_sha256": {}}
+        base.update(kw)
+        return base
+
+    def status(self, ledger):
+        return sc.check_s12(ledger, self.root)
+
+    def sha(self, path):
+        import hashlib
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def test_matching_sha_and_count_is_pass(self):
+        path = self.write_iter((1, 2, 3))
+        status, detail, findings = self.status([self.entry(iterations=3,
+                                                           iterations_sha256=self.sha(path))])
+        self.assertEqual(status, "PASS", detail)
+        self.assertEqual(findings, [])
+        self.assertIn("1 条 sha256 一致", detail)
+        self.assertIn("1 条节数连续", detail)
+
+    def test_one_byte_edit_after_landing_is_red(self):
+        path = self.write_iter((1, 2, 3))
+        frozen = self.sha(path)
+        osnorm.write_text(path, osnorm.read_text(path) + "补一笔\n", newline="lf")
+        status, _, findings = self.status([self.entry(iterations=3, iterations_sha256=frozen)])
+        self.assertEqual(status, "FAIL")
+        self.assertTrue(any("落地后被改" in f["message"] for f in findings), findings)
+        self.assertTrue(any(f["file"].endswith("R46.md") for f in findings), findings)
+
+    def test_section_count_mismatch_is_red(self):
+        path = self.write_iter((1, 2, 3))
+        status, _, findings = self.status([self.entry(iterations=4, iterations_sha256=self.sha(path))])
+        self.assertEqual(status, "FAIL")
+        self.assertTrue(any("iterations=4" in f["message"] and "3 节" in f["message"] for f in findings),
+                        findings)
+
+    def test_non_contiguous_it_numbers_are_red(self):
+        path = self.write_iter((1, 2, 4))
+        status, _, findings = self.status([self.entry(iterations=3, iterations_sha256=self.sha(path))])
+        self.assertEqual(status, "FAIL")
+        self.assertTrue(any("1..3 连续" in f["message"] for f in findings), findings)
+
+    def test_missing_file_with_sha_is_red(self):
+        """账本声明了 sha、文件却被删 → 红（没有东西可对账，不是「无锚豁免」）。"""
+        path = self.write_iter((1,))
+        path.unlink()
+        status, _, findings = self.status([self.entry(iterations=1, iterations_sha256="0" * 64)])
+        self.assertEqual(status, "FAIL")
+        self.assertTrue(any("不存在" in f["message"] for f in findings), findings)
+        self.assertTrue(any(f["file"] == ".workspace/iterations/R46.md" for f in findings), findings)
+
+    def test_wrong_sha_with_file_present_is_red_as_rewrite(self):
+        """文件还在但内容对不上 → 报「落地后被改」，而不是报缺文件（两种红要分得开）。"""
+        path = self.write_iter((1,))
+        status, _, findings = self.status([self.entry(iterations=1, iterations_sha256="0" * 64)])
+        self.assertEqual(status, "FAIL")
+        self.assertTrue(any("落地后被改" in f["message"] for f in findings), findings)
+        self.assertFalse(any("不存在" in f["message"] for f in findings), findings)
+
+    def test_entry_without_fields_is_exempt(self):
+        """未记锚的条目（44.3.8.0 等历史条目）不判：没有 `iterations` 文件也必须 PASS。"""
+        status, detail, findings = self.status([self.entry()])
+        self.assertEqual(status, "PASS", detail)
+        self.assertEqual(findings, [])
+        self.assertIn("legacy", detail)
+
 
 
 class RealTree(unittest.TestCase):
@@ -1089,8 +1245,8 @@ class RealTree(unittest.TestCase):
             # DEGRADED（显式降级，不是绿）；S10 在非 dev/main 分支上 WARN；
             # S11 在 origin/<当前分支> 未推送时 WARN（「仅有本地锚」）。
             allowed = {5: ("PASS", "SKIP"), 7: ("PASS", "DEGRADED"), 10: ("PASS", "WARN"),
-                       11: ("PASS", "WARN")}
-            for i in range(1, 12):
+                       11: ("PASS", "WARN"), 12: ("PASS",)}
+            for i in range(1, 13):
                 ok = any(f"S{i} {s}" in p.stdout for s in allowed.get(i, ("PASS",)))
                 self.assertTrue(ok, f"S{i} 在真实树上不是在允许的状态里：\n{p.stdout}")
             self.assertIn("→ OK", p.stdout)

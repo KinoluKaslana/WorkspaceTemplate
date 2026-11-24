@@ -14,7 +14,7 @@
 | `inspect_skills.py` | 只读盘点 skills 目录（入口、name/description、嵌套） | `<skills-dir> [--include-nested]` | 0 / 1 |
 | `version_check.py` | 版本三元组：政策 ↔ CHANGELOG ↔ bootstrap | `[--json]` | 0 / 1 |
 | `policy_facts.py` | 政策事实生成器：从权威源渲染「生成块」（政策/插件版本、`TEMPLATE_FILES`/skills/scripts 计数、条款范围），并判「未登记的政策版本文面量」（历史标记只豁免它声明的版本、不得登记当前版本；`CHANGELOG` 条目须为 `## x.y.z`）。另有 dev 双账本判据：`.workspace/release_dev.json` 末条 == `CHANGELOG_DEV.md` 首个四段标题、两文件必须成对、dev 版本严格递增；**三段判据不套 `CHANGELOG_DEV.md`**（否则四段版本被误杀） | `[--check] \| [--write] \| [--print]` | 0 一致 / 1 有 finding（`--write` 缺标记时为 2） |
-| `release.py` | 发版事务：版本/CHANGELOG/bootstrap/生成块/账本同步，失败整体回滚；tag 单独执行，绝不 push。`--dev` 走**四段 dev 账本**（`NN.X.Y.Z`）：只写 `CHANGELOG_DEV.md` + `.workspace/release_dev.json`，不写 `releases.json`、不改政策头、不 tag/push | `--version X.Y.Z --summary "…" [--dry-run\|--apply]`；`--verify`；`--tag X.Y.Z --apply`；`--dev [--round NN\|--version NN.X.Y.Z] [--dry-run\|--apply]`；`--dev --verify`；`--dev --list` | 0 / 1 |
+| `release.py` | 发版事务：版本/CHANGELOG/bootstrap/生成块/账本同步，失败整体回滚；tag 单独执行，绝不 push。`--dev` 走**四段 dev 账本**（`NN.X.Y.Z`）：只写 `CHANGELOG_DEV.md` + `.workspace/release_dev.json`，不写 `releases.json`、不改政策头、不 tag/push；若 `.workspace/iterations/R<round>.md` 存在，条目追加 `iterations`（节数）与 `iterations_sha256`（文件 sha256）作为 S12 冻结锚 | `--version X.Y.Z --summary "…" [--dry-run\|--apply]`；`--verify`；`--tag X.Y.Z --apply`；`--dev [--round NN\|--version NN.X.Y.Z] [--dry-run\|--apply]`；`--dev --verify`；`--dev --list` | 0 / 1 |
 | `notes_index_check.py` | notes 索引与重建结果一致（防手改/过期） | `[--json]` | 0 / 1 |
 | `secret_scan.py` | 高置信度明文凭据扫描（只打印脱敏片段） | `[--root PATH] [--json]` | 0 / 1 |
 | `clause_lint.py` | 条款属性门：正文用词 ↔ `clauses.meta.json` 声明一致；附带条款引用门（E12/E13：仓内文档 `§<n> R<m>` 的条款须存在且章节号对得上） | `[--strict] [--report] [--json]` | 0 / 1 |
@@ -31,8 +31,8 @@
 | `local_state.py` | 本机状态按 context 分片（库，无 CLI）：`read_state` / `read_status` / `bind` / `resolve_identity` / `detect_platform_info` | `import local_state` | 库：不变量失败抛 `ValueError`/`TypeError`；判读结果在返回字典的 `status`/`reason` |
 | `osnorm.py` | 路径交换格式与文本 I/O 的**唯一实现**（库，无 CLI）：`canonical_path` / `family` / `read_text` / `write_text` / `run_text` / `atomic_write_text` / `replace_retry` / `configure_stdio` / `BOM_POLICY` | `import osnorm` | 库：路径形式不可接受抛 `PathFormError`（`ValueError` 子类） |
 | `encoding_guard.py` | 文本编码机械统一：扫模板层 + 用户可编辑清单的 BOM / 纯 CRLF / 混合换行；`--fix` 备份后剥 BOM + 统一 LF（幂等） | `--check [--json]`；`--fix`；`[--root PATH]` | `--check`：0 干净 / 1 有发现；`--fix`：0 全部修好 / 1 有文件修复失败 |
-| `sequence_check.py` | 计划侧 ↔ 事实侧互校：`.workspace/SEQUENCE.md` §4 的 S1–S11（轮次递增；**模板仓 dev 缺计划文件 = 红**（SKIP 只留给实例侧/非模板仓）/ 版本首段==轮次 / landed↔账本双向+`land_status` 三值+§1↔§2 一致+**历史锚**（含 `landed-no-ledger` 轮次）+**落地即入账**（首次标 landed 的提交必须已含该轮账本）/ 依赖不倒置 / 范围引用 WORKLIST（无文件 = 声明过的 SKIP；**显式 `--worklist` 指错/不可读 = 红**）/ 计数+历史下界 / 每条账本 summary 与 `CHANGELOG_DEV.md` 逐字**且**与 git 锚一致（`commit: null` → 独立 `DEGRADED`）/ 已落地版本不可变 + **已提交历史版本全字段严格 append-only**（summary 改写也红）/ **`landed` 与 `landed-no-ledger` 都要三席确认**（`legacy` 白名单 + 未知席位必红；中英文方括号/全角逗号都解析）/ `_DEV` 文件分支归属（**模板身份只用 git 锚**，改 `bootstrap.json` 关不掉；非模板仓只 WARN）/ **S11 远端锚**：`origin/<分支>` 是 HEAD 祖先，不可用时 WARN 并明示「仅有本地锚」）。**S10/S11 无论是否 skip 都执行**；`--json` 在任何结局都只输出一个 JSON 对象（`ok`/`checks[]`/`counts`/`degraded`/`warned`/`skipped`） | `[--json] [--root DIR] [--worklist PATH]` | 0 全绿或显式 skip（可含 DEGRADED/WARN）/ 1 有 findings / 2 用法或 IO |
-| `check_all.py` | 提交前统一门禁：check 模式 11 段（sequence 是第 10）；`--fix` 模式共 15 段（4 修复 + 11 检查；`--full` 再加 tests / hooks-tests） | `[--fix] [--check] [--full] [--json] [--only a,b]` | 0 全绿 / 1 任一阶段失败 / 2 用法错误 |
+| `sequence_check.py` | 计划侧 ↔ 事实侧互校：`.workspace/SEQUENCE.md` §4 的 S1–S12（轮次递增；**模板仓 dev 缺计划文件 = 红**（SKIP 只留给实例侧/非模板仓）/ 版本首段==轮次 / landed↔账本双向+`land_status` 三值+§1↔§2 一致+**历史锚**（含 `landed-no-ledger` 轮次）+**落地即入账**（首次标 landed 的提交必须已含该轮账本）/ 依赖不倒置 / 范围引用 WORKLIST（无文件 = 声明过的 SKIP；**显式 `--worklist` 指错/不可读 = 红**）/ 计数+历史下界 / 每条账本 summary 与 `CHANGELOG_DEV.md` 逐字**且**与 git 锚一致（`commit: null` → 独立 `DEGRADED`）/ 已落地版本不可变 + **已提交历史版本全字段严格 append-only**（summary 改写也红）/ **`landed` 与 `landed-no-ledger` 都要三席确认**（`legacy` 白名单 + 未知席位必红；中英文方括号/全角逗号都解析）/ `_DEV` 文件分支归属（**模板身份只用 git 锚**，改 `bootstrap.json` 关不掉；非模板仓只 WARN）/ **S11 远端锚**：`origin/<分支>` 是 HEAD 祖先，不可用时 WARN 并明示「仅有本地锚」/ **S12 迭代日志冻结锚**：账本 `iterations_sha256` 必须等于 `.workspace/iterations/R<round>.md` 当前 sha256（落地后回改 = 红）、`iterations` 必须等于 `## it<N>` 节数且编号 1..N 连续，两者都无 = 不判）。**S10/S11 无论是否 skip 都执行**；`--json` 在任何结局都只输出一个 JSON 对象（`ok`/`checks[]`/`counts`/`degraded`/`warned`/`skipped`） | `[--json] [--root DIR] [--worklist PATH]` | 0 全绿或显式 skip（可含 DEGRADED/WARN）/ 1 有 findings / 2 用法或 IO |
+| `check_all.py` | 提交前统一门禁：check 模式 11 段（sequence 是第 10）；`--fix` 模式共 15 段（4 修复 + 11 检查；`--full` 再加 tests / hooks-tests）。全部阶段跑完后若有未推送提交且 dev 账本非空，打一行「尚未由用户放行（未 push）」WARN，**不改退出码** | `[--fix] [--check] [--full] [--json] [--only a,b]` | 0 全绿 / 1 任一阶段失败 / 2 用法错误 |
 
 ## 1. 完整性：`verify_rules.py` + `mark_rules.py`
 
@@ -384,6 +384,11 @@ CI 治理 job 跑**同一条命令**。
 - `--fix` 收尾**强制复查**：修复阶段跑完后再跑一遍全部检查阶段，单独打印 `修复后复查` 段，
   末尾汇总写「修复后仍有阶段未通过：<names>」；有失败即 rc=1（修复是否收口只看这次复查）。
 - `--json` 的 stdout 只有 `{"ok": bool, "stages": [{"name","ok","rc","seconds","tail"}]}`，人读进度走 stderr。
+- **放行提示（只提示，不改退出码）**：全部阶段跑完后，若当前分支**有上游**且 `ahead > 0`（有未推送提交）、
+  且 dev 账本 `.workspace/release_dev.json` **非空**，打印一行
+  `WARN: 本轮已由三席放行，但尚未由用户放行（未 push）；全绿 ≠ 已放行`。push 永远由用户执行，
+  所以「全绿但没 push」是正常中间态、不判红；但它必须出现一次，免得把三席放行读成用户放行。
+  `--json` 下这行走 stderr，stdout 仍只有一个 JSON 对象；退出码不受影响。
 - 子进程一律走 `osnorm.run_text`（恒捕获 + utf-8），解释器用**当前** `sys.executable`。
 - **只调度，不改判据**：不解释 findings、不自动 `git commit` / `git push`、不把失败改判成通过。
 - `--only a,b` 精确覆盖模式过滤（按阶段表顺序执行）——调试口；提交前只认完整三连。

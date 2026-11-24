@@ -35,6 +35,9 @@ Agent「记得逐个跑」必然漏；CI 与本地各跑一套还会漂移。这
   → rc=1。修复是否真的收口只由这次复查回答，不能从"修复阶段 ok"推断。
 - **子进程恒捕获 + utf-8**：一律走 `osnorm.run_text`，不自己拼 `subprocess.run` 的编码参数。
 - 解释器用**当前解释器**（`sys.executable`）：调用方已经选好 venv，本脚本不再猜 `python3`。
+- **放行提示（只提示，不改退出码）**：全部阶段跑完后，若「当前分支有上游且 ahead > 0」且
+  「dev 账本非空」，打印一行 `WARN`：三席放行 ≠ 用户放行。`--json` 下这行走 stderr，
+  stdout 仍然只有一个 JSON 对象。
 
 用法：
   python3 scripts/check_all.py             # = --check：只跑检查阶段
@@ -132,6 +135,57 @@ def select_stages(*, fix: bool, full: bool, only: str | None) -> list[Stage] | N
             if s.kind == KIND_CHECK or (s.kind == KIND_FIX and fix) or (s.kind == KIND_FULL and full)]
 
 
+DEV_LEDGER_REL = ".workspace/release_dev.json"
+RELEASE_WARN = "本轮已由三席放行，但尚未由用户放行（未 push）；全绿 ≠ 已放行"
+
+
+def _git(root: Path, *args: str) -> tuple[int, str]:
+    """只读 git 命令；缺 git / 非仓库都不抛，按 rc≠0 返回（与 sequence_check 同口径）。"""
+    try:
+        proc = osnorm.run_text(["git", *args], cwd=str(root), errors="replace")
+    except OSError:
+        return 127, ""
+    return proc.returncode, (proc.stdout or "")
+
+
+def dev_ledger_has_entries(root: Path = ROOT) -> bool:
+    """dev 账本存在且非空（读不出/不是数组一律按「没有」处理：提示不参与判据）。"""
+    path = root / DEV_LEDGER_REL
+    if not path.is_file():
+        return False
+    try:
+        data = json.loads(osnorm.read_text(path))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(data, list) and bool(data)
+
+
+def release_hint(root: Path = ROOT) -> str | None:
+    """三席放行 ≠ 用户放行：有未推送提交且 dev 账本非空 → 一行提示。
+
+    **纯提示**：它不进 `--json` 的 `ok`、不改退出码。理由是这条判据无法替用户表达「放行」：
+    push 由用户手动执行，脚本永远不 push（`release.py` 的硬约束），所以「全绿但没 push」
+    是正常的中间态，不是失败；但它必须在人读输出里出现一次，免得把三席放行误读成用户放行。
+    无上游（新分支从未推送）不提示：那种情况没有可比的远端，S11 已 WARN「仅有本地锚」。
+    """
+    if not dev_ledger_has_entries(root):
+        return None
+    rc, out = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if rc != 0 or not out.strip() or out.strip() == "HEAD":
+        return None
+    rc, _ = _git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if rc != 0:
+        return None
+    rc, out = _git(root, "rev-list", "--count", "@{u}..HEAD")
+    if rc != 0:
+        return None
+    try:
+        ahead = int(out.strip() or "0")
+    except ValueError:
+        return None
+    return RELEASE_WARN if ahead > 0 else None
+
+
 def _tail(lines: str) -> list[str]:
     """输出尾部 20 行（去尾部空行；空输出返回 []）。"""
     kept = lines.split("\n")
@@ -200,6 +254,8 @@ def main(argv: list[str]) -> int:
     ok = all(r["ok"] for r in results)
     failed = [r["name"] for r in results if not r["ok"]]
 
+    hint = release_hint(ROOT)
+
     if quiet:
         print(json.dumps({"ok": ok, "stages": results}, ensure_ascii=False))
     else:
@@ -210,6 +266,9 @@ def main(argv: list[str]) -> int:
         else:
             summary = "失败阶段：" + ", ".join(failed)
         print(f"check_all: {'ok' if ok else 'FAIL'} — {len(results) - len(failed)}/{len(results)} 通过；{summary}")
+    # 放行提示：全部阶段跑完后才出现一次；**不改 ok / rc**（三席放行 ≠ 用户放行，见模块 docstring）。
+    if hint:
+        print(f"WARN: {hint}", file=sys.stderr if quiet else sys.stdout)
     return 0 if ok else 1
 
 

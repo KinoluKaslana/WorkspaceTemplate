@@ -333,7 +333,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "1a2b83f1bc3faf9602d2343b10670277d789e8bddc86a98e8e76ec2ae6f6fb8b",
+    "file_sha256": "34ddc4835f9cf135ed77643a6d8c469a9c98b071f15c73fa1f14e54d822f4be4",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -398,7 +398,7 @@
   },
   "scripts/release.py": {
     "clauses": {},
-    "file_sha256": "3fec287350c5de453d3c791bb3b630edd5a21a4591c3105119c15bbe1528f31b",
+    "file_sha256": "7b4a19036e7f5ee6c28849f27c8169ae9296f19db02b2cbdba387177ca7bd53a",
     "marked": 0
   },
   ".workspace/skills/release/SKILL.md": {
@@ -418,7 +418,7 @@
   },
   "tests/test_release.py": {
     "clauses": {},
-    "file_sha256": "c4e1cebee0db4e386fe8cab02fc72e0fc9656d84af8655854230e9b9c829f953",
+    "file_sha256": "1b3b81ea837ea51e55bef8e8869fdae6933a29769bdcac244eb11186f7e86765",
     "marked": 0
   },
   "scripts/notes_index_check.py": {
@@ -653,7 +653,7 @@
   },
   "scripts/check_all.py": {
     "clauses": {},
-    "file_sha256": "7b847e046329991f943a814d5f207ed6f14bb3e12e953a75f3f4d4088c90b4c6",
+    "file_sha256": "c6baff9d35a992e94119ab9d0e42e3e592c063eefb7d192c66a641b898bbae22",
     "marked": 0
   },
   ".workspace/skills/commit-gate/SKILL.md": {
@@ -663,12 +663,12 @@
   },
   "scripts/sequence_check.py": {
     "clauses": {},
-    "file_sha256": "3587ae8fc327968b792398ebb14ef7a105d36115bc73d1b67559bc3e9c663591",
+    "file_sha256": "b64d151395d8dce8cfdee7d0799398d6d010d4d8989fefe756ab4f56d9366022",
     "marked": 0
   },
   "tests/test_sequence_check.py": {
     "clauses": {},
-    "file_sha256": "23ff806df7cd9049dd749720bb14c976a5e7ceda40141c63b2ef388f97baeb14",
+    "file_sha256": "188ac7bc159c7a5a65a7f4887af85a818eeaee88dbc79368c8da8546dc5d63dd",
     "marked": 0
   }
 }
