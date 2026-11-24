@@ -1,7 +1,7 @@
 # SEQUENCE — 交付顺序与版本号（计划侧）
 
 > 本文件是**计划侧**事实源；**事实侧**是 `.workspace/release_dev.json` + `CHANGELOG_DEV.md` + git 提交。
-> 两者由 `scripts/sequence_check.py` 机械互校（S1–S12）。校验的是**一致性**，不是「计划不可改」。
+> 两者由 `scripts/sequence_check.py` 机械互校（S1–S13）。校验的是**一致性**，不是「计划不可改」。
 > 变更规则：改本文件必须在对应条目 `note` 写明「谁改的、为什么」；落地顺序与计划不同只有两条合法出路——
 > 改计划（并登记）或回退落地。**不允许「计划写 A、实际做 B、账本记 C」并存。**
 
@@ -54,22 +54,25 @@
 > `land_status` 取值：`planned`（未做）/ `landed`（账本 + changelog + 三席确认齐全）/ `landed-no-ledger`（机制轮，见 R45）。
 
 ### R46 · `46.3.8.0` · 计划互校机制
-- **范围**：`scripts/sequence_check.py`（S1–S12：R46 落 S1–S8；R46b 补 S9/S10；R46c 补 git 历史锚；
+- **范围**：`scripts/sequence_check.py`（S1–S13：R46 落 S1–S8；R46b 补 S9/S10；R46c 补 git 历史锚；
   R46d 以第二实现为基线重做——补 A 无计划文件时仍判 S10、B 显式 `--worklist` 指错必红、
   C `legacy` 白名单、D 未知席位必红、E S7 独立 `DEGRADED`、F 历史轮次集合收 `landed-no-ledger`，
-  并新增 S11 远端锚；R46e 修三席九条 A–I；R46f 新增 S12 迭代日志冻结锚）
+  并新增 S11 远端锚；R46e 修三席九条 A–I；R46f 新增 S12 迭代日志冻结锚；
+  R46g 新增 S13 §1 landed 行整行冻结——历史 §1 数据行逐字仍在，当前追加新行不红）
   + 迭代日志机制（`.workspace/iterations/R<round>.md` + `release.py --dev` 冻结 `iterations` /
   `iterations_sha256`；日志属 dev 专属，不随模板同步）
   + 本文件 + 登记（`TEMPLATE_FILES` / `TOOLS.md` / `check_all` 阶段）
   + 顺手：C11（`release_anchor.py` 进 `TEMPLATE_FILES`）、D5（`docs/tools.md` 补 `collapse_path`/`OSNORM_API`）、
   D6（台账 `R35-C1` 回写已修）
 - **依赖**：R45
-- **判据**：S1–S12 全绿（S7 的 `DEGRADED`、S10/S11 的 `WARN` 不算失败，但必须在摘要里可见）；证伪必须红：
+- **判据**：S1–S13 全绿（S7 的 `DEGRADED`、S10/S11 的 `WARN` 不算失败，但必须在摘要里可见）；证伪必须红：
   ①删 §1 landed 行 + 删账本条目（成对删除）②账本 summary 与 CHANGELOG 同步改写 ③新轮次写 `verified_by: legacy`
   ④`verified_by` 含白名单外席位 ⑤`--worklist` 指向不存在路径 ⑥main 分支留 `_DEV` 文件（且无 `SEQUENCE.md`）
   ⑦删历史 §1 的 R45（landed-no-ledger）行并把 R46 依赖改 R44 ⑧本地历史改写而 origin 未同步 ⑨无 origin 时只 WARN
   ⑩落地后改 `.workspace/iterations/R<round>.md` 一个字节（S12 红）⑪账本 `iterations` 与文件节数不符（S12 红）
   ⑫账本有 `iterations_sha256` 但日志被删（S12 红）；未落地轮次无日志文件 → 不判（豁免）
+  ⑬改历史 §1 landed 行的 `范围` / `备注` / `确认` 说明文字，或把 `提交` 换成另一真实提交（S13 红）；
+  正常追加新 landed 行 / planned→landed 合法升级 → S13 不红
 - **风险**：低（不改产品行为）
 
 ### R47 · `47.3.8.0` · stdio 三件套（R4 归零）
@@ -144,9 +147,10 @@
 | **S10** | **`_DEV` 文件只属于 dev 分支**：模板身份**只用 git 锚判定**（`git log -- _DEV 文件` 非空），**不读** `.workspace/bootstrap.json` 等可编辑 JSON；分支为 `dev` 时两文件必须存在；为 `main` 时**必须不存在**（存在即红）；其他分支告警；非模板仓（历史里从未出现 `_DEV` 文件）只 WARN，不判红。**无 `SEQUENCE.md` 时本条仍须执行**（main 的合法态正是没有计划文件） | `git log --oneline -- CHANGELOG_DEV.md` / `-- .workspace/release_dev.json` + `git rev-parse --abbrev-ref HEAD` + 文件存在性 | 分支与 `_DEV` 文件不匹配 / 靠改 JSON 关判据 |
 | **S11** | **远端锚对账（增强层）**：`origin/<当前分支>` 存在且可读时，本地历史必须是它的**超集**（`origin/x` 是 HEAD 祖先）；否则红。远端不可用（离线/无远端）→ **WARN 并明示「仅有本地锚」**，不判红 | `git merge-base --is-ancestor origin/x HEAD`；失败分支区分「不是超集」与「远端不可用」 | 本地历史被重写而远端未同步 / 仅本地锚 |
 | **S12** | **迭代日志冻结锚**：`.workspace/iterations/R<round>.md` 每轮一个、append-only。账本条目带 `iterations_sha256` ⇒ 当前文件 sha256 必须一致（**landed 后回改日志 = 红**）；带 `iterations` ⇒ 文件必须存在、`## it<N>` 节数一致、编号 **1..N 连续**（缺节/跳号/乱序都红）；**两者都没有 ⇒ 不判**（历史条目 legacy 豁免，不回填） | `hashlib.sha256(读字节)` 与账本 `iterations_sha256` 比对 + 逐行解析 `## it<N>` 得节数与编号序列，与 `iterations` 比对 | 日志落地后被改/被删、节数或编号漂移 |
+| **S13** | **§1 landed 行整行冻结（append-only rows）**：`git log -- .workspace/SEQUENCE.md` 取各历史版本 blob，解析 §1 表格**数据行**（不含表头与分隔行），历史全集必须在当前版本里**逐字**仍在；缺任一行 = 红（贴出**缺行原文**与该行**首次出现的提交**）。当前**新增**行（追加）不红。`范围` / `备注` / `确认` 说明文字改写、`提交` 列换成另一真实提交、整行删除都在射程内。**判据建立前已发生的合法改写**（`e895711` 的 R45 确认列在 `464e0c9` 被澄清）由代码内白名单 `S13_PREEXISTING_EDITS` 豁免（键 = 行原文 sha256[:16]，扩名单必须改代码、diff 留痕；只豁免旧行缺失，当前行被改仍红），豁免条数在 detail 里打印 | `git log --format=%H -- .workspace/SEQUENCE.md` 逐个 `git show <sha>:.workspace/SEQUENCE.md` → `section1_rows()` 取行原文（仅 `rstrip`）→ 历史并集 vs 当前 §1 行集合 | 已落地行的非锚列被改写 / 历史行被删 / 只改当前文件或改完再普通 commit |
 
 **状态与退出码**：`PASS` / `FAIL` / `SKIP`（声明过的豁免：实例侧 / 非模板仓无 `SEQUENCE.md`、
-候选路径无 `WORKLIST.md`）/ `DEGRADED`（锚不可用，已降级但**显式打印**：S7 的未提交条目、无 git 时的 S10）/
+候选路径无 `WORKLIST.md`）/ `DEGRADED`（锚不可用，已降级但**显式打印**：S7 的未提交条目、无 git 时的 S10/S13）/
 `WARN`（不影响结论：非 dev/main 分支的 S10、非模板仓的 S10、远端不可用的 S11）。**只有 `FAIL` 影响退出码**；
 `DEGRADED` 与 `WARN` 在汇总行计数（`N DEGRADED(S7)` / `N WARN(S10, S11)`），并在 `--json` 的
 `degraded` / `warned` / `counts` 里逐项列出——降级可见，但不被静默当成通过。
@@ -155,33 +159,32 @@
 
 ```
 适用域  判据以 **dev 分支**为权威域：**计划文件存在时，所有分支都执行现行 S 判据
-        （当前 S1–S12）**。main 上 S10 判 _DEV 归属、其余 S 照常互校（实测：main 保留
+        （当前 S1–S13）**。main 上 S10 判 _DEV 归属、其余 S 照常互校（实测：main 保留
         计划并移走两份 _DEV 文件 → S3/S6/S8 红）；其他分支上 S10 只对分支归属告警；
-        只有**整份计划文件不存在**时 S2–S9 与 S12 才按 SKIP 不判红（S1 在 dev 上缺计划
-        仍 FAIL、其他分支只告警；实测：非 dev/main 删整份计划 → 9 SKIP / 3 WARN，rc=0；
-        main 缺计划且无 _DEV 残留 → S10 PASS）。计划内容篡改不因分支豁免（实测：
+        只有**整份计划文件不存在**时 S2–S9、S12 与 S13 才按 SKIP 不判红（S1 在 dev 上
+        缺计划仍 FAIL、其他分支只告警；实测：非 dev/main 删整份计划 → 10 SKIP / 3 WARN，
+        rc=0；main 缺计划且无 _DEV 残留 → S10 PASS）。计划内容篡改不因分支豁免（实测：
         probe-feature 保留计划注入非法 land_status → S3 红）。
 
 主防线  本地 git 锚（账本 append-only 全字段前缀 + 有 commit 条目的 changelog blob
         + 历史轮次集合 + 落地即入账）
         能挡（每条都有构造测试证明）：
-          · **误删 / 误改已提交的历史条目** —— 仅限**账本条目字段**（S8 全字段前缀）
-            与**历史 landed 轮次集合**（S3/S6）
+          · **误删 / 误改已提交的历史条目** —— 账本条目字段（S8 全字段前缀）、
+            **历史 landed 轮次集合**（S3/S6）、**§1 landed 数据行原文**（S13 整行冻结）
           · §1 landed 行的 `version` 列改写 —— S2/S8（与账本逐轮对账）
-          · 成对删除（landed 行 + 账本条目同时删） —— S3/S6/S8
+          · **§1 landed 行的非锚列** —— S13：`范围` / `备注` / `确认` 列的说明文字改写、
+            `提交` 列换成另一真实提交、整行删除 → 红（`version` 列仍由 S2/S8 对账；
+            `确认` 列的**结构字段**——`legacy` 白名单 / `verified_by` 席位 / `verdict` /
+            `verified_at`——仍由 S9 校验）。判据建立前已发生的改写见 S13 的代码白名单
+          · 成对删除（landed 行 + 账本条目同时删） —— S3/S6/S8/S13
           · 有 commit 的账本条目：summary 与历史 CHANGELOG blob 逐字不符 —— S7
           · 依赖倒置、非法 land_status、landed 与账本脱钩 —— S4/S3
           · 未落地轮次的 `依赖` / `land_status` / `version` 首段改写 —— S4/S3/S2/S8
           · dev 分支的**计划文件缺失**（历史有计划却删掉 SEQUENCE.md） —— R46e B 项
         不能挡（**已实测**，不要再当成能力）：
-          · **§1 landed 表的非锚列**：`范围`、`备注` 两列与 `确认` 列的说明文字改写后
-            仍 rc=0 —— `version` 列由 S2/S8 对账；`确认` 列的**结构字段**（`legacy`
-            白名单 / `verified_by` 席位 / `verdict` / `verified_at`）由 S9 校验，但
-            说明文字没有逐字锚；`提交` 列只有「提交号真在 git 里」的存在性校验，
-            改写为另一真实提交仍 rc=0
           · **未落地轮次的散文字段**（`范围`、`判据`、`说明`）改写、或整块删除 ——
             rc=0（`依赖` / `land_status` / `version` 首段仍受 S4/S3/S2/S8 校验，改写会红）
-          · 非 dev/main 分支上删除整份计划（S1–S9 全部 SKIP，只告警）
+          · 非 dev/main 分支上删除整份计划（S2–S9/S12/S13 全部 SKIP，S1/S10/S11 只告警）
           · 追加伪造的轮次（含伪造三席确认）
           · 重写整条可达历史（orphan 分支 / 全链 rebase / filter-branch）
           · 本地改写而远端同谋

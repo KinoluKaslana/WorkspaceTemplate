@@ -31,6 +31,11 @@ R46f 补的两件：
   I 的补完：§0 里**每一条**「`<path>` 在 / 不在 `TEMPLATE_FILES`」断言都按
       `verify_rules.TEMPLATE_FILES` 现场解析比对（原来只覆盖两份 `_DEV` 文件与一句措辞）
 
+R46g 补的一条（S13 §1 整行冻结）：
+  历史版本 `SEQUENCE.md` 的**每一行 §1 数据行**必须在当前版本里逐字仍在（append-only rows）：
+  红例 = 改历史行一个字（未提交 / 提交后都红，锚是 git 历史不是当前文件）、删历史行；
+  绿例 = 追加新行、历史行一字未动。判据建立前已发生的合法改写走代码白名单（`S13_PREEXISTING_EDITS`）。
+
 最后一条跑真实树：有 `SEQUENCE.md` 就必须全绿，没有就必须显式 skip 且 rc=0
 （这条把「判据文档」与「实现」钉在一起——文档改了实现跟不上，这里先红）。
 """
@@ -234,7 +239,7 @@ class Base(unittest.TestCase):
         out = {}
         for line in proc.stdout.splitlines():
             parts = line.split()
-            if len(parts) >= 2 and parts[0] in {f"S{i}" for i in range(1, 12)}:
+            if len(parts) >= 2 and parts[0] in {f"S{i}" for i in range(1, 14)}:
                 out[parts[0]] = parts[1]
         return out
 
@@ -244,7 +249,7 @@ class Green(Base):
         p = self.run_script()
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         st = self.status(p)
-        self.assertEqual(st, {f"S{i}": "PASS" for i in range(1, 12)}, p.stdout)
+        self.assertEqual(st, {f"S{i}": "PASS" for i in range(1, 14)}, p.stdout)
         self.assertIn("→ OK", p.stdout)
         # 历史锚生效的证据：真在 git 里比对，而不是「当前文件自证」
         self.assertIn("git 锚", p.stdout)
@@ -259,7 +264,7 @@ class Green(Base):
         self.assertFalse(data["skipped"])
         self.assertEqual([c["id"] for c in data["checks"]],
                          ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11",
-                          "S12"])
+                          "S12", "S13"])
         self.assertEqual([r["round"] for r in data["rounds"]], [44, 45, 46])
         self.assertEqual(data["ledger_entries"], 1)
         self.assertEqual(data["branch"], "dev")
@@ -288,7 +293,7 @@ class Instance(Base):
         self.assertTrue(data["skipped"])
         self.assertIn(".workspace/SEQUENCE.md", data["reason"])
         self.assertIn("S10", json.dumps(data, ensure_ascii=False))   # S10 不随计划侧一起跳过
-        self.assertEqual(data["counts"]["SKIP"], 10)                 # S1–S9 + S12 声明式 SKIP
+        self.assertEqual(data["counts"]["SKIP"], 11)                 # S1–S9 + S12/S13 声明式 SKIP
         self.assertEqual(data["counts"]["FAIL"], 0)
         self.assertIn("SKIP", self.run_script().stdout)
 
@@ -885,7 +890,7 @@ class JsonEverywhere(Base):
         s10 = next(c for c in data["checks"] if c["id"] == "S10")
         self.assertEqual(s10["status"], "FAIL")
         self.assertEqual(data["counts"]["FAIL"], 1)
-        self.assertEqual(data["counts"]["SKIP"], 9)          # S2–S9 + S12；S1 在 main 上是 WARN
+        self.assertEqual(data["counts"]["SKIP"], 10)          # S2–S9 + S12/S13；S1 在 main 上是 WARN
 
 
 class S10Branch(Base):
@@ -1052,8 +1057,21 @@ class DocsCapabilityList(unittest.TestCase):
     def test_can_block_list_is_grounded(self):
         block = self._block()
         for item in ("能挡", "误删", "误改已提交的历史条目", "成对删除", "依赖倒置",
-                     "landed 与账本脱钩", "计划文件缺失"):
+                     "landed 与账本脱钩", "计划文件缺失", "非锚列", "整行冻结", "S13"):
             self.assertIn(item, block)
+
+    def test_non_anchor_columns_moved_to_can_block(self):
+        """S13 落地后 §1 非锚列改写不再是「不能挡」：能挡侧点名 S13，不能挡侧不再列出该项。
+
+        这条是**文档口径**的机械断言：它假设 S13 的构造测试（`S13Rows`）真的存在并跑红，
+        所以两侧一起改才算「清单与能力一致」，只改一侧就先在这里红。
+        """
+        block = self._block()
+        cannot = block[block.index("不能挡"):block.index("—— 与 `AGENT_RULES.md §12 R100`")]
+        self.assertNotIn("§1 landed 表的非锚列", cannot)
+        can = block[block.index("能挡"):block.index("不能挡")]
+        self.assertIn("非锚列", can)
+        self.assertIn("S13", can)
 
     def test_cannot_block_list_names_the_boundary(self):
         block = self._block()
@@ -1233,6 +1251,112 @@ class S12Iterations(unittest.TestCase):
 
 
 
+class S13RowParsing(unittest.TestCase):
+    """S13 的解析域：§1 只取**数据行**——表头与分隔行不是判据对象。"""
+
+    def test_header_and_separator_are_not_rows(self):
+        text = ("# SEQUENCE\n\n## 1. 已落地（landed）\n\n"
+                "| round | version | 提交 | 范围 | 确认（verified_by / verdict） | 备注 |\n"
+                "|---|---|---|---|---|---|\n"
+                "| 44 | `44.3.8.0` | `abc1234` | 范围 | `legacy`（机制前） | 首条 |\n"
+                "\n## 2. 计划（planned）\n\n"
+                "| 45 | 不该被算进来 |\n")
+        rows = sc.section1_rows(text)
+        self.assertEqual(rows, ["| 44 | `44.3.8.0` | `abc1234` | 范围 | `legacy`（机制前） | 首条 |"])
+
+    def test_preexisting_edit_whitelist_is_code_bound(self):
+        """白名单是写死的代码常量（键 = 行原文 sha256[:16]），不是可编辑的名单文件。"""
+        self.assertTrue(sc.S13_PREEXISTING_EDITS)
+        for key in sc.S13_PREEXISTING_EDITS:
+            self.assertRegex(key, r"^[0-9a-f]{16}$")
+
+
+class S13Rows(Base):
+    """S13：§1 landed 数据行整行冻结（append-only rows）。
+
+    红例必须点名到「缺了哪一行 + 该行首次出现在哪个提交」；绿例只覆盖两类合法动作：
+    历史行一字未动、以及**追加**新行。锚是 git 历史——所以「改完再普通 commit」同样红。
+    """
+
+    def test_untouched_rows_are_green(self):
+        p = self.run_script()
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertEqual(self.status(p)["S13"], "PASS", p.stdout)
+        self.assertIn("历史 §1 行 1 条全部逐字在位", p.stdout)
+
+    def test_one_char_rewrite_of_scope_is_red(self):
+        """① 改历史行的「范围」列一个字（工作区未提交）。"""
+        plan_head = self.head()                     # §1 行首次出现的提交
+        self.write_all(seq=SEQ_TMPL.format(commit=self.sha).replace(
+            "R35–R44 全集", "R35–R45 全集"))
+        p = self.run_script()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertEqual(self.status(p)["S13"], "FAIL", p.stdout)
+        self.assertIn("§1 landed 行被改写或删除", p.stdout)
+        self.assertIn("append-only rows", p.stdout)
+        self.assertIn("缺行原文", p.stdout)
+        self.assertIn(f"首次出现 {plan_head[:7]}", p.stdout)      # 来源提交
+        self.assertIn("[R44]", p.stdout)                        # 点名轮次
+        self.assertIn(".workspace/SEQUENCE.md", p.stdout)       # 点名文件
+
+    def test_note_column_rewrite_is_red(self):
+        """② 改「备注」列（R44「首条 dev 版本…」）。"""
+        self.write_all(seq=SEQ_TMPL.format(commit=self.sha).replace(
+            "| 首条 |", "| 首条 dev 版本 |"))
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S13"], "FAIL", p.stdout)
+        self.assertIn("缺行原文", p.stdout)
+
+    def test_same_rewrite_after_commit_is_still_red(self):
+        """锚是 git 历史不是当前文件：改完再普通 commit，旧行仍在历史里 → 仍红。"""
+        self.write_all(seq=SEQ_TMPL.format(commit=self.sha).replace(
+            "R35–R44 全集", "R35–R44"))
+        self.commit_all("tamper then commit")
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S13"], "FAIL", p.stdout)
+        self.assertIn("§1 landed 行被改写或删除", p.stdout)
+
+    def test_deleting_historical_row_is_red(self):
+        seq = "\n".join(line for line in SEQ_TMPL.format(commit=self.sha).splitlines()
+                        if not line.startswith("| 44 |"))
+        self.write_all(seq=seq + "\n")
+        p = self.run_script()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertEqual(self.status(p)["S13"], "FAIL", p.stdout)
+        self.assertIn("§1 landed 行被改写或删除", p.stdout)
+
+    def test_appended_new_row_is_green(self):
+        """③ 正常追加新 landed 行：历史行不变 → S13 不红（多出来不算漂移）。"""
+        anchor = f"| 44 | `44.3.8.0` | `{self.sha}` | R35–R44 全集 | `legacy`（机制建立前） | 首条 |"
+        new = (f"| 46 | （并入 44 条） | `{self.sha}` | 新追加的机制行 | "
+               f"`legacy`（机制建立前） | 追加 |")
+        text = SEQ_TMPL.format(commit=self.sha).replace(anchor, anchor + "\n" + new)
+        self.assertIn(new, text)
+        self.write_all(seq=text)
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S13"], "PASS", p.stdout)
+        self.assertIn("历史 §1 行 1 条全部逐字在位", p.stdout)
+
+    def test_planned_to_landed_upgrade_is_green(self):
+        """④ §2 的 planned 块整体移入 §1 成为新行（合法升级）：S13 只要求旧行仍在。"""
+        anchor = f"| 44 | `44.3.8.0` | `{self.sha}` | R35–R44 全集 | `legacy`（机制建立前） | 首条 |"
+        landed45 = (f"| 45 | `45.3.8.0` | `{self.sha}` | 机制（C1） | "
+                    f"verified_by=[SOL, GPT-SOL-6, PRO]；verdict=pass；verified_at=2026-11-23 | 升级 |")
+        text = SEQ_TMPL.format(commit=self.sha).replace(anchor, anchor + "\n" + landed45)
+        text = "\n".join(line for line in text.splitlines()
+                         if not line.startswith("### R45 ·"))
+        self.write_all(seq=text + "\n")
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S13"], "PASS", p.stdout)
+
+    def test_no_git_is_degraded_not_green(self):
+        """没有 git = 没有历史锚：S13 报 DEGRADED，不冒充 PASS。"""
+        shutil.rmtree(self.root / ".git")
+        p = self.run_script()
+        self.assertEqual(self.status(p)["S13"], "DEGRADED", p.stdout)
+        self.assertIn("没有锚可比", p.stdout)
+
+
 class RealTree(unittest.TestCase):
     """真实树上的契约：有 SEQUENCE.md 就必须全绿；没有必须显式 skip + rc=0。"""
 
@@ -1245,8 +1369,8 @@ class RealTree(unittest.TestCase):
             # DEGRADED（显式降级，不是绿）；S10 在非 dev/main 分支上 WARN；
             # S11 在 origin/<当前分支> 未推送时 WARN（「仅有本地锚」）。
             allowed = {5: ("PASS", "SKIP"), 7: ("PASS", "DEGRADED"), 10: ("PASS", "WARN"),
-                       11: ("PASS", "WARN"), 12: ("PASS",)}
-            for i in range(1, 13):
+                       11: ("PASS", "WARN"), 12: ("PASS",), 13: ("PASS",)}
+            for i in range(1, 14):
                 ok = any(f"S{i} {s}" in p.stdout for s in allowed.get(i, ("PASS",)))
                 self.assertTrue(ok, f"S{i} 在真实树上不是在允许的状态里：\n{p.stdout}")
             self.assertIn("→ OK", p.stdout)

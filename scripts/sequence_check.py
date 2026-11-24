@@ -3,7 +3,7 @@
 
 为什么要有它：交付顺序、dev 版本号、依赖关系写在计划里，实际落地写在账本里。两边靠人「记得
 同步」必然漂移（本轮已实发一次：账本 `summary` 与 `CHANGELOG_DEV.md` 正文差一个措辞）。这里把
-`SEQUENCE.md` §4 的 S1–S12 做成机械判据：**只判一致性，不判计划好坏**。
+`SEQUENCE.md` §4 的 S1–S13 做成机械判据：**只判一致性，不判计划好坏**。
 
 判据（逐条实现 `SEQUENCE.md` §4，编号与那里一致）：
 
@@ -49,6 +49,12 @@
                                                 （landed 后回改日志 = 红）；带 `iterations` ⇒ 文件必须存在、
                                                 `## it<N>` 节数一致、编号 1..N 连续；
                                                 两者都没有 ⇒ **不判**（历史条目 legacy 豁免，不回填）
+  S13 §1 landed 行整行冻结（append-only rows）  `git log -- .workspace/SEQUENCE.md` 取各历史版本 blob →
+                                                解析 §1 表格**数据行**（不含表头与分隔行）→ 历史全集与
+                                                当前 §1 数据行**逐字**比对；历史行缺任一 = 红（贴出缺行
+                                                原文与来源提交）。当前**多出新行**（追加）不红。
+                                                判据建立前已发生的合法改写由代码内白名单
+                                                （`S13_PREEXISTING_EDITS`）豁免，改它必须改代码、diff 留痕
 
 状态取值：`PASS` / `FAIL` / `SKIP`（声明过的豁免）/ `DEGRADED`（锚不可用，已降级但可见）/ `WARN`
 （不构成失败）。**只有 FAIL 影响退出码**；DEGRADED 与 WARN 会逐行打印并在汇总里计数。
@@ -60,7 +66,7 @@
 报告 skip、退出码 0**——不崩、不假红。`check_all.py` 会在实例侧照常调度本阶段。
 例外有两处：① S10/S11 只依赖当前分支、git 历史与两份 `_DEV` 文件，**没有计划文件时仍执行**；
 ② 模板仓的 **dev 分支**缺 `SEQUENCE.md` 是**红**（历史里出现过计划文件或 `_DEV` 文件），
-删计划不能把 S1–S9 的判据整条关掉——SKIP 只留给实例侧 / 非模板仓。
+删计划不能把 S1–S9 与 S12/S13 的判据整条关掉——SKIP 只留给实例侧 / 非模板仓。
 
 用法：
   python3 scripts/sequence_check.py                 # 人读
@@ -140,6 +146,20 @@ LEGAL_VERDICTS = ("pass", "pass-with-notes")
 # 新轮次只要往文件里加一行就绕过了三席确认。R46 起的新轮次自称 `legacy` 一律红。
 LEGACY_ROUNDS = frozenset({44, 45})
 
+# S13 的「判据建立前已发生的合法改写」白名单：键 = §1 数据行**原文**的 sha256[:16]。
+#
+# 来由（真实历史，不是随口列的）：`e895711`（计划首次落盘）的 R45 行确认列写 `` `legacy`（同上） ``，
+# `464e0c9`（R46c）把它改成 `` `legacy`（机制建立前；本副本以完整树基线提交为 git 对象锚） ``——
+# 这次改写发生在 S13 存在之前，性质是**说明变清楚**，不是结论漂移。S13 若对「历史全集」无条件判，
+# 真实树在判据落地当天就红，判据一上线就被迫破例。
+# 写成代码常量而不是可编辑名单（与 LEGACY_ROUNDS 同理）：扩白名单必须改代码、在 diff 里留痕。
+# 豁免只作用于「这条**旧行原文**不在当前版本里」的缺行判定——当前行自身被改写仍会红
+# （新文本不在白名单里），所以它不是一条可用来放行新改写的旁路。
+S13_PREEXISTING_EDITS = {
+    "00b1277e17991779": "e895711 的 R45 行确认列在 464e0c9 被改写"
+                        "（`legacy`（同上）→ `legacy`（机制建立前；…））；S13 建立前的说明澄清",
+}
+
 PASS, FAIL, SKIP, DEGRADED, WARN = "PASS", "FAIL", "SKIP", "DEGRADED", "WARN"
 
 # 只在 dev 分支存在的两份文件（SEQUENCE.md 的 §0「边界」）
@@ -218,6 +238,32 @@ def _col(cols: dict[str, int], key: str, default: int) -> int:
 
 def _cell(cells: list[str], idx: int) -> str:
     return cells[idx] if 0 <= idx < len(cells) else ""
+
+
+def section1_rows(text: str) -> list[str]:
+    """§1「已落地」表格的**数据行原文**（不含表头与分隔行，也不含表外散文）。
+
+    判定域与 `parse_sequence` 的 §1 分支一致：`|` 起头、至少 5 列、首列是纯数字轮次号。
+    只 `rstrip()` 掉行尾空白（CR / 尾随空格不参与比较），其余逐字——S13 的「冻结」按字节算：
+    改一个字、改一列、整行删除都会让该行不再出现在当前版本里（追加新行不受影响）。
+    """
+    rows: list[str] = []
+    section: int | None = None
+    for line in text.splitlines():
+        m = SECTION_RE.match(line)
+        if m:
+            section = int(m.group(1))
+            continue
+        if line.startswith("## "):
+            section = None
+            continue
+        if section != 1:
+            continue
+        cells = _table_cells(line)
+        if cells is None or len(cells) < 5 or not cells[0].isdigit():
+            continue
+        rows.append(line.rstrip())
+    return rows
 
 
 def _parse_confirm(cell: str) -> dict:
@@ -462,9 +508,9 @@ def _ledger_at(root: Path, ref: str) -> tuple[list[dict] | None, str | None]:
 
 
 def collect_history(root: Path) -> dict:
-    """一次性收集 git 历史里的账本/SEQUENCE 版本（新→旧），供 S3/S6/S7/S8 共用。"""
+    """一次性收集 git 历史里的账本/SEQUENCE 版本（新→旧），供 S3/S6/S7/S8/S13 共用。"""
     info: dict = {"is_repo": False, "branch": None, "ledger_versions": [], "seq_versions": [],
-                  "errors": [], "ledger_commits": [], "seq_commits": []}
+                  "seq_rows": [], "errors": [], "ledger_commits": [], "seq_commits": []}
     branch = git_branch(root)
     if branch is None:
         info["errors"].append("不是 git 仓库（或缺 git / 游离 HEAD）")
@@ -484,6 +530,8 @@ def collect_history(root: Path) -> dict:
             info["errors"].append(f"{sha}:{SEQ_REL} 取不到")
             continue
         info["seq_versions"].append((sha, parse_sequence(text)))
+        # §1 数据行的原文（S13 的锚）：与 rounds 同一份 blob 解析，不额外跑 git
+        info["seq_rows"].append((sha, section1_rows(text)))
     return info
 
 
@@ -1239,6 +1287,60 @@ def _history_root(history: dict) -> Path:
     return history["root"]
 
 
+def _row_fingerprint(row: str) -> str:
+    """§1 数据行原文指纹（S13）：改一个字就变。"""
+    return hashlib.sha256(row.encode("utf-8")).hexdigest()[:16]
+
+
+def check_s13(history: dict, current_rows: list[str]) -> tuple[str, str, list[dict]]:
+    """§1 landed 数据行整行冻结（append-only rows）。
+
+    为什么要有它：R46f 之前 §1 只有 `version` 列被 S2/S8 钉住、`提交` 列只有「该提交真在 git 里」
+    的存在性校验，于是 `范围` / `备注` / `确认` 列的说明文字改写、把提交号换成**另一个真实提交**
+    都能 rc=0（v51/v52 三席实跑）。S13 把 §1 数据行当 append-only **行集合**：历史版本里出现过的
+    任何一行，必须在当前版本里**逐字**仍在；当前新增行（追加）不算漂移。
+
+    锚必须是 git 历史（`git log -- .workspace/SEQUENCE.md` 的各 blob），不能是当前文件：
+    否则「改完当前文件再提交」就自证一致。判据建立前已发生的合法改写见 `S13_PREEXISTING_EDITS`
+    （只豁免旧行原文缺失，当前行被改写仍红），豁免条数在 detail 里打印。
+    """
+    if not history["is_repo"]:
+        return DEGRADED, ("无法判定：不是 git 仓库（或缺 git / 游离 HEAD）——"
+                          "§1 历史行没有锚可比，S13 不冒充通过"), []
+    versions = history.get("seq_rows") or []
+    if not versions:
+        return PASS, f"git 历史里没有 {SEQ_REL} 版本：无历史 §1 行可锚（0 条）", []
+    current = set(current_rows)
+    first_seen: dict[str, str] = {}
+    for sha, rows in reversed(versions):                # 旧→新：记首次出现的提交
+        for row in rows:
+            first_seen.setdefault(row, sha)
+    findings: list[dict] = []
+    exempt = 0
+    for row, sha in first_seen.items():
+        if row in current:
+            continue
+        if _row_fingerprint(row) in S13_PREEXISTING_EDITS:
+            exempt += 1
+            continue
+        rnd = row.strip().strip("|").split("|")[0].strip()
+        findings.append({
+            "round": f"R{rnd}" if rnd else None,
+            "line": None,
+            "file": SEQ_REL,
+            "message": (f"§1 landed 行被改写或删除：历史（首次出现 {sha[:7]}）有该行，"
+                        f"当前 §1 没有——append-only rows，历史行必须逐字保留\n"
+                        f"        缺行原文：{row}"),
+        })
+    if findings:
+        return FAIL, (f"历史 §1 行 {len(first_seen)} 条中有 {len(findings)} 条在当前缺失"
+                      f"（{len(versions)} 个历史版本）"), findings
+    detail = f"历史 §1 行 {len(first_seen)} 条全部逐字在位（{len(versions)} 个历史版本）"
+    if exempt:
+        detail += f"；判据建立前已发生的改写 {exempt} 条（代码白名单，不判）"
+    return PASS, detail, findings
+
+
 def template_repo(root: Path) -> bool | None:
     """模板身份的**唯一**判据：git 历史里是否出现过 `_DEV` 文件（不看工作区 JSON）。
 
@@ -1284,12 +1386,16 @@ def run(root: Path, worklist_arg: str | None) -> dict:
     seq_exists = seq_path.is_file()
     ledger, ledger_errs = load_ledger(root)
     rounds: list[Round] = []
+    seq_text: str | None = None
     parse_error: str | None = None
     if seq_exists:
         try:
-            rounds = parse_sequence(osnorm.read_text(seq_path))
+            seq_text = osnorm.read_text(seq_path)
+            rounds = parse_sequence(seq_text)
         except OSError as exc:
             parse_error = f"{SEQ_REL} 读取失败：{type(exc).__name__}: {exc}"
+    # S13 的「当前侧」：§1 数据行原文（历史侧在 collect_history 的 seq_rows 里）
+    current_rows = section1_rows(seq_text) if seq_text is not None else []
 
     worklist, tried, explicit_missing = find_worklist(root, worklist_arg)
     history = collect_history(root)
@@ -1316,6 +1422,7 @@ def run(root: Path, worklist_arg: str | None) -> dict:
             ("S10", s10),
             ("S11", s11),
             ("S12", check_s12(ledger, root)),
+            ("S13", check_s13(history, current_rows)),
         ):
             status, detail, findings = triple
             checks.append({"id": cid, "status": status, "detail": detail, "findings": findings})
@@ -1326,7 +1433,7 @@ def run(root: Path, worklist_arg: str | None) -> dict:
         plan_status, plan_detail, plan_findings = check_plan_missing(history)
         checks.append({"id": "S1", "status": plan_status, "detail": plan_detail,
                        "findings": plan_findings})
-        for cid in ("S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S12"):
+        for cid in ("S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S12", "S13"):
             checks.append({"id": cid, "status": SKIP, "detail": f"未找到 {SEQ_REL}：计划侧检查不适用",
                            "findings": []})
         checks.append({"id": "S10", "status": s10[0], "detail": s10[1], "findings": s10[2]})
