@@ -216,7 +216,8 @@ python3 scripts/pyenv_init.py --mode mcp --mcp-server s --mcp-tool t --apply
 ```python
 from osnorm import (OSNORM_API, PathFormError, canonical_path, family, read_text, write_text,
                     read_bytes, write_bytes, append_text, run_text, utf8_env, collapse_path,
-                    replace_retry, atomic_write_text, configure_stdio)
+                    replace_retry, atomic_write_text, configure_stdio,
+                    read_stdin_text, emit_stdout, emit_stderr)
 
 canonical_path(r"\\?\UNC\host\share\x")        # '//host/share/x'
 canonical_path("a/b", base="/r")               # '/r/a/b'（相对路径必须给 base）
@@ -227,7 +228,7 @@ read_text(p)                                  # bom=None → 取 BOM_POLICY（�
 write_text(p, "a\r\nb")                       # 磁盘落 'a\nb'（newline='lf' 默认）
 append_text(p, "line\n")                      # O_APPEND 并发追加；不重写整文件
 run_text(["git", "-C", ws, "status"])         # proc.stdout 恒为 str，永不是 None
-OSNORM_API                                    # 2（hooks 装载器的版本判据）
+OSNORM_API                                    # 3（hooks 装载器的版本判据）
 ```
 
 **两层分工（`collapse_path` 与 `canonical_path`）**：路径写法的**裸折叠**只有一份实现——
@@ -283,12 +284,13 @@ UTF-8 + `errors`，并把 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 注入子进�
 `.workspace/hooks/osnorm_loader.py` 按「① hook 自身树 → ② 请求期 `ws_root` → ③ fail-closed」
 解析，进程内只解析一次并钉住指纹（路径 + size + mtime_ns + sha256），
 `OSNORM_API` 在 `exec_module` 之后、任何 API 调用之前校验；候选必须是非 symlink 的普通文件。
-hooks 侧剩下的 R5 分两类落账，同一文件（`tests/osnorm_allowlist.json`）三个段，**不许互相顶替**：
+hooks 用 `read_stdin_text` 严格解码管道 stdin，并经 `emit_stdout` / `emit_stderr` 写 UTF-8 字节。
+TTY 沿用流的编码，编解码错误采用 `replace`。
+账本（`tests/osnorm_allowlist.json`）的三个段各有独立用途：
 
 - `entries`（兜底存量）：`(file, rule, target, line_kind)` 节点级表项。`count` 必须**精确等于**
   实测（`>` 或 `<` 都红；归零必须删表项）；`baseline` 记录每个 `(file, rule)` 的历史最低值，
-  `count` 不得高于它。R43 之后这里只剩 `hook.py` 的 R4 3 处（stdin strict + stdout/stderr
-  两处 `reconfigure`），因为 `configure_stdio` 既不碰 stdin 也不做 strict。
+  `count` 不得高于它。R47 移除了 `hook.py` 的三处 `reconfigure`，`entries` 已归零。
 - `structural`（结构性豁免，落 S3）：位置永久保留，但**理由由一条可执行 oracle 持续验证**。
   登记粒度 `(file, rule, target)`，`target` = `函数名#序数`（序数 = 该函数内 R5 命中按源码顺序
   的第几处，**不写行号**——行号会随上面任意一行改动漂移，漂移即红就把门禁变成噪音）。

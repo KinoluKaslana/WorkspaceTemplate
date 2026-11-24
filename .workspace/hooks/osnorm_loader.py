@@ -34,8 +34,8 @@ import os
 from pathlib import Path
 
 # 装载器认的 osnorm 版本（N2）；与 `scripts/osnorm.py` 顶层的 `OSNORM_API` 配对。
-# 2：路径词法拆成 collapse_path（变换层）+ canonical_path（判定层）。
-OSNORM_API_EXPECTED = 2
+# 3：hooks 使用显式的 stdio 读写 API。
+OSNORM_API_EXPECTED = 3
 
 # 装载器要求 osnorm 提供的 API（N2 的「所需 API 存在」）。
 # `append_text` 是 R41 新增的并发追加原语：hooks 的日志/账本不能拿整文件重写代替。
@@ -50,6 +50,9 @@ REQUIRED_API = (
     "replace_retry",
     "run_text",
     "configure_stdio",
+    "read_stdin_text",
+    "emit_stdout",
+    "emit_stderr",
 )
 
 # 装载进内存时用的模块名（不写 `sys.modules`，只作为 module 对象的 `__name__`）。
@@ -215,7 +218,7 @@ def load(ws_root: str | os.PathLike[str] | None = None):
 
 
 def bootstrap_module():
-    """import 期 ① 的结果（**绝不触发 ②**）；供 stdio 重配这类无 `ws_root` 的早期调用。"""
+    """返回已装载的模块（**绝不触发 ②**）；供无 `ws_root` 的早期 stdio 调用。"""
     return _STATE["module"]
 
 

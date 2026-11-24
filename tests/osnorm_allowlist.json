@@ -11,21 +11,8 @@
   "  ③ 该 (file, rule) 的实测计数不得高于登记计数之和（count_baseline）；④ 目标能在真实代码里",
   "定位到（函数存在且该序数处确实是声明的表达式类），且 15 条与实测 15 处严格一一对应。"
  ],
- "baseline": {
-  ".workspace/hooks/hook.py": {"R4": 3}
- },
- "entries": [
-  {
-   "file": ".workspace/hooks/hook.py",
-   "rule": "R4",
-   "kind": "call",
-   "target": ".reconfigure",
-   "line_kind": "call",
-   "count": 3,
-   "reason": "R4 残留 3 处：stdin `errors=\"strict\"` + stdout/stderr 两处（hook.py:941-943，`configure_stdio` 不碰 stdin、也不做 strict）",
-   "expires": "R39"
-  }
- ],
+ "baseline": {},
+ "entries": [],
  "structural": [
   {
    "file": ".workspace/hooks/cc_transcript.py",

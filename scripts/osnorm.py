@@ -43,7 +43,8 @@ from urllib.parse import unquote, urlsplit
 # 2：路径词法拆成「变换层 collapse_path + 判定层 canonical_path」两层——`..` 折叠只剩
 #    一份实现（此前盘符族/UNC 族/POSIX 族各写一套、语义不一致）。canonical_path 的
 #    外部输出逐字不变，但可用的折叠原语变了，装载器必须与实现同版本。
-OSNORM_API = 2
+# 3：hooks 通过 read_stdin_text / emit_stdout / emit_stderr 处理每次 stdio 读写。
+OSNORM_API = 3
 
 __all__ = [
     "BOM_POLICY",
@@ -54,8 +55,11 @@ __all__ = [
     "canonical_path",
     "collapse_path",
     "configure_stdio",
+    "emit_stderr",
+    "emit_stdout",
     "family",
     "read_bytes",
+    "read_stdin_text",
     "read_text",
     "replace_retry",
     "run_text",
@@ -589,6 +593,55 @@ def run_text(argv: Sequence[str], *, cwd: str | os.PathLike[str] | None = None,
     return subprocess.run(list(argv), cwd=cwd, env=merged, input=input, timeout=timeout,
                           check=check, capture_output=True, text=True,
                           encoding="utf-8", errors=errors)
+
+
+def read_stdin_text(*, encoding: str = "utf-8", errors: str = "strict") -> str:
+    """读至 EOF。管道直接解码字节；TTY 沿用流的编码并替换无法解码的字符。
+
+    BOM 原样交给调用方。
+    """
+    return _read_stdin_text(encoding=encoding, errors=errors)
+
+
+def _read_stdin_text(buffer=None, *, encoding: str = "utf-8", errors: str = "strict") -> str:
+    """读取 stdin，或重放已用于定位候选模块的原始字节。"""
+    stream = sys.stdin
+    if stream.isatty():
+        encoding = stream.encoding or encoding
+        errors = "replace"
+    if buffer is None:
+        buffer = getattr(stream, "buffer", None)
+    if buffer is None:
+        return stream.read()
+    return buffer.read().decode(encoding, errors)
+
+
+def _emit_stdio(stream, text: str) -> None:
+    if stream is None:
+        return
+    buffer = getattr(stream, "buffer", None)
+    if stream.isatty():
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None and stream.errors != "replace":
+            reconfigure(errors="replace")
+    elif buffer is not None:
+        # 与此前通过同一文本流写入的输出保持顺序。
+        stream.flush()
+        buffer.write(text.encode("utf-8", errors="replace"))
+        buffer.flush()
+        return
+    stream.write(text)
+    stream.flush()
+
+
+def emit_stdout(text: str) -> None:
+    """向 stdout 写入文本并刷新。换行由调用方提供。"""
+    _emit_stdio(sys.stdout, text)
+
+
+def emit_stderr(text: str) -> None:
+    """向 stderr 写入文本并刷新。换行由调用方提供。"""
+    _emit_stdio(sys.stderr, text)
 
 
 def configure_stdio() -> None:

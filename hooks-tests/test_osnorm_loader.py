@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -202,7 +203,7 @@ class T2NormalTree(_EnvelopeAssertions):
             sys.path.pop(0)
         module = osnorm_loader.load(str(ROOT))
         self.assertEqual(Path(module.__file__).resolve(), (SCRIPTS / "osnorm.py").resolve())
-        self.assertEqual(module.OSNORM_API, 2)
+        self.assertEqual(module.OSNORM_API, 3)
         state = osnorm_loader.state()
         self.assertEqual(state["origin"], "A")
         fp = state["fingerprint"]
@@ -247,6 +248,19 @@ class T2NormalTree(_EnvelopeAssertions):
             self.assertEqual(got["origin"], "B")
             self.assertEqual(Path(got["file"]).resolve(), b_path.resolve())
             self.assertTrue(str(Path(got["file"]).resolve()).startswith(str(ws.resolve())))
+            proc = _run_hook(hooks, ws, "prompt_submit")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(json.loads(proc.stdout)["hookSpecificOutput"]["hookEventName"],
+                             "UserPromptSubmit")
+            # JSON 的字节探测能定位 ②，但 UTF-16 不能通过 osnorm 的正式读取。
+            proc = subprocess.run(
+                [PY, "-S", "-B", str(hooks / "hook.py"), "pre_write"],
+                input=_payload(ws).encode("utf-16"), capture_output=True,
+                cwd=hooks, env=_clean_env(), timeout=15)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            decision = json.loads(proc.stdout)["hookSpecificOutput"]
+            self.assertEqual(decision["permissionDecision"], "deny")
+            self.assertIn("UnicodeDecodeError", decision["permissionDecisionReason"])
 
     def test_n1_version_is_pinned_after_load(self):
         """同一进程内文件被改 → `changed-after-load`，不换版本继续跑。"""
@@ -298,13 +312,15 @@ class T3FaultMatrix(_EnvelopeAssertions):
 
     def test_api_missing(self):
         # 只有版本常量、没有任何 API → api-missing，且列出缺的具体名字
-        self._deny_for(b"OSNORM_API = 2\n", "api-missing")
+        self._deny_for(b"OSNORM_API = 3\n", "api-missing")
         with tempfile.TemporaryDirectory(prefix="r41-t3a-") as tmp:
             ws, hooks = _make_ws(Path(tmp))
-            _put_osnorm(ws, b"OSNORM_API = 2\n")
+            _put_osnorm(ws, b"OSNORM_API = 3\n")
             reason = json.loads(_run_hook(hooks, ws).stdout)["hookSpecificOutput"][
                 "permissionDecisionReason"]
             self.assertIn("run_text", reason)
+            for name in ("read_stdin_text", "emit_stdout", "emit_stderr"):
+                self.assertIn(name, reason)
 
     def test_init_error(self):
         self._deny_for(b"raise RuntimeError('boom')\n", "init-error")
@@ -316,8 +332,8 @@ class T3FaultMatrix(_EnvelopeAssertions):
                               "permissionDecisionReason"])
 
     def test_api_version_mismatch(self):
-        """N2：`OSNORM_API` 不是 2 → 按不可用处理（不是「加载成功就凑合跑」）。"""
-        self._deny_for(b"OSNORM_API = 3\n", "api-version")
+        """N2：上一版 osnorm 与当前 hooks 不兼容。"""
+        self._deny_for(b"OSNORM_API = 2\n", "api-version")
 
     def test_unreadable(self):
         """不可读 → deny，**真子进程**断言，两条平台路径都必须真拦住读取。
@@ -415,6 +431,122 @@ class T4TemplateOrder(unittest.TestCase):
         self.assertLess(files.index(".workspace/hooks/osnorm_loader.py"),
                         files.index(".workspace/hooks/hook.py"),
                         "装载器必须先于使用它的 hook.py 下发")
+
+
+class StdioMatrix(unittest.TestCase):
+    """R47 的管道与伪终端回归测试。"""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="r47-stdio-")
+        self.addCleanup(tmp.cleanup)
+        self.cwd = Path(tmp.name)
+        self.ws = self.cwd / "中文工作区"
+        workspace = self.ws / ".workspace"
+        workspace.mkdir(parents=True)
+        (workspace / "bootstrap.json").write_bytes(b'{"workspace_status":"active"}')
+        self.env = _clean_env()
+        self.env["PYTHONIOENCODING"] = "cp1252:replace"
+
+    def _run(self, argv, raw: bytes) -> bytes:
+        proc = subprocess.run([PY, "-S", "-B", *argv], input=raw, capture_output=True,
+                              cwd=self.cwd, env=self.env, timeout=15)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stderr, b"")
+        return proc.stdout
+
+    def _prompt_payload(self, **extra) -> bytes:
+        return json.dumps({"cwd": str(self.ws), "session_id": "r47-stdio", **extra},
+                          ensure_ascii=False).encode("utf-8")
+
+    def _expect_prompt(self, raw: bytes):
+        stdout = self._run([str(HOOKS / "hook.py"), "prompt_submit"], raw)
+        output = json.loads(stdout.decode("utf-8"))["hookSpecificOutput"]
+        self.assertEqual(output["hookEventName"], "UserPromptSubmit")
+        self.assertIn(str(self.ws), output["additionalContext"])
+        self.assertIn("中文工作区".encode("utf-8"), stdout)
+
+    def _pre_bash_payload(self, marker: str) -> bytes:
+        return json.dumps({"cwd": str(self.cwd), "session_id": "r47-stdio", "tool_name": "Bash",
+                           "tool_input": {"command": "pwd"}, "marker": marker},
+                          ensure_ascii=False).encode("utf-8")
+
+    def _pre_bash(self, raw: bytes) -> bytes:
+        return self._run([str(HOOKS / "hook.py"), "pre_bash"], raw)
+
+    def _expect_deny(self, raw: bytes, error: str):
+        stdout = self._pre_bash(raw).decode("utf-8")
+        output = json.loads(stdout).get("hookSpecificOutput", {}) if stdout else {}
+        self.assertEqual(output.get("permissionDecision"), "deny", repr(stdout))
+        self.assertEqual(output["hookEventName"], "PreToolUse")
+        self.assertIn(error, output["permissionDecisionReason"])
+
+    def test_01_chinese_payload_and_response(self):
+        self._expect_prompt(self._prompt_payload())
+
+    def test_02_invalid_utf8_denied(self):
+        valid = self._pre_bash_payload("\ufffd")
+        self.assertEqual(self._pre_bash(valid), b"")
+        self._expect_deny(valid.replace(b"\xef\xbf\xbd", b"\xff"), "UnicodeDecodeError")
+
+    def test_03_utf8_bom_denied(self):
+        self._expect_deny(b"\xef\xbb\xbf" + self._pre_bash_payload("bom"), "JSONDecodeError")
+
+    def test_04_empty_stdin_denied(self):
+        self._expect_deny(b"", "JSONDecodeError")
+
+    def test_05_payload_larger_than_one_mib(self):
+        raw = self._prompt_payload(padding="x" * (1024 * 1024), tail="结束")
+        self.assertGreater(len(raw), 1024 * 1024)
+        self._expect_prompt(raw)
+
+    @staticmethod
+    def _probe_argv():
+        return [PY, "-S", "-B", "-c",
+                "import sys; sys.path.insert(0, sys.argv[1]); import osnorm; "
+                "text = osnorm.read_stdin_text(); osnorm.emit_stdout(text); "
+                "osnorm.emit_stderr(text)", str(SCRIPTS)]
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX pty")
+    def test_06_tty_replaces_bad_input_and_preserves_native_output(self):
+        import pty
+        import termios
+
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        mode = termios.tcgetattr(slave)
+        mode[3] = (mode[3] | termios.ICANON) & ~termios.ECHO
+        termios.tcsetattr(slave, termios.TCSANOW, mode)
+        try:
+            proc = subprocess.Popen(self._probe_argv(), stdin=slave, stdout=slave, stderr=slave,
+                                    cwd=self.cwd, env={**self.env, "PYTHONIOENCODING": "cp1252:strict"})
+        finally:
+            os.close(slave)
+        try:
+            os.write(master, b"caf\xe9 \x81\n" + mode[6][termios.VEOF])
+            self.assertEqual(proc.wait(timeout=15), 0)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+        chunks = bytearray()
+        while True:
+            try:
+                chunk = os.read(master, 1024)
+            except OSError as exc:
+                if exc.errno != errno.EIO:
+                    raise
+                break
+            if not chunk:
+                break
+            chunks.extend(chunk)
+        self.assertEqual(bytes(chunks).replace(b"\r\n", b"\n"), b"caf\xe9 ?\n" * 2)
+
+    def test_07_pipes_use_utf8_on_stdout_and_stderr(self):
+        raw = "中\n文\r\n".encode("utf-8")
+        proc = subprocess.run(self._probe_argv(), input=raw, capture_output=True,
+                              cwd=self.cwd, env=self.env, timeout=15)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual((proc.stdout, proc.stderr), (raw, raw))
 
 
 if __name__ == "__main__":

@@ -611,23 +611,16 @@ class SingleSourceScanTest(unittest.TestCase):
         self.actual = scan_repo()
 
     def test_scan_covers_three_roots(self) -> None:
-        """扫描面必须覆盖三个根：逐根枚举、逐个真扫（**不以「该根还有违规」为前提**）。
-
-        R40b 之后 `scripts/` 已清零（8 个脚本全部迁到 osnorm），R42b 之后 `tests/` 也清零
-        （254 处按调用点迁到 osnorm），「三个根都还剩存量违规」这条旧前提永久失效；覆盖性
-        改由「逐根枚举 + 真解析」证明，`.workspace/hooks` 仍以「有登记违规」作为扫描确实
-        落地的旁证，`tests/` 反过来把「清零」本身钉成断言。
-        """
+        """逐根枚举和解析，hooks 的结构性位置可在原始扫描中检出。"""
         for prefix, root in SCAN_ROOTS:
             files = sorted(root.glob("*.py"))
             self.assertTrue(files, f"{prefix} 根下没有可扫描文件")
             for path in files:
                 scan_file(path, f"{prefix}/{path.name}")   # 解析失败会直接抛
-        seen = {key[0] for key in self.actual}
+        seen = {key[0] for key in scan_repo(with_structural=False)}
         self.assertTrue(any(f.startswith(".workspace/hooks/") for f in seen),
-                        ".workspace/hooks 的存量违规没有被扫描到")
-        leftover = sorted(key for key in self.actual if key[0].startswith("tests/"))
-        self.assertEqual(leftover, [], f"tests/ 的存量违规必须保持 0 处：{leftover}")
+                        ".workspace/hooks 的结构性位置没有被扫描到")
+        self.assertFalse(self.actual, f"三个根的非结构性命中必须保持 0 处：{self.actual}")
 
     def test_r6_normcase_stays_zero(self) -> None:
         hits = [key for key in self.actual if key[1] == "R6"]
@@ -704,7 +697,8 @@ class AllowlistTest(unittest.TestCase):
         self.assertIsInstance(self.doc["entries"], list)
         self.assertIsInstance(self.doc["baseline"], dict)
         self.assertIsInstance(self.doc["structural"], list, "v2 起必须有 structural 段")
-        self.assertTrue(self.doc["entries"], "第 0 步的存量基线不得为空")
+        self.assertEqual(self.doc["entries"], [])
+        self.assertEqual(self.doc["baseline"], {})
 
     def test_counts_match_reality(self) -> None:
         problems = audit(self.actual, self.doc["entries"], self.doc["baseline"])
@@ -741,24 +735,27 @@ class AllowlistTest(unittest.TestCase):
         no_reason = [dict(entries[0], count=3, reason="")]
         self.assertTrue(any("reason/expires" in p for p in audit(over, no_reason, baseline)))
 
+    @staticmethod
+    def _count_fixture() -> tuple[tuple[str, str, str, str], dict, dict]:
+        key = (".workspace/hooks/hook.py", "R4", ".reconfigure", "call")
+        entry = dict(zip(("file", "rule", "target", "line_kind"), key))
+        entry.update(kind="call", count=3, reason="计数判据自检用条目", expires="R39")
+        return key, entry, {key[0]: {key[1]: 3}}
+
     def test_t_b2a_count_plus_one_is_red(self) -> None:
-        entries = [dict(item) for item in self.doc["entries"]]
-        entries[0]["count"] += 1
-        self.assertTrue(any("与登记不等" in p
-                            for p in audit(self.actual, entries, self.doc["baseline"])))
+        key, entry, baseline = self._count_fixture()
+        entry["count"] += 1
+        self.assertTrue(any("与登记不等" in p for p in audit(Counter({key: 3}), [entry], baseline)))
 
     def test_t_b2b_count_minus_one_is_red(self) -> None:
-        entries = [dict(item) for item in self.doc["entries"]]
-        entries[0]["count"] -= 1
-        self.assertTrue(any("与登记不等" in p
-                            for p in audit(self.actual, entries, self.doc["baseline"])))
+        key, entry, baseline = self._count_fixture()
+        entry["count"] -= 1
+        self.assertTrue(any("与登记不等" in p for p in audit(Counter({key: 3}), [entry], baseline)))
 
     def test_t_b2c_count_above_baseline_is_red(self) -> None:
-        entry = dict(self.doc["entries"][0])
-        baseline = {entry["file"]: {entry["rule"]: entry["count"]}}
+        key, entry, baseline = self._count_fixture()
         entry["count"] += 1
-        actual = Counter({(entry["file"], entry["rule"], entry["target"],
-                           entry["line_kind"]): entry["count"]})
+        actual = Counter({key: entry["count"]})
         self.assertTrue(any("高于历史最低 baseline" in p
                             for p in audit(actual, [entry], baseline)))
 
@@ -1167,8 +1164,8 @@ class StructuralRegistryTest(unittest.TestCase):
         self.assertEqual(problems, [], "\n".join(problems))
 
     def test_ledger_totals_are_conserved(self) -> None:
-        """18 = entries 3 + structural 15：不许靠删条目清零，也不许把 15 处藏进别的名下。"""
-        self.assertEqual(sum(entry["count"] for entry in self.doc["entries"]), 3)
+        """R47 后 entries 为 0，实测 R5 仍与 15 个 structural 位置对账。"""
+        self.assertEqual(sum(entry["count"] for entry in self.doc["entries"]), 0)
         self.assertEqual(len(self.entries), 15)
         self.assertEqual(sum(entry["count_baseline"] for entry in self.entries), 15)
         r5 = {key: count for key, count in self.raw.items() if key[1] == "R5"}

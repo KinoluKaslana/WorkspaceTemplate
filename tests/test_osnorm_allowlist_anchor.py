@@ -6,7 +6,7 @@
 `baseline`+1」能一起改到自洽，账本本身没有独立锚点。方案 C 把账本登记进
 `TEMPLATE_FILES`，由 `scripts/verify_rules.py` 给出与该文件独立的外部锚：
 
-- T-c1：同仓抬高账本（`count`+1）且**不重建注册表** → `verify_rules --workspace .`
+- T-c1：在已清零的账本恢复一处 R4 豁免且**不重建注册表** → `verify_rules --workspace .`
   报 `[file] HASH-DIFF tests/osnorm_allowlist.json`。
 - T-c2：伪造模板副本 + 实例侧账本放宽 → `verify_rules --workspace <实例> --vs-template <副本>`
   对该文件报 `HASH-DIFF`（派生实例自行放宽在跨实例对账里暴露）。
@@ -31,7 +31,6 @@ import osnorm  # noqa: E402
 
 VERIFY_RULES = SCRIPTS / "verify_rules.py"
 ALLOWLIST_REL = "tests/osnorm_allowlist.json"
-ALLOWLIST = ROOT / ALLOWLIST_REL
 IGNORE = shutil.ignore_patterns(".venv", ".git", "__pycache__", "*.pyc", ".pytest_cache")
 
 
@@ -48,16 +47,16 @@ def run_verify(workspace: Path, *extra: str) -> tuple[int, dict]:
     return proc.returncode, report
 
 
-def bump_first_count(text: str) -> str:
-    """把账本里第一处 `"count": N` 抬成 N+1（模拟「真加一处违规 + 登记同步抬高」）。"""
-    marker = '"count": '
-    pos = text.index(marker) + len(marker)
-    end = pos
-    while end < len(text) and text[end].isdigit():
-        end += 1
-    if end == pos:
-        raise AssertionError("allowlist 里找不到可抬高的 count")
-    return text[:pos] + str(int(text[pos:end]) + 1) + text[end:]
+def restore_r4_exemption(text: str) -> str:
+    """模拟为一处复发的 reconfigure 同时放宽 entries 和 baseline。"""
+    doc = json.loads(text)
+    file = ".workspace/hooks/hook.py"
+    doc["baseline"].setdefault(file, {})["R4"] = 1
+    doc["entries"].append({
+        "file": file, "rule": "R4", "kind": "call", "target": ".reconfigure",
+        "line_kind": "call", "count": 1, "reason": "外部锚回归用条目", "expires": "R47",
+    })
+    return json.dumps(doc, ensure_ascii=False, indent=1) + "\n"
 
 
 def git(path: Path, *args: str) -> None:
@@ -70,23 +69,26 @@ class TestAllowlistAnchorT1(unittest.TestCase):
     """T-c1：同仓抬高账本必须留 HASH-DIFF（注册表未重建 → 文件级外部锚报警）。"""
 
     def test_t_c1_bump_without_registry_rebuild_is_red(self) -> None:
-        original = osnorm.read_bytes(ALLOWLIST)
-        # 起点必须 clean：否则红可能来自别的既有漂移，本用例就失去归因力
-        rc0, report0 = run_verify(ROOT)
-        self.assertEqual(0, rc0, msg=f"起点不 clean，无法归因：{report0.get('findings')}")
-        try:
-            osnorm.write_bytes(ALLOWLIST, bump_first_count(original.decode("utf-8")).encode("utf-8"))
-            rc, report = run_verify(ROOT)
-        finally:
-            osnorm.write_bytes(ALLOWLIST, original)   # 字面量还原，后续用例不受影响
-        findings = report["findings"]
-        self.assertEqual(1, rc, msg=f"抬高账本后应红：{findings}")
-        self.assertFalse(report["clean"])
-        self.assertTrue(any(f.startswith(f"[file] HASH-DIFF {ALLOWLIST_REL}") for f in findings),
-                        msg=f"缺少该文件的 HASH-DIFF：{findings}")
-        # 还原后注册表重新自洽——确认红是账本改动带来的，不是残留
-        rc_after, report_after = run_verify(ROOT)
-        self.assertEqual(0, rc_after, msg=f"还原后应回绿：{report_after.get('findings')}")
+        with tempfile.TemporaryDirectory(prefix="osnorm-anchor-") as tmp:
+            workspace = Path(tmp) / "workspace"
+            shutil.copytree(ROOT, workspace, ignore=IGNORE)
+            target = workspace / ALLOWLIST_REL
+            original = osnorm.read_bytes(target)
+            rc0, report0 = run_verify(workspace)
+            self.assertEqual(0, rc0, msg=f"起点不 clean，无法归因：{report0.get('findings')}")
+
+            relaxed = restore_r4_exemption(original.decode("utf-8"))
+            osnorm.write_bytes(target, relaxed.encode("utf-8"))
+            rc, report = run_verify(workspace)
+            findings = report["findings"]
+            self.assertEqual(1, rc, msg=f"抬高账本后应红：{findings}")
+            self.assertFalse(report["clean"])
+            self.assertTrue(any(f.startswith(f"[file] HASH-DIFF {ALLOWLIST_REL}") for f in findings),
+                            msg=f"缺少该文件的 HASH-DIFF：{findings}")
+
+            osnorm.write_bytes(target, original)
+            rc_after, report_after = run_verify(workspace)
+            self.assertEqual(0, rc_after, msg=f"还原后应回绿：{report_after.get('findings')}")
 
 
 class TestAllowlistAnchorT2(unittest.TestCase):
@@ -108,7 +110,7 @@ class TestAllowlistAnchorT2(unittest.TestCase):
             self.assertEqual(0, rc0, msg=f"未改动的实例副本应 clean：{report0.get('findings')}")
 
             target = inst / ALLOWLIST_REL
-            relaxed = bump_first_count(osnorm.read_text(target))
+            relaxed = restore_r4_exemption(osnorm.read_text(target))
             osnorm.write_bytes(target, relaxed.encode("utf-8"))
 
             rc, report = run_verify(inst, "--vs-template", str(tpl))

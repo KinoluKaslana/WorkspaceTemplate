@@ -31,8 +31,8 @@
 
 | 文件 | SHA-256 |
 |---|---|
-| `.workspace/hooks/osnorm_loader.py` | `3fddeeb3a955bda7b5ae5be229a1431f85386716ba50f1ed238ee9cf4e9d2f70` |
-| `.workspace/hooks/hook.py` | `522ba6a9b189b8500a1c65a4a925a167791cb10f9fd99f27cea9b0ecc92ed4f6` |
+| `.workspace/hooks/osnorm_loader.py` | `d452ed3d537de928d08817dd39267fdb45b9a04970d1aee19566ad4502d64dab` |
+| `.workspace/hooks/hook.py` | `42b480fe7ba541efc040748693ea9d4dc320a99110a10ea67d1d7ba16e98a109` |
 | `.workspace/hooks/gate_core.py` | `98c4a068b2117b772bfabed1219fa6c37d1520a4214771e3fe8ea2f0b16ee9a4` |
 | `.workspace/hooks/wtarget.py` | `5dc87f762c08cb37546f2348056285f1908cf0d49174823274748305eec40b95` |
 | `.workspace/hooks/authz.py` | `6730e6be82b70ac73aedd383d7ecd2baf3272de4087f4e432864238ea3c3c6ab` |
