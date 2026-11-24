@@ -155,11 +155,12 @@
 
 ```
 适用域  判据以 **dev 分支**为权威域：**计划文件存在时，所有分支都执行现行 S 判据
-        （当前 S1–S11）**。main 上 S10 判 _DEV 归属、其余 S 照常互校（实测：main 保留
+        （当前 S1–S12）**。main 上 S10 判 _DEV 归属、其余 S 照常互校（实测：main 保留
         计划并移走两份 _DEV 文件 → S3/S6/S8 红）；其他分支上 S10 只对分支归属告警；
-        只有**整份计划文件不存在**时 S1–S9 才按 SKIP 不判红（实测：非 dev/main 删整份
-        计划 → 8 SKIP / 3 WARN，rc=0）。计划内容篡改不因分支豁免（实测：probe-feature
-        保留计划注入非法 land_status → S3 红）。
+        只有**整份计划文件不存在**时 S2–S9 与 S12 才按 SKIP 不判红（S1 在 dev 上缺计划
+        仍 FAIL、其他分支只告警；实测：非 dev/main 删整份计划 → 9 SKIP / 3 WARN，rc=0；
+        main 缺计划且无 _DEV 残留 → S10 PASS）。计划内容篡改不因分支豁免（实测：
+        probe-feature 保留计划注入非法 land_status → S3 红）。
 
 主防线  本地 git 锚（账本 append-only 全字段前缀 + 有 commit 条目的 changelog blob
         + 历史轮次集合 + 落地即入账）
