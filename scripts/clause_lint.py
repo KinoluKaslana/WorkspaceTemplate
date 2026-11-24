@@ -7,6 +7,8 @@
   E5 强条款（MUST/MUST_NOT）缺 check  E6 manual 理由为空
   E7 正文没有与声明档位相符的情态词    E8 可机械判定的强条款标了 manual
   E9 强条款未复核（reviewed=false）    E7b check 不是可执行前缀
+  E12 仓内文档引用了不存在的条款号    E13 章节号与被引条款实际所在章节不符
+      （扫描 `.workspace/SEQUENCE.md`、`TOOLS.md`、`docs/**/*.md` 里的 `§<n> R<m>`）
 警告（默认 exit 0，--strict 算失败）：
   W1 同条款混用必须/不得   W2 模糊量词（尽量/必要时/建议/通常）
   W3 强条款里出现「可」    W4 声明档位与正文情态词不匹配（弱）
@@ -67,13 +69,54 @@ def load():
     return bodies, json.loads(osnorm.read_text(META)), dup
 
 
+# ── 条款引用门（E12/E13）─────────────────────────────────────────────────
+# 仓内文档写 `§<n> R<m>` 时，被引条款必须真实存在，且确实位于所写章节。
+# 动机：SEQUENCE.md §4.1 曾写「与 §12 R100 同类」却不带文件名，读者无法分辨
+# 这是政策条款还是本文件的章节；而条款号写错（幻觉/漂移）没有任何判据会响。
+REF_SCAN_FILES = (".workspace/SEQUENCE.md", "TOOLS.md")
+REF_SCAN_GLOBS = ("docs/**/*.md",)
+REF_RE = re.compile(r"§\s*(\d+)\s*(R\d+)")
+
+
+def clause_sections() -> dict:
+    """条款 ID → 所属一级章节号（由 AGENT_RULES.md 的 `## <n>.` 标题界定）。"""
+    out, cur = {}, None
+    for line in osnorm.read_text(POLICY).split("\n"):
+        m = re.match(r"^##\s+(\d+)\s*[.、]", line)
+        if m:
+            cur = int(m.group(1))
+            continue
+        for rid in re.findall(r"<!--\s*id:(R\d+)\s*-->", line):
+            out[rid] = cur
+    return out
+
+
+def check_clause_refs(bodies: dict) -> list:
+    secs = clause_sections()
+    files = [ROOT / rel for rel in REF_SCAN_FILES if (ROOT / rel).is_file()]
+    for pat in REF_SCAN_GLOBS:
+        files += sorted(ROOT.glob(pat))
+    out = []
+    for p in files:
+        rel = p.relative_to(ROOT).as_posix()
+        text = osnorm.read_text(p)
+        for m in REF_RE.finditer(text):
+            n, rid = int(m.group(1)), m.group(2)
+            if rid not in bodies:
+                out.append({"level": "error", "clause": rid, "code": "E12",
+                            "message": f"{rel} 引用了不存在的条款 {rid}"})
+            elif secs.get(rid) is not None and secs[rid] != n:
+                out.append({"level": "error", "clause": rid, "code": "E13",
+                            "message": f"{rel} 写 §{n} {rid}，但 {rid} 实际在 §{secs[rid]}"})
+    return out
+
+
 def lint() -> list[dict]:
     bodies, meta, leftovers = load()
     out = []
 
     def add(level, rid, code, msg):
         out.append({"level": level, "clause": rid, "code": code, "message": msg})
-
     for rid in sorted(set(leftovers) - {"<tail>"}):
         add("error", rid, "E10", "条款 ID 重复（后一条覆盖前一条）")
     if "<tail>" in leftovers:
@@ -138,6 +181,7 @@ def lint() -> list[dict]:
                 if "可以" in sentence and re.search(r"必须|不得", sentence):
                     add("warn", rid, "W3", "同一句里出现「可以」授权与强义务，确认不是能力描述")
                     break
+    out += check_clause_refs(bodies)
     return out
 
 

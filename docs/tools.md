@@ -17,7 +17,7 @@
 | `release.py` | 发版事务：版本/CHANGELOG/bootstrap/生成块/账本同步，失败整体回滚；tag 单独执行，绝不 push。`--dev` 走**四段 dev 账本**（`NN.X.Y.Z`）：只写 `CHANGELOG_DEV.md` + `.workspace/release_dev.json`，不写 `releases.json`、不改政策头、不 tag/push | `--version X.Y.Z --summary "…" [--dry-run\|--apply]`；`--verify`；`--tag X.Y.Z --apply`；`--dev [--round NN\|--version NN.X.Y.Z] [--dry-run\|--apply]`；`--dev --verify`；`--dev --list` | 0 / 1 |
 | `notes_index_check.py` | notes 索引与重建结果一致（防手改/过期） | `[--json]` | 0 / 1 |
 | `secret_scan.py` | 高置信度明文凭据扫描（只打印脱敏片段） | `[--root PATH] [--json]` | 0 / 1 |
-| `clause_lint.py` | 条款属性门：正文用词 ↔ `clauses.meta.json` 声明一致 | `[--strict] [--report] [--json]` | 0 / 1 |
+| `clause_lint.py` | 条款属性门：正文用词 ↔ `clauses.meta.json` 声明一致；附带条款引用门（E12/E13：仓内文档 `§<n> R<m>` 的条款须存在且章节号对得上） | `[--strict] [--report] [--json]` | 0 / 1 |
 | `skill_audit.py` | skills 契约节 / 双登记 / 计数与名称集合 / 引用路径 | `[--strict] [--sync-registry] [--tools-snippet] [--json]` | 0 / 1 |
 | ↳ `--sync-registry` 契约 | 写完**回读校验**（名称集合 + 入口节计数）；不一致或 I/O 失败 → exit 1 并输出 `registry_problems`。入口行按列结构解析（首列名必须与第三列路径自洽），字符宽度与发现器一致；目录名不符 lowercase-kebab 只在 `--strict` 提示 | 同上 | 0 / 1 |
 | `docs_index.py` | docs 确定性索引：`build` / `check` / `query` | `build`；`query <词> --json --top 2` | 0 / 1(stale) / 2(缺索引) / 3(stale 查询) |

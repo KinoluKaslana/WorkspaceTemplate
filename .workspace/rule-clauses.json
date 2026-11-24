@@ -333,7 +333,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "802db4ab5e50fa7f1d33b412134ff602df08af295f3056a7f3531aed5de2e056",
+    "file_sha256": "c1acb81385f7e5284e818b08ab1095781321d986c7fa3be4dc3aede29f4a7eea",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -373,7 +373,7 @@
   },
   "tests/test_clause_lint.py": {
     "clauses": {},
-    "file_sha256": "ab0b206ec2c3c78b48af09bc8c2bc218dec62306cb1efa1399a9c0b478d8f178",
+    "file_sha256": "2c93e6e3c7386f08dceb9248161d54208049b44fb4fa21bc84ec86ab5042727f",
     "marked": 0
   },
   "tests/test_check_scripts.py": {
@@ -468,7 +468,7 @@
   },
   "scripts/clause_lint.py": {
     "clauses": {},
-    "file_sha256": "9eaec6f465d66173e6d08b4129891190a38056eb1075d1bb7306e8d9b81b9d44",
+    "file_sha256": "90a3c618cd6b6bf8847bae76a14a9bc8aa6e5635fc7593179e939547b1c72c37",
     "marked": 0
   },
   ".workspace/clauses.meta.json": {

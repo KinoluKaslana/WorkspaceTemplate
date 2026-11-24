@@ -145,6 +145,29 @@ class ClauseLint(unittest.TestCase):
         self.assertEqual(p.returncode, 1)                        # 引号外：仍报 W2
         self.assertIn("W2", p.stdout)
 
+    def test_t13_clause_ref_section_mismatch_is_error(self):
+        """§<n> R<m> 的章节号必须与 AGENT_RULES.md 里该条款实际所在章节一致。"""
+        osnorm.write_text(self.root / ".workspace" / "SEQUENCE.md",
+                          "见 AGENT_RULES.md §12 R3 的规定。\n", newline="lf")
+        p = self.run_lint()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("E13", p.stdout)
+        self.assertIn("R3 实际在 §0", p.stdout)
+
+    def test_t14_unknown_clause_ref_is_error(self):
+        """引用不存在的条款号（幻觉/漂移）必须红。"""
+        osnorm.write_text(self.root / ".workspace" / "SEQUENCE.md",
+                          "见 AGENT_RULES.md §0 R999 的规定。\n", newline="lf")
+        p = self.run_lint()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("E12", p.stdout)
+
+    def test_t15_correct_clause_ref_passes(self):
+        osnorm.write_text(self.root / ".workspace" / "SEQUENCE.md",
+                          "见 AGENT_RULES.md §0 R3 的规定。\n", newline="lf")
+        p = self.run_lint()
+        self.assertEqual(p.returncode, 0, p.stdout)
+
     def test_t9_report_counts(self):
         p = self.run_lint("--report")
         data = json.loads(p.stdout)
