@@ -296,12 +296,19 @@ TTY 沿用流的编码，编解码错误采用 `replace`。
   的第几处，**不写行号**——行号会随上面任意一行改动漂移，漂移即红就把门禁变成噪音）。
   每条至少含 `file / rule / target / expr / verdict(a|b) / count_baseline / reason / oracle`，
   门禁机械校验四项：① `oracle` 指向的用例真实存在且被 `unittest` 收集（跑真实子进程，
-  出现 `_FailedTest` 即「查无此例」）；② 该用例当前通过（rc=0）；③ 该 `(file, rule)` 实测计数
-  不得高于 `count_baseline` 之和（未覆盖即红）；④ 目标能在真实代码里定位——函数存在、该序数处
-  确实是声明的表达式类。此外 15 条与实测 15 处**严格一一对应**：删条目或加一处 R5 都红。
+  出现 `_FailedTest` 即「查无此例」；`oracle` 可为字符串或字符串列表，列表逐条都要收集且通过）；
+  ② 该用例当前通过（rc=0）；③ 该 `(file, rule)` 实测计数不得高于 `count_baseline` 之和（未覆盖即红）；
+  ④ 目标能在真实代码里定位——函数存在、该序数处确实是声明的表达式类。此外 15 条与实测 15 处
+  **严格一一对应**：删条目或加一处 R5 都红。
   判定的两个方向都有 oracle：`(a)` 可等价 = 在声明的子域内与 `canonical_path` 得出**同一路径
   标识**（原生形态 + 回喂 canonical 往返）且出界就分叉；`(b)` 不同域 = 证明 osnorm 根本产不出
   该处产物（例如相对键：osnorm 没有 `relpath`，`canonical_path` 对无 base 的相对路径直接拒）。
+  R48 起 `verdict=a` 的 12 条公共边界抽到顶层 `subdomains`（`host-native-join`）：条目只写
+  `subdomain` 名 + 本条特有理由，门禁校验名在注册表、reason 引用了它、且边界文本没有被复制
+  进 reason——避免 11 条文案各自漂移。比较基准从「宿主原生串」切换到「交换形态」由
+  `OSNORM_COMPARE_BASELINE=native|exchange` 控制（默认 `exchange`，两侧一起 canonical），
+  保证 R49 改调用点后判据不假绿/假红；`entries` 的 `expires` 采用**收紧**口径：早于当前 dev
+  轮次即红（R39 批次已在 R44–R47 迁完，不再续期）。
 - 账本本身进 `TEMPLATE_FILES` 哈希锁定：抬高账本会留下 `HASH-DIFF`，派生实例自行放宽会被
   `verify_rules --vs-template` 暴露。同仓内抬高要同时重建注册表，两次改动都留在 diff 与 CI 记录里。
 

@@ -47,10 +47,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import os
+import posixpath
 import re
 import tempfile
-from typing import Any
+from typing import Any, Iterator
 
 import wtarget
 import osnorm_loader as _osnorm_loader
@@ -256,11 +258,52 @@ def gate_key(ws: str, gate: str) -> str:
         return os.path.normpath(gate).replace(os.sep, "/")
 
 
+def _exchange_gate_key(ws: str, gate: str) -> str | None:
+    """在同卷的交换形态路径上计算 R49 相对键。"""
+    try:
+        osn = _osn(ws)
+        gate_canon = osn.canonical_path(gate)
+        ws_canon = osn.canonical_path(ws)
+    except Exception:
+        return None
+    gate_volume, gate_tail = ntpath.splitdrive(gate_canon)
+    ws_volume, ws_tail = ntpath.splitdrive(ws_canon)
+    if gate_volume.lower() != ws_volume.lower():
+        return None
+    # 盘符和 UNC 共享名只参与卷比较，根后的路径段保留字面大小写。
+    return posixpath.relpath(gate_tail or "/", ws_tail or "/")
+
+
+def _legacy_gate_key(ws: str, gate: str) -> str:
+    """冻结 R49 前的持久化键格式，仅供 sidecar 兼容读取。
+
+    保留宿主相对键与跨卷绝对键的原有拼写规则。R5 登记的 15 处迁移对象里，
+    此处对应的迁移目标是写侧 `gate_key#1`，本函数属于旧数据格式的解码边界。
+    """
+    try:
+        rel = os.path.relpath(os.path.normpath(gate), os.path.normpath(ws))
+    except ValueError:
+        return os.path.normpath(gate).replace(os.sep, "/")
+    return rel.replace(os.sep, "/")
+
+
+def _book_lookup_keys(ws: str, gate: str) -> Iterator[str]:
+    """按新键、冻结旧键、原始绝对键的顺序惰性生成候选。"""
+    new = _exchange_gate_key(ws, gate)
+    if new:
+        yield new
+    old = _legacy_gate_key(ws, gate)
+    if old and old != new:
+        yield old
+    if gate and gate not in (new, old):
+        yield gate
+
+
 def _book_entry(ws: str, books: object, gate: str) -> dict | None:
-    """从持久化账本取某 gate 的旧读账（键为相对路径，容错绝对路径）。"""
+    """从持久化账本取某 gate 的旧读账（三段兼容：新键 → 旧键 → 原始绝对路径）。"""
     if not isinstance(books, dict):
         return None
-    for key in (gate_key(ws, gate), gate):
+    for key in _book_lookup_keys(ws, gate):
         entry = books.get(key)
         if isinstance(entry, dict):
             return entry

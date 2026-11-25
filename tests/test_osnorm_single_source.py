@@ -26,6 +26,7 @@ import functools
 import importlib.util
 import json
 import os
+import re
 import sys
 import unittest
 from collections import Counter
@@ -240,6 +241,16 @@ def load_structural() -> list[dict]:
     return list(load_allowlist().get("structural") or [])
 
 
+def load_subdomains() -> dict:
+    """`structural` 里 `verdict=a` 条目共用的具名子域注册表（R48/P5）。
+
+    边界文本只在注册表里维护一份；条目只写 `subdomain` 名 + 本条特有理由，门禁校验
+    名存在、reason 引用了它、且没有把边界文本再抄一遍。
+    """
+    subs = load_allowlist().get("subdomains")
+    return subs if isinstance(subs, dict) else {}
+
+
 def _split_target(target: object) -> tuple[str, int]:
     """`函数名#序数` → (函数名, 序数)。
 
@@ -313,47 +324,104 @@ def _site_map(entries: list[dict]) -> tuple[dict[tuple[str, int], dict], list[st
     return index, problems
 
 
+def _oracle_specs(entry: dict) -> list[str]:
+    """条目声明的 oracle 用例（单个字符串或字符串列表；R48 起 gate_key 有 4 条）。"""
+    raw = entry.get("oracle")
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list) and raw and all(isinstance(item, str) for item in raw):
+        return list(raw)
+    return []
+
+
 def _oracle_shape(entry: dict) -> str | None:
-    """oracle 引用的形态判据（① 的存在性部分；不跑用例）。"""
-    spec = str(entry.get("oracle") or "")
-    file_part, _sep, rest = spec.partition("::")
-    cls, _sep2, method = rest.partition("::")
-    if not file_part.endswith(".py") or not (ROOT / file_part).is_file():
-        return f"oracle 指向不存在的测试文件：{spec!r}"
-    if not cls.startswith("StructuralOracle"):
-        return (f"oracle 必须指向 StructuralOracle* 类里的专用站点用例"
-                f"（防止把门禁自身的审计用例当 oracle 造成递归）：{spec!r}")
-    if not method.startswith("test_oracle_"):
-        return f"oracle 方法名必须以 test_oracle_ 开头：{spec!r}"
+    """oracle 引用的形态判据（① 的存在性部分；不跑用例）；列表里每一条都要过。"""
+    specs = _oracle_specs(entry)
+    if not specs:
+        return f"oracle 缺失或形态非法（只认非空字符串 / 字符串列表）：{entry.get('oracle')!r}"
+    for spec in specs:
+        file_part, _sep, rest = spec.partition("::")
+        cls, _sep2, method = rest.partition("::")
+        if not file_part.endswith(".py") or not (ROOT / file_part).is_file():
+            return f"oracle 指向不存在的测试文件：{spec!r}"
+        if not cls.startswith("StructuralOracle"):
+            return (f"oracle 必须指向 StructuralOracle* 类里的专用站点用例"
+                    f"（防止把门禁自身的审计用例当 oracle 造成递归）：{spec!r}")
+        if not method.startswith("test_oracle_"):
+            return f"oracle 方法名必须以 test_oracle_ 开头：{spec!r}"
     return None
 
 
 def _run_oracle(entry: dict) -> list[str]:
-    """① 真被收集 + ② 当前通过：跑真实子进程 `unittest <module>.<Class>.<method>`。"""
-    spec = str(entry["oracle"])
-    file_part, _sep, rest = spec.partition("::")
-    cls, _sep2, method = rest.partition("::")
-    module = file_part[:-3].replace("/", ".").replace("\\", ".")
-    target = f"{module}.{cls}.{method}"
+    """① 真被收集 + ② 当前通过：列表里每条都跑真实子进程 `unittest`（缺一即红）。"""
+    problems: list[str] = []
     who = f"{entry.get('file')}::{entry.get('target')}"
-    proc = osnorm.run_text([sys.executable, "-B", "-m", "unittest", "-v", target],
-                           cwd=str(ROOT), timeout=300)
-    output = f"{proc.stdout}\n{proc.stderr}"
-    # `unittest` 对不存在的用例会造一个 `_FailedTest` 并照样打印 "Ran 1 test"，所以
-    # 「真被收集」不能只看计数：出现 `_FailedTest` 就是「查无此例」。
-    if "_FailedTest" in output or "Ran 0 tests" in output or "Ran 1 test" not in output:
-        return [f"structural 豁免 {who} 失效：oracle 未被收集"
-                f"（`unittest {target}` 没有跑起 1 个用例）：\n{output[-800:]}"]
-    if proc.returncode != 0:
-        return [f"structural 豁免 {who} 失效：oracle 当前未通过"
-                f"（rc={proc.returncode}）：{spec}\n{output[-1500:]}"]
-    return []
+    for spec in _oracle_specs(entry):
+        file_part, _sep, rest = spec.partition("::")
+        cls, _sep2, method = rest.partition("::")
+        module = file_part[:-3].replace("/", ".").replace("\\", ".")
+        target = f"{module}.{cls}.{method}"
+        proc = osnorm.run_text([sys.executable, "-B", "-m", "unittest", "-v", target],
+                               cwd=str(ROOT), timeout=300)
+        output = f"{proc.stdout}\n{proc.stderr}"
+        # `unittest` 对不存在的用例会造一个 `_FailedTest` 并照样打印 "Ran 1 test"，所以
+        # 「真被收集」不能只看计数：出现 `_FailedTest` 就是「查无此例」。
+        if "_FailedTest" in output or "Ran 0 tests" in output or "Ran 1 test" not in output:
+            problems.append(f"structural 豁免 {who} 失效：oracle 未被收集"
+                            f"（`unittest {target}` 没有跑起 1 个用例）：\n{output[-800:]}")
+            continue
+        if proc.returncode != 0:
+            problems.append(f"structural 豁免 {who} 失效：oracle 当前未通过"
+                            f"（rc={proc.returncode}）：{spec}\n{output[-1500:]}")
+    return problems
+
+
+def _subdomain_problems(entries: list[dict], subdomains: dict) -> list[str]:
+    """R48/P5：a 类条目的公共边界只许在 `subdomains` 注册表里维护一份。"""
+    problems: list[str] = []
+    for name, spec in subdomains.items():
+        if not isinstance(spec, dict):
+            problems.append(f"subdomain 必须是对象：{name!r}")
+            continue
+        for field in ("boundary", "equivalence", "divergence"):
+            if not str(spec.get(field) or "").strip():
+                problems.append(f"subdomain {name!r} 缺字段 {field}")
+    used: Counter = Counter()
+    for entry in entries:
+        if entry.get("verdict") != "a":
+            continue
+        name = str(entry.get("subdomain") or "")
+        if not name:
+            problems.append(f"a 类条目缺 subdomain（边界必须引用注册表）："
+                            f"{entry.get('target')!r}")
+            continue
+        if name not in subdomains:
+            problems.append(f"a 类条目引用了未登记的 subdomain {name!r}："
+                            f"{entry.get('target')!r}")
+            continue
+        used[name] += 1
+        reason = str(entry.get("reason") or "")
+        if f"subdomains.{name}" not in reason:
+            problems.append(f"a 类条目的 reason 没有引用 subdomains.{name}："
+                            f"{entry.get('target')!r}")
+        spec = subdomains.get(name)
+        boundary = str((spec or {}).get("boundary") or "") if isinstance(spec, dict) else ""
+        if boundary and boundary in reason:
+            problems.append(f"a 类条目把 subdomain 边界文本复制进了 reason（文案会漂移）："
+                            f"{entry.get('target')!r}")
+    for name in subdomains:
+        if used[name] == 0:
+            problems.append(f"subdomain {name!r} 没有被任何 a 类条目引用")
+    return problems
 
 
 def structural_problems(actual: Counter, entries: list[dict], *,
-                        check_oracles: bool = True) -> list[str]:
-    """S3 的四项机械校验 + 一一对应；`actual` 是**未套 structural** 的实测计数。"""
+                        check_oracles: bool = True,
+                        subdomains: dict | None = None) -> list[str]:
+    """S3 的四项机械校验 + 一一对应 + R48 的 subdomain 单一来源；`actual` 是**未套 structural** 的实测计数。"""
     problems: list[str] = []
+    problems.extend(_subdomain_problems(entries, load_subdomains() if subdomains is None
+                                       else subdomains))
     rules = {str(entry.get("rule")) for entry in entries}
     for entry in entries:
         for field in STRUCTURAL_FIELDS:
@@ -460,8 +528,39 @@ def load_allowlist() -> dict:
     return json.loads(osnorm.read_text(ALLOWLIST_PATH))
 
 
-def audit(actual: Counter, entries: list[dict], baseline: dict[str, dict[str, int]]) -> list[str]:
-    """实测、精确登记与历史最低基线三方对账；任一方向漂移都算问题。"""
+def current_dev_round() -> int | None:
+    """当前 dev 轮次（`release_dev.json` 里最大的 `round`）；没有 dev 账本（实例侧）返回 None。
+
+    R48/P5：`expires` 的「过期」必须有可比的当前轮次。实例侧不带 dev 账本，按无轮次跳过；
+    模板侧读不到/损坏时同样不猜——只跳过过期判定，不把坏账本当 0。
+    """
+    path = ROOT / ".workspace" / "release_dev.json"
+    try:
+        data = json.loads(osnorm.read_text(path, bom=False, newline="preserve"))
+    except (OSError, ValueError):
+        return None
+    rounds = []
+    for entry in data if isinstance(data, list) else []:
+        value = entry.get("round") if isinstance(entry, dict) else None
+        if isinstance(value, int):
+            rounds.append(value)
+    return max(rounds) if rounds else None
+
+
+def _expires_round(value: object) -> int | None:
+    match = re.fullmatch(r"R(\d+)[a-z]?", str(value or ""))
+    return int(match.group(1)) if match else None
+
+
+def audit(actual: Counter, entries: list[dict], baseline: dict[str, dict[str, int]], *,
+          current_round: int | None = None) -> list[str]:
+    """实测、精确登记与历史最低基线三方对账；任一方向漂移都算问题。
+
+    `current_round` 非空时额外判「过期」：`expires` 必须是 `R<n>[a-z]?` 且不早于当前轮次。
+    R48/P5 选择**收紧**：R39 那批已在 R44–R47 迁完（entries=[]），续期只会把「已不存在的
+    条目」开成无限延期；现在起任何早于当前轮次的 `expires` 都红。实例侧没有 dev 账本时
+    调用方传 None，跳过该项。
+    """
     problems: list[str] = []
     recorded: dict[tuple, dict] = {}
     for entry in entries:
@@ -473,6 +572,16 @@ def audit(actual: Counter, entries: list[dict], baseline: dict[str, dict[str, in
             problems.append(f"allowlist 条目规则不在 R1–R6：{entry.get('rule')!r}")
         if not entry.get("reason") or not entry.get("expires"):
             problems.append(f"allowlist 条目缺 reason/expires：{entry}")
+        if entry.get("expires") and current_round is not None:
+            expires = _expires_round(entry.get("expires"))
+            if expires is None:
+                problems.append(f"allowlist expires 形态非法（只认 R<n>[a-z]?）："
+                                f"{entry.get('expires')!r}")
+            elif expires < current_round:
+                problems.append(
+                    f"allowlist 条目已过期：expires={entry.get('expires')} 早于当前轮次 "
+                    f"R{current_round}（{entry.get('file')}::{entry.get('target')}）"
+                    "——收紧口径：过期必须迁移或删除，不许续期")
         count = entry.get("count")
         if not isinstance(count, int) or count <= 0:
             problems.append(f"allowlist count 必须是正整数（不许填 0）：{entry}")
@@ -634,7 +743,8 @@ class SingleSourceScanTest(unittest.TestCase):
 
     def test_no_unregistered_violation(self) -> None:
         doc = load_allowlist()
-        problems = audit(self.actual, doc["entries"], doc["baseline"])
+        problems = audit(self.actual, doc["entries"], doc["baseline"],
+                         current_round=current_dev_round())
         self.assertEqual(problems, [], "\n".join(problems))
 
 
@@ -701,8 +811,36 @@ class AllowlistTest(unittest.TestCase):
         self.assertEqual(self.doc["baseline"], {})
 
     def test_counts_match_reality(self) -> None:
-        problems = audit(self.actual, self.doc["entries"], self.doc["baseline"])
+        problems = audit(self.actual, self.doc["entries"], self.doc["baseline"],
+                         current_round=current_dev_round())
         self.assertEqual(problems, [], "\n".join(problems))
+
+    def test_expired_entry_is_red(self) -> None:
+        """R48/P5：`expires` 早于当前轮次 → 红（选择收紧，不续期）。"""
+        key, entry, baseline = self._count_fixture()
+        entry = dict(entry, expires="R39")
+        actual = Counter({key: 3})
+        problems = audit(actual, [entry], baseline, current_round=47)
+        self.assertTrue(any("已过期" in p for p in problems), problems)
+        fresh = dict(entry, expires="R47")
+        self.assertFalse(any("已过期" in p for p in audit(actual, [fresh], baseline,
+                                                          current_round=47)))
+        later = dict(entry, expires="R48")
+        self.assertFalse(any("已过期" in p for p in audit(actual, [later], baseline,
+                                                          current_round=47)))
+
+    def test_expiry_is_skipped_without_dev_ledger(self) -> None:
+        """实例侧没有 dev 账本（无轮次可比）时显式跳过，不把缺失当 0。"""
+        key, entry, baseline = self._count_fixture()
+        entry = dict(entry, expires="R39")
+        problems = audit(Counter({key: 3}), [entry], baseline, current_round=None)
+        self.assertFalse(any("已过期" in p for p in problems), problems)
+
+    def test_expiry_shape_is_checked(self) -> None:
+        key, entry, baseline = self._count_fixture()
+        entry = dict(entry, expires="next-round")
+        problems = audit(Counter({key: 3}), [entry], baseline, current_round=47)
+        self.assertTrue(any("expires 形态非法" in p for p in problems), problems)
 
     def test_every_entry_has_reason_and_expiry(self) -> None:
         for entry in self.doc["entries"]:
@@ -947,6 +1085,17 @@ class AdapterOracleTest(unittest.TestCase):
 BASE_NATIVE = "/ws" if os.name != "nt" else "C:\\ws"
 
 
+def _expand_base(value: object) -> str:
+    """把 fixture 里的 `@base` 占位符换成宿主自适的 BASE_NATIVE（不写死宿主形态）。"""
+    return str(value or "").replace("@base", BASE_NATIVE)
+
+
+def _native_join(base: str, rel: str) -> str:
+    """宿主原生 join + normpath（拆两句：本文件也在 R5 扫描面内，不写内联惯用法）。"""
+    joined = os.path.join(base, rel)
+    return os.path.normpath(joined)
+
+
 def _native_form(canonical: str) -> str:
     """交换形态 → 本宿主原生写法。判据侧用，不参与被验证的实现。"""
     return os.path.normpath(canonical)
@@ -956,6 +1105,64 @@ def _path_pair(rel: str, base: str | None = None) -> tuple[str, str]:
     """(原生期望, 交换期望)：两个都从 canonical_path 现算，避免把宿主形态写成字面量。"""
     want = osnorm.canonical_path(rel, base=BASE_NATIVE if base is None else base)
     return _native_form(want), want
+
+
+# ---- R48/P1：比较基准可切换（宿主原生串 ↔ 交换形态）--------------------------
+#
+# R49 会把 12 处 `normpath_join` 改成 `collapse_path`：站点输出从「宿主原生串」变成
+# 「交换形态（或混合分隔符）」。若判据仍只比原生形态，R49 要么大面积假红、要么被迫
+# 放宽成「比字符串前缀」之类的假绿。这里把比较基准做成**可切换的判据**：
+#   native   —— 逐字比较（历史口径，仍可用于诊断）
+#   exchange —— 两侧都先 canonical_path 再比较（R49 迁移后的默认口径）
+# 关键约束是**双侧一起改**：只 canonical 实际值会放过「期望还停在原生形态」的分叉；
+# `compare_paths` 对两侧同时变换，`ComparisonBaselineTest.test_switch_is_two_sided`
+# 用两个方向的反例钉住这一点。
+
+COMPARE_BASELINES = ("native", "exchange")
+COMPARE_ENV = "OSNORM_COMPARE_BASELINE"
+DEFAULT_COMPARE_BASELINE = "exchange"
+
+
+def comparison_baseline() -> str:
+    """当前比较基准（环境变量可切换）；未知值 fail-closed，不静默退回宽松口径。"""
+    mode = (os.environ.get(COMPARE_ENV) or DEFAULT_COMPARE_BASELINE).strip().lower()
+    if mode not in COMPARE_BASELINES:
+        raise AssertionError(f"未知比较基准 {mode!r}（只认 {COMPARE_BASELINES}）")
+    return mode
+
+
+def exchange_form(value: str) -> str:
+    """宿主原生 / 交换形态 → 交换形态（canonical_path 对已交换形态幂等）。"""
+    return osnorm.canonical_path(value)
+
+
+def compare_paths(left: str, right: str, mode: str | None = None) -> bool:
+    """按当前基准判断两个绝对路径是否同一标识；exchange 模式**两侧都变换**。"""
+    mode = mode or comparison_baseline()
+    if mode == "native":
+        return left == right
+    if mode == "exchange":
+        return exchange_form(left) == exchange_form(right)
+    raise AssertionError(f"未知比较基准 {mode!r}")
+
+
+class _BaselineMode:
+    """临时切换比较基准（测试用；退出时恢复环境变量）。"""
+
+    def __init__(self, mode: str) -> None:
+        self.mode = mode
+        self._saved: str | None = None
+
+    def __enter__(self) -> str:
+        self._saved = os.environ.get(COMPARE_ENV)
+        os.environ[COMPARE_ENV] = self.mode
+        return self.mode
+
+    def __exit__(self, *_exc) -> None:
+        if self._saved is None:
+            os.environ.pop(COMPARE_ENV, None)
+        else:
+            os.environ[COMPARE_ENV] = self._saved
 
 
 class StructuralSiteMixin:
@@ -978,9 +1185,15 @@ class StructuralSiteMixin:
         return eval(code, {"os": os, "__builtins__": {"str": str, "int": int}}, dict(env))  # noqa: S307
 
     def assert_same_path(self, got: object, expected: tuple[str, str], msg: str) -> None:
-        """同一路径标识：原生形态逐字相等 **且** 回喂 canonical 得同一交换形态。"""
+        """同一路径标识：按当前基准比较，并保留回喂 canonical 的往返判据。"""
         native_expected, canonical_expected = expected
-        self.assertEqual(got, native_expected, f"{msg}：原生形态不等")
+        if comparison_baseline() == "native":
+            self.assertEqual(got, native_expected, f"{msg}：原生形态不等")
+        else:
+            self.assertEqual(exchange_form(str(got)), canonical_expected,
+                             f"{msg}：双侧交换形态不等")
+            self.assertEqual(exchange_form(str(got)), exchange_form(native_expected),
+                             f"{msg}：原生期望与交换期望不是同一标识")
         self.assertEqual(osnorm.canonical_path(got), canonical_expected,
                          f"{msg}：回喂 canonical 后不是同一标识")
 
@@ -1014,6 +1227,51 @@ class StructuralOracleTest(StructuralSiteMixin, unittest.TestCase):
         self.assertNotEqual(got, osnorm.canonical_path(gate), "相对键与 canonical 不是同一个东西")
         with self.assertRaises(osnorm.PathFormError):
             osnorm.canonical_path("a/b.md")   # 无 base 的相对路径 canonical 直接拒 → 产不出相对键
+
+    def test_oracle_cc_gate_key_escape_allowed(self) -> None:
+        """逃逸不是错误：gate_key 允许工作区外的 gate，返回带 `..` 的相对键（不抛、不绝对化）。"""
+        row = (CASES.get("gate_key") or {}).get("escape") or {}
+        cc_transcript = _hook_module("cc_transcript")
+        gate = _expand_base(row.get("gate"))
+        got = cc_transcript.gate_key(BASE_NATIVE, gate)
+        self.assertEqual(got, row.get("expect"), "逃逸必须保留相对键（允许），不能抛错或退回绝对键")
+        self.assertFalse(os.path.isabs(got), "逃逸键仍必须是相对形态")
+        self.assertTrue(got.startswith(".."), f"逃逸键必须保留前导 ..：{got!r}")
+
+    def test_oracle_cc_gate_key_cross_drive_no_throw(self) -> None:
+        """跨盘符：`relpath` 抛 ValueError 时必须回退成绝对键，hook 不得被打崩。"""
+        row = (CASES.get("gate_key") or {}).get("cross_drive") or {}
+        cc_transcript = _hook_module("cc_transcript")
+        gate = os.path.join(BASE_NATIVE, "a", "b.md")
+        expected = os.path.normpath(gate).replace(os.sep, "/")
+        original = os.path.relpath
+        try:
+            def boom(*_args, **_kwargs):
+                raise ValueError(row.get("message") or "path is on mount 'D:', start on mount 'C:'")
+            os.path.relpath = boom
+            got = cc_transcript.gate_key(BASE_NATIVE, gate)       # 不得抛
+            legacy = cc_transcript._legacy_gate_key(BASE_NATIVE, gate)
+        finally:
+            os.path.relpath = original
+        self.assertEqual(got, expected, "跨盘必须回退为绝对键（fail-safe）")
+        self.assertEqual(legacy, expected, "兼容读的旧键也必须对跨盘回退（不得抛）")
+        self.assertTrue(os.path.isabs(got), f"回退键必须是绝对形态：{got!r}")
+
+    def test_oracle_cc_gate_key_two_cwds_same_key(self) -> None:
+        """两个 cwd 写法（尾斜杠 / `.` / `sub/..`）必须同键；不同 cwd 必须异键（负例防恒真）。"""
+        rows = (CASES.get("gate_key") or {}).get("rows") or []
+        cc_transcript = _hook_module("cc_transcript")
+        gate = os.path.join(BASE_NATIVE, "a", "b.md")
+        self.assertGreaterEqual(len(rows), 2, "fixture 至少要有同键行与异键行")
+        expects = {row.get("expect") for row in rows}
+        self.assertIn("a/b.md", expects, "fixture 缺「同键」行")
+        self.assertTrue(any(value != "a/b.md" for value in expects),
+                        "fixture 缺「异键」负例：只断言同键的判据会退化成恒真")
+        for row in rows:
+            with self.subTest(name=row.get("name")):
+                cwd = _expand_base(row.get("cwd"))
+                self.assertEqual(cc_transcript.gate_key(cwd, gate), row.get("expect"),
+                                 f"cwd={cwd!r} 的键不符")
 
     def test_oracle_gate_core_recent_files_relative_key(self) -> None:
         path = os.path.join(BASE_NATIVE, "sub", "a.md")
@@ -1107,6 +1365,125 @@ class StructuralOracleTest(StructuralSiteMixin, unittest.TestCase):
     def test_oracle_wtarget_absolute_join(self) -> None:
         got = self.site(self.WT, "absolute#1", {"cwd": BASE_NATIVE, "v": "a/b.md"})
         self.assert_same_path(got, _path_pair("a/b.md"), "absolute#1")
+
+
+class ComparisonBaselineTest(unittest.TestCase):
+    """R48/P1：比较基准（宿主原生 ↔ 交换形态）是**可切换且双侧**的判据 + fixture。
+
+    这组用例不验证生产行为，验证的是「R49 改调用点时判据不会假绿/假红」：
+    - fixture 的每一行证明 native / exchange 两种写法是同一路径标识；
+    - 切换开关在 native 模式下必须恢复逐字比较，未知值 fail-closed；
+    - 两个方向的反例证明 exchange 模式**两侧都变换**（只变一侧会漏掉一侧的分叉）；
+    - 15 处 structural oracle 在两种基准下都必须全绿。
+    """
+
+    def _fixture(self) -> dict:
+        return CASES.get("baseline") or {}
+
+    def test_fixture_rows_are_same_identifier(self) -> None:
+        rows = self._fixture().get("rows") or []
+        self.assertGreaterEqual(len(rows), 6, "比较基准 fixture 行数不足")
+        for row in rows:
+            with self.subTest(rel=row.get("rel")):
+                base = BASE_NATIVE
+                if row.get("base_rel"):
+                    base = os.path.join(BASE_NATIVE, row["base_rel"])
+                native = _native_join(base, row["rel"])
+                exchange = osnorm.canonical_path(
+                    row["rel"], base=osnorm.canonical_path(base))
+                self.assertEqual(exchange_form(native), exchange,
+                                 f"fixture 行不是同一标识：{row!r}")
+
+    def test_fixture_diverging_rows_are_declared(self) -> None:
+        rows = self._fixture().get("diverging") or []
+        self.assertGreaterEqual(len(rows), 2, "出界分叉 fixture 不足")
+        for row in rows:
+            with self.subTest(rel=row.get("rel")):
+                native = _native_join(BASE_NATIVE, row["rel"])
+                self.assertIsInstance(native, str, "原生串在出界行上仍必须可得")
+                with self.assertRaises(osnorm.PathFormError):
+                    osnorm.canonical_path(row["rel"], base=BASE_NATIVE)
+
+    def test_switch_is_two_sided(self) -> None:
+        # 原生形态保留 `a/..` 未折叠（仍是合法路径写法），交换形态已折叠：同一标识、不同串。
+        native = os.path.join(BASE_NATIVE, "a", "..", "b.md")
+        exchange = osnorm.canonical_path("b.md", base=osnorm.canonical_path(BASE_NATIVE))
+        self.assertNotEqual(native, exchange, "前提不成立：两种形态竟然逐字相同")
+        with _BaselineMode("exchange"):
+            self.assertTrue(compare_paths(native, exchange), "exchange：原生→交换方向没比较")
+            self.assertTrue(compare_paths(exchange, native), "exchange：交换→原生方向没比较")
+        with _BaselineMode("native"):
+            self.assertFalse(compare_paths(native, exchange), "native：不该把交换形态当等值")
+            self.assertFalse(compare_paths(exchange, native), "native：不该把原生形态当等值")
+
+    def test_unknown_baseline_is_fail_closed(self) -> None:
+        with _BaselineMode("lenient"):
+            with self.assertRaises(AssertionError):
+                comparison_baseline()
+            with self.assertRaises(AssertionError):
+                compare_paths(BASE_NATIVE, BASE_NATIVE)
+
+    def test_all_structural_oracles_pass_under_both_baselines(self) -> None:
+        for mode in COMPARE_BASELINES:
+            with self.subTest(mode=mode), _BaselineMode(mode):
+                suite = unittest.TestLoader().loadTestsFromTestCase(StructuralOracleTest)
+                result = unittest.TestResult()
+                suite.run(result)
+                problems = result.failures + result.errors
+                self.assertFalse(problems, f"{mode} 基准下 structural oracle 未全绿："
+                                 + "\n".join(f"{test}: {detail[:800]}" for test, detail in problems))
+
+
+class OracleMutationControlTest(unittest.TestCase):
+    """R48：oracle 自身必须可证伪——对「已知坏实现」必须转红。
+
+    为什么单有 oracle 不够：把 `assertEqual(gate_key(cwd, gate), expect)` 改成
+    `assertEqual(gate_key(...), gate_key(...))` 之类的「放水」，oracle 会永远绿，门禁却看不出来。
+    这里对三条 gate_key oracle 各注入一个坏实现，要求 oracle **必须失败**；oracle 被放水时
+    本组用例转红，放水者无法静默通过。
+    """
+
+    def _result(self, name: str) -> unittest.TestResult:
+        case = StructuralOracleTest(name)
+        result = unittest.TestResult()
+        case.run(result)
+        return result
+
+    @staticmethod
+    def _bad_constant_key(_ws: str, _gate: str) -> str:
+        return "a/b.md"          # 恒同键：不同 cwd 也返回同键
+
+    @staticmethod
+    def _bad_absolute_key(_ws: str, _gate: str) -> str:
+        return _native_join(_ws, _gate)   # 逃逸被绝对化，不再保留相对 ..
+
+    @staticmethod
+    def _bad_uncatchable_key(ws: str, gate: str) -> str:
+        rel = os.path.relpath(os.path.normpath(gate), os.path.normpath(ws))
+        return rel
+
+    def _assert_red(self, method: str, bad, msg: str) -> None:
+        cc_transcript = _hook_module("cc_transcript")
+        original = cc_transcript.gate_key
+        cc_transcript.gate_key = bad
+        try:
+            result = self._result(method)
+        finally:
+            cc_transcript.gate_key = original
+        self.assertTrue(result.failures or result.errors,
+                        f"{msg}：oracle 对坏实现没有转红（判据被放水）")
+
+    def test_same_key_oracle_rejects_constant_key(self) -> None:
+        self._assert_red("test_oracle_cc_gate_key_two_cwds_same_key",
+                         self._bad_constant_key, "两 cwd 同键恒真")
+
+    def test_escape_oracle_rejects_absolute_key(self) -> None:
+        self._assert_red("test_oracle_cc_gate_key_escape_allowed",
+                         self._bad_absolute_key, "逃逸被绝对化")
+
+    def test_cross_drive_oracle_rejects_uncatchable_key(self) -> None:
+        self._assert_red("test_oracle_cc_gate_key_cross_drive_no_throw",
+                         self._bad_uncatchable_key, "跨盘不捕获 ValueError")
 
 
 class StructuralRealCallTest(StructuralSiteMixin, unittest.TestCase):
@@ -1215,11 +1592,44 @@ class StructuralRegistryTest(unittest.TestCase):
             problems = structural_problems(self.raw, broken, check_oracles=False)
             self.assertTrue(problems, f"{field}={bad!r} 竟然没有报错")
 
+    def test_subdomains_are_single_source(self) -> None:
+        """R48/P5：12 条 a 类共用 `host-native-join`，边界文本只在注册表里出现一次。"""
+        subdomains = load_subdomains()
+        self.assertEqual(set(subdomains), {"host-native-join"})
+        spec = subdomains["host-native-join"]
+        for field in ("boundary", "equivalence", "divergence"):
+            self.assertTrue(str(spec.get(field) or "").strip(), f"subdomain 缺 {field}")
+        a_entries = [entry for entry in self.entries if entry.get("verdict") == "a"]
+        self.assertEqual(len(a_entries), 12, "a 类条目数变了（R48 固定 12 条）")
+        for entry in a_entries:
+            self.assertEqual(entry.get("subdomain"), "host-native-join")
+            self.assertIn("subdomains.host-native-join", entry["reason"])
+            self.assertNotIn(spec["boundary"], entry["reason"],
+                             "边界文本被复制进条目 reason（会漂移）")
+        b_entries = [entry for entry in self.entries if entry.get("verdict") == "b"]
+        self.assertEqual(len(b_entries), 3, "b 类条目数变了（相对键 3 条）")
+
+    def test_missing_subdomain_is_red(self) -> None:
+        broken = [dict(item) for item in self.entries]
+        a_index = next(i for i, item in enumerate(broken) if item.get("verdict") == "a")
+        broken[a_index].pop("subdomain", None)
+        problems = structural_problems(self.raw, broken, check_oracles=False)
+        self.assertTrue(any("缺 subdomain" in item for item in problems), problems)
+
+    def test_conflicting_subdomain_reason_is_red(self) -> None:
+        broken = [dict(item) for item in self.entries]
+        a_index = next(i for i, item in enumerate(broken) if item.get("verdict") == "a")
+        broken[a_index]["reason"] = "没有引用注册表的理由"
+        problems = structural_problems(self.raw, broken, check_oracles=False)
+        self.assertTrue(any("没有引用 subdomains." in item for item in problems), problems)
+
     def test_oracle_is_run_for_real(self) -> None:
         """①② 走真实子进程：通过则无问题，改名后必须报「未被收集」。"""
         first = self.entries[0]
         self.assertEqual(_run_oracle(first), [], "oracle 引用的用例必须当前通过")
-        ghost = dict(first, oracle=first["oracle"].replace("test_oracle_", "test_oracle_ghost_"))
+        specs = _oracle_specs(first)
+        self.assertGreaterEqual(len(specs), 2, "gate_key#1 应登记 4 条 oracle")
+        ghost = dict(first, oracle=[specs[0].replace("test_oracle_", "test_oracle_ghost_")])
         self.assertTrue(any("未被收集" in item for item in _run_oracle(ghost)))
 
     def test_oracle_shape_rules(self) -> None:
@@ -1231,9 +1641,10 @@ class StructuralRegistryTest(unittest.TestCase):
              "StructuralOracle*"),
             (dict(first, oracle="tests/test_osnorm_single_source.py::StructuralOracleTest::test_x"),
              "test_oracle_"),
+            (dict(first, oracle=[]), "oracle"),
         )
         for entry, needle in cases:
-            self.assertIn(needle, _oracle_shape(entry) or "", entry["oracle"])
+            self.assertIn(needle, _oracle_shape(entry) or "", str(entry["oracle"]))
 
 
 # ---------------------------------------------------------------- 测试：§5.2 repo_identity 矩阵

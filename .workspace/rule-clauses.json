@@ -333,12 +333,12 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "947ab0bfbafbeb6ddddc595bc256e84b4a2f4f48c6de22d6eb4c8f665ea0ce2a",
+    "file_sha256": "501f2001061fd4aaf1e8ab7ce974beeb70b7921db5edbbe445c43e2e8f5d8a6b",
     "marked": 0
   },
   "docs/hooks-guide.md": {
     "clauses": {},
-    "file_sha256": "e31ddcaca041738189701c88f8bc3804a30e05b4d360c0c0822a474ec5d3c6ac",
+    "file_sha256": "40a63d9044c048f7b2b08ede0254e9581e5ec77bcdd2433eed6ad7a013c034fa",
     "marked": 0
   },
   "docs/hooks-catalog.md": {
@@ -363,7 +363,7 @@
   },
   "tests/test_docs_consistency.py": {
     "clauses": {},
-    "file_sha256": "077130c656229e59d0e470e5308e300c07a3bba7712cfd396ee257090a50f834",
+    "file_sha256": "9dbf1fd53a36581f5c3b2cd32b5dcd68edf8a76efaf2489074859bee4df8af6b",
     "marked": 0
   },
   "tests/test_template_sync_rollback.py": {
@@ -393,7 +393,7 @@
   },
   "scripts/policy_facts.py": {
     "clauses": {},
-    "file_sha256": "cea71ae702c4f7d860f79e21ad103b9857170c98611f16c23053e2ab842ef83d",
+    "file_sha256": "f999453ba1dab710d36ea1ee14edf162dfddd51a3da2eb2fb179574b893af76b",
     "marked": 0
   },
   "scripts/release.py": {
@@ -538,7 +538,7 @@
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "98c4a068b2117b772bfabed1219fa6c37d1520a4214771e3fe8ea2f0b16ee9a4",
+    "file_sha256": "64b129f602a3ab955c13d796812a02c5f4af256117b1500cf69cbf1a34b68c91",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
@@ -553,7 +553,7 @@
   },
   ".workspace/hooks/cc_transcript.py": {
     "clauses": {},
-    "file_sha256": "6226a2ee2e698576087d11f943262cab79144c6fdaf4dc14ead890716b57cffd",
+    "file_sha256": "6236953535cfc127f0989e8a47db03f8c0eaaf1c04f3cdbf314f77bcedbbbc90",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {
@@ -578,12 +578,12 @@
   },
   "scripts/gate_status.py": {
     "clauses": {},
-    "file_sha256": "53feb91e645eb3f76461337c17baf4dc70a437617c79d642704ade0b4ce2048f",
+    "file_sha256": "bef453bf3aa9698276f6df21d0c07b6338d402b63531a866591659382c11fa80",
     "marked": 0
   },
   "tests/test_gate_status.py": {
     "clauses": {},
-    "file_sha256": "81bfdcab2972f0247cae40e857cdd33b5d0004b70ff05c45ac3d24f6959fc5f4",
+    "file_sha256": "b0dfd133a5801404a653a0bf3b4d2902b5df0a958f0ce32e70e87cecfb47ef4e",
     "marked": 0
   },
   "tests/no_git_runner.py": {
@@ -623,7 +623,7 @@
   },
   "tests/test_osnorm_cases.json": {
     "clauses": {},
-    "file_sha256": "0328735eea7de97127cc67a20adb1f606a49ef8217bf43e91396d0a08009a0b4",
+    "file_sha256": "d2aebbde5edae8e884ad3a987503fb96addc3be9949fff4e758d9583bfd077f9",
     "marked": 0
   },
   "tests/test_osnorm_properties.py": {
@@ -633,12 +633,12 @@
   },
   "tests/test_osnorm_single_source.py": {
     "clauses": {},
-    "file_sha256": "6a6f80f3bdcc69e4d0e91a7e23443c002a8096f23b094f7395d0cedd0edcfdf5",
+    "file_sha256": "97c1ed2de97aa4b2535e68f15706ada0e2eccb2a2d2c012dccfd52b26676e87c",
     "marked": 0
   },
   "tests/osnorm_allowlist.json": {
     "clauses": {},
-    "file_sha256": "26dfb1f0355464d086e1460d67bdf923848254ba6feefe1fdafe273b48396815",
+    "file_sha256": "fff09fe16d815104593b7b9d32a1bd45390edd4df2615a8fa782bca5c26860fa",
     "marked": 0
   },
   "scripts/encoding_guard.py": {

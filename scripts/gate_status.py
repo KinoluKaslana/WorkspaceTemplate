@@ -44,24 +44,35 @@ GATE_STATE_FILE = "gate.json"
 
 
 def _machine_scope(workspace: Path) -> str:
-    """本机作用域键：local_state 优先，缺失时与 gate_core 的自足兜底完全同源。"""
+    """本机作用域键：**唯一来源**是 hooks 决策核心 `gate_core.machine_scope`。
+
+    R48/P5-C8（原 O4）：这里曾复制一份「local_state 优先 + gate_core 兜底」的算法，
+    两处对「两者都取不到」的收尾不同（gate_status 给 `unknown`，gate_core 给空串，状态
+    目录就落回共享根）。现在先委托 gate_core，只在其不可导入（半同步/旧实例）时按同源
+    顺序兜底；对同机 scope 必须逐字相同，差异由 `tests/test_gate_status.py` 钉住。
+    """
+    try:
+        hooks = Path(workspace) / ".workspace" / "hooks"
+        if str(hooks) not in sys.path:
+            sys.path.insert(0, str(hooks))
+        import gate_core
+        scope = gate_core.machine_scope(str(Path(workspace)))
+        if scope:
+            return scope
+    except Exception:
+        pass
     try:
         scripts = Path(workspace) / "scripts"
         if (scripts / "local_state.py").is_file():
             if str(scripts) not in sys.path:
                 sys.path.insert(0, str(scripts))
             import local_state
-            return local_state.machine_scope()
+            scope = local_state.machine_scope()
+            if scope:
+                return scope
     except Exception:
         pass
-    try:
-        hooks = Path(workspace) / ".workspace" / "hooks"
-        if str(hooks) not in sys.path:
-            sys.path.insert(0, str(hooks))
-        from gate_core import _fallback_scope
-        return _fallback_scope() or "unknown"
-    except Exception:
-        return "unknown"
+    return "unknown"
 
 
 def _state_dirs(workspace: Path) -> list[Path]:

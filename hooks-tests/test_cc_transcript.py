@@ -16,6 +16,7 @@
 运行：python3 -B hooks-tests/test_cc_transcript.py
 """
 import json
+import ntpath
 import os
 
 os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
@@ -24,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -701,6 +703,108 @@ class CcTranscript(unittest.TestCase):
                            start_offset=res["offset"])
         self.assertFalse([e for e in again["events"]
                           if e.get("reason") == "transcript-cwd-missing"], again["events"])
+
+
+class SidecarCompatR48(unittest.TestCase):
+    """R48/P2：sidecar 三段兼容读（新键 → 旧键 → 原始绝对路径）。
+
+    R49 会把写侧 `gate_key` 换成交换形态；旧 sidecar 里的相对键、以及更早跨盘回退时写的
+    绝对键都必须还能读。这里同时钉「三段各自可读」「优先级」「未来写侧换键后旧账仍可读」
+    与「两 cwd 写法同键」；夹具用 `C:\\ws` 形态让新旧键在 POSIX 上也真正不同（Windows 上
+    两者会重合，断言按运行时结果自适应）。
+    """
+
+    WS = "C:\\ws"
+    GATE = "C:\\ws\\a\\b.md"
+    VALUE = {"coverage": [[1, 2]], "revision": "post-write", "total": 2, "sha": "0" * 64}
+
+    def setUp(self):
+        self.new = ct._exchange_gate_key(self.WS, self.GATE)
+        self.old = ct._legacy_gate_key(self.WS, self.GATE)
+        self.absolute = self.GATE
+
+    def test_three_way_fixture_is_readable(self):
+        """旧 / 新 / 原始绝对三路 fixture：各自单独放进 books 都必须读回同一条账。"""
+        cases = (("new", self.new), ("old", self.old), ("absolute-raw", self.GATE))
+        for name, key in cases:
+            with self.subTest(stage=name, key=key):
+                self.assertIsInstance(key, str)
+                self.assertEqual(ct._book_entry(self.WS, {key: self.VALUE}, self.GATE),
+                                 self.VALUE)
+
+    def test_lookup_order_new_then_old_then_absolute(self):
+        keys = list(ct._book_lookup_keys(self.WS, self.GATE))
+        self.assertEqual(keys[0], self.new, keys)
+        self.assertEqual(keys[-1], self.GATE, keys)
+        self.assertIn(self.old, keys)
+        if self.new != self.old:
+            self.assertLess(keys.index(self.new), keys.index(self.old), keys)
+
+    def test_precedence_and_fallbacks(self):
+        books = {self.absolute: {"stage": "absolute"}}
+        if self.old != self.absolute:
+            books[self.old] = {"stage": "old"}
+        books[self.new] = {"stage": "new"}
+        self.assertEqual(ct._book_entry(self.WS, books, self.GATE), {"stage": "new"})
+        books.pop(self.new)
+        if self.old != self.new:
+            self.assertEqual(ct._book_entry(self.WS, books, self.GATE), {"stage": "old"})
+            books.pop(self.old)
+        self.assertEqual(ct._book_entry(self.WS, books, self.GATE), {"stage": "absolute"})
+
+    def test_frozen_old_key_wins_over_current_writer(self):
+        ws, gate = "/ws", "/ws/rules/g.md"
+        books = {"frozen-old": self.VALUE, "current-writer": {"stage": "writer"},
+                 gate: {"stage": "raw"}}
+        with mock.patch.object(ct, "_legacy_gate_key", return_value="frozen-old"), \
+                mock.patch.object(ct, "gate_key", return_value="current-writer"):
+            self.assertEqual(ct._book_entry(ws, books, gate), self.VALUE)
+
+    def test_new_key_hit_does_not_evaluate_lower_priority_keys(self):
+        ws, gate = "/ws", "/ws/rules/g.md"
+        with mock.patch.object(ct, "gate_key", side_effect=ValueError("writer drift")), \
+                mock.patch.object(ct, "_legacy_gate_key") as legacy:
+            self.assertEqual(ct._book_entry(ws, {"rules/g.md": self.VALUE}, gate), self.VALUE)
+            legacy.assert_not_called()
+
+    def test_future_gate_key_still_reads_old_sidecar(self):
+        """模拟 R49：写侧 gate_key 已换成新键，旧 sidecar（旧键）仍必须可读。"""
+        with mock.patch.object(
+                ct, "gate_key", new=lambda ws, gate: ct._exchange_gate_key(ws, gate)):
+            self.assertEqual(ct._book_entry(self.WS, {self.old: self.VALUE}, self.GATE),
+                             self.VALUE)
+
+    def test_two_cwd_spellings_same_key(self):
+        with tempfile.TemporaryDirectory(prefix="sidecar-cwd-") as tmp:
+            gate = os.path.join(tmp, "a", "b.md")
+            spellings = (tmp, tmp + os.sep, os.path.join(tmp, "."),
+                         os.path.join(tmp, "sub", ".."))
+            for ws in spellings:
+                with self.subTest(ws=ws):
+                    self.assertEqual(ct._legacy_gate_key(ws, gate), "a/b.md")
+                    self.assertEqual(ct._exchange_gate_key(ws, gate), "a/b.md")
+
+    def test_cross_root_has_no_new_key(self):
+        self.assertIsNone(ct._exchange_gate_key("C:/ws", "D:/x/a.md"),
+                          "跨盘不得伪造相对新键（posix.relpath 不抛，必须显式判根）")
+        self.assertIsNone(ct._exchange_gate_key("/ws", "relative/a.md"),
+                          "相对输入不产新键（canonical_path 缺 base 会拒）")
+        self.assertEqual(ct._exchange_gate_key("C:/ws", "C:/ws/a/../b.md"), "b.md")
+        self.assertIsNone(ct._exchange_gate_key("//HOST/One/ws", "//host/Two/ws/g.md"))
+
+    def test_unc_volume_case_and_literal_path_segments(self):
+        self.assertEqual(
+            ct._exchange_gate_key("//HOST/Share/ws", "//host/share/ws/rules/g.md"),
+            "rules/g.md")
+        self.assertEqual(
+            ct._exchange_gate_key("//HOST/Share/WS", "//host/share/ws/Rules/g.md"),
+            "../ws/Rules/g.md")
+        self.assertEqual(ct._exchange_gate_key("//HOST/Share", "//host/share/g.md"), "g.md")
+
+    def test_cross_volume_reads_frozen_absolute_key(self):
+        ws, gate = r"C:\ws", r"d:\rules\g.md"
+        with mock.patch.object(ct, "os", mock.Mock(path=ntpath, sep="\\")):
+            self.assertEqual(ct._book_entry(ws, {"d:/rules/g.md": self.VALUE}, gate), self.VALUE)
 
 
 if __name__ == "__main__":

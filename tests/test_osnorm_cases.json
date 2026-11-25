@@ -725,5 +725,82 @@
     }
    }
   }
- ]
+ ],
+ "baseline": {
+  "note": "R48/P1：比较基准 fixture。native = normpath(join(BASE_NATIVE, rel))，exchange = canonical_path(rel, base=BASE_NATIVE)；两形态必须是同一路径标识。diverging 行登记「出界即分叉」，不参与同标识断言。",
+  "rows": [
+   {
+    "rel": "a/b.md"
+   },
+   {
+    "rel": "a/./b.md"
+   },
+   {
+    "rel": "a/../b.md"
+   },
+   {
+    "rel": "a//b//"
+   },
+   {
+    "rel": "docs/a b.md"
+   },
+   {
+    "rel": ".hidden/x.md"
+   },
+   {
+    "rel": "sub/../a.md",
+    "base_rel": "sub"
+   },
+   {
+    "rel": "中文/路径.md"
+   }
+  ],
+  "diverging": [
+   {
+    "rel": "../x.md"
+   },
+   {
+    "rel": ""
+   }
+  ]
+ },
+ "gate_key": {
+  "note": "R48/P3：gate_key oracle 场景。@base = 宿主自适 BASE_NATIVE；rows 里同键行与异键负例都必须进同一判据（全同键的实现会被负例打红）。escape/cross_drive 分别钉「逃逸允许」与「跨盘不抛」。",
+  "rows": [
+   {
+    "name": "base",
+    "cwd": "@base",
+    "expect": "a/b.md"
+   },
+   {
+    "name": "trailing-sep",
+    "cwd": "@base/",
+    "expect": "a/b.md"
+   },
+   {
+    "name": "dot-segment",
+    "cwd": "@base/.",
+    "expect": "a/b.md"
+   },
+   {
+    "name": "dotdot-segment",
+    "cwd": "@base/sub/..",
+    "expect": "a/b.md"
+   },
+   {
+    "name": "sibling",
+    "cwd": "@base/other",
+    "expect": "../a/b.md"
+   }
+  ],
+  "escape": {
+   "gate": "@base/../x.md",
+   "expect": "../x.md"
+  },
+  "cross_drive": {
+   "raises": "ValueError",
+   "expect_absolute": true,
+   "message": "path is on mount 'D:', start on mount 'C:'"
+  }
+ }
 }

@@ -282,13 +282,16 @@ def skills(root=ROOT) -> dict:
 # ── 权威源（现场取数，不存期望值）─────────────────────────────────────────────
 
 def _policy_version(root) -> str:
-    lines = osnorm.read_text(Path(root) / "AGENT_RULES.md", bom=False, newline="preserve").split("\n")
-    if len(lines) < 4:
-        raise _AuthorityError("AGENT_RULES.md 不足 4 行")
-    m = _POLICY_HEAD_RE.search(lines[3])
-    if not m:
-        raise _AuthorityError("AGENT_RULES.md:4 没有「模板政策版本：`x.y.z`」")
-    return m.group(1)
+    """取数逻辑唯一来源 = `policy_facts.parse_policy_version`（R48/P5-C5）。
+
+    测试侧只保留**严格读法**（`bom=False, newline="preserve"`，R42a/R42b）与异常类型映射；
+    正则、行号与报错文案都在生产实现里，两处不再各存一份。
+    """
+    text = osnorm.read_text(Path(root) / "AGENT_RULES.md", bom=False, newline="preserve")
+    try:
+        return _POLICY_FACTS.parse_policy_version(text)
+    except _POLICY_FACTS.FactSourceError as exc:
+        raise _AuthorityError(str(exc)) from exc
 
 
 def _stale_version(root) -> str:
@@ -301,13 +304,11 @@ def _plugin_version(root) -> str:
     path = Path(root) / ".hermes" / "plugins" / "workspace-gate" / "plugin.yaml"
     if not path.is_file():
         raise _AuthorityError("plugin.yaml 不存在")
-    lines = osnorm.read_text(path, bom=False, newline="preserve").split("\n")
-    if len(lines) < 2:
-        raise _AuthorityError("plugin.yaml 不足 2 行")
-    m = _PLUGIN_VERSION_RE.match(lines[1])
-    if not m:
-        raise _AuthorityError("plugin.yaml:2 不是 `version: \"x.y.z\"`")
-    return m.group(1)
+    text = osnorm.read_text(path, bom=False, newline="preserve")
+    try:
+        return _POLICY_FACTS.parse_plugin_version(text)
+    except _POLICY_FACTS.FactSourceError as exc:
+        raise _AuthorityError(str(exc)) from exc
 
 
 def _template_file_count(root) -> int:
@@ -1017,6 +1018,41 @@ class DocFactContract(unittest.TestCase):
         dupes = sorted(patterns.intersection(literals))
         self.assertEqual(dupes, [],
                          f"测试侧又写了第二份 pattern 字面量（改回从 policy_facts 取名）：{dupes}")
+
+    def test_version_fetch_single_source_with_policy_facts(self):
+        """取数逻辑（不只是正则）也必须只有一份：测试/生产都走 `parse_*`（R48/P5-C5）。
+
+        证伪方式不是读源码（源码可写成等价复制），而是**替换 parser 后观察两条入口是否都
+        经过它**：测试侧 `_policy_version` / `_plugin_version` 与生产侧 `policy_version` /
+        `plugin_version` 都必须调用同一个函数对象，且各调用一次。任何一侧退回自写
+        `re.search`，这里都会因为调用次数/返回值不符而红。
+        """
+        calls: list[str] = []
+        original_policy = _POLICY_FACTS.parse_policy_version
+        original_plugin = _POLICY_FACTS.parse_plugin_version
+
+        def spy_policy(text: str) -> str:
+            calls.append("policy")
+            return original_policy(text)
+
+        def spy_plugin(text: str) -> str:
+            calls.append("plugin")
+            return original_plugin(text)
+
+        _POLICY_FACTS.parse_policy_version = spy_policy
+        _POLICY_FACTS.parse_plugin_version = spy_plugin
+        try:
+            test_policy = _policy_version(ROOT)
+            prod_policy = _POLICY_FACTS.policy_version(ROOT)
+            test_plugin = _plugin_version(ROOT)
+            prod_plugin = _POLICY_FACTS.plugin_version(ROOT)
+        finally:
+            _POLICY_FACTS.parse_policy_version = original_policy
+            _POLICY_FACTS.parse_plugin_version = original_plugin
+        self.assertEqual(test_policy, prod_policy)
+        self.assertEqual(test_plugin, prod_plugin)
+        self.assertEqual(calls, ["policy", "policy", "plugin", "plugin"],
+                         "测试侧或生产侧没有经过共享 parser（取数逻辑被复制了一份）")
 
     def test_scope_g1_policy_version_matches_policy_head(self):
         res = scan(ROOT)

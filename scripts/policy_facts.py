@@ -150,12 +150,14 @@ def _load_verify_rules(root):
     return mod
 
 
-def policy_version(root=ROOT):
-    """`AGENT_RULES.md:4` 的 `模板政策版本：\\`x.y.z\\``。"""
-    path = Path(root) / "AGENT_RULES.md"
-    if not path.is_file():
-        raise FactSourceError("AGENT_RULES.md 不存在")
-    lines = osnorm.read_text(path).split("\n")
+def parse_policy_version(text: str) -> str:
+    """从 `AGENT_RULES.md` 全文取政策版本（**取数逻辑的唯一实现**）。
+
+    R48/P5-C5（原 R33-C3/C3a）：测试侧曾用另一份 `re.search` 复刻这段取数；现在两边都
+    只调用本函数——生产入口 `policy_version()` 负责读文件，测试侧按严格读法读文本后调用
+    本函数。读侧策略（宽容/严格）属于各自入口，**取数/报错文案只有一份**。
+    """
+    lines = text.split("\n")
     if len(lines) < 4:
         raise FactSourceError("AGENT_RULES.md 不足 4 行")
     m = _POLICY_HEAD_RE.search(lines[3])
@@ -164,18 +166,31 @@ def policy_version(root=ROOT):
     return m.group(1)
 
 
-def plugin_version(root=ROOT):
-    """`.hermes/plugins/workspace-gate/plugin.yaml:2` 的 `version:`。"""
-    path = Path(root) / ".hermes" / "plugins" / "workspace-gate" / "plugin.yaml"
-    if not path.is_file():
-        raise FactSourceError("plugin.yaml 不存在")
-    lines = osnorm.read_text(path).split("\n")
+def parse_plugin_version(text: str) -> str:
+    """从 `plugin.yaml` 全文取插件版本（**取数逻辑的唯一实现**，见 `parse_policy_version`）。"""
+    lines = text.split("\n")
     if len(lines) < 2:
         raise FactSourceError("plugin.yaml 不足 2 行")
     m = _PLUGIN_VERSION_RE.match(lines[1])
     if not m:
         raise FactSourceError('plugin.yaml:2 不是 `version: "x.y.z"`')
     return m.group(1)
+
+
+def policy_version(root=ROOT):
+    """`AGENT_RULES.md:4` 的 `模板政策版本：\\`x.y.z\\``。"""
+    path = Path(root) / "AGENT_RULES.md"
+    if not path.is_file():
+        raise FactSourceError("AGENT_RULES.md 不存在")
+    return parse_policy_version(osnorm.read_text(path))
+
+
+def plugin_version(root=ROOT):
+    """`.hermes/plugins/workspace-gate/plugin.yaml:2` 的 `version:`。"""
+    path = Path(root) / ".hermes" / "plugins" / "workspace-gate" / "plugin.yaml"
+    if not path.is_file():
+        raise FactSourceError("plugin.yaml 不存在")
+    return parse_plugin_version(osnorm.read_text(path))
 
 
 def template_files_count(root=ROOT):

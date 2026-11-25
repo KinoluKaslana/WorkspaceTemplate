@@ -68,6 +68,7 @@ def _machine_scope(ws_root: str = "") -> str:
     为什么按机器分片：`.hook-state/` 会被同步盘带到别的机器；不隔离就会把
     另一台机器的会话账本/读证据当成自己的（Helper 事故同型）。
     取不到机器身份 → 本机持久种子派生；两者都拿不到才是 `"unknown"`；**不回退到共享根目录**。
+    R48/P5-C8：返回值**永不是空串**，与 `scripts/gate_status.py::_machine_scope` 逐字同源。
     """
     key = str(ws_root)
     cached = _SCOPE_CACHE.get(key)
@@ -92,6 +93,9 @@ def _machine_scope(ws_root: str = "") -> str:
     except Exception:
         fallback = _fallback_scope()
         scope = fallback or "unknown"
+    # 空串不得成为状态目录名：`Path(ws) / ".hook-state" / ""` 就是共享的旧根目录，
+    # 跨机隔离失效（C8 的另一半：`gate_status._machine_scope` 对此返回 `unknown`）。
+    scope = scope or "unknown"
     _SCOPE_CACHE[key] = scope
     return scope
 

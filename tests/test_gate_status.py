@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 
@@ -15,6 +16,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "gate_status.py"
@@ -31,6 +33,91 @@ def run(ws: Path, *args: str, env: dict | None = None) -> subprocess.CompletedPr
     if env:
         base.update(env)
     return osnorm.run_text([sys.executable, "-B", str(SCRIPT), "--workspace", str(ws), *args], timeout=60, env=base)
+
+
+def _load_gate_status_module():
+    """按路径加载门禁脚本（测试进程内调用 `_machine_scope`，不走 CLI）。"""
+    spec = importlib.util.spec_from_file_location("gate_status_scope_parity", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_gate_core_module():
+    hooks = ROOT / ".workspace" / "hooks"
+    if str(hooks) not in sys.path:
+        sys.path.insert(0, str(hooks))
+    import gate_core
+    return gate_core
+
+
+class ScopeParity(unittest.TestCase):
+    """R48/P5-C8（原 O4）：gate_status 与 gate_core 对同机 scope 必须逐字相同。
+
+    旧实现是两份算法：gate_status 收尾 `or "unknown"`，gate_core 直接返回空串——
+    「两边都取不到机器身份」时一个落 `.hook-state/unknown/`、一个落共享根 `.hook-state/`。
+    现在 gate_status 委托 gate_core；本组用例既比对返回值，也钉住「永不为空 / 永不回退共享根」。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="scope-parity-")
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+        self.gs = _load_gate_status_module()
+        self.core = _load_gate_core_module()
+
+    def _workspace(self, name: str, *, with_scripts: bool) -> Path:
+        ws = self.base / name
+        (ws / ".workspace").mkdir(parents=True)
+        if with_scripts:
+            (ws / "scripts").mkdir()
+            shutil.copyfile(ROOT / "scripts" / "local_state.py", ws / "scripts" / "local_state.py")
+        return ws
+
+    def _assert_parity(self, ws: Path, env: dict) -> str:
+        with mock.patch.dict(os.environ, env, clear=False):
+            self.core._SCOPE_CACHE.clear()
+            status_scope = self.gs._machine_scope(ws)
+            core_scope = self.core.machine_scope(str(ws))
+        self.assertEqual(status_scope, core_scope, f"同机 scope 分叉：{ws} / {env}")
+        self.assertRegex(status_scope, r"^[0-9a-f]{12}$", "scope 必须是 12 位 hex")
+        self.assertEqual(self.core.state_dir(str(ws)).name, status_scope,
+                         "状态目录名必须是同一个 scope")
+        return status_scope
+
+    def test_verbatim_parity_with_and_without_local_state(self) -> None:
+        with_local = self._workspace("with-local", with_scripts=True)
+        without_local = self._workspace("without-local", with_scripts=False)
+        a = self._assert_parity(with_local, {"WORKSPACE_CONTEXT_SEED": "machine-A"})
+        b = self._assert_parity(without_local, {"WORKSPACE_CONTEXT_SEED": "machine-B"})
+        self.assertNotEqual(a, b, "两台机器（不同 seed）落到了同一个 scope")
+
+    def test_verbatim_parity_across_cwd_spellings(self) -> None:
+        ws = self._workspace("spellings", with_scripts=True)
+        scope = self._assert_parity(ws, {"WORKSPACE_CONTEXT_SEED": "machine-A"})
+        for spelling in (str(ws) + os.sep, str(ws / "."), str(ws / "sub" / "..")):
+            with self.subTest(spelling=spelling):
+                with mock.patch.dict(os.environ, {"WORKSPACE_CONTEXT_SEED": "machine-A"}):
+                    self.core._SCOPE_CACHE.clear()
+                    self.assertEqual(self.gs._machine_scope(Path(spelling)), scope)
+                    self.assertEqual(self.core.machine_scope(spelling), scope)
+
+    def test_empty_identity_falls_back_to_unknown_on_both_sides(self) -> None:
+        ws = self._workspace("no-identity", with_scripts=False)
+        with mock.patch.object(self.core, "_fallback_machine_material", lambda: b""), \
+                mock.patch.object(self.core, "_fallback_seed", lambda: b""):
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("WORKSPACE_CONTEXT_SEED", None)
+                os.environ.pop("XDG_STATE_HOME", None)
+                os.environ.pop("LOCALAPPDATA", None)
+                self.core._SCOPE_CACHE.clear()
+                status_scope = self.gs._machine_scope(ws)
+                core_scope = self.core.machine_scope(str(ws))
+        self.assertEqual(status_scope, "unknown")
+        self.assertEqual(core_scope, "unknown")
+        self.assertEqual(self.core.state_dir(str(ws)).name, "unknown",
+                         "空身份不得回退到共享根 .hook-state/")
+        self.assertNotEqual(self.core.state_dir(str(ws)), ws / ".workspace" / ".hook-state")
 
 
 class GateStatus(unittest.TestCase):
