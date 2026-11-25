@@ -1417,11 +1417,12 @@ class ComparisonBaselineTest(unittest.TestCase):
             self.assertFalse(compare_paths(exchange, native), "native：不该把原生形态当等值")
 
     def test_unknown_baseline_is_fail_closed(self) -> None:
-        with _BaselineMode("lenient"):
-            with self.assertRaises(AssertionError):
-                comparison_baseline()
-            with self.assertRaises(AssertionError):
-                compare_paths(BASE_NATIVE, BASE_NATIVE)
+        for mode in ("lenient", "illegal"):
+            with self.subTest(mode=mode), _BaselineMode(mode):
+                with self.assertRaisesRegex(AssertionError, "未知比较基准"):
+                    comparison_baseline()
+                with self.assertRaisesRegex(AssertionError, "未知比较基准"):
+                    compare_paths(BASE_NATIVE, BASE_NATIVE)
 
     def test_all_structural_oracles_pass_under_both_baselines(self) -> None:
         for mode in COMPARE_BASELINES:
