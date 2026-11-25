@@ -18,6 +18,10 @@
 >
 > 账本：`.workspace/release_dev.json`（append-only，字段对齐 `releases.json`，另加 `round`）。
 
+## 47.3.8.0（2026-11-25）
+
+R47 stdio 三件套（R4 归零）：osnorm 新增 read_stdin_text/emit_stdout/emit_stderr（OSNORM_API 2→3）、删除 hook.py reconfigure 三行、收敛 print(json.dumps) 散点、账本 entries 3→0。取版 gpt + 汇总席签名修补；v55 三席通过 + 真 Windows ①②④ 原生复跑全过。
+
 ## 46.3.8.0（2026-11-24）
 
 R46 计划↔账本互校机制（S1–S13，R46a–R46g）：sequence_check.py 以第二实现为基线重做 S1–S11（git 历史锚、三席确认、_DEV 分支归属、远端锚）；新增 S12 迭代日志冻结锚（release.py --dev 写 iterations/iterations_sha256，落地后回改=红；未入账轮次豁免）与 S13 §1 landed 行整行冻结（append-only rows，含 S13 建前合法改写的代码白名单）；check_all 收尾打印「三席放行 ≠ 用户放行」WARN（不改退出码）；SEQUENCE.md 补 §4.1 锚分层威胁模型与迭代日志边界。三席核验 v54 + v54b 轻量复核通过。

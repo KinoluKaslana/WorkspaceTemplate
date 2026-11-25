@@ -24,5 +24,19 @@
     },
     "iterations": 7,
     "iterations_sha256": "06d002bec3e198a23e30362a8b3aadaedafa8faaac96dc2bf464f652fbbf6a46"
+  },
+  {
+    "version": "47.3.8.0",
+    "round": 47,
+    "date": "2026-11-25",
+    "summary": "R47 stdio 三件套（R4 归零）：osnorm 新增 read_stdin_text/emit_stdout/emit_stderr（OSNORM_API 2→3）、删除 hook.py reconfigure 三行、收敛 print(json.dumps) 散点、账本 entries 3→0。取版 gpt + 汇总席签名修补；v55 三席通过 + 真 Windows ①②④ 原生复跑全过。",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "CHANGELOG_DEV.md": "dfbfffb3c1ddbe12",
+      "AGENT_RULES.md": "0ffb5264ca8382d1"
+    },
+    "iterations": 3,
+    "iterations_sha256": "961310b5f8296606b7c2a70b61877f06da4b7d781efe70b583243c41b6206351"
   }
 ]
