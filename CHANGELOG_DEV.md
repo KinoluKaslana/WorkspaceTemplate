@@ -18,6 +18,10 @@
 >
 > 账本：`.workspace/release_dev.json`（append-only，字段对齐 `releases.json`，另加 `round`）。
 
+## 48.3.8.0（2026-11-25）
+
+R48 R5 迁移前置（只建判据不改调用点）：比较基准统一开关（非法值 fail-closed）、sidecar 三段兼容读、gate_key oracle 四条、12 条 a 类具名 subdomain、expires=R39 过期判定、C5/C8 收敛。取版 flash + 汇总席裁决修补；v56 三席 pass-with-notes + SOL 必修 illegal 子例由二修席补入。
+
 ## 47.3.8.0（2026-11-25）
 
 R47 stdio 三件套（R4 归零）：osnorm 新增 read_stdin_text/emit_stdout/emit_stderr（OSNORM_API 2→3）、删除 hook.py reconfigure 三行、收敛 print(json.dumps) 散点、账本 entries 3→0。取版 gpt + 汇总席签名修补；v55 三席通过 + 真 Windows ①②④ 原生复跑全过。

@@ -38,5 +38,19 @@
     },
     "iterations": 3,
     "iterations_sha256": "961310b5f8296606b7c2a70b61877f06da4b7d781efe70b583243c41b6206351"
+  },
+  {
+    "version": "48.3.8.0",
+    "round": 48,
+    "date": "2026-11-25",
+    "summary": "R48 R5 迁移前置（只建判据不改调用点）：比较基准统一开关（非法值 fail-closed）、sidecar 三段兼容读、gate_key oracle 四条、12 条 a 类具名 subdomain、expires=R39 过期判定、C5/C8 收敛。取版 flash + 汇总席裁决修补；v56 三席 pass-with-notes + SOL 必修 illegal 子例由二修席补入。",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "CHANGELOG_DEV.md": "bbd57ffe4e3872f4",
+      "AGENT_RULES.md": "0ffb5264ca8382d1"
+    },
+    "iterations": 4,
+    "iterations_sha256": "9691dc101604c3d3b4483d166b4cf27fa9fad5b19114ce026aa33ad2e5ae3727"
   }
 ]

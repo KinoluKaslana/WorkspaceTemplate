@@ -143,7 +143,7 @@
   },
   "CHANGELOG_DEV.md": {
     "clauses": {},
-    "file_sha256": "dfbfffb3c1ddbe1218b54b35cd7bd5485ac87addd0a7a7d6f67dba7f030b4e23",
+    "file_sha256": "bbd57ffe4e3872f4762b23399ee15995b6f755244ac56dc7cb80b8ab0c5364ac",
     "marked": 0
   },
   "LICENSE": {
@@ -413,7 +413,7 @@
   },
   ".workspace/release_dev.json": {
     "clauses": {},
-    "file_sha256": "dff7246093886a629a5994df6d3da42f5092b6cb28f412abc7999b3aa0275b6b",
+    "file_sha256": "34ef00f8e91960df6ee103a82e2cdf5a1cedc3a3a329acdfc3681facecc42b15",
     "marked": 0
   },
   "tests/test_release.py": {
