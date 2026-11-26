@@ -762,18 +762,17 @@ class SidecarCompatR48(unittest.TestCase):
         self.assertEqual(ct._book_entry(self.WS, books, self.GATE), {"stage": "absolute"})
 
     def test_frozen_old_key_wins_over_current_writer(self):
-        ws, gate = "/ws", "/ws/rules/g.md"
         books = {"frozen-old": self.VALUE, "current-writer": {"stage": "writer"},
-                 gate: {"stage": "raw"}}
+                 self.absolute: {"stage": "raw"}}
         with mock.patch.object(ct, "_legacy_gate_key", return_value="frozen-old"), \
                 mock.patch.object(ct, "gate_key", return_value="current-writer"):
-            self.assertEqual(ct._book_entry(ws, books, gate), self.VALUE)
+            self.assertEqual(ct._book_entry(self.WS, books, self.GATE), self.VALUE)
 
     def test_new_key_hit_does_not_evaluate_lower_priority_keys(self):
-        ws, gate = "/ws", "/ws/rules/g.md"
         with mock.patch.object(ct, "gate_key", side_effect=ValueError("writer drift")), \
                 mock.patch.object(ct, "_legacy_gate_key") as legacy:
-            self.assertEqual(ct._book_entry(ws, {"rules/g.md": self.VALUE}, gate), self.VALUE)
+            self.assertEqual(ct._book_entry(self.WS, {self.new: self.VALUE}, self.GATE),
+                             self.VALUE)
             legacy.assert_not_called()
 
     def test_new_writer_still_reads_old_sidecar(self):
