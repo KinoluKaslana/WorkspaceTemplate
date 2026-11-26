@@ -18,6 +18,10 @@
 >
 > 账本：`.workspace/release_dev.json`（append-only，字段对齐 `releases.json`，另加 `round`）。
 
+## 49.3.8.0（2026-11-26）
+
+R49 R5 语义迁移（账本归零）：15 处迁移（12 normpath_join→交换形态 + 3 relpath_sep_key→新键）、逐项删 structural、比较两侧统一盘符/分隔符口径、wtarget 恢复无盘契约。取版 gpt + 汇总席裁决修补；真 Windows SidecarCompatR48 10/10、双端键集合逐字相同；v58 三席 pass。
+
 ## 48.3.8.0（2026-11-25）
 
 R48 R5 迁移前置（只建判据不改调用点）：比较基准统一开关（非法值 fail-closed）、sidecar 三段兼容读、gate_key oracle 四条、12 条 a 类具名 subdomain、expires=R39 过期判定、C5/C8 收敛。取版 flash + 汇总席裁决修补；v56 三席 pass-with-notes + SOL 必修 illegal 子例由二修席补入。

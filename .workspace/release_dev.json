@@ -52,5 +52,19 @@
     },
     "iterations": 4,
     "iterations_sha256": "9691dc101604c3d3b4483d166b4cf27fa9fad5b19114ce026aa33ad2e5ae3727"
+  },
+  {
+    "version": "49.3.8.0",
+    "round": 49,
+    "date": "2026-11-26",
+    "summary": "R49 R5 语义迁移（账本归零）：15 处迁移（12 normpath_join→交换形态 + 3 relpath_sep_key→新键）、逐项删 structural、比较两侧统一盘符/分隔符口径、wtarget 恢复无盘契约。取版 gpt + 汇总席裁决修补；真 Windows SidecarCompatR48 10/10、双端键集合逐字相同；v58 三席 pass。",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "CHANGELOG_DEV.md": "a02f6304b8ecde6e",
+      "AGENT_RULES.md": "0ffb5264ca8382d1"
+    },
+    "iterations": 3,
+    "iterations_sha256": "7114d0aea3762d42395d71e22e77429aa8e63f30fd6e8bf934bf21b53fa4b9fd"
   }
 ]

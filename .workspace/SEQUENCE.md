@@ -43,6 +43,7 @@
 | 46 | `46.3.8.0` | `0d3185d` | R46 计划互校机制：S1–S13（R46a–R46g；含 S12 迭代日志冻结锚、S13 §1 行冻结与建前改写白名单、放行 WARN） | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass verified_at=2026-11-24 | 迭代粒度机制：每轮一次尝试一节（it1–it7）；v54 三席唯一必修已修 `0d3185d` + v54b 复核通过 |
 | 47 | `47.3.8.0` | `a6e8620` | stdio 三件套（R4 归零）：osnorm read_stdin_text/emit_stdout/emit_stderr、OSNORM_API 3、hook.py 收敛、entries 归零 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass-with-notes verified_at=2026-11-25 notes=候选②冷启动可于定位前拒非法字节，已装载时由 strict 拒，两条路径都 deny；真 Windows ①②④ 原生复跑全过 | 迭代日志 it1–it3（R46f 机制） |
 | 48 | `48.3.8.0` | `949b470` | R5 迁移前置（只建判据不改调用点）：比较基准统一开关、sidecar 三段兼容读、gate_key oracle 四条、12 条 a 类 subdomain、expires=R39 过期判定、C5/C8 收敛 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass-with-notes verified_at=2026-11-25 notes=SOL 必修 illegal 子例已由二修席补入，三态配方验证；S7 三条 commit:null 为基线遗留 | 迭代日志 it1–it4（R46f 机制） |
+| 49 | `49.3.8.0` | `20ef01c` | R5 语义迁移（账本归零）：15 处迁移（12 normpath_join→交换形态 + 3 relpath_sep_key→新键）、逐项删 structural、比较两侧统一口径、wtarget 无盘契约 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass verified_at=2026-11-26 notes=真 Windows SidecarCompatR48 10/10，双端键集合 11 项逐字相同；二修为测试层自适应（零产品代码） | 迭代日志 it1–it3（R46f 机制） |
 
 > **`verified_by` 取值**：`[SOL, GPT-SOL-6, PRO]`（三席轮次确认）或 `legacy`（机制建立前，S9 豁免但必须注明原因）。
 > 自 R46 起，所有 `landed` 轮次必须是前者。
@@ -59,13 +60,6 @@
 
 
 
-### R49 · `49.3.8.0` · R5 语义迁移（账本归零）
-- **范围**：12 处 `normpath_join` → `collapse_path`；3 处 `relpath_sep_key` → `posixpath.relpath(collapse_path, collapse_path)`
-  + 显式盘符判定；逐项删 `structural`
-- **依赖**：R48
-- **判据**：`entries 0 / structural 0`；Linux 与 Windows 同批会话 sidecar 键集合**逐字相同**；
-  故障注入证明逃逸 fail-closed、跨盘不抛
-- **风险**：**全序最高**（比较基准错 → 静默误 deny 或误放行）
 
 ### R50 · `50.3.8.0` · 真机闭环 + 治理单源
 - **范围**：C6 Windows 五项真机复验；C10 dsh 会话账本缺失；C2 `bootstrap.gate` 化石块（`gate_status --migrate-legacy`
