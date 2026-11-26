@@ -1,7 +1,9 @@
 {
  "version": 2,
  "doc": [
-  "R1–R6 存量违规账本。三节各有单一用途，不许互相顶替：",
+  "R51 blocking 基线：entries、structural、subdomains、baseline 必须为空。",
+  "扫描逐处报告文件、行号和规则。账本计数不参与 blocking 判定。",
+  "以下为 R1–R6 历史账本校验与 oracle 的约定：",
   "  baseline   每个 (file, rule) 的历史最低登记计数；只覆盖 entries 里的 (file, rule)。",
   "  entries    「还没迁移、也没有 oracle」的存量违规（只许精确登记，count 必须等于实测）。",
   "  structural 「结构性豁免」：位置永久保留，但理由由一条可执行 oracle 持续验证（S3）。",

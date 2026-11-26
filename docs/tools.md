@@ -272,7 +272,7 @@ UTF-16/GBK 在 `strict` 下上抛。
 预算耗尽时原样抛出，**绝不退化成非原子写**。`run_text` 固定 `capture_output=True` +
 UTF-8 + `errors`，并把 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 注入子进程环境
 （`os.environ` → `utf8_env()` → 调用方 `env`，调用方优先），因此 `proc.stdout` 恒为 `str`。
-流式/交互式子进程不在它范围内（调用方自行 `Popen`，且须进门禁 allowlist 登记）。
+流式/交互式子进程由调用方自行使用 `Popen`，同样受 R2 的编码参数检查。
 
 **门禁（blocking）**：`tests/test_osnorm_single_source.py` 由 `tests/` discovery 与 CI 执行——
 `scripts/`、`.workspace/hooks/`、`tests/` 里再出现自带 `encoding=` 的文本 I/O（R1）、
@@ -287,7 +287,13 @@ UTF-8 + `errors`，并把 `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` 注入子进�
 `OSNORM_API` 在 `exec_module` 之后、任何 API 调用之前校验；候选必须是非 symlink 的普通文件。
 hooks 用 `read_stdin_text` 严格解码管道 stdin，并经 `emit_stdout` / `emit_stderr` 写 UTF-8 字节。
 TTY 沿用流的编码，编解码错误采用 `replace`。
-账本（`tests/osnorm_allowlist.json`）的三个段各有独立用途：
+R51 起，门禁按 `文件:行: [规则] 违规类别` 逐处报告，并独立校验
+`tests/osnorm_allowlist.json` 的 `entries`、`structural`、`subdomains`、`baseline` 四段均为空。
+账本中的计数或登记无法抵消违规，重建文件哈希注册表后亦如此。
+门禁入口的回归用例注入 `sys.stdout.reconfigure(encoding="utf-8")`（R4）和
+`os.path.normpath(os.path.join(base, name))`（R5），逐处核对文件、行号与类别。
+`print(json.dumps(...))` 是允许的 CLI JSON 输出形态，作为负控注入时门禁通过。
+以下为历史账本格式及仍由回归用例验证的判据：
 
 - `entries`（兜底存量）：`(file, rule, target, line_kind)` 节点级表项。`count` 必须**精确等于**
   实测（`>` 或 `<` 都红；归零必须删表项）；`baseline` 记录每个 `(file, rule)` 的历史最低值，
@@ -299,8 +305,8 @@ TTY 沿用流的编码，编解码错误采用 `replace`。
   门禁机械校验四项：① `oracle` 指向的用例真实存在且被 `unittest` 收集（跑真实子进程，
   出现 `_FailedTest` 即「查无此例」；`oracle` 可为字符串或字符串列表，列表逐条都要收集且通过）；
   ② 该用例当前通过（rc=0）；③ 该 `(file, rule)` 实测计数不得高于 `count_baseline` 之和（未覆盖即红）；
-  ④ 目标能在真实代码里定位——函数存在、该序数处确实是声明的表达式类。此外 15 条与实测 15 处
-  **严格一一对应**：删条目或加一处 R5 都红。
+  ④ 目标能在真实代码里定位——函数存在、该序数处确实是声明的表达式类。迁移前 15 个表项与实测
+  15 处 **严格一一对应**，该批表项已在 R49 归零。
   判定的两个方向都有 oracle：`(a)` 可等价 = 在声明的子域内与 `canonical_path` 得出**同一路径
   标识**（原生形态 + 回喂 canonical 往返）且出界就分叉；`(b)` 不同域 = 证明 osnorm 根本产不出
   该处产物（例如相对键：osnorm 没有 `relpath`，`canonical_path` 对无 base 的相对路径直接拒）。
@@ -310,8 +316,8 @@ TTY 沿用流的编码，编解码错误采用 `replace`。
   `OSNORM_COMPARE_BASELINE=native|exchange` 控制（默认 `exchange`，两侧一起 canonical），
   保证 R49 改调用点后判据不假绿/假红；`entries` 的 `expires` 采用**收紧**口径：早于当前 dev
   轮次即红（R39 批次已在 R44–R47 迁完，不再续期）。
-- 账本本身进 `TEMPLATE_FILES` 哈希锁定：抬高账本会留下 `HASH-DIFF`，派生实例自行放宽会被
-  `verify_rules --vs-template` 暴露。同仓内抬高要同时重建注册表，两次改动都留在 diff 与 CI 记录里。
+- 账本进 `TEMPLATE_FILES` 哈希锁定：改动账本会触发 `HASH-DIFF`，派生实例自行放宽会被
+  `verify_rules --vs-template` 暴露。
 
 ## 6.6 文本编码：`encoding_guard.py`（BOM / 换行机械统一）
 

@@ -3,10 +3,10 @@
 
 **这是 blocking 门禁**（由 `tests/` discovery 执行，`ci.yml` 已跑；`docs/tools.md` 有登记）：
 `scripts/*.py`、`.workspace/hooks/*.py`、`tests/*.py` 里出现自写归一化 / 自带编码 / 自写原子发布
-就直接红，除非该处**结构性豁免**（osnorm 自身、`local_state` 的 no-follow 路径、
-两个 hooks adapter）或已在 `tests/osnorm_allowlist.json` 登记。
+就直接按文件、行号和规则报告，规则级豁免见 `STRUCTURAL_EXEMPT`。
+`tests/osnorm_allowlist.json` 的四个账本段必须为空，登记和计数不参与 blocking 判定。
 
-关键约定：
+保留的历史账本校验和 oracle 约定：
 - 匹配粒度是 `(file, rule, target, line_kind)`，**不按行号**（行号会漂移）。
 - allowlist 的 `count` 必须精确等于实测；`baseline` 另钉住每个 `(file, rule)` 的历史最低值。
 - allowlist v2 的 `structural` 段是**结构性豁免**（R43）：位置永久保留，但每条必须带一条可执行
@@ -33,6 +33,7 @@ import sys
 import tempfile
 import unittest
 from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
 from unittest import mock
 
@@ -511,6 +512,16 @@ def scan_file(path: Path, rel: str,
     return [v for v in found if _exempted(rel, v, site_map) is None]
 
 
+def iter_repo_violations(
+    site_map: dict[tuple[str, int], dict],
+) -> Iterator[tuple[str, Violation]]:
+    for prefix, root in SCAN_ROOTS:
+        for path in sorted(root.glob("*.py")):
+            rel = f"{prefix}/{path.name}"
+            for violation in scan_file(path, rel, site_map):
+                yield rel, violation
+
+
 def scan_repo(with_structural: bool = True, entries: list[dict] | None = None) -> Counter:
     """扫描全量扫描面，返回 {(file, rule, target, line_kind): count}。
 
@@ -518,13 +529,19 @@ def scan_repo(with_structural: bool = True, entries: list[dict] | None = None) -
     """
     site_map = {} if not with_structural else _site_map(
         load_structural() if entries is None else entries)[0]
-    counts: Counter = Counter()
-    for prefix, root in SCAN_ROOTS:
-        for path in sorted(root.glob("*.py")):
-            rel = f"{prefix}/{path.name}"
-            for violation in scan_file(path, rel, site_map):
-                counts[(rel,) + violation.key] += 1
-    return counts
+    return Counter((rel,) + violation.key for rel, violation in iter_repo_violations(site_map))
+
+
+def blocking_problems(doc: dict) -> list[str]:
+    """R51：带定位的实测违规与账本的空值约束分别判定。"""
+    hits = sorted(iter_repo_violations({}), key=lambda hit: (hit[0], hit[1].line))
+    problems = [f"{rel}:{hit.line}: [{hit.rule}] {hit.target} ({hit.line_kind})"
+                for rel, hit in hits]
+    for section, empty in (("entries", []), ("structural", []), ("subdomains", {}),
+                           ("baseline", {})):
+        if doc.get(section) != empty:
+            problems.append(f"tests/osnorm_allowlist.json: {section} 必须为 {empty}")
+    return problems
 
 
 # ---------------------------------------------------------------- R9：allowlist 审计
@@ -723,7 +740,7 @@ class RuleSelfCheckTest(unittest.TestCase):
 
 class SingleSourceScanTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.actual = scan_repo()
+        self.actual = scan_repo(with_structural=False)
 
     def test_scan_covers_three_roots(self) -> None:
         """用实际扫描调用验证三个根都参与检查，归零后仍要扫描 hooks。"""
@@ -748,11 +765,96 @@ class SingleSourceScanTest(unittest.TestCase):
         dirty = [key for key in self.actual if key[0] in ours]
         self.assertEqual(dirty, [], f"本轮新增文件不得带任何存量违规：{dirty}")
 
+
+class WorkspaceBlockingGateTest(unittest.TestCase):
+    """逐处诊断排在历史账本测试后，保留在 check_all 展示的输出尾部。"""
+
     def test_no_unregistered_violation(self) -> None:
-        doc = load_allowlist()
-        problems = audit(self.actual, doc["entries"], doc["baseline"],
-                         current_round=current_dev_round())
-        self.assertEqual(problems, [], "\n".join(problems))
+        problems = blocking_problems(load_allowlist())
+        if problems:
+            self.fail("\n".join(problems))
+
+
+class BlockingGateTest(unittest.TestCase):
+    def test_workspace_gate_reports_each_injected_violation(self) -> None:
+        gate = WorkspaceBlockingGateTest("test_no_unregistered_violation")
+        ledger = {"entries": [], "structural": [], "subdomains": {}, "baseline": {}}
+        json_control = 'import json\nprint(json.dumps({"ok": True}))\n'
+        violations = (
+            "import os\n"
+            "import sys\n"
+            "sys.stdout.reconfigure(encoding='utf-8')\n"
+            "sys.stderr.reconfigure(encoding='utf-8')\n"
+            "def joined_key(base, name):\n"
+            "    return os.path.normpath(os.path.join(base, name))\n"
+        )
+        expected = [
+            "scripts/r51_probe.py:5: [R4] .reconfigure (call)",
+            "scripts/r51_probe.py:6: [R4] .reconfigure (call)",
+            "scripts/r51_probe.py:8: [R5] expr:normpath_join (expr)",
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scripts = root / "scripts"
+            scripts.mkdir()
+            probe = scripts / "r51_probe.py"
+            allowlist = root / "osnorm_allowlist.json"
+            with mock.patch.multiple(__name__, ROOT=root, ALLOWLIST_PATH=allowlist,
+                                     SCAN_ROOTS=(("scripts", scripts),)):
+                osnorm.write_text(allowlist, json.dumps(ledger))
+                osnorm.write_text(probe, json_control)
+                gate.test_no_unregistered_violation()
+
+                osnorm.write_text(probe, json_control + violations)
+                with self.assertRaises(AssertionError) as failure:
+                    gate.test_no_unregistered_violation()
+                self.assertEqual(str(failure.exception).splitlines(), expected)
+
+                ledger["blocking"] = False
+                ledger["structural"] = [
+                    {"file": "scripts/r51_probe.py", "rule": "R5",
+                     "target": "joined_key#1", "expr": "expr:normpath_join"},
+                ]
+                ledger["baseline"] = {"scripts/r51_probe.py": {"R4": 2}}
+                osnorm.write_text(allowlist, json.dumps(ledger))
+                with self.assertRaises(AssertionError) as failure:
+                    gate.test_no_unregistered_violation()
+                self.assertEqual(str(failure.exception).splitlines(), expected + [
+                    "tests/osnorm_allowlist.json: structural 必须为 []",
+                    "tests/osnorm_allowlist.json: baseline 必须为 {}",
+                ])
+
+    def test_r51_blocks_r4_and_r5_even_with_raised_ledger(self) -> None:
+        empty = {"entries": [], "structural": [], "subdomains": {}, "baseline": {}}
+        r4_entry = {"file": "scripts/probe.py", "rule": "R4", "target": ".reconfigure",
+                    "kind": "call", "line_kind": "call", "count": 1,
+                    "reason": "回归用条目", "expires": "R999"}
+        raised = dict(empty, entries=[r4_entry], baseline={"scripts/probe.py": {"R4": 1}})
+        r4 = "sys.stdout.reconfigure(encoding='utf-8')\n"
+        r5 = "key = os.path.normpath(os.path.join(base, name))\n"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            probe = root / "probe.py"
+            with mock.patch(f"{__name__}.SCAN_ROOTS", (("scripts", root),)):
+                osnorm.write_text(probe, "import sys\n" + r4 + "\n" + r5)
+                expected = ["scripts/probe.py:2: [R4] .reconfigure (call)",
+                            "scripts/probe.py:4: [R5] expr:normpath_join (expr)"]
+                self.assertEqual(blocking_problems(empty), expected)
+                self.assertEqual(blocking_problems(raised), expected + [
+                    "tests/osnorm_allowlist.json: entries 必须为 []",
+                    "tests/osnorm_allowlist.json: baseline 必须为 {}",
+                ])
+
+                osnorm.write_text(probe, "key = osnorm.canonical_path(name, base=base)\n")
+                self.assertEqual(blocking_problems(empty), [])
+                self.assertEqual(blocking_problems(dict(
+                    empty, structural=[{"file": "scripts/probe.py"}], subdomains={"probe": "域"}
+                )), [
+                    "tests/osnorm_allowlist.json: structural 必须为 []",
+                    "tests/osnorm_allowlist.json: subdomains 必须为 {}",
+                ])
 
 
 class SeamExamplesTest(unittest.TestCase):

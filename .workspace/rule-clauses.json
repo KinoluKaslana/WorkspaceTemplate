@@ -333,7 +333,7 @@
   },
   "docs/tools.md": {
     "clauses": {},
-    "file_sha256": "29eaec1df3b11c52ff6db5c5d8a79883a2e72307ba418d004a35d203a3d08e6a",
+    "file_sha256": "05bdb45f16227eee66496aa501be920372519234523a98279de18c3fe879b5d9",
     "marked": 0
   },
   "docs/hooks-guide.md": {
@@ -633,12 +633,12 @@
   },
   "tests/test_osnorm_single_source.py": {
     "clauses": {},
-    "file_sha256": "f8d09f31d9452388fbf4f01870f241421164e601650f7f03fb11fece23303a14",
+    "file_sha256": "a91d562a8541e94e696939db86d76cadc95b4e7119f1036d2a73982a2ed05688",
     "marked": 0
   },
   "tests/osnorm_allowlist.json": {
     "clauses": {},
-    "file_sha256": "8d10675c9ae9e320656d47be0752e41de3906a70233dc804fc8e7e5bfb1c406f",
+    "file_sha256": "23f3f5c263150bdc1089420b150b1a0a00e7969bef88fb1c2152081a35785f31",
     "marked": 0
   },
   "scripts/encoding_guard.py": {
