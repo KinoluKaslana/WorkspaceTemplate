@@ -66,5 +66,19 @@
     },
     "iterations": 3,
     "iterations_sha256": "7114d0aea3762d42395d71e22e77429aa8e63f30fd6e8bf934bf21b53fa4b9fd"
+  },
+  {
+    "version": "50.3.8.0",
+    "round": 50,
+    "date": "2026-11-26",
+    "summary": "R50 真机闭环+治理单源：C6 Windows 五项真机复验、C10 dsh 双证（gate.log 不参与活跃判断）、C2 bootstrap.gate 可恢复迁移、C3 缺账本语义限定、C4 同步后派生登记、C7 候选列表、C9 归档测试。取版 gpt+汇总席裁决修补；v59 三席 pass；Windows 原生 dsh 端到端（便携 node+dsh 真机会话）。",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "CHANGELOG_DEV.md": "102db0433f291eff",
+      "AGENT_RULES.md": "c84751c0a66dfe46"
+    },
+    "iterations": 4,
+    "iterations_sha256": "2ae1bf31ccf6b502bdc5c35682798ec00a38dc38270c4233578707a57fd96950"
   }
 ]

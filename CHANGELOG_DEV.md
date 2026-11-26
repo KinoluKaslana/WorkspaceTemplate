@@ -18,6 +18,10 @@
 >
 > 账本：`.workspace/release_dev.json`（append-only，字段对齐 `releases.json`，另加 `round`）。
 
+## 50.3.8.0（2026-11-26）
+
+R50 真机闭环+治理单源：C6 Windows 五项真机复验、C10 dsh 双证（gate.log 不参与活跃判断）、C2 bootstrap.gate 可恢复迁移、C3 缺账本语义限定、C4 同步后派生登记、C7 候选列表、C9 归档测试。取版 gpt+汇总席裁决修补；v59 三席 pass；Windows 原生 dsh 端到端（便携 node+dsh 真机会话）。
+
 ## 49.3.8.0（2026-11-26）
 
 R49 R5 语义迁移（账本归零）：15 处迁移（12 normpath_join→交换形态 + 3 relpath_sep_key→新键）、逐项删 structural、比较两侧统一盘符/分隔符口径、wtarget 恢复无盘契约。取版 gpt + 汇总席裁决修补；真 Windows SidecarCompatR48 10/10、双端键集合逐字相同；v58 三席 pass。

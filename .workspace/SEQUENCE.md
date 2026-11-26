@@ -44,6 +44,7 @@
 | 47 | `47.3.8.0` | `a6e8620` | stdio 三件套（R4 归零）：osnorm read_stdin_text/emit_stdout/emit_stderr、OSNORM_API 3、hook.py 收敛、entries 归零 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass-with-notes verified_at=2026-11-25 notes=候选②冷启动可于定位前拒非法字节，已装载时由 strict 拒，两条路径都 deny；真 Windows ①②④ 原生复跑全过 | 迭代日志 it1–it3（R46f 机制） |
 | 48 | `48.3.8.0` | `949b470` | R5 迁移前置（只建判据不改调用点）：比较基准统一开关、sidecar 三段兼容读、gate_key oracle 四条、12 条 a 类 subdomain、expires=R39 过期判定、C5/C8 收敛 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass-with-notes verified_at=2026-11-25 notes=SOL 必修 illegal 子例已由二修席补入，三态配方验证；S7 三条 commit:null 为基线遗留 | 迭代日志 it1–it4（R46f 机制） |
 | 49 | `49.3.8.0` | `20ef01c` | R5 语义迁移（账本归零）：15 处迁移（12 normpath_join→交换形态 + 3 relpath_sep_key→新键）、逐项删 structural、比较两侧统一口径、wtarget 无盘契约 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass verified_at=2026-11-26 notes=真 Windows SidecarCompatR48 10/10，双端键集合 11 项逐字相同；二修为测试层自适应（零产品代码） | 迭代日志 it1–it3（R46f 机制） |
+| 50 | `50.3.8.0` | `b1a6e02` | 真机闭环+治理单源：C6 Windows 五项复验、C10 dsh 双证（glob 修复）、C2 bootstrap.gate 化石块可恢复迁移、C3/C4/C7/C9 治理收敛 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass verified_at=2026-11-26 notes=Windows 原生五项+GBK 字节一致复跑，dsh 双证与 Windows 原生 dsh 端到端，三端对照一致，证据归档 ~/.cache/seat-logs/r50-50.3.8.0/ | 迭代日志 it1–it4（R46f 机制） |
 
 > **`verified_by` 取值**：`[SOL, GPT-SOL-6, PRO]`（三席轮次确认）或 `legacy`（机制建立前，S9 豁免但必须注明原因）。
 > 自 R46 起，所有 `landed` 轮次必须是前者。
@@ -61,13 +62,6 @@
 
 
 
-### R50 · `50.3.8.0` · 真机闭环 + 治理单源
-- **范围**：C6 Windows 五项真机复验；C10 dsh 会话账本缺失；C2 `bootstrap.gate` 化石块（`gate_status --migrate-legacy`
-  + preflight 不读化石 + 报 source）；C3/C4/C7/C9（实例 CHANGELOG 测试、sync 后登记/索引、`--python` 拼接、
-  无 `.git` 导出 3 例）
-- **依赖**：R49（必须验**迁移后**的实现）
-- **判据**：五项有真机命令与绿结果；dsh 同一工作区的新鲜 apply 与本机有效 `dsh-<sid>.json` 双证齐备，单独的通用 `gate.log` 不计；Linux/Windows/dsh 对相同目标决策一致
-- **风险**：高（平台差异暴露轮）
 
 ### R51 · `51.3.8.0` · 闸门转 blocking（空白名单）
 - **范围**：规则从「只许减不许增」→「新增违规直接红」；`allowlist` 空白名单
