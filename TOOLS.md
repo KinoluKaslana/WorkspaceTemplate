@@ -173,13 +173,13 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | 项 | 内容 |
 |---|---|
 | **类型** | Python 标准库 CLI |
-| **作用** | 判「现在到底有没有 gate 在跑」：`cc`/`codex` 看 `.workspace/.hook-state/<scope>/gate.log` 的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.dsh-gate.log` 的 `apply` 与 `.hook-state/<scope>/dsh-session-*.json`；`--require` 缺证据 → 退出码 1 |
+| **作用** | 判「现在到底有没有 gate 在跑」：`cc`/`codex` 看 `.workspace/.hook-state/<scope>/gate.log` 的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.dsh-gate.log` 中同一工作区的新鲜 `apply` 事件与有效的 `.hook-state/<scope>/dsh-<sid>.json`；`--require` 缺证据 → 退出码 1 |
 | **位置** | `scripts/gate_status.py` |
-| **SHA-256** | `9a2a194abc1271ed8629015e1f1328926e02c4413af2a57916adb2b55e468e98` |
+| **SHA-256** | `c78b534978b044c82f5b960784051e3931d72ec00c7cd57e7fa2996c300ebdc2` |
 | **运行时** | §2 中已配置的 Python；无第三方依赖 |
 | **来源与信任边界** | 模板内置、只读日志与状态文件；证据是**运行期**的，插件没加载就没有证据——这正是要判的东西 |
-| **副作用/数据外发** | 默认只读 + stdout；`--record` **会写** 本机状态 `.workspace/.hook-state/<scope>/gate.json`（原子替换），不联网 |
-| **核验日期** | 2026-11-04 |
+| **副作用/数据外发** | 默认只读 + stdout；`--record` **会写** 本机状态 `.workspace/.hook-state/<scope>/gate.json`（原子替换）；`--migrate-legacy` 写本机历史快照并清理共享旧字段，均不联网 |
+| **核验日期** | 2026-11-26 |
 
 为什么需要：dsh **没有项目级自动发现**，不带 `--patch` 启动等于完全没有 gate（读证据、写前拦截、事后审计都不发生）；`cc`/`codex` 依赖项目受信，`hermes` 依赖 env + config 双开关。克隆下来文件齐全 ≠ 已经受管。
 

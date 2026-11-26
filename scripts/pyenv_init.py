@@ -190,9 +190,11 @@ def _resolve_base_python(spec: str | None) -> str | None:
         return sys.executable
     text = str(spec).strip()
     cands: list[str] = []
-    if os.path.isabs(text) or os.sep in text:
+    if os.path.isabs(text) or os.sep in text or (os.altsep and os.altsep in text):
         cands.append(text)
-    cands += [f"python{text}", f"python{text.replace('.', '')}"]
+    else:
+        version = _norm_python_version(text)
+        cands.extend((f"python{version}", f"python{version.replace('.', '')}"))
     for cand in cands:
         path = shutil.which(cand) if not os.path.isabs(cand) else (cand if Path(cand).is_file() else None)
         if path and py_version(path):
@@ -355,7 +357,7 @@ def main(argv: list[str]) -> int:
 
     elif a.mode == "venv":
         base = normalized_python
-        base_exe = _resolve_base_python(normalized_python if a.python else None)
+        base_exe = _resolve_base_python(a.python)
         if base_exe is None:
             print(json.dumps({
                 "error": "python-not-found", "requested": a.python,

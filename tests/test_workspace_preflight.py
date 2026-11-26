@@ -97,39 +97,28 @@ class Preflight(unittest.TestCase):
         self.assertEqual(data.get("mismatch"), 0, data)
         self.assertEqual(rc, 0, data)
 
-    def test_p23_legacy_gate_note_is_visible_and_non_blocking(self):
-        """旧 bootstrap.gate 与本机 gate.json 不一致：提示并进 gate 行，不新增行、不影响退出码。"""
-        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
-        self.addCleanup(shutil.rmtree, tmp, True)
-        ws = base_ws(tmp)
-        osnorm.write_text(ws / ".workspace" / "bootstrap.json", json.dumps({
-            "workspace_status": "active",
-            "python": {"mode": "local-venv", "runtime": {"identifier": ".venv-999"}, "version": "9.9.9"},
-            "git": {"status": "initialized", "remote": ""},
-            "gate": {"status": "configured", "harness": ["cc"]},
-        }), newline="lf")
-        gj = ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
-        gj.parent.mkdir(parents=True, exist_ok=True)
-        osnorm.write_text(gj, json.dumps({"schema": 1, "status": "unconfigured", "harness": [],
-                                  "machine_scope": "unknown"}), newline="lf")
-        rc, data = run(ws)
-        gate_row = [i for i in data["items"] if i["id"] == "gate"][0]
-        self.assertIn("旧 bootstrap.gate", gate_row["action"], "legacy 提示被丢弃")
-        self.assertFalse([i for i in data["items"] if i["id"] == "gate_legacy"],
-                         "不得新增 gate_legacy 行")
-        # 该提示本身不得把 gate 行从 warn 抬成 mismatch（其它项的 mismatch 与本条无关）
-        self.assertEqual(gate_row["status"], "warn", gate_row)
-        rc_strict, data_strict = run(ws, "--strict")
-        self.assertEqual(
-            [i["id"] for i in data_strict["items"] if i["id"] == "gate_legacy"], [],
-            "gate_legacy 不得成为独立行（否则 --strict 会被它顶红）")
-        # 直接对照：把旧 bootstrap.gate 改成与本机一致（提示消失）后，--strict 退出码必须不变
-        boot = json.loads(osnorm.read_text(ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
-        boot["gate"] = {"status": "unconfigured", "harness": []}
-        osnorm.write_text(ws / ".workspace" / "bootstrap.json", json.dumps(boot), newline="lf")
-        rc_strict_no_note, _ = run(ws, "--strict")
-        self.assertEqual(rc_strict, rc_strict_no_note,
-                         "legacy 提示改变了 --strict 退出码（应非阻断）")
+    def test_p23_gate_source_ignores_legacy_bootstrap(self):
+        ws = self.ws
+        boot_path = ws / ".workspace" / "bootstrap.json"
+        boot = json.loads(osnorm.read_text(boot_path))
+        boot["gate"] = {"status": "configured", "harness": ["hermes"], "ttl_minutes": "garbage"}
+        osnorm.write_text(boot_path, json.dumps(boot), newline="lf")
+        _, data = run(ws)
+        gate = next(item for item in data["items"] if item["id"] == "gate")
+        self.assertEqual((gate["source"], gate["recorded"], gate["status"]),
+                         ("none", "未记录", "warn"))
+        self.assertEqual(gate["legacy_source"], "bootstrap.gate")
+        self.assertIn("bootstrap.gate", gate["action"])
+
+        shutil.copyfile(SRC / "scripts/gate_status.py", ws / "scripts/gate_status.py")
+        osnorm.run_text([sys.executable, str(ws / "scripts/gate_status.py"),
+                         "--workspace", str(ws), "--record", "--require", "codex",
+                         "--force", "--user-decision", "接受无 gate"])
+        _, data = run(ws)
+        gate = next(item for item in data["items"] if item["id"] == "gate")
+        self.assertEqual((gate["source"], gate["recorded"], gate["status"]),
+                         ("gate.json", "unconfigured", "warn"))
+        self.assertEqual(gate["legacy_source"], "bootstrap.gate")
 
     def test_p2_missing_venv(self):
         rc, data = run(self.ws)

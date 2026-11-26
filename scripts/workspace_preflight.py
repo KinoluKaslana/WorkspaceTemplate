@@ -143,19 +143,6 @@ def _origin_push_urls(ws: Path) -> list[str]:
     return [line.strip() for line in out.splitlines() if line.strip()] if rc == 0 else []
 
 
-def _legacy_gate_note(ws: Path, boot: dict, record: dict) -> str:
-    """新 gate.json 与旧 bootstrap.gate 结论不一致时给一句提示（非阻断）。"""
-    legacy = boot.get("gate") or {}
-    if not isinstance(legacy, dict) or not legacy.get("status") or not record:
-        return ""
-    if (legacy.get("status") != record.get("status")
-            or sorted(legacy.get("harness") or []) != sorted(record.get("harness") or [])):
-        return (f"旧 bootstrap.gate={legacy.get('status')}/{(legacy.get('harness') or [])} "
-                f"与本机 gate.json={record.get('status')}/{(record.get('harness') or [])} 不一致；"
-                f"以 gate.json 为准（旧位置只读兼容）")
-    return ""
-
-
 def _python_state(ws: Path, boot: dict) -> dict:
     """运行时状态：本机 `.local` 优先（python.mode 已下沉），bootstrap.python 仅旧位置兼容。"""
     try:
@@ -180,27 +167,17 @@ def _python_state(ws: Path, boot: dict) -> dict:
     return {"source": "none"}
 
 
-def _gate_record(ws: Path, boot: dict) -> dict:
-    """gate 结论：本机分片 `gate.json` 优先；`bootstrap.gate` 只作旧位置兼容。"""
-    scope = "unknown"
+def _gate_record(ws: Path) -> dict:
+    """只读取本机分片的结论，并报告来源。"""
     try:
-        scripts = Path(ws) / "scripts"
-        if (scripts / "gate_status.py").is_file() and str(scripts) not in sys.path:
-            sys.path.insert(0, str(scripts))
-        import gate_status as _gs
-        scope = _gs._machine_scope(Path(ws))
-    except Exception:
-        scope = "unknown"
-    try:
-        sp = Path(ws) / ".workspace" / ".hook-state" / scope / "gate.json"
-        if sp.is_file():
-            data = json.loads(osnorm.read_text(sp))
-            if isinstance(data, dict):
-                return data
-    except Exception:
+        from gate_status import gate_record_path
+
+        data = json.loads(osnorm.read_text(gate_record_path(ws)))
+        if isinstance(data, dict):
+            return {**data, "source": "gate.json"}
+    except (ImportError, OSError, ValueError):
         pass
-    legacy = boot.get("gate") or {}
-    return legacy if isinstance(legacy, dict) else {}
+    return {"source": "none"}
 
 
 def main(argv: list[str]) -> int:
@@ -358,8 +335,7 @@ def main(argv: list[str]) -> int:
         ))
 
     # 2b) Gate 接线（§15）：登记状态 vs 运行期证据
-    gate = _gate_record(ws, boot)
-    _legacy_note = _legacy_gate_note(ws, boot, gate)
+    gate = _gate_record(ws)
     g_status = gate.get("status")
     g_harness = [h for h in (gate.get("harness") or []) if h]
     want = [h.strip() for h in (getattr(a, "harness", "") or "").split(",") if h.strip()]
@@ -377,7 +353,7 @@ def main(argv: list[str]) -> int:
                          "当前 harness 不在已登记的接线结论里：先按 §15 核验该端并 --record"))
     elif not g_harness:
         rows.append(item("gate", "configured（缺 harness）", "", BAD,
-                         "bootstrap.gate.harness 为空：重新用 --record 写入"))
+                         "gate.json 的 harness 为空：重新用 --record 写入"))
     else:
         ttl = min(float(gate.get("ttl_minutes") or 30), 30.0)
         rc, out = sh(sys.executable, str(Path(__file__).resolve().parent / "gate_status.py"),
@@ -402,12 +378,11 @@ def main(argv: list[str]) -> int:
                                            else "声明已接线但没有任何证据：确认 harness 启动方式（dsh 需 --patch）")))
 
 
-    # 非阻断：把「旧 bootstrap.gate 与本机 gate.json 不一致」并进 gate 行说明（不新增行、不影响 --strict）
-    if _legacy_note:
-        for _row in rows:
-            if _row.get("id") == "gate":
-                _row["action"] = ((_row.get("action") or "") + "；" if _row.get("action") else "") + _legacy_note
-                break
+    rows[-1]["source"] = gate["source"]
+    if "gate" in boot:
+        rows[-1]["legacy_source"] = "bootstrap.gate"
+        rows[-1]["action"] = (rows[-1]["action"] +
+            " 发现旧位置 bootstrap.gate，可用 gate_status.py --migrate-legacy 归档并清理。").strip()
 
     # 3) 模板克隆
     tpl = boot.get("template") or {}
@@ -570,6 +545,8 @@ def main(argv: list[str]) -> int:
     else:
         for r in rows:
             print(f'{r["status"].upper():8s} {r["id"]:15s} {json.dumps(r["recorded"], ensure_ascii=False)[:70]}')
+            if "source" in r:
+                print(f'         来源：{r["source"]}')
             if r["action"]:
                 print(f'         → {r["action"]}')
         print(f'结论: {"OK" if out["ok"] else "需裁决"}（mismatch={len(bad)} warn={len(warn)}）')

@@ -241,13 +241,14 @@ class PyenvInit(unittest.TestCase):
                 self.assertEqual(rc, 0, data)
                 self.assertEqual(data["identifier"], ".venv-312")
                 self.assertIn("(Python 3.12)", data["tools_snippet"])
-        with mock.patch.object(pi, "_resolve_base_python", return_value=sys.executable):
+        with mock.patch.object(pi.shutil, "which", return_value=sys.executable) as which:
             for value in forms[:3]:
                 rc, output = self._run_inproc(
                     pi, ["--workspace", str(self.ws), "--mode", "venv", "--python", value,
                          "--json"])
                 self.assertEqual(rc, 0, output)
                 self.assertEqual(json.loads(output)["identifier"], ".venv-312")
+                which.assert_called_with("python3.12")
 
     def test_t13b_invalid_python_versions_are_clear_errors(self):
         sys.path.insert(0, str(self.ws / "scripts"))

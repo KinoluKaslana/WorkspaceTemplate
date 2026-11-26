@@ -270,7 +270,7 @@ python3 scripts/gate_status.py --ttl-minutes 30                 # 四种 harness
 python3 scripts/gate_status.py --require dsh,cc --ttl-minutes 30 # 要求项缺证据 → 退出码 1
 ```
 
-判定看的是**运行期证据**而不是文件在不在：`cc`/`codex` 看 `.workspace/.hook-state/<scope>/gate.log` 里的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 与 `.hook-state/<scope>/dsh-session-*.json` 账本。
+判定看的是**运行期证据**而不是文件在不在：`cc`/`codex` 看 `.workspace/.hook-state/<scope>/gate.log` 里的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 中同一工作区的新鲜 `apply` 事件与有效的 `.hook-state/<scope>/dsh-<sid>.json` 账本。
 dsh 侧覆盖：`write`/`edit`/`str_replace_editor` 受拦，`bash`/`pwsh` 走静态可判写，`read` 记读证据；插件异常/hook 超时放行并记 `.workspace/.dsh-gate.log`，拿不到会话身份则 fail-closed。已在**真实模型回合**里验证（dsh headless + DeepSeek 账号）：未读先写被拒且文件未创建、先读后写放行、`bash` 重定向写被拒；另有 8 条走真实 `plugin.js`+`hook.py` 的合成用例。细节与已知限制见 **[docs/dsh.md](docs/dsh.md)**。
 
 ## 工作区生命周期 skills

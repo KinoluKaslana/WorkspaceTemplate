@@ -23,6 +23,8 @@ SPEC.loader.exec_module(release)
 NESTED_VERIFY = os.environ.get("RELEASE_VERIFY_NESTED") == "1"
 
 
+@unittest.skipUnless((ROOT / "CHANGELOG.md").is_file(),
+                     "正式发版用例需要模板仓 CHANGELOG.md")
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

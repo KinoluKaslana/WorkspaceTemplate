@@ -66,7 +66,7 @@
   + preflight 不读化石 + 报 source）；C3/C4/C7/C9（实例 CHANGELOG 测试、sync 后登记/索引、`--python` 拼接、
   无 `.git` 导出 3 例）
 - **依赖**：R49（必须验**迁移后**的实现）
-- **判据**：五项有真机命令与绿结果；dsh 同时产生 apply 事件与 `dsh-session-*.json`；Linux/Windows/dsh 对相同目标决策一致
+- **判据**：五项有真机命令与绿结果；dsh 同一工作区的新鲜 apply 与本机有效 `dsh-<sid>.json` 双证齐备，单独的通用 `gate.log` 不计；Linux/Windows/dsh 对相同目标决策一致
 - **风险**：高（平台差异暴露轮）
 
 ### R51 · `51.3.8.0` · 闸门转 blocking（空白名单）

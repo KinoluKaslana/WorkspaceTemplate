@@ -251,7 +251,7 @@ def is_template(root=ROOT):
         data = json.loads(osnorm.read_text(Path(root) / ".workspace" / "bootstrap.json"))
     except Exception:                                  # noqa: BLE001 —— 任一读取/解析失败均未知
         return "unknown"
-    status = data.get("workspace_status")
+    status = data.get("workspace_status") if isinstance(data, dict) else None
     if status == "template":
         return "template"
     if status == "active":
@@ -441,8 +441,7 @@ def write_blocks(root=ROOT, facts=None):
 def changelog_versions(root=ROOT):
     """`CHANGELOG.md` 里所有 `## x.y.z` 条目（按文件顺序）。
 
-    返回 None 表示**账本不可用**（派生工作区通常没有 CHANGELOG）：此时与历史版本相关的
-    两条判据自动降级为跳过，其余判据照跑。
+    返回 None 表示缺文件或没有可解析的版本条目；是否允许缺文件由调用方按工作区身份判断。
 
     这是历史集合的**唯一权威源**：任何手工清单都不得成为第二真源，否则「账本删条目」
     与「清单还留着」会互相打掩护。标题格式不对的条目由 `changelog_heading_offenders` 另报。
@@ -625,6 +624,18 @@ def _doc_files(root):
     return [p for p in paths if p.is_file()]
 
 
+def _instance_without_changelog(root, instance):
+    if not instance:
+        return False
+    try:
+        (Path(root) / "CHANGELOG.md").lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        pass
+    return False
+
+
 def literal_offenders(root=ROOT, facts=None, ledger=None, status=None):
     """政策版本字面量的「未登记即错」扫描。
 
@@ -647,11 +658,19 @@ def literal_offenders(root=ROOT, facts=None, ledger=None, status=None):
     root = Path(root)
     facts = facts or collect(root)
     cur = facts["policy"]
-    if ledger is None:
-        ledger = changelog_versions(root)
-    history_set = set(ledger or ())
     instance = _instance(root, status)
+    check_membership = True
     out = []
+    if ledger is None:
+        try:
+            ledger = changelog_versions(root)
+        except (OSError, UnicodeError) as exc:
+            out.append(f"CHANGELOG.md: 无法读取账本：{exc}")
+        else:
+            check_membership = ledger is not None or not _instance_without_changelog(root, instance)
+            if ledger is None and check_membership:
+                out.append("CHANGELOG.md: 账本缺失或没有可解析的政策版本条目")
+    history_set = set(ledger or ())
     for path in _doc_files(root):
         rel = path.relative_to(root).as_posix()
         if _instance_user_doc(rel, instance):
@@ -676,11 +695,11 @@ def literal_offenders(root=ROOT, facts=None, ledger=None, status=None):
                         f"{rel}:{i}: `<!-- history:{v} -->` 登记了**当前**政策版本"
                         f"（历史标记不得登记当前版本：当前版本只许出现在生成块内）："
                         f"{line.strip()[:100]}")
-                elif v not in history_set:
+                elif check_membership and v not in history_set:
                     out.append(
                         f"{rel}:{i}: `<!-- history:{v} -->` 登记的版本不在 CHANGELOG 账本里"
                         f"（删过条目？写错了？）：{line.strip()[:100]}")
-                elif v not in present:
+                if v not in present:
                     out.append(
                         f"{rel}:{i}: `<!-- history:{v} -->` 登记了 {v}，但本行没有这个版本字面量")
             for m in _SEMVER_RE.finditer(body):
@@ -696,7 +715,7 @@ def literal_offenders(root=ROOT, facts=None, ledger=None, status=None):
                     out.append(
                         f"{rel}:{i}: 历史政策版本 {v} 未登记：{line.strip()[:100]}"
                         f"\n    → 确属沿革就在行尾加 `<!-- history:{v} -->`（登记值须在 CHANGELOG 账本里）")
-                elif declared and body[m.start() - 1:m.start()] not in ("v", "V"):
+                elif check_membership and declared and body[m.start() - 1:m.start()] not in ("v", "V"):
                     # 结构判据：本行带 history 标记，另一个既非当前/也不在账本的**裸**版本号
                     # 只能是拼错或臆造（M5）。`vX.Y.Z` 是工具/插件命名空间（`plugin v1.4.3`），
                     # 本脚本不判；没有标记的纯散文（「现行治理基线为 9.9.9」）也不判 → N2。
@@ -830,8 +849,12 @@ def check(root=ROOT):
     findings += clause_range_offenders(root, facts, status=status)
     findings += literal_offenders(root, facts, status=status)
     findings += heading_offenders(root, facts, status=status)
-    findings += changelog_heading_offenders(root)
-    if ledger := changelog_versions(root):
+    try:
+        findings += changelog_heading_offenders(root)
+        ledger = changelog_versions(root)
+    except (OSError, UnicodeError):
+        ledger = None                       # literal_offenders 已报告账本读取错误
+    if ledger:
         if ledger[0] != facts["policy"]:
             findings.append(
                 f"CHANGELOG.md: 顶层条目 {ledger[0]} ≠ 政策头 {facts['policy']}"

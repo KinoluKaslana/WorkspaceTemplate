@@ -19,34 +19,29 @@ if str(ROOT / "scripts") not in sys.path:
 import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
 
-def _source_ref() -> str:
-    """同步来源 ref：优先 HEAD 的提交 sha。
-
-    不能用写死的 `main`：CI 里 `actions/checkout` 是单分支浅克隆（推 dev 时本地只有 dev），
-    `--ref main` 会以 `ref-not-found` 失败——那会让 CI 在任何非 main 分支上永久红，
-    而测试真正要验的是备份/回滚机制，与分支名无关。
-    取 HEAD sha 在完整克隆、浅克隆、detached HEAD 三种形态下都成立。
-    """
-    try:
-        r = osnorm.run_text(["git", "-C", str(ROOT), "rev-parse", "HEAD"], errors="replace")
-        sha = r.stdout.strip()
-        if r.returncode == 0 and sha:
-            return sha
-    except OSError:
-        pass
-    return "main"
-
-
 @unittest.skipUnless(shutil.which("git"), "未安装 git：本套用例需要真实 git 仓库")
 class Rollback(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        from template_sync import template_files
+
+        self.tpl = Path(self.tmp.name) / "template"
+        for rel in dict.fromkeys([*template_files(ROOT), ".gitattributes"]):
+            source = ROOT / rel
+            if source.is_file():
+                dest = self.tpl / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, dest)
+        for cmd in (("init", "-q"), ("add", "-A"),
+                    ("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                     "commit", "-qm", "template fixture")):
+            osnorm.run_text(["git", "-C", str(self.tpl), *cmd], check=True)
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
         osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps({
             "workspace_status": "active",
             "python": {"mode": "local-venv", "runtime": {"identifier": "/x/.venv-312", "version": "3.12.0"}},
-            "template": {"source_repo": str(ROOT)},
+            "template": {"source_repo": str(self.tpl)},
         }, ensure_ascii=False, indent=2) + "\n", newline="lf")
         self.old_rules = "# 旧规则\n\n> **模板政策版本：`2.4.0`。**\n"
         osnorm.write_text(self.ws / "AGENT_RULES.md", self.old_rules, newline="lf")
@@ -57,11 +52,18 @@ class Rollback(unittest.TestCase):
 
     def run_sync(self, *args):
         return osnorm.run_text([sys.executable, str(SYNC), "--workspace", str(self.ws),
-                               "--template", str(ROOT), "--ref", _source_ref(), *args], cwd=ROOT)
+                               "--template", str(self.tpl), "--ref", "HEAD", *args], cwd=ROOT)
 
     def test_apply_writes_manifest_sections(self):
-        p = self.run_sync("--apply")
+        p = self.run_sync("--apply", "--json")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        report = json.loads(p.stdout)
+        self.assertEqual(report["refreshed"], ["scripts/skill_audit.py", "scripts/docs_index.py"])
+        registry = osnorm.read_text(self.ws / "skills/REGISTRY.md")
+        self.assertIn(".workspace/skills/template-update/SKILL.md", registry)
+        check = osnorm.run_text([sys.executable, "-B", "scripts/docs_index.py", "check"],
+                                cwd=self.ws)
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
         bk = sorted((self.ws / ".workspace").glob("backup-*-sync"))[-1]
         man = osnorm.read_text(bk / "MANIFEST.txt", bom=False, newline="preserve")
         # 换行契约（写侧 `osnorm.write_text(newline="lf")` 的对外承诺）：MANIFEST 落盘必须是 LF。
@@ -111,6 +113,35 @@ class Rollback(unittest.TestCase):
         self.assertFalse((self.ws / "docs").exists())
         self.assertFalse((self.ws / "scripts").exists())
         self.assertTrue((self.ws / ".workspace" / "bootstrap.json").is_file())
+
+    def test_docs_refresh_failure_restores_generated_files(self):
+        before = {
+            "skills/REGISTRY.md": (
+                "| `workspace-skills` | `.workspace/skills/` | 无路由器 | "
+                "已登记（1 入口：old） | `TOOLS.md` |\n"
+            ).encode("utf-8"),
+            "docs/.index.json": b'{"old":true}\n',
+            "TOOLS.md": b"# local tools\n",
+        }
+        for rel, content in before.items():
+            path = self.ws / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        boot = ".workspace/bootstrap.json"
+        before[boot] = (self.ws / boot).read_bytes()
+
+        osnorm.write_text(self.tpl / "scripts/docs_index.py", "raise SystemExit(9)\n", newline="lf")
+        osnorm.run_text(["git", "-C", str(self.tpl), "-c", "user.name=Test",
+                         "-c", "user.email=test@example.invalid",
+                         "commit", "-qam", "inject docs build failure"], check=True)
+        p = self.run_sync("--apply", "--json")
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        rollback = json.loads(p.stdout)["auto_rollback"]
+        self.assertEqual(rollback["rollback_rc"], 0, rollback)
+        self.assertIn("docs_index.py build (rc=9)", rollback["reason"])
+        for rel, content in before.items():
+            self.assertEqual((self.ws / rel).read_bytes(), content, rel)
+        self.assertFalse((self.ws / "scripts").exists())
 
     def test_rollback_purges_generated_files(self):
         """第 3 步生成的 REGISTRY/索引：升级前不存在时，--purge-generated 要删掉。"""

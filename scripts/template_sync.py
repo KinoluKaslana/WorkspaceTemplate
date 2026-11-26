@@ -187,7 +187,7 @@ def _registry_has_foreign_namespaces(path: Path) -> bool:
     return False
 
 
-def _rollback(ws: Path, backup: Path, purge_generated: bool = False) -> int:
+def _rollback(ws: Path, backup: Path, purge_generated: bool = False, *, output=None) -> int:
     """按 MANIFEST 回滚：先放回 replaced，再删除 added，最后恢复 preserved。"""
     man = backup / "MANIFEST.txt"
     if not man.is_file():
@@ -255,16 +255,19 @@ def _rollback(ws: Path, backup: Path, purge_generated: bool = False) -> int:
             while parent != ws and parent.is_dir() and not any(parent.iterdir()):
                 parent.rmdir()
                 parent = parent.parent
-    print(f"回滚完成：放回 {restored}，删除本次新增 {removed}，源 {backup}")
+    print(f"回滚完成：放回 {restored}，删除本次新增 {removed}，源 {backup}", file=output)
     if purged:
-        print("已清除引导期生成（升级前不存在）:", ", ".join(purged))
+        print("已清除引导期生成（升级前不存在）:", ", ".join(purged), file=output)
         if snapshotted:
-            print("  清除前快照:", ", ".join(str(backup / "purged" / r) for r in snapshotted))
-            print("  需要找回: 从上面的快照目录复制回工作区，或按工作区自己的重建流程重生成")
+            print("  清除前快照:", ", ".join(str(backup / "purged" / r) for r in snapshotted),
+                  file=output)
+            print("  需要找回: 从上面的快照目录复制回工作区，或按工作区自己的重建流程重生成",
+                  file=output)
     elif not purge_generated:
-        print("提示：第 3 步生成的工作区自有文件不在 MANIFEST 内；需要一并清除时加 --purge-generated")
+        print("提示：清除 MANIFEST 未记录的引导期生成文件可加 --purge-generated", file=output)
     if kept:
-        print("保留未清除（含工作区自有命名空间，删除会丢用户数据）:", ", ".join(kept))
+        print("保留未清除（含工作区自有命名空间，删除会丢用户数据）:", ", ".join(kept),
+              file=output)
     return 0
 
 
@@ -498,10 +501,19 @@ def main(argv: list[str]) -> int:
             return 0
 
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup = ws / ".workspace" / f"backup-{stamp}-sync"
-        backup.mkdir(parents=True, exist_ok=True)
+        backup = Path(tempfile.mkdtemp(prefix=f"backup-{stamp}-", suffix="-sync",
+                                      dir=ws / ".workspace"))
         replaced, added = [], []
-        for rel in files:
+        refresh = []
+        generated = []
+        if "scripts/skill_audit.py" in files and (wt / "scripts/skill_audit.py").is_file():
+            refresh.append(("scripts/skill_audit.py", "--sync-registry"))
+            generated.extend(("skills/REGISTRY.md", "TOOLS.md"))
+        if ("scripts/docs_index.py" in files and (wt / "scripts/docs_index.py").is_file()
+                and (wt / "docs").is_dir()):
+            refresh.append(("scripts/docs_index.py", "build"))
+            generated.append("docs/.index.json")
+        for rel in dict.fromkeys([*files, *generated]):
             src_dst = ws / rel
             if src_dst.is_file():
                 (backup / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -575,13 +587,20 @@ def main(argv: list[str]) -> int:
             tpl_sec["last_synced_commit"] = commit
             osnorm.write_text(boot_path, json.dumps(boot, ensure_ascii=False, indent=2) + "\n",
                               newline="lf")
+            for script, option in refresh:
+                result = osnorm.run_text([sys.executable, "-B", str(ws / script), option],
+                                         cwd=ws, errors="replace")
+                if result.returncode != 0:
+                    raise RuntimeError(f"{script} {option} (rc={result.returncode}): "
+                                       f"{(result.stderr or result.stdout).strip()}")
+            report["refreshed"] = [script for script, _ in refresh]
             return done
 
         try:
             copied = _apply_changes()
         except Exception as exc:  # noqa: BLE001 —— 写盘中途失败必须回到同步前
             print(f"同步失败：{exc}", file=sys.stderr)
-            rb = _rollback(ws, backup)
+            rb = _rollback(ws, backup, output=sys.stderr if a.json else None)
             report["auto_rollback"] = {"reason": f"exception: {exc}", "rollback_rc": rb}
             report["copied"] = []
             if a.json:
@@ -616,12 +635,12 @@ def main(argv: list[str]) -> int:
         if a.verify:
             out_json = ws / ".workspace" / ".verify-tmp.json"
             try:
-                p = osnorm.run_text([sys.executable, str(ws / "scripts" / "verify_rules.py"),
+                p = osnorm.run_text([sys.executable, "-B", str(ws / "scripts" / "verify_rules.py"),
                                      "--workspace", str(ws), "--vs-template", str(wt),
                                      "--json", str(out_json)],
                                     cwd=ws, errors="replace")
             except Exception as exc:  # noqa: BLE001 —— 校验器本身起不来也算同步失败
-                rb = _rollback(ws, backup)
+                rb = _rollback(ws, backup, output=sys.stderr if a.json else None)
                 report["auto_rollback"] = {"reason": f"verify-exception: {exc}", "rollback_rc": rb}
                 print(f"verify 无法运行：{exc}", file=sys.stderr)
                 if a.json:
@@ -640,7 +659,7 @@ def main(argv: list[str]) -> int:
             report["verify"] = {"clean": verify.get("clean"), "findings": verify.get("findings", [])[:10]}
             if not verify.get("clean") and not a.keep_on_fail:
                 # 校验不通过 = 这次同步没有产出可用的工作区：回到同步前，而不是留一套半对的状态
-                rb = _rollback(ws, backup)
+                rb = _rollback(ws, backup, output=sys.stderr if a.json else None)
                 report["auto_rollback"] = {"reason": "verify-not-clean", "rollback_rc": rb}
                 if rb != 0:
                     print(f"verify 未通过且回滚失败（rc={rb}）：按 {backup}/MANIFEST.txt 手工恢复",
@@ -664,6 +683,8 @@ def main(argv: list[str]) -> int:
         else:
             print(f"{ref}({kind})@{commit[:8]}  {before} → {after}；替换 {len(copied)} 个文件")
             print("备份:", backup)
+            if report["refreshed"]:
+                print("已刷新:", ", ".join(report["refreshed"]))
             if report["pruned"]:
                 print("已删除上游移除的文件:", ", ".join(report["pruned"]))
             if a.verify:

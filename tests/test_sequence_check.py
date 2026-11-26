@@ -1358,11 +1358,17 @@ class S13Rows(Base):
 
 
 class RealTree(unittest.TestCase):
-    """真实树上的契约：有 SEQUENCE.md 就必须全绿；没有必须显式 skip + rc=0。"""
+    """真实树与归档导出的锚定契约。"""
 
     def test_real_tree(self):
         p = osnorm.run_text([sys.executable, "-B", str(ROOT / "scripts" / "sequence_check.py")],
                             cwd=ROOT, errors="replace")
+        if (ROOT / SEQ_REL).is_file() and not (ROOT / ".git").exists():
+            # git archive 保留计划与账本，但缺失证明 append-only 的历史锚。
+            self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+            self.assertIn("→ FAIL(S8)", p.stdout)
+            self.assertIn("git 锚不可用", p.stdout)
+            return
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         if (ROOT / SEQ_REL).is_file():
             # S5 可声明式 SKIP（WORKLIST.md 是工作区级文件）；S7 在账本末条未提交时是

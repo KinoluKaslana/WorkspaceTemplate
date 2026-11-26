@@ -1819,6 +1819,35 @@ class DocFactContract(unittest.TestCase):
                     self.assertIn(sentinel, "\n".join(check(ROOT)),
                                   f"{name} 没接进 check()：删掉它的调用也不会红")
 
+    def test_changelog_missing_only_relaxes_membership_for_instances(self):
+        copy = _copy_repo()
+        self.addCleanup(shutil.rmtree, copy, ignore_errors=True)
+        changelog = copy / "CHANGELOG.md"
+        changelog.unlink()
+        boot = copy / ".workspace" / "bootstrap.json"
+        state = json.loads(osnorm.read_text(boot))
+        for identity in ("template", "active"):
+            with self.subTest(identity=identity):
+                state["workspace_status"] = identity
+                osnorm.write_text(boot, json.dumps(state))
+                findings = check(copy)
+                if identity == "template":
+                    self.assertTrue(any(f.startswith("CHANGELOG.md: 账本缺失") for f in findings), findings)
+                else:
+                    self.assertEqual(findings, [])
+
+        upgrade = copy / "UPGRADE.md"
+        current = _policy_version(copy)
+        osnorm.write_text(upgrade, osnorm.read_text(upgrade) + (
+            f"\n\n{current} <!-- history:{current} -->\n"
+            "缺少版本字面量 <!-- history:3.7.0 -->\n"))
+        findings = check(copy)
+        self.assertTrue(any("登记了**当前**" in f for f in findings), findings)
+        self.assertTrue(any("本行没有这个版本字面量" in f for f in findings), findings)
+        self.assertFalse(any("不在 CHANGELOG" in f for f in findings), findings)
+        osnorm.write_text(changelog, "# 没有账本条目\n")
+        self.assertTrue(any(f.startswith("CHANGELOG.md: 账本缺失") for f in check(copy)))
+
     def test_t11_inline_marker_is_red(self):
         """行内标记必须报错：只认「独立成行 + 紧贴声明行上方」（第 6 轮发现 3）。"""
         if os.environ.get(_WIRING_ENV) == "1":

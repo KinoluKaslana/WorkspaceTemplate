@@ -85,9 +85,10 @@ python3 scripts/template_sync.py --workspace . --ref 5edf554 --apply       # 提
 ```
 
 - 用 `git worktree add --detach` 取快照，不动模板克隆的工作树；
-- 备份到 `.workspace/backup-<ts>-sync/`（含 `MANIFEST.txt`）；
+- 备份到 `.workspace/backup-<ts>-<唯一后缀>-sync/`（含 `MANIFEST.txt`）；
 - 回报 `changed / skipped / identical / removed_upstream / pruned / python_mode_preserved`（后者只针对旧 `bootstrap.python` 节；本机状态不在同步范围）；
 - `--prune` 删除上游已移除的模板层文件（先备份，并清理空父目录）。
+- `--apply` 在安装模板文件后调用 `skill_audit.py --sync-registry` 和 `docs_index.py build`。生成文件随同步一起备份和回滚，JSON 的 `refreshed` 列出已运行的生成器。
 
 ## 4.5 条款属性：`clause_lint.py`
 
@@ -141,7 +142,7 @@ python3 scripts/workspace_preflight.py  # R11：MCP 模式不得同时存在本�
 ## 5.5 Gate 接线：`gate_status.py`
 
 gate 结论按机器分片落在 `<ws>/.workspace/.hook-state/<scope>/gate.json`（`<scope>` 见 `docs/hooks-catalog.md`）；
-`bootstrap.json` 的 `gate` 节是旧位置，只读兼容、不再写入。同一份证据文件（`gate.log`）也按 `<scope>` 分片，
+`bootstrap.json` 的 `gate` 节是旧位置。`--migrate-legacy` 先把旧值完整保存到本机分片的 `gate-history/`，再删除共享旧字段。`workspace_preflight.py` 会提示旧位置，当前结论仍从本机 `gate.json` 读取。证据文件 `gate.log` 也按 `<scope>` 分片，
 别的机器同步过来的证据不会被当作本机证据。
 
 
@@ -150,19 +151,19 @@ python3 scripts/gate_status.py --ttl-minutes 30                  # 四端「有�
 python3 scripts/gate_status.py --require dsh,cc --json           # 缺证据 → 退出码 1
 ```
 
-政策 §15 把这条核验定为启动前必须项（与 Python 选择同性质），结论落本机状态 `.workspace/.hook-state/<scope>/gate.json`（`bootstrap.gate` 是旧位置，只读兼容）。判据只看运行期证据：`cc`/`codex` 来自 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行；`hermes` 来自
+政策 §15 把这条核验定为启动前必须项（与 Python 选择同性质），结论落本机状态 `.workspace/.hook-state/<scope>/gate.json`。判据只看运行期证据：`cc`/`codex` 来自 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行；`hermes` 来自
 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，插件日志不绑工作区——这是已知边界）；
-`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/<scope>/dsh-session-*.json` 账本。
+`dsh` **必须同时**有 `.workspace/.dsh-gate.log` 中同一工作区的新鲜 `apply` 事件与有效的 `.hook-state/<scope>/dsh-<sid>.json` 账本。
 TTL 必须为正（0 直接拒绝）；时间戳在当前时刻之后超过 2 分钟不算证据（时钟回拨/伪造）。
 **文件在不在不算证据**——
 dsh 没有项目级自动发现，不带 `--patch` 启动就完全没有 gate；`hermes` 需要 `HERMES_ENABLE_PROJECT_PLUGINS=true`
 且 config 里 `plugins.enabled` 含 `workspace-gate`。克隆后先跑这一条，别用「目录长这样」推断「已经受管」。
 
-`--record` 会把结论写进 `bootstrap.gate`（原子替换）：有证据才写 `configured`；`unconfigured` 需要
+`--record` 会把结论写进本机 `gate.json`（原子替换）：有证据才写 `configured`；`unconfigured` 需要
 `--force --user-decision '<用户原话>'`；从 `configured` 翻转或缩小 harness 集合同样需要 `--user-decision`（R117）。
 
 **与预检的失败姿态**：`workspace_preflight` 的 `gate` 项判 `mismatch` 表示「不能进入受管写入/同步」，
-不表示只读也被禁止（R118）。预检复核 TTL 固定按 ≤30 分钟算，不会因为 bootstrap 里填了更大的值而放宽。
+不表示只读也被禁止（R118）。预检复核 TTL 固定按 ≤30 分钟算，并报告 gate 项的 `source`（`gate.json` 或 `none`）。迁移保留已有本机结论；旧字段不会被提升为本机证据。
 
 ## 5.6 本机状态分片：`local_state.py`
 
