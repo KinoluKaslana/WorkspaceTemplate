@@ -451,7 +451,8 @@ def consume_authz(ws_root: str, targets: list[str]) -> dict | None:
     try:
         if not isinstance(targets, list) or not targets:
             return None
-        tset = {os.path.normpath(os.path.expanduser(t)) for t in targets if isinstance(t, str)}
+        osn = _osn(ws_root)
+        tset = {osn.exchange_path(os.path.expanduser(t)) for t in targets if isinstance(t, str)}
         if not tset:
             return None
         data = load_authz(ws_root)
@@ -471,7 +472,7 @@ def consume_authz(ws_root: str, targets: list[str]) -> dict | None:
             tt = tok.get("targets")
             if not isinstance(tt, list):
                 continue
-            if {os.path.normpath(os.path.expanduser(t)) for t in tt if isinstance(t, str)} != tset:
+            if {osn.exchange_path(os.path.expanduser(t)) for t in tt if isinstance(t, str)} != tset:
                 continue
             hit = tok
             break
@@ -526,15 +527,16 @@ def file_sha(path: object) -> str | None:
         return None
 
 
-def record_intent(state: dict, targets: list[str]) -> list[dict]:
+def record_intent(state: dict, targets: list[str], ws_root: str) -> list[dict]:
     """写前意图：target + 写前内容 sha（不存在则 None）。"""
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     recs = []
     events = state.get("events")
     if not isinstance(events, list):
         events = []
+    osn = _osn(ws_root)
     for target in targets:
-        rec = {"type": "gate-intent", "target": os.path.normpath(str(target)),
+        rec = {"type": "gate-intent", "target": osn.exchange_path(str(target)),
                "base_sha": file_sha(target), "ts": ts}
         events.append(rec)
         recs.append(rec)
@@ -562,6 +564,7 @@ def _recent_files(ws_root: str, since_ns: int, cap: int = 2000) -> list[str]:
     """
     skip = {".git", ".workspace", "node_modules", "__pycache__", ".venv", "dist", "build", ".mypy_cache"}
     out: list[str] = []
+    osn = _osn(ws_root)
     try:
         for root, dirs, files in os.walk(ws_root):
             dirs[:] = [d for d in dirs if d not in skip and not d.startswith(".venv-")]
@@ -572,7 +575,10 @@ def _recent_files(ws_root: str, since_ns: int, cap: int = 2000) -> list[str]:
                 except OSError:
                     continue
                 if st.st_mtime_ns >= since_ns:
-                    out.append(os.path.relpath(p, ws_root).replace(os.sep, "/"))
+                    key = osn.host_relative_key(p, ws_root)
+                    if key is None:
+                        continue
+                    out.append(key)
                     if len(out) >= cap:
                         return out
     except Exception:
@@ -612,6 +618,7 @@ def _scan_hashes(ws_root: str, budget: int = HASH_BUDGET_BYTES,
     """
     out: dict[str, str] = {}
     used = 0
+    osn = _osn(ws_root)
     skip = {".git", ".workspace", "node_modules", "__pycache__", ".venv", "dist", "build", ".mypy_cache"}
     try:
         for root, dirs, files in os.walk(ws_root):
@@ -628,7 +635,10 @@ def _scan_hashes(ws_root: str, budget: int = HASH_BUDGET_BYTES,
                     return out, False
                 sha = file_sha(p)
                 if sha:
-                    out[os.path.relpath(p, ws_root).replace(os.sep, "/")] = sha
+                    key = osn.host_relative_key(p, ws_root)
+                    if key is None:
+                        return out, False
+                    out[key] = sha
                     used += st.st_size
     except Exception:
         return out, False
@@ -643,8 +653,9 @@ def worktree_snapshot(ws_root: str) -> dict[str, str | None]:
     """
     snap: dict[str, str | None] = {}
     try:
-        st = _osn(ws_root).run_text(["git", "-C", ws_root, "status", "--porcelain"],
-                                    errors="replace", timeout=5)
+        osn = _osn(ws_root)
+        st = osn.run_text(["git", "-C", ws_root, "status", "--porcelain"],
+                          errors="replace", timeout=5)
         if st.returncode != 0:
             return snap
         for line in (st.stdout or "").splitlines():
@@ -655,7 +666,7 @@ def worktree_snapshot(ws_root: str) -> dict[str, str | None]:
                 rel = rel.split(" -> ")[-1].strip()
             if not rel:
                 continue
-            abs_path = os.path.normpath(os.path.join(ws_root, rel))
+            abs_path = osn.collapse_host_path(os.path.join(ws_root, rel))
             snap[rel] = file_sha(abs_path) if os.path.isfile(abs_path) else None
     except Exception:
         return snap
@@ -730,7 +741,10 @@ def committed_targets(ws_root: str, current_sha: dict[str, str | None]) -> set[s
             p = _legacy_state_dir(ws_root) / "commits.jsonl"
         if not p.is_file():
             return out
-        text = _osn(ws_root).read_text(p, bom=False, errors="replace")
+        osn = _osn(ws_root)
+        current = {osn.exchange_path(target): (target, sha)
+                   for target, sha in current_sha.items()}
+        text = osn.read_text(p, bom=False, errors="replace")
         lines = text.splitlines()
         # 压缩后体积按 target 数有界；这里不硬截行数，避免「轮转后判定不到」。
         if len(lines) > 50000:
@@ -740,10 +754,12 @@ def committed_targets(ws_root: str, current_sha: dict[str, str | None]) -> set[s
                 rec = json.loads(line)
             except Exception:
                 continue
-            t = rec.get("target")
+            target = rec.get("target")
             sha = rec.get("new_sha")
-            if isinstance(t, str) and isinstance(sha, str) and current_sha.get(t) == sha:
-                out.add(t)
+            if isinstance(target, str) and isinstance(sha, str):
+                entry = current.get(osn.exchange_path(target))
+                if entry is not None and entry[1] == sha:
+                    out.add(entry[0])
     except Exception:
         return out
     return out
@@ -995,7 +1011,8 @@ def record_read(state: dict, ws_root: str, gate_rel: str, client: str,
     key = reads_key(ws_root, gate_rel)          # 账本键口径（唯一入口），见 reads_key
     path = read_info.get("path") or ""
     gate_abs = _norm_join(ws_root, gate_rel)
-    if os.path.normpath(os.path.expanduser(path)) != gate_abs:
+    osn = _osn(ws_root)
+    if osn.exchange_path(os.path.expanduser(path)) != osn.exchange_path(gate_abs):
         return {"recorded": False, "reason": "not-gate-file"}
 
     gate_path = Path(gate_abs)
@@ -1125,9 +1142,12 @@ def workspace_is_taken_over(ws_root: str) -> bool:
 
 def _is_within(path: str, root: str) -> bool:
     """词法 + 解析后双判定：区外软链指回区内必须仍算区内（反向逃逸）。"""
+    path_key = _osn(root).exchange_path if os.path.sep == "\\" else os.path.normpath
+
     def one(a: str, b: str) -> bool:
         try:
-            return os.path.commonpath([os.path.normpath(a), os.path.normpath(b)]) == os.path.normpath(b)
+            base = path_key(b)
+            return path_key(os.path.commonpath([path_key(a), base])) == base
         except ValueError:             # 不同盘符
             return False
     if one(path, root):
@@ -1216,8 +1236,9 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
         if unread:
             # B4 豁免令牌：仅当静态可判目标集合命中任一 gate 文件时尝试消费；
             # 命中 → allow + authorized-gatefile-write 审计；未命中 → 维持既有 C9 deny。
-            gate_abs_set = {os.path.normpath(g) for g in gate_abs_map.values()}
-            target_set = {os.path.normpath(t) for t in targets}
+            osn = _osn(ws_root)
+            gate_abs_set = {osn.exchange_path(g) for g in gate_abs_map.values()}
+            target_set = {osn.exchange_path(t) for t in targets}
             if gate_abs_set & target_set:
                 authz = consume_authz(ws_root, targets)
                 if authz:
@@ -1228,7 +1249,7 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
                         "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
                     })
                     state["events"] = state["events"][-50:]
-                    record_intent(state, targets)
+                    record_intent(state, targets, ws_root)
                     save_state(ws_root, client, session_id, state)
                     return {"action": "allow", "reason": "authorized-gatefile-write", "ws": ws_root}
             # R98 扩展（3.0.0）：子作用域的写可由「父证据 + 有效委托」授权。
@@ -1247,7 +1268,7 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
                                 "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
                             })
                             state["events"] = state["events"][-50:]
-                            record_intent(state, targets)
+                            record_intent(state, targets, ws_root)
                             save_state(ws_root, client, session_id, state)
                             return {"action": "allow", "reason": "delegation", "ws": ws_root}
             except Exception as _exc:
@@ -1264,7 +1285,7 @@ def _evaluate_workspace_write(ws_root: str, client: str, session_id: str,
                 "ws": ws_root,
             }
         # 全部治理文件当前修订均已读，持久化撤销留档；同时记写前意图（target+base_sha）。
-        record_intent(state, targets)
+        record_intent(state, targets, ws_root)
         save_state(ws_root, client, session_id, state)
     return {"action": "allow", "reason": "ok", "ws": ws_root}
 
@@ -1479,21 +1500,24 @@ def evaluate_post_write(ws_root: str, client: str, session_id: str,
       表示「这次变化没有经过本 gate 的观测」，**不得读成 allow**。
     """
     conf = load_conf(ws_root)
-    gate_abs_map = {g: _norm_join(ws_root, g) for g in conf["gate_files"]}
+    osn = _osn(ws_root)
+    gate_abs_map = {g: osn.exchange_path(_norm_join(ws_root, g)) for g in conf["gate_files"]}
     touched, commits, unobserved = [], [], []
     with _StateLock(ws_root, client, session_id):
         state = load_state(ws_root, client, session_id)
         events = state.get("events") if isinstance(state.get("events"), list) else []
         for target in targets:
-            norm = os.path.normpath(os.path.expanduser(str(target)))
+            path = os.path.normpath(os.path.expanduser(str(target)))
+            norm = osn.exchange_path(path)
             _mark_activity(state)
-            new_sha = file_sha(norm)
+            new_sha = file_sha(path)
             # 找最近一条未被 commit 的同目标意图
             intent = None
             for ev in reversed(events):
                 if not isinstance(ev, dict) or ev.get("type") != "gate-intent":
                     continue
-                if ev.get("target") != norm or ev.get("committed"):
+                if (ev.get("committed") or not isinstance(ev.get("target"), str)
+                        or osn.exchange_path(ev["target"]) != norm):
                     continue
                 intent = ev
                 break
@@ -1740,14 +1764,16 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
     # 未观测写：worktree 里有内容变化、但本会话没有对应 gate-commit 的目标。
     # report-only，最多 20 条；不代表 deny，只是"没有经过 gate 观测"。
     try:
+        osn = _osn(ws_root)
         state = load_state(ws_root, client, session_id)
         if is_git:
             _b = state.get("worktree_baseline")
             baseline: dict = _b if isinstance(_b, dict) else {}
             current = worktree_snapshot(ws_root)
             changed = {rel for rel, sha in current.items() if baseline.get(rel) != sha}
-            abs_sha: dict[str, str | None] = {os.path.normpath(os.path.join(ws_root, rel)): sha
-                                              for rel, sha in current.items()}
+            abs_sha: dict[str, str | None] = {
+                osn.collapse_host_path(os.path.join(ws_root, rel)): sha for rel, sha in current.items()
+            }
         else:
             watermark = int(state.get("audit_watermark_ns") or 0)
             changed = set(_recent_files(ws_root, watermark))
@@ -1768,7 +1794,7 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
                                         "reason": "hash-budget", "source": source})
             except Exception as exc:
                 log(ws_root, f"hash audit failed: {exc}")
-            abs_sha = {os.path.normpath(os.path.join(ws_root, rel)): None for rel in changed}
+            abs_sha = {osn.collapse_host_path(os.path.join(ws_root, rel)): None for rel in changed}
         append_audit_event(ws_root, client, session_id, {
             "type": "worktree-change",
             "files": (files or sorted(changed))[:200],
@@ -1776,21 +1802,24 @@ def worktree_audit(ws_root: str, client: str, session_id: str, source: str) -> N
             "diff_stat": (diff.stdout if diff is not None else "").strip(),
             "git": is_git,
         })
-        committed = {e.get("target") for e in (state.get("events") or [])
-                     if isinstance(e, dict) and e.get("type") == "gate-commit"}
+        committed = {osn.exchange_path(e["target"]) for e in (state.get("events") or [])
+                     if isinstance(e, dict) and e.get("type") == "gate-commit"
+                     and isinstance(e.get("target"), str)}
         # 只认同 sha 的 commit（commits.jsonl 记录），不按路径无条件跳过：否则
         # 「被 commit 过、随后又被未观测改动」会漏报（DS 复核 ②/④）。
-        committed |= committed_targets(ws_root, abs_sha)
-        gate_abs = { (_norm_join(ws_root, g)) for g in load_conf(ws_root)["gate_files"] }
+        committed.update(osn.exchange_path(p) for p in committed_targets(ws_root, abs_sha))
+        gate_abs = {osn.exchange_path(_norm_join(ws_root, g))
+                    for g in load_conf(ws_root)["gate_files"]}
         pending = []
         # 以 changed 为准而不是 git 列表：非 git 工作区没有 porcelain 输出，但差集仍然成立。
         for rel in sorted(changed)[:200]:
-            abs_path = os.path.normpath(os.path.join(ws_root, rel))
+            abs_path = osn.collapse_host_path(os.path.join(ws_root, rel))
             if not os.path.isfile(abs_path):
                 continue
-            if abs_path in committed:
+            key = osn.exchange_path(abs_path)
+            if key in committed:
                 continue
-            if abs_path in gate_abs:
+            if key in gate_abs:
                 continue
             pending.append({"type": "unobserved-write", "target": abs_path,
                             "new_sha": file_sha(abs_path),

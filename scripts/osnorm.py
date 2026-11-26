@@ -230,6 +230,52 @@ def collapse_path(p: str) -> str:
     return "/" + body if absolute else (body or ".")
 
 
+def collapse_host_path(p: str, *, path_module=None) -> str:
+    """Fold a host path, preserving its original volume spelling for I/O."""
+    host = os.path if path_module is None else path_module
+    if host.sep == "/":
+        # POSIX allows a distinct root for exactly two leading slashes.
+        prefix = "/" if p.startswith("//") and not p.startswith("///") else ""
+        return prefix + (collapse_path(p) or ".")
+    volume, tail = host.splitdrive(p.replace(host.sep, "/"))
+    if not tail and volume:
+        return volume
+    return volume + (collapse_path(tail) or ".")
+
+
+def exchange_path(p: str, *, path_module=None) -> str:
+    """Lexical comparison form for host paths, preserving literal path segments."""
+    host = os.path if path_module is None else path_module
+    if host.sep == "/":
+        return collapse_host_path(p, path_module=host)
+    text = p.replace(host.sep, "/")
+    unprefixed, error = _strip_device_prefix(text)
+    if error is None:
+        text = unprefixed
+    folded = collapse_host_path(text, path_module=host)
+    volume, tail = host.splitdrive(folded)
+    if _DRIVE.match(volume):
+        return volume.upper() + ("" if tail == "." else tail)
+    if volume.startswith("//") and tail == "/":
+        return volume
+    return folded
+
+
+def host_relative_key(p: str, base: str, *, path_module=None) -> str | None:
+    """Return an exchange relative key, or None when the volumes differ."""
+    host = os.path if path_module is None else path_module
+    cwd = os.getcwd()
+    target = exchange_path(host.join(cwd, p), path_module=host)
+    root = exchange_path(host.join(cwd, base), path_module=host)
+    volume, tail = host.splitdrive(target)
+    base_volume, base_tail = host.splitdrive(root)
+    if host.normcase(volume) != host.normcase(base_volume):
+        return None
+    if host.sep != "/" and not all(host.isabs(q) for q in (target, root)):
+        return None
+    return posixpath.relpath(tail or "/", base_tail or "/")
+
+
 # ---------------------------------------------------------------- 判定层：形态判定 / 平台语义 / 组装 / 逃逸
 
 

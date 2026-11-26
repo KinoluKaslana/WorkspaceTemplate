@@ -25,12 +25,16 @@ import ast
 import functools
 import importlib.util
 import json
+import ntpath
 import os
+import posixpath
 import re
 import sys
+import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
@@ -269,7 +273,10 @@ def _file_scan(rel: str) -> tuple[frozenset[str], tuple[dict, ...]]:
 
     定位 = `{function, expr, ordinal, line, node}`；`node` 供逐处 oracle 现场求值真实表达式。
     """
-    source = osnorm.read_text(ROOT / rel)
+    return _scan_file_source(osnorm.read_text(ROOT / rel), rel)
+
+
+def _scan_file_source(source: str, rel: str) -> tuple[frozenset[str], tuple[dict, ...]]:
     tree = ast.parse(source, filename=rel)
     defs = [(node.lineno, node.end_lineno or node.lineno, node.name)
             for node in ast.walk(tree)
@@ -507,8 +514,7 @@ def scan_file(path: Path, rel: str,
 def scan_repo(with_structural: bool = True, entries: list[dict] | None = None) -> Counter:
     """扫描全量扫描面，返回 {(file, rule, target, line_kind): count}。
 
-    `with_structural=False` 只套规则级豁免（`STRUCTURAL_EXEMPT`），保留 structural 段覆盖的
-    那 15 处——登记审计必须看到它们，否则「豁免失效」无从证伪。
+    `with_structural=False` 只套规则级豁免（`STRUCTURAL_EXEMPT`），保留 structural 段覆盖的命中。
     """
     site_map = {} if not with_structural else _site_map(
         load_structural() if entries is None else entries)[0]
@@ -720,15 +726,16 @@ class SingleSourceScanTest(unittest.TestCase):
         self.actual = scan_repo()
 
     def test_scan_covers_three_roots(self) -> None:
-        """逐根枚举和解析，hooks 的结构性位置可在原始扫描中检出。"""
+        """用实际扫描调用验证三个根都参与检查，归零后仍要扫描 hooks。"""
+        with mock.patch(f"{__name__}.scan_file", wraps=scan_file) as scanned:
+            scan_repo(with_structural=False)
+        roots = {call.args[1].rsplit("/", 1)[0] for call in scanned.call_args_list}
+        self.assertEqual(roots, {".workspace/hooks", "scripts", "tests"})
         for prefix, root in SCAN_ROOTS:
             files = sorted(root.glob("*.py"))
             self.assertTrue(files, f"{prefix} 根下没有可扫描文件")
             for path in files:
                 scan_file(path, f"{prefix}/{path.name}")   # 解析失败会直接抛
-        seen = {key[0] for key in scan_repo(with_structural=False)}
-        self.assertTrue(any(f.startswith(".workspace/hooks/") for f in seen),
-                        ".workspace/hooks 的结构性位置没有被扫描到")
         self.assertFalse(self.actual, f"三个根的非结构性命中必须保持 0 处：{self.actual}")
 
     def test_r6_normcase_stays_zero(self) -> None:
@@ -788,10 +795,10 @@ class SeamExamplesTest(unittest.TestCase):
                 self.assertNotIn("osnorm", names,
                                  f"{path.name}:{node.lineno} 出现裸 import osnorm（须经 osnorm_loader）")
 
-    def test_gate_core_relpath_keys_are_detected(self) -> None:
+    def test_gate_core_relpath_keys_are_migrated(self) -> None:
         hits = [v for v in self._scan(".workspace/hooks/gate_core.py")
                 if v.rule == "R5" and v.target == "expr:relpath_sep_key"]
-        self.assertEqual(len(hits), 2, "gate_core 的 relpath + os.sep 键应为 2 处")
+        self.assertEqual(hits, [], "gate_core 的相对键必须保持交换形态")
 
 
 # ---------------------------------------------------------------- 测试：R9 allowlist
@@ -1166,36 +1173,51 @@ class _BaselineMode:
 
 
 class StructuralSiteMixin:
-    """逐处 oracle 的公共动作：**取真实代码里那个表达式节点**现场求值，再对账。
-
-    为什么求值 AST 而不是复制一份等价表达式：复制会变成第二份实现，改了 hooks 却不动
-    测试照样绿。这里取的是 `_file_scan()` 从 hooks 源码里解析出来的同一个节点，位置变了
-    `_split_target` 就定位不到（条目失效即红）。
-    """
+    """Evaluate the production path expression under the host and ntpath."""
 
     def site(self, rel: str, target: str, env: dict):
         function, ordinal = _split_target(target)
-        _names, sites = _file_scan(rel)
-        hits = [item for item in sites if item["function"] == function]
-        self.assertLessEqual(ordinal, len(hits),
-                             f"{rel}::{target} 处已没有那么多 R5 命中（{len(hits)} 处）")
-        node = hits[ordinal - 1]["node"]
-        self.assertIsNotNone(node, f"{rel}::{target} 的命中没带 AST 节点（规则实现可能变了）")
-        code = compile(ast.Expression(body=node), f"<{rel}:{hits[ordinal - 1]['line']}>", "eval")
-        return eval(code, {"os": os, "__builtins__": {"str": str, "int": int}}, dict(env))  # noqa: S307
+        tree = ast.parse(osnorm.read_text(ROOT / rel), filename=rel)
+        owner, = (node for node in ast.walk(tree)
+                  if isinstance(node, ast.FunctionDef) and node.name == function)
+        hits = [node for node in ast.walk(owner)
+                if isinstance(node, ast.Call) and _dotted(node.func) in {
+                    "osn.collapse_host_path", "osn.host_relative_key", "os.path.normpath",
+                    "path_form", "_exchange_path",
+                } and (_dotted(node.func) == "osn.host_relative_key"
+                       or (node.args and isinstance(node.args[0], ast.Call)
+                           and _dotted(node.args[0].func) == "os.path.join"))]
+        hits.sort(key=lambda node: (node.lineno, node.col_offset))
+        self.assertLessEqual(ordinal, len(hits), f"{rel}::{target} 表达式缺失")
+        node = hits[ordinal - 1]
+        code = compile(ast.Expression(body=node), f"<{rel}:{node.lineno}>", "eval")
+        scope = {"os": os, "osn": osnorm, "path_form": osnorm.collapse_host_path,
+                 "__builtins__": {"str": str, "int": int}}
+        if rel.endswith("/wtarget.py"):
+            scope["_exchange_path"] = _hook_module("wtarget")._exchange_path
+        got = eval(code, scope, dict(env))  # noqa: S307
+
+        windows_env = {key: value.replace(BASE_NATIVE, r"C:\ws", 1)
+                       if isinstance(value, str) else value for key, value in env.items()}
+        windows_osn = mock.Mock(
+            collapse_host_path=functools.partial(osnorm.collapse_host_path, path_module=ntpath),
+            host_relative_key=functools.partial(osnorm.host_relative_key, path_module=ntpath))
+        windows_scope = dict(scope, os=mock.Mock(path=ntpath), osn=windows_osn,
+                             path_form=windows_osn.collapse_host_path)
+        if "_exchange_path" in scope:
+            windows_scope["_exchange_path"] = functools.partial(
+                scope["_exchange_path"], path_module=ntpath)
+        windows = eval(code, windows_scope, windows_env)  # noqa: S307
+        self.assertIsInstance(windows, str)
+        self.assertNotIn("\\", windows, f"{rel}::{target} 输出了原生分隔符")
+        return got
 
     def assert_same_path(self, got: object, expected: tuple[str, str], msg: str) -> None:
-        """同一路径标识：按当前基准比较，并保留回喂 canonical 的往返判据。"""
         native_expected, canonical_expected = expected
-        if comparison_baseline() == "native":
-            self.assertEqual(got, native_expected, f"{msg}：原生形态不等")
-        else:
-            self.assertEqual(exchange_form(str(got)), canonical_expected,
-                             f"{msg}：双侧交换形态不等")
-            self.assertEqual(exchange_form(str(got)), exchange_form(native_expected),
-                             f"{msg}：原生期望与交换期望不是同一标识")
-        self.assertEqual(osnorm.canonical_path(got), canonical_expected,
-                         f"{msg}：回喂 canonical 后不是同一标识")
+        self.assertEqual(got, canonical_expected, f"{msg}：输出必须为交换形态")
+        self.assertTrue(compare_paths(_native_form(got), native_expected)
+                        if comparison_baseline() == "native"
+                        else compare_paths(got, native_expected), msg)
 
     def assert_declared_divergence(self, got: object, rel: str, msg: str) -> None:
         """出界分叉是被声明的：站点仍返回值（hook 不得抛），而 canonical_path 直接拒。"""
@@ -1205,23 +1227,17 @@ class StructuralSiteMixin:
 
 
 class StructuralOracleTest(StructuralSiteMixin, unittest.TestCase):
-    """R43：15 处 R5 的逐处 oracle。
-
-    判据分两半，和条目里的 `verdict` 一一对应：
-    - `(a)` 可等价：金表行在声明子域内与 `canonical_path` **同一路径标识**（原生形态 + 回喂
-      往返），另有 boundary 行证明「出界就分叉」——不是含糊的「差不多」。
-    - `(b)` 不同域：证明 osnorm 根本产不出该处的产物（相对键 / 无 relpath 能力），差异有意。
-    """
+    """R49：守住迁移后的路径表达式及其边界行为。"""
 
     CT = ".workspace/hooks/cc_transcript.py"
     CORE = ".workspace/hooks/gate_core.py"
     WT = ".workspace/hooks/wtarget.py"
 
-    # ---- (b) 相对键：osnorm 没有 relpath 能力，canonical 只产绝对交换路径
+    # ---- 3 处相对键
 
     def test_oracle_cc_gate_key_relative_key(self) -> None:
         gate = os.path.join(BASE_NATIVE, "a", "b.md")
-        got = self.site(self.CT, "gate_key#1", {"ws": BASE_NATIVE, "gate": gate})
+        got = _hook_module("cc_transcript").gate_key(BASE_NATIVE, gate)
         self.assertEqual(got, "a/b.md", "账本键必须是相对路径且用 '/' 分隔")
         self.assertFalse(os.path.isabs(got))
         self.assertNotEqual(got, osnorm.canonical_path(gate), "相对键与 canonical 不是同一个东西")
@@ -1239,23 +1255,12 @@ class StructuralOracleTest(StructuralSiteMixin, unittest.TestCase):
         self.assertTrue(got.startswith(".."), f"逃逸键必须保留前导 ..：{got!r}")
 
     def test_oracle_cc_gate_key_cross_drive_no_throw(self) -> None:
-        """跨盘符：`relpath` 抛 ValueError 时必须回退成绝对键，hook 不得被打崩。"""
-        row = (CASES.get("gate_key") or {}).get("cross_drive") or {}
-        cc_transcript = _hook_module("cc_transcript")
-        gate = os.path.join(BASE_NATIVE, "a", "b.md")
-        expected = os.path.normpath(gate).replace(os.sep, "/")
-        original = os.path.relpath
-        try:
-            def boom(*_args, **_kwargs):
-                raise ValueError(row.get("message") or "path is on mount 'D:', start on mount 'C:'")
-            os.path.relpath = boom
-            got = cc_transcript.gate_key(BASE_NATIVE, gate)       # 不得抛
-            legacy = cc_transcript._legacy_gate_key(BASE_NATIVE, gate)
-        finally:
-            os.path.relpath = original
-        self.assertEqual(got, expected, "跨盘必须回退为绝对键（fail-safe）")
-        self.assertEqual(legacy, expected, "兼容读的旧键也必须对跨盘回退（不得抛）")
-        self.assertTrue(os.path.isabs(got), f"回退键必须是绝对形态：{got!r}")
+        """跨盘键必须明确回退为绝对交换形态。"""
+        ct = _hook_module("cc_transcript")
+        ws, gate = r"C:\ws", r"d:\a\b.md"
+        with mock.patch.object(ct, "os", mock.Mock(path=ntpath, sep="\\")):
+            self.assertEqual(ct.gate_key(ws, gate), "D:/a/b.md")
+            self.assertEqual(ct._legacy_gate_key(ws, gate), "d:/a/b.md")
 
     def test_oracle_cc_gate_key_two_cwds_same_key(self) -> None:
         """两个 cwd 写法（尾斜杠 / `.` / `sub/..`）必须同键；不同 cwd 必须异键（负例防恒真）。"""
@@ -1289,7 +1294,7 @@ class StructuralOracleTest(StructuralSiteMixin, unittest.TestCase):
         with self.assertRaises(osnorm.PathFormError):
             osnorm.canonical_path("sub/a.md")
 
-    # ---- (a) join + normpath：子域内同一路径标识，出界分叉
+    # ---- 12 处路径拼接
 
     def test_oracle_cc_git_changed_files_join(self) -> None:
         got = self.site(self.CT, "git_changed_files#1", {"ws": BASE_NATIVE, "path": "a/b.md"})
@@ -1374,7 +1379,7 @@ class ComparisonBaselineTest(unittest.TestCase):
     - fixture 的每一行证明 native / exchange 两种写法是同一路径标识；
     - 切换开关在 native 模式下必须恢复逐字比较，未知值 fail-closed；
     - 两个方向的反例证明 exchange 模式**两侧都变换**（只变一侧会漏掉一侧的分叉）；
-    - 15 处 structural oracle 在两种基准下都必须全绿。
+    - 15 处迁移站点在两种比较基准下都必须全绿。
     """
 
     def _fixture(self) -> dict:
@@ -1460,8 +1465,7 @@ class OracleMutationControlTest(unittest.TestCase):
 
     @staticmethod
     def _bad_uncatchable_key(ws: str, gate: str) -> str:
-        rel = os.path.relpath(os.path.normpath(gate), os.path.normpath(ws))
-        return rel
+        return ntpath.relpath(gate, ws)
 
     def _assert_red(self, method: str, bad, msg: str) -> None:
         cc_transcript = _hook_module("cc_transcript")
@@ -1490,26 +1494,16 @@ class OracleMutationControlTest(unittest.TestCase):
 class StructuralRealCallTest(StructuralSiteMixin, unittest.TestCase):
     """oracle 不能只对着表达式求值：这几条走**真实函数**，证明站点在生产路径上真被执行。"""
 
-    def test_resolve_gate_files_returns_native_targets(self) -> None:
+    def test_resolve_gate_files_returns_exchange_targets(self) -> None:
         cc_transcript = _hook_module("cc_transcript")
         got = cc_transcript.resolve_gate_files(BASE_NATIVE, "AGENT_RULES.md")
-        self.assertEqual(got, [os.path.join(BASE_NATIVE, "AGENT_RULES.md")])
+        self.assertEqual(got, [osnorm.canonical_path("AGENT_RULES.md", base=BASE_NATIVE)])
         self.assertEqual(osnorm.canonical_path(got[0]), osnorm.canonical_path("AGENT_RULES.md", base=BASE_NATIVE))
 
     def test_gate_key_falls_back_when_relpath_cannot_relate(self) -> None:
-        """跨盘符（Windows）时 relpath 抛 ValueError：必须回退成绝对键，不能把 hook 打崩。"""
-        cc_transcript = _hook_module("cc_transcript")
-        gate = os.path.join(BASE_NATIVE, "a", "b.md")
-        self.assertEqual(cc_transcript.gate_key(BASE_NATIVE, gate), "a/b.md")
-        original = os.path.relpath
-        try:
-            def boom(*_args, **_kwargs):
-                raise ValueError("path is on mount 'D:', start on mount 'C:'")
-            os.path.relpath = boom
-            self.assertEqual(cc_transcript.gate_key(BASE_NATIVE, gate),
-                             os.path.normpath(gate).replace(os.sep, "/"))
-        finally:
-            os.path.relpath = original
+        ct = _hook_module("cc_transcript")
+        self.assertEqual(ct.gate_key("C:/ws", "C:/ws/a/b.md"), "a/b.md")
+        self.assertEqual(ct.gate_key("C:/ws", "D:/a/b.md"), "D:/a/b.md")
 
     def test_recent_files_keys_are_relative_and_posix(self) -> None:
         gate_core = _hook_module("gate_core")
@@ -1522,11 +1516,109 @@ class StructuralRealCallTest(StructuralSiteMixin, unittest.TestCase):
             keys = set(gate_core._recent_files(tmp, 0))
         self.assertEqual(keys, {"sub/a.md", "b.md"})
 
-    def test_resolve_target_returns_native_absolute(self) -> None:
+    def test_resolve_target_returns_exchange_absolute(self) -> None:
         wtarget = _hook_module("wtarget")
         target, status = wtarget._resolve_target("a/b.md", BASE_NATIVE)
         self.assertEqual(status, "static")
         self.assert_same_path(target, _path_pair("a/b.md"), "_resolve_target 真实调用")
+
+    def test_ntpath_preserves_volume_roots_and_rejects_cross_volume_relative_keys(self) -> None:
+        self.assertEqual(osnorm.collapse_host_path(r"C:\a\..\..\b", path_module=ntpath),
+                         "C:/b")
+        self.assertEqual(osnorm.collapse_host_path(r"\\host\share\a\..\..\b",
+                                                  path_module=ntpath), "//host/share/b")
+        self.assertIsNone(osnorm.host_relative_key(r"D:\b", r"C:\a", path_module=ntpath))
+        self.assertIsNone(osnorm.host_relative_key(r"\\host\one\b", r"\\host\two\a",
+                                                   path_module=ntpath))
+
+    def test_wtarget_runs_without_loader_or_scripts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            osnorm.write_bytes(Path(tmp) / "wtarget.py", osnorm.read_bytes(HOOKS / "wtarget.py"))
+            probe = (
+                "import sys, wtarget; "
+                "result = wtarget.classify('echo x > a.md', sys.argv[1], []); "
+                "assert result['targets'] == [sys.argv[2]], result; "
+                "assert 'osnorm_loader' not in sys.modules"
+            )
+            result = osnorm.run_text([sys.executable, "-B", "-S", "-c", probe, tmp,
+                                      osnorm.exchange_path(os.path.join(tmp, "a.md"))], cwd=tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_wtarget_exchange_form_matches_osnorm(self) -> None:
+        wt = _hook_module("wtarget")
+        cases = {
+            posixpath: ("", ".", "/ws/a.md ", r"/ws/a\b.md", "//ws/a/../b", "a/../../b"),
+            ntpath: (r"c:\ws\a\..\b.md", r"c:\..\b", r"c:relative.md", r"c:dir\..",
+                     r"\\HOST\Share\..\g.md", r"\\host\share\.",
+                     r"\\?\c:\ws\g.md", r"\\?\UNC\HOST\Share\g.md", r"\\.\PIPE\name"),
+        }
+        for host, paths in cases.items():
+            for path in paths:
+                with self.subTest(host=host.__name__, path=path):
+                    self.assertEqual(wt._exchange_path(path, path_module=host),
+                                     osnorm.exchange_path(path, path_module=host))
+        with mock.patch.object(wt, "os", mock.Mock(wraps=os, path=ntpath, environ=os.environ)):
+            ws = r"c:\ws"
+            target = "C:/ws/g.md"
+            for command, classify in (
+                ('echo x > "//?/c:/ws/g.md"', wt.classify),
+                ('Set-Content -LiteralPath "//?/c:/ws/g.md" -Value x', wt.classify_pwsh),
+            ):
+                result = classify(command, ws, [r"c:\ws\g.md"])
+                self.assertEqual((result["targets"], result["gate_targets"]), ([target], [target]))
+            self.assertEqual(wt.classify("echo x > D:relative.md", ws, [])["kind"], "unresolved")
+            self.assertEqual(wt.classify_pwsh(
+                "Set-Content -Path D:relative.md -Value x", ws, [])["kind"], "unresolved")
+            self.assertEqual(wt.classify('echo x > "//?/GLOBALROOT/device.md"',
+                                         ws, [])["kind"], "unresolved")
+        with mock.patch.object(wt, "os", mock.Mock(wraps=os, path=posixpath, sep="/",
+                                                   environ={"HOME": "/home/current"})), \
+                mock.patch.object(posixpath, "expanduser", side_effect=AssertionError("home lookup")):
+            self.assertEqual(wt.classify_pwsh("Set-Content ~/g.md -Value x", "/ws", [])["targets"],
+                             ["/home/current/g.md"])
+            self.assertEqual(wt.classify_pwsh("Set-Content ~other/g.md -Value x",
+                                              "/ws", [])["kind"], "unresolved")
+
+    def test_core_commit_matches_windows_intent_and_legacy_ledger(self) -> None:
+        core = _hook_module("gate_core")
+        native = r"c:\ws\g.md"
+        extended = r"\\?\C:\ws\g.md"
+        target = "C:/ws/g.md"
+        osn = core._osn()
+        windows_osn = mock.Mock(wraps=osn, exchange_path=functools.partial(
+            osn.exchange_path, path_module=ntpath))
+        with tempfile.TemporaryDirectory() as ws, \
+                mock.patch.object(core, "_osn", return_value=windows_osn), \
+                mock.patch.object(core, "file_sha", return_value="same-sha"):
+            sid = "r49-ntpath-commit"
+            state = core.load_state(ws, "codex", sid)
+            self.assertEqual(core.record_intent(state, [native], ws)[0]["target"], target)
+            state["events"][-1]["target"] = native  # R48 intent on disk
+            core.save_state(ws, "codex", sid, state)
+            result = core.evaluate_post_write(ws, "codex", sid, [extended])
+            self.assertEqual([e["target"] for e in result["committed"]], [target])
+            self.assertEqual(result["unobserved"], [])
+            ledger = core._state_dir(ws) / "commits.jsonl"
+            self.assertEqual(json.loads(osnorm.read_text(ledger))["target"], target)
+            self.assertEqual(core.committed_targets(ws, {target: "same-sha"}), {target})
+            osnorm.write_text(ledger, json.dumps({"target": native, "new_sha": "same-sha"}) + "\n")
+            self.assertEqual(core.committed_targets(ws, {target: "same-sha"}), {target})
+            self.assertEqual(core.committed_targets(ws, {target: "changed-sha"}), set())
+
+    def test_core_workspace_path_compares_extended_and_native_windows_spellings(self) -> None:
+        core = _hook_module("gate_core")
+        osn = mock.Mock(exchange_path=functools.partial(osnorm.exchange_path, path_module=ntpath))
+        with mock.patch.object(core, "_osn", return_value=osn), \
+                mock.patch.object(core, "os", mock.Mock(wraps=os, path=ntpath)):
+            self.assertTrue(core._is_within(r"\\?\C:\ws\g.md", r"c:\ws"))
+            self.assertFalse(core._is_within(r"D:\ws\g.md", r"c:\ws"))
+
+    @unittest.skipUnless(os.name == "posix", "POSIX literal filename semantics")
+    def test_sidecar_keys_keep_distinct_posix_spellings(self) -> None:
+        ct = _hook_module("cc_transcript")
+        gates = ("/ws/a.md", "/ws/a.md ", r"/ws/a\b.md", "/ws/a/b.md")
+        self.assertEqual([ct.gate_key("/ws", gate) for gate in gates],
+                         ["a.md", "a.md ", r"a\b.md", "a/b.md"])
 
 
 class StructuralRegistryTest(unittest.TestCase):
@@ -1542,86 +1634,106 @@ class StructuralRegistryTest(unittest.TestCase):
         self.assertEqual(problems, [], "\n".join(problems))
 
     def test_ledger_totals_are_conserved(self) -> None:
-        """R47 后 entries 为 0，实测 R5 仍与 15 个 structural 位置对账。"""
-        self.assertEqual(sum(entry["count"] for entry in self.doc["entries"]), 0)
-        self.assertEqual(len(self.entries), 15)
-        self.assertEqual(sum(entry["count_baseline"] for entry in self.entries), 15)
+        self.assertEqual(self.doc["entries"], [])
+        self.assertEqual(self.entries, [])
         r5 = {key: count for key, count in self.raw.items() if key[1] == "R5"}
-        self.assertEqual(sum(r5.values()), 15, f"实测 R5 处数变了：{sorted(r5)}")
-        self.assertEqual({key[0] for key in r5},
-                         {".workspace/hooks/cc_transcript.py",
-                          ".workspace/hooks/gate_core.py",
-                          ".workspace/hooks/wtarget.py"},
-                         "这批 R5 仍然分布在 hook 的三个模块里")
+        self.assertEqual(r5, {}, f"structural R5 实测必须为 0：{r5}")
+
+
+class StructuralRegistryControlTest(unittest.TestCase):
+    """账本归零后继续用两处可扫描的历史模式测试 S3 的拒绝条件。"""
+
+    def setUp(self) -> None:
+        rel = ".workspace/hooks/cc_transcript.py"
+        source = """
+def old_relative(ws, gate):
+    return os.path.relpath(gate, ws).replace(os.sep, "/")
+
+def old_join(ws, gate):
+    return os.path.normpath(os.path.join(ws, gate))
+"""
+        names, sites = _scan_file_source(source, rel)
+        patcher = mock.patch(f"{__name__}._file_scan", return_value=(names, sites))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.raw = Counter((rel, v.rule, v.target, v.line_kind) for v in scan_source(source, rel))
+        oracle = "tests/test_osnorm_single_source.py::StructuralOracleTest::test_oracle_"
+        self.entries = [
+            dict(file=rel, rule="R5", target="old_relative#1", expr="expr:relpath_sep_key",
+                 verdict="b", count_baseline=1, reason="相对键",
+                 oracle=[oracle + "cc_gate_key_" + case for case in (
+                     "relative_key", "escape_allowed", "cross_drive_no_throw", "two_cwds_same_key")]),
+            dict(file=rel, rule="R5", target="old_join#1", expr="expr:normpath_join",
+                 verdict="a", count_baseline=1, reason="见 subdomains.host-native-join",
+                 subdomain="host-native-join", oracle=oracle + "cc_git_changed_files_join"),
+        ]
+        self.subdomains = {
+            "host-native-join": dict(boundary="宿主绝对路径与相对段",
+                                     equivalence="路径标识相同", divergence="出界由 canonical 拒绝"),
+        }
+
+    def problems(self, raw, entries):
+        return structural_problems(raw, entries, check_oracles=False, subdomains=self.subdomains)
 
     def test_targets_are_unique_and_resolvable(self) -> None:
         index, problems = _site_map(self.entries)
         self.assertEqual(problems, [], "\n".join(problems))
-        self.assertEqual(len(index), 15, "15 条必须落在 15 个不同位置（不许一处登记两次）")
+        self.assertEqual(len(index), len(self.entries))
+        self.assertEqual(self.problems(self.raw, self.entries), [])
 
     def test_target_out_of_range_is_red(self) -> None:
         broken = [dict(item) for item in self.entries]
         broken[0]["target"] = broken[0]["target"].split("#")[0] + "#9"
-        problems = structural_problems(self.raw, broken, check_oracles=False)
+        problems = self.problems(self.raw, broken)
         self.assertTrue(any("目标越界" in item for item in problems), problems)
 
     def test_missing_function_is_red(self) -> None:
         broken = [dict(self.entries[0], target="no_such_function#1")]
-        problems = structural_problems(self.raw, broken, check_oracles=False)
+        problems = self.problems(self.raw, broken)
         self.assertTrue(any("目标函数不存在" in item for item in problems), problems)
 
     def test_removed_entry_leaves_violation_uncovered(self) -> None:
-        problems = structural_problems(self.raw, self.entries[1:], check_oracles=False)
+        problems = self.problems(self.raw, self.entries[1:])
         self.assertTrue(any("未覆盖的 R5" in item for item in problems), problems)
 
     def test_count_growth_is_red(self) -> None:
         grown = Counter(self.raw)
         key = next(key for key in grown if key[1] == "R5")
         grown[key] += 1
-        problems = structural_problems(grown, self.entries, check_oracles=False)
+        problems = self.problems(grown, self.entries)
         self.assertTrue(any("高于 count_baseline" in item for item in problems), problems)
 
     def test_expressed_class_mismatch_is_red(self) -> None:
         broken = [dict(item) for item in self.entries]
         broken[0]["expr"] = "expr:normpath_join"
-        problems = structural_problems(self.raw, broken, check_oracles=False)
+        problems = self.problems(self.raw, broken)
         self.assertTrue(any("表达式类不符" in item for item in problems), problems)
 
     def test_verdict_and_reason_are_required(self) -> None:
         for field, bad in (("verdict", "c"), ("reason", ""), ("count_baseline", 0)):
             broken = [dict(self.entries[0], **{field: bad})]
-            problems = structural_problems(self.raw, broken, check_oracles=False)
+            problems = self.problems(self.raw, broken)
             self.assertTrue(problems, f"{field}={bad!r} 竟然没有报错")
 
     def test_subdomains_are_single_source(self) -> None:
-        """R48/P5：12 条 a 类共用 `host-native-join`，边界文本只在注册表里出现一次。"""
-        subdomains = load_subdomains()
-        self.assertEqual(set(subdomains), {"host-native-join"})
-        spec = subdomains["host-native-join"]
-        for field in ("boundary", "equivalence", "divergence"):
-            self.assertTrue(str(spec.get(field) or "").strip(), f"subdomain 缺 {field}")
-        a_entries = [entry for entry in self.entries if entry.get("verdict") == "a"]
-        self.assertEqual(len(a_entries), 12, "a 类条目数变了（R48 固定 12 条）")
-        for entry in a_entries:
-            self.assertEqual(entry.get("subdomain"), "host-native-join")
-            self.assertIn("subdomains.host-native-join", entry["reason"])
-            self.assertNotIn(spec["boundary"], entry["reason"],
-                             "边界文本被复制进条目 reason（会漂移）")
-        b_entries = [entry for entry in self.entries if entry.get("verdict") == "b"]
-        self.assertEqual(len(b_entries), 3, "b 类条目数变了（相对键 3 条）")
+        self.assertEqual(load_subdomains(), {})
+        broken = [dict(entry) for entry in self.entries]
+        boundary = self.subdomains["host-native-join"]["boundary"]
+        broken[1]["reason"] += boundary
+        self.assertTrue(any("边界文本" in problem for problem in self.problems(self.raw, broken)))
 
     def test_missing_subdomain_is_red(self) -> None:
         broken = [dict(item) for item in self.entries]
         a_index = next(i for i, item in enumerate(broken) if item.get("verdict") == "a")
         broken[a_index].pop("subdomain", None)
-        problems = structural_problems(self.raw, broken, check_oracles=False)
+        problems = self.problems(self.raw, broken)
         self.assertTrue(any("缺 subdomain" in item for item in problems), problems)
 
     def test_conflicting_subdomain_reason_is_red(self) -> None:
         broken = [dict(item) for item in self.entries]
         a_index = next(i for i, item in enumerate(broken) if item.get("verdict") == "a")
         broken[a_index]["reason"] = "没有引用注册表的理由"
-        problems = structural_problems(self.raw, broken, check_oracles=False)
+        problems = self.problems(self.raw, broken)
         self.assertTrue(any("没有引用 subdomains." in item for item in problems), problems)
 
     def test_oracle_is_run_for_real(self) -> None:
@@ -1629,7 +1741,7 @@ class StructuralRegistryTest(unittest.TestCase):
         first = self.entries[0]
         self.assertEqual(_run_oracle(first), [], "oracle 引用的用例必须当前通过")
         specs = _oracle_specs(first)
-        self.assertGreaterEqual(len(specs), 2, "gate_key#1 应登记 4 条 oracle")
+        self.assertEqual(len(specs), 4)
         ghost = dict(first, oracle=[specs[0].replace("test_oracle_", "test_oracle_ghost_")])
         self.assertTrue(any("未被收集" in item for item in _run_oracle(ghost)))
 

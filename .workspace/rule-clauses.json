@@ -523,12 +523,12 @@
   },
   "scripts/osnorm.py": {
     "clauses": {},
-    "file_sha256": "0c25bc84663ef085c35589af1be8caf5a595b4e5d328f81c6173592f052f81d1",
+    "file_sha256": "c1d392e70dc91e9dde28c920f0e4841317e3b8bae14c6ef32dc9a1b2749f6722",
     "marked": 0
   },
   ".workspace/hooks/osnorm_loader.py": {
     "clauses": {},
-    "file_sha256": "d452ed3d537de928d08817dd39267fdb45b9a04970d1aee19566ad4502d64dab",
+    "file_sha256": "a10623712f60d1cd880b2d75c01e5c642b90b22033673468b748453294e6d0f3",
     "marked": 0
   },
   ".workspace/hooks/hook.py": {
@@ -538,12 +538,12 @@
   },
   ".workspace/hooks/gate_core.py": {
     "clauses": {},
-    "file_sha256": "64b129f602a3ab955c13d796812a02c5f4af256117b1500cf69cbf1a34b68c91",
+    "file_sha256": "a5c4a18141b6890ff1462450971d16662febd507102601ef399fb6a0f69ae224",
     "marked": 0
   },
   ".workspace/hooks/wtarget.py": {
     "clauses": {},
-    "file_sha256": "5dc87f762c08cb37546f2348056285f1908cf0d49174823274748305eec40b95",
+    "file_sha256": "a21e153b47cfbc8f7dbc54726f443bc5eb86367962e35c377ae72a07ec054815",
     "marked": 0
   },
   ".workspace/hooks/authz.py": {
@@ -553,7 +553,7 @@
   },
   ".workspace/hooks/cc_transcript.py": {
     "clauses": {},
-    "file_sha256": "6236953535cfc127f0989e8a47db03f8c0eaaf1c04f3cdbf314f77bcedbbbc90",
+    "file_sha256": "1c0f9e3a761b0e2b495ff92fbea644e95e6423498b238c8abb2a51125839edf4",
     "marked": 0
   },
   ".workspace/hooks/template_anchor.py": {
@@ -633,12 +633,12 @@
   },
   "tests/test_osnorm_single_source.py": {
     "clauses": {},
-    "file_sha256": "e040932bfa2341edbee3c87038077301dd5549aa26222e3f3f1c2d65650068d5",
+    "file_sha256": "f8d09f31d9452388fbf4f01870f241421164e601650f7f03fb11fece23303a14",
     "marked": 0
   },
   "tests/osnorm_allowlist.json": {
     "clauses": {},
-    "file_sha256": "fff09fe16d815104593b7b9d32a1bd45390edd4df2615a8fa782bca5c26860fa",
+    "file_sha256": "8d10675c9ae9e320656d47be0752e41de3906a70233dc804fc8e7e5bfb1c406f",
     "marked": 0
   },
   "scripts/encoding_guard.py": {

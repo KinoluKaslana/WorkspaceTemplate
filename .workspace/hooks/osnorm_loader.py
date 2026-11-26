@@ -41,7 +41,10 @@ OSNORM_API_EXPECTED = 3
 # `append_text` 是 R41 新增的并发追加原语：hooks 的日志/账本不能拿整文件重写代替。
 REQUIRED_API = (
     "canonical_path",
+    "collapse_host_path",
+    "exchange_path",
     "family",
+    "host_relative_key",
     "read_text",
     "write_text",
     "read_bytes",
