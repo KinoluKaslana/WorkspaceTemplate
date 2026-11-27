@@ -2,6 +2,7 @@
 """Unified Claude Code/Codex workspace-gate hook adapter."""
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -10,10 +11,13 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import gate_core as core
 import wtarget
 import cc_transcript
+import osnorm_loader as _osnorm_loader
+
 
 PATCH_HEADER = re.compile(r"\*\*\* (?:(?:Update|Add|Delete) File|Move to): (.+)")
 
@@ -49,18 +53,81 @@ def _deny(reason: str, *, ws=None, client=None, sid=None, tool=None, targets=Non
             pass
     if code:
         reason = f"[workspace-gate:{code}] " + reason
-    print(json.dumps({"hookSpecificOutput": {
+    _emit_json({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
         "permissionDecisionReason": reason,
-    }}, ensure_ascii=False))
+    }})
 
 
 def _context(text: str, event_name: str) -> None:
-    print(json.dumps({"hookSpecificOutput": {
+    _emit_json({"hookSpecificOutput": {
         "hookEventName": event_name,
         "additionalContext": text,
-    }}, ensure_ascii=False))
+    }})
+
+
+def _emit_json(payload: dict) -> None:
+    _osn().emit_stdout(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _osn(ws_root=None) -> Any:
+    """经装载器取 osnorm（**禁止裸 import**）。已装载时只做 N1 指纹复核。"""
+    return _osnorm_loader.load(ws_root)
+
+
+def _payload_ws_root(data: dict) -> str | None:
+    """候选 ② 的 `ws_root`：payload 的 `cwd` 所属工作区根（找不到退回 cwd 本身）。
+
+    payload 解析之后才有 cwd，所以 ② 只能在
+    请求期算——这是 v1 把「三级解析」写成 import 期一次性解决时踩的坑（E1）。
+    """
+    cwd = data.get("cwd")
+    if not isinstance(cwd, str) or not cwd.strip():
+        return None
+    try:
+        cwd = os.path.abspath(os.path.expanduser(cwd))
+    except (OSError, ValueError):
+        return None
+    try:
+        return core.find_workspace(cwd) or cwd
+    except Exception:  # 找根失败仍可用 cwd 试 ②
+        return cwd
+
+
+def _read_payload() -> Any:
+    module = _osnorm_loader.bootstrap_module()
+    if module is not None:
+        return json.loads(module.read_stdin_text())
+
+    # 配套模块缺失时先探测 cwd 来定位候选 ②。判定只使用经 osnorm 重读的原始字节。
+    stream = sys.stdin
+    raw = stream.buffer.read()
+    hint = json.loads(raw.decode(stream.encoding or "utf-8", "replace") if stream.isatty() else raw)
+    module = _osn(_payload_ws_root(hint) if isinstance(hint, dict) else None)
+    return json.loads(module._read_stdin_text(io.BytesIO(raw)))
+
+
+def _osnorm_unavailable(event: str, exc: "_osnorm_loader.OsnormUnavailable") -> None:
+    """fail-closed 包络（§2.3）：写前事件 deny，其余只 advisory；纯 ASCII + rc=0。
+
+    字段与 `_deny`（`hook.py` 顶部 PreToolUse 包络）逐字同构：`hookSpecificOutput` 下
+    `hookEventName="PreToolUse"` / `permissionDecision="deny"` / `permissionDecisionReason`。
+    `reason` 里的稳定标记（`osnorm-unavailable` + `<reason>`）是测试判死分支的依据。
+    """
+    detail = f"（{exc.reason}）" + (f"：{exc.detail}" if exc.detail else "")
+    reason = "[workspace-gate:osnorm-unavailable] hooks 无法装载 osnorm" + detail
+    if event in ("pre_write", "pre_bash"):
+        payload = {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }}
+    else:
+        payload = {"systemMessage": reason}
+    # 不经任何编码判断：ASCII 转义 + 字节写，rc 恒 0。
+    sys.stdout.buffer.write((json.dumps(payload, ensure_ascii=True) + "\n").encode("ascii"))
+    sys.stdout.buffer.flush()
 
 
 def _client(data: dict) -> str:
@@ -463,7 +530,9 @@ def _record_read(data: dict, client: str, cwd: str) -> None:
         body, inferred_start, inferred_end = parsed
         target = _absolute(path, cwd)
         try:
-            total = len(Path(target).read_text(encoding="utf-8", errors="replace").split("\n"))
+            # bom=False：与原 `Path.read_text(encoding="utf-8")` 一致（不剥 BOM）；
+            # newline 默认 "lf" 与 open() 的 universal newlines 等价。
+            total = len(_osn(target).read_text(target, bom=False, errors="replace").split("\n"))
         except OSError:
             return
         off = inp.get("offset", inferred_start)
@@ -633,9 +702,10 @@ def _template_anchor_gate(ws: str) -> dict:
     """W4：运行 template_anchor.py（timeout 10）。advisory，绝不产生 deny 决策。"""
     anchor_script = Path(__file__).resolve().parent / "template_anchor.py"
     try:
-        proc = subprocess.run(
+        # 恒捕获 + UTF-8 由 osnorm.run_text 固定；子进程 stderr 不参与判定（原逻辑只看 stdout）。
+        proc = _osn(ws).run_text(
             [sys.executable, "-B", str(anchor_script), "--workspace", ws, "--json"],
-            capture_output=True, text=True, timeout=10)
+            errors="replace", timeout=10)
     except subprocess.TimeoutExpired:
         return {"ok": False, "reason": "completion-gate 超时（10s）",
                 "systemMessage": "[workspace-gate] 完成声明门禁：template_anchor 超时（10s）"}
@@ -687,7 +757,7 @@ def handle(event: str, data: dict) -> None:
                                 {**data, "transcript_path": agent_tp}, "subagent_stop")
             with core._StateLock(ws, client, sid):
                 core._append_audit(ws, client, core.load_state(ws, client, sid))
-        print("{}")
+        _emit_json({})
         return
     if event == "subagent_start":
         ws = core.find_workspace(cwd)
@@ -702,7 +772,7 @@ def handle(event: str, data: dict) -> None:
                 "agent_type": data.get("agent_type"),
                 "parent_session_id": data.get("session_id"),
             })
-        print("{}")
+        _emit_json({})
         return
     if event == "stop":
         # W3：客户端无关差集审计 + W4 完成声明门禁（均 report-only / advisory）。
@@ -717,10 +787,9 @@ def handle(event: str, data: dict) -> None:
                 "ok": bool(gate.get("ok")),
                 "reason": gate.get("reason", ""),
             })
-            print(json.dumps({"systemMessage": gate.get("systemMessage", "")},
-                             ensure_ascii=False))
+            _emit_json({"systemMessage": gate.get("systemMessage", "")})
             return
-        print("{}")
+        _emit_json({})
         return
     if event in ("pre_bash", "post_bash"):
         if client not in ("cc", "codex", "dsh") or data.get("tool_name") != "Bash":
@@ -841,7 +910,7 @@ def handle(event: str, data: dict) -> None:
         ws = core.find_workspace(cwd)
         if ws:
             core.worktree_audit(ws, client, sid, event)
-        print("{}")
+        _emit_json({})
     elif event == "session_end":
         ws = core.find_workspace(cwd)
         if ws:
@@ -860,16 +929,8 @@ def handle(event: str, data: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     event = argv[0] if argv else ""
-    # Windows 的默认 stdin/stdout 编码是本地码页（GBK），而客户端送来的是 UTF-8。
-    # 不显式指定会导致：① 中文 payload 解析失败（JSONDecodeError）② deny 文案乱码。
     try:
-        sys.stdin.reconfigure(encoding="utf-8", errors="strict")
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-    try:
-        data = json.load(sys.stdin)
+        data = _read_payload()
         if not isinstance(data, dict):
             raise ValueError("payload must be object")
         # 部署配置经 GATE_CLIENT 显式声明客户端；payload 探测（_client）仅作兜底。
@@ -878,23 +939,32 @@ def main(argv: list[str] | None = None) -> int:
         env_client = os.environ.get("GATE_CLIENT")
         if env_client in ("cc", "codex", "dsh"):
             data["client"] = env_client
+        # 装载器（§2）：只要走到判定就必须有 osnorm。不可用 → fail-closed 包络后返回，
+        # 绝不落进 handle()（否则「缺 osnorm」会被写成「已通过」的证据）。
+        _osn(_payload_ws_root(data))
         handle(event, data)
+    except _osnorm_loader.OsnormUnavailable as exc:
+        _osnorm_unavailable(event, exc)
+        return 0
     except _PatchParseError as exc:
         # 可读 deny 文案：apply_patch 形态无法静态确定，不包装成「内部错误」。
-        if event in ("pre_write", "pre_bash"):
-            _deny(str(exc))
-        else:
-            print(json.dumps({"systemMessage": str(exc)}, ensure_ascii=False))
+        message = str(exc)
     except Exception as exc:
         message = f"Workspace gate 内部错误；请人工检查。({type(exc).__name__})"
-        # Only configured PreToolUse dispatches can return a deny decision.
-        # Use argv, not payload metadata: JSON/identity parsing may itself fail.
+    else:
+        return 0
+
+    # Only configured PreToolUse dispatches can return a deny decision.
+    # Use argv, not payload metadata: JSON/identity parsing may itself fail.
+    try:
         if event in ("pre_write", "pre_bash"):
             _deny(message)
         else:
             # Lifecycle/post-tool failures are advisory, never tool decisions
             # or requests to continue a turn (including Stop/SessionEnd).
-            print(json.dumps({"systemMessage": message}, ensure_ascii=False))
+            _emit_json({"systemMessage": message})
+    except _osnorm_loader.OsnormUnavailable as exc:
+        _osnorm_unavailable(event, exc)
     return 0
 
 

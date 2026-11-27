@@ -15,6 +15,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / ".workspace" / "hooks"
 
@@ -27,11 +30,13 @@ class PluginPythonMissing(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace" / "hooks").parent.mkdir(parents=True)
         shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
+        # R41：hooks 经装载器使用 scripts/osnorm.py —— 实例 fixture 必须带上，否则 fail-closed。
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         shutil.copytree(ROOT / ".dsh" / "workspace-gate", self.ws / ".dsh" / "workspace-gate")
         shutil.copy2(ROOT / "AGENT_RULES.md", self.ws / "AGENT_RULES.md")
-        (self.ws / ".workspace" / "bootstrap.json").write_text(
-            json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
-                        "template": {"source_repo": "https://example.invalid/t"}}), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
+                        "template": {"source_repo": "https://example.invalid/t"}}), newline="lf")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -60,14 +65,13 @@ console.log(JSON.stringify({ ms: Date.now() - started, kind: r.kind, reason: Str
                # 清空 PATH 且不设 WORKSPACE_GATE_DSH_PYTHON：三个候选全部失败 → python-missing
                "PATH": "/nonexistent"}
         env.pop("WORKSPACE_GATE_DSH_PYTHON", None)
-        p = subprocess.run([node, "--input-type=module", "-e", script, str(self.ws)],
-                           capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
+        p = osnorm.run_text([node, "--input-type=module", "-e", script, str(self.ws)], env=env, timeout=60, errors="strict")
         self.assertEqual(p.returncode, 0, p.stderr[-400:])
         out = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertNotEqual(out["kind"], "TIMEOUT", "插件在解释器缺失时挂起了")
         self.assertEqual(out["kind"], "allow")
         self.assertLess(out["ms"], 3000, "解释器缺失时应立即返回")
-        log = (self.ws / ".workspace" / ".dsh-gate.log").read_text(encoding="utf-8")
+        log = osnorm.read_text(self.ws / ".workspace" / ".dsh-gate.log", bom=False, newline="preserve")
         self.assertIn("python-missing", log)
 
 
@@ -79,11 +83,13 @@ class FailClosedKnob(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace" / "hooks").parent.mkdir(parents=True)
         shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
+        # R41：hooks 经装载器使用 scripts/osnorm.py —— 实例 fixture 必须带上，否则 fail-closed。
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         shutil.copytree(ROOT / ".dsh" / "workspace-gate", self.ws / ".dsh" / "workspace-gate")
         shutil.copy2(ROOT / "AGENT_RULES.md", self.ws / "AGENT_RULES.md")
-        (self.ws / ".workspace" / "bootstrap.json").write_text(
-            json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
-                        "template": {"source_repo": "https://example.invalid/t"}}), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
+                        "template": {"source_repo": "https://example.invalid/t"}}), newline="lf")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -106,8 +112,7 @@ console.log(JSON.stringify({ kind: r.kind, reason: String(r.reason || '') }))
         env = {**os.environ, "WORKSPACE_GATE_DSH_CWD": str(self.ws), "PATH": "/nonexistent",
                "WORKSPACE_GATE_DSH_FAIL_CLOSED": "1"}
         env.pop("WORKSPACE_GATE_DSH_PYTHON", None)
-        p = subprocess.run([node, "--input-type=module", "-e", script, str(self.ws)],
-                           capture_output=True, text=True, encoding="utf-8", env=env, timeout=60)
+        p = osnorm.run_text([node, "--input-type=module", "-e", script, str(self.ws)], env=env, timeout=60, errors="strict")
         self.assertEqual(p.returncode, 0, p.stderr[-400:])
         out = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertEqual(out["kind"], "deny", out)
@@ -122,10 +127,12 @@ class StdinStrictDecode(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
         shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
+        # R41：hooks 经装载器使用 scripts/osnorm.py —— 实例 fixture 必须带上，否则 fail-closed。
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         shutil.copy2(ROOT / "AGENT_RULES.md", self.ws / "AGENT_RULES.md")
-        (self.ws / ".workspace" / "bootstrap.json").write_text(
-            json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
-                        "template": {"source_repo": "https://example.invalid/t"}}), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
+                        "template": {"source_repo": "https://example.invalid/t"}}), newline="lf")
 
     def tearDown(self):
         self.tmp.cleanup()

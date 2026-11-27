@@ -16,6 +16,36 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
+
+import osnorm_loader as _osnorm_loader
+
+
+def _utf8_stdio() -> None:
+    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）——单一实现是 osnorm。
+
+    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
+    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
+    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
+    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
+    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
+    """
+    module = _osnorm_loader.bootstrap_module()
+    if module is None:
+        return  # 不可用时只输出 ASCII 的 ok:false 包（见 main），与 locale 无关
+    try:
+        module.configure_stdio()
+    except Exception:                                                   # noqa: BLE001 - 输出层不许抛
+        pass
+
+
+_utf8_stdio()
+
+
+def _osn(ws_root: str | None = None) -> Any:
+    """经装载器取 osnorm（**禁止裸 import**）。"""
+    return _osnorm_loader.load(ws_root)
+
 
 
 def _emit(result: dict, pretty: bool) -> None:
@@ -35,6 +65,14 @@ def main(argv: list[str] | None = None) -> int:
 
     ws = Path(args.workspace).resolve()
 
+    try:
+        _osn(str(ws))
+    except _osnorm_loader.OsnormUnavailable as exc:
+        # 独立 CLI 入口：不可用就明确报错退出（调用方按 exit!=0 当「未证明 clean」）。
+        _emit({"ok": False,
+               "reason": f"osnorm 不可用（{exc.reason}）：{exc.detail}"}, args.json)
+        return 2
+
     clone = args.template
     if not clone:
         clone = os.environ.get("WORKSPACE_TEMPLATE_CLONE")
@@ -42,7 +80,8 @@ def main(argv: list[str] | None = None) -> int:
         b = ws / ".workspace" / "bootstrap.json"
         if b.is_file():
             try:
-                data = json.loads(b.read_text(encoding="utf-8-sig"))
+                # bom=True：原 `read_text(encoding="utf-8-sig")` 剥 BOM 的语义原样保留。
+                data = json.loads(_osn(str(ws)).read_text(b, bom=True))
                 _tpl = data.get("template") or {}
                 clone = _tpl.get("local_clone") or _tpl.get("clone_path")
             except Exception:
@@ -64,10 +103,11 @@ def main(argv: list[str] | None = None) -> int:
     os.close(fd)
     try:
         try:
-            proc = subprocess.run(
+            # 恒捕获 + UTF-8 由 osnorm.run_text 固定；退出码与 stdout 判据不变。
+            proc = _osn(str(ws)).run_text(
                 [sys.executable, "-B", str(vr), "--workspace", str(ws),
                  "--vs-template", str(clone_path), "--json", tmp_path],
-                capture_output=True, text=True, timeout=60)
+                errors="replace", timeout=60)
         except subprocess.TimeoutExpired:
             _emit({"ok": False, "reason": "verify_rules 超时（60s）"}, args.json)
             return 1

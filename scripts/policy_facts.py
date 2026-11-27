@@ -29,11 +29,24 @@
 退出码：0 一致；1 有 finding（--check）；2 用法/IO/块缺失（--write 不自动插标记）。
 """
 import argparse
+import fnmatch
 import importlib.util
 import json
 import re
 import sys
 from pathlib import Path
+
+
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
+
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -56,6 +69,19 @@ _CHANGELOG_HEADING_RE = re.compile(r"^##\s+(\S.*?)\s*$")
 # 只有「看起来是版本号」的标题才算格式候选（`## 1. 概述` 这种编号小节不受约束），
 # 但候选比条目宽：`3.6` / `3.6.1beta` / `v3.6.1` 都得被抓住，否则它们静默退出账本。
 _CHANGELOG_VERSIONISH_RE = re.compile(r"^v?\d+\.\d")
+# dev 版本链（四段 `NN.X.Y.Z`）与政策版本链（三段 `X.Y.Z`）**物理分文件**：
+# 政策链 = `AGENT_RULES.md:4` ↔ `CHANGELOG.md` ↔ `bootstrap.json` ↔ `releases.json`；
+# dev 链 = `CHANGELOG_DEV.md` ↔ `.workspace/release_dev.json`。两链只共享一件事实：
+# dev 版本的后三段必须等于当前政策版本（由 `scripts/release.py --dev` 保证）。
+# 因此 `CHANGELOG_DEV.md` **不进** `_doc_files()`：三段判据（当前政策版本字面量、
+# 历史标记、标题版本）套上去会把合法的 `## 44.3.8.0` 判成 `## 3.8.0` 而误杀。
+DEV_CHANGELOG = "CHANGELOG_DEV.md"
+DEV_LEDGER = Path(".workspace") / "release_dev.json"
+_DEV_ENTRY_RE = re.compile(r"^##[ \t]+(\d+\.\d+\.\d+\.\d+)(?![\dA-Za-z.\-])")
+_DEV_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+# 候选比条目宽一档（同三段侧口径）：`44.3` / `v44.3.8.0` 这类标题也必须被抓住，
+# 否则它们静默退出 dev 账本，末条对首条那条判据就失去了牙齿。
+_DEV_VERSIONISH_RE = re.compile(r"^v?\d+\.\d")
 _SEMVER_RE = re.compile(r"(?<![\d.])(\d+\.\d+\.\d+)(?![\d.])")
 # 空白用 `[ \t]`、不用 `\s`（第 32 轮 P1）：`\s` 会吃换行/CR/VT/全角空格/NBSP，跨行匹配是
 # bug 温床，也会把 `##　标题`（全角空格分隔）当成标题。测试侧按名导入**同一对象**
@@ -80,7 +106,27 @@ _DUP_FACT_SITES = (
 # （`当前政策版本|政策版本|policy version`）是开放词表补洞——词表内的字段名会误报
 # （`"当前政策版本"只是字段名`），词表外的说法照样漏（`本模板现行治理基线为 9.9.9。`）。
 # 现在只认**结构**：生成块 / `<!-- history:x.y.z -->`。纯散文归 N2（人工评审层）。
-_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".hook-state"}
+# 瞬时/旁路目录：**其下的 md 不是本仓文档**（构建产物、虚拟环境、备份副本、并行沙箱）。
+# 扫描一律经 `_transient_dir()` 收口（R39b）：旧实现只按目录名精确匹配，
+# `.workspace/backup-<ts>-encoding/` 里的备份副本会被当成本仓文档 → `--fix` 刚剥完 BOM，
+# `--check` 反而红（备份副本里还留着生成块标记）。新增旁路形态只改这张表，其它脚本可复用。
+TRANSIENT_DIR_PATTERNS = (
+    ".git", ".venv*", "__pycache__", "node_modules", ".hook-state",
+    "backup-*", "sandbox-*", "*.egg-info",
+)
+# 需要「父 + 子」两段才成立的旁路路径（单看目录名会误伤真实文档）。
+TRANSIENT_DIR_PAIRS = {(".workspace", ".local")}
+
+
+def _transient_dir(name, parent=""):
+    """`name` 是否为瞬时/旁路目录 → 其下 md 不参与本仓文档判定。
+
+    `parent` 只用于两段式形态（如 `.workspace/.local`）；其余形态只看目录名。
+    单一入口：任何需要递归 md 的脚本复用本函数，不要在各自文件里另抄一份黑名单。
+    """
+    if any(fnmatch.fnmatchcase(name, pattern) for pattern in TRANSIENT_DIR_PATTERNS):
+        return True
+    return (parent, name) in TRANSIENT_DIR_PAIRS
 
 
 class FactSourceError(Exception):
@@ -104,12 +150,14 @@ def _load_verify_rules(root):
     return mod
 
 
-def policy_version(root=ROOT):
-    """`AGENT_RULES.md:4` 的 `模板政策版本：\\`x.y.z\\``。"""
-    path = Path(root) / "AGENT_RULES.md"
-    if not path.is_file():
-        raise FactSourceError("AGENT_RULES.md 不存在")
-    lines = path.read_text(encoding="utf-8").split("\n")
+def parse_policy_version(text: str) -> str:
+    """从 `AGENT_RULES.md` 全文取政策版本（**取数逻辑的唯一实现**）。
+
+    R48/P5-C5（原 R33-C3/C3a）：测试侧曾用另一份 `re.search` 复刻这段取数；现在两边都
+    只调用本函数——生产入口 `policy_version()` 负责读文件，测试侧按严格读法读文本后调用
+    本函数。读侧策略（宽容/严格）属于各自入口，**取数/报错文案只有一份**。
+    """
+    lines = text.split("\n")
     if len(lines) < 4:
         raise FactSourceError("AGENT_RULES.md 不足 4 行")
     m = _POLICY_HEAD_RE.search(lines[3])
@@ -118,18 +166,31 @@ def policy_version(root=ROOT):
     return m.group(1)
 
 
-def plugin_version(root=ROOT):
-    """`.hermes/plugins/workspace-gate/plugin.yaml:2` 的 `version:`。"""
-    path = Path(root) / ".hermes" / "plugins" / "workspace-gate" / "plugin.yaml"
-    if not path.is_file():
-        raise FactSourceError("plugin.yaml 不存在")
-    lines = path.read_text(encoding="utf-8").split("\n")
+def parse_plugin_version(text: str) -> str:
+    """从 `plugin.yaml` 全文取插件版本（**取数逻辑的唯一实现**，见 `parse_policy_version`）。"""
+    lines = text.split("\n")
     if len(lines) < 2:
         raise FactSourceError("plugin.yaml 不足 2 行")
     m = _PLUGIN_VERSION_RE.match(lines[1])
     if not m:
         raise FactSourceError('plugin.yaml:2 不是 `version: "x.y.z"`')
     return m.group(1)
+
+
+def policy_version(root=ROOT):
+    """`AGENT_RULES.md:4` 的 `模板政策版本：\\`x.y.z\\``。"""
+    path = Path(root) / "AGENT_RULES.md"
+    if not path.is_file():
+        raise FactSourceError("AGENT_RULES.md 不存在")
+    return parse_policy_version(osnorm.read_text(path))
+
+
+def plugin_version(root=ROOT):
+    """`.hermes/plugins/workspace-gate/plugin.yaml:2` 的 `version:`。"""
+    path = Path(root) / ".hermes" / "plugins" / "workspace-gate" / "plugin.yaml"
+    if not path.is_file():
+        raise FactSourceError("plugin.yaml 不存在")
+    return parse_plugin_version(osnorm.read_text(path))
 
 
 def template_files_count(root=ROOT):
@@ -158,7 +219,7 @@ def clause_range(root=ROOT):
     root = Path(root)
     ids = []
     for path in sorted(root.glob("AGENT_RULES*.md")):
-        ids += [int(x) for x in _CLAUSE_ID_RE.findall(path.read_text(encoding="utf-8"))]
+        ids += [int(x) for x in _CLAUSE_ID_RE.findall(osnorm.read_text(path))]
     if not ids:
         raise FactSourceError("AGENT_RULES.md 里没有任何 `<!-- id:Rn -->` 标记")
     return f"R{min(ids)}..R{max(ids)}"
@@ -184,11 +245,13 @@ def is_template(root=ROOT):
     按模板契约检查 README。
     """
     try:
-        data = json.loads((Path(root) / ".workspace" / "bootstrap.json")
-                          .read_text(encoding="utf-8"))
+        # 身份判据按 UTF-8 解；BOM 由 osnorm 的 BOM_POLICY（§3.1，tolerate）统一剥掉——
+        # 用户可编辑的 bootstrap.json 被记事本存成 UTF-8 with BOM 时不该让身份判成 unknown。
+        # 判据本身不放宽：JSON 损坏/字段非法仍 fail-closed。
+        data = json.loads(osnorm.read_text(Path(root) / ".workspace" / "bootstrap.json"))
     except Exception:                                  # noqa: BLE001 —— 任一读取/解析失败均未知
         return "unknown"
-    status = data.get("workspace_status")
+    status = data.get("workspace_status") if isinstance(data, dict) else None
     if status == "template":
         return "template"
     if status == "active":
@@ -270,7 +333,8 @@ def _iter_md(root):
     root = Path(root)
     for path in sorted(root.rglob("*.md")):
         parts = path.relative_to(root).parts[:-1]
-        if _SKIP_DIRS & set(parts) or any(p.startswith(".venv") for p in parts):
+        if any(_transient_dir(part, parts[i - 1] if i else "")
+               for i, part in enumerate(parts)):
             continue
         yield path
 
@@ -286,7 +350,7 @@ def _unknown_blocks(root, instance=False):
         if rel in known:
             continue
         try:
-            text = path.read_text(encoding="utf-8")
+            text = osnorm.read_text(path)
         except OSError:
             continue
         if BEGIN in text or END in text:
@@ -317,7 +381,7 @@ def check_blocks(root=ROOT, facts=None, status=None):
         if not path.is_file():
             findings.append(f"{block.path}: 文件不存在（生成块的落点没了）")
             continue
-        lines = path.read_text(encoding="utf-8").split("\n")
+        lines = osnorm.read_text(path).split("\n")
         try:
             span = _span(lines)
         except ValueError as exc:
@@ -353,7 +417,7 @@ def write_blocks(root=ROOT, facts=None):
         if not path.is_file():
             findings.append(f"{block.path}: 文件不存在")
             continue
-        text = path.read_text(encoding="utf-8")
+        text = osnorm.read_text(path)
         lines = text.split("\n")
         try:
             span = _span(lines)
@@ -367,7 +431,7 @@ def write_blocks(root=ROOT, facts=None):
         got = lines[span[0]:span[1] + 1]
         if got != want:
             lines[span[0]:span[1] + 1] = want
-            path.write_text("\n".join(lines), encoding="utf-8")
+            osnorm.write_text(path, "\n".join(lines), newline="preserve")
             changed.append(block.path)
     return changed, findings
 
@@ -377,8 +441,7 @@ def write_blocks(root=ROOT, facts=None):
 def changelog_versions(root=ROOT):
     """`CHANGELOG.md` 里所有 `## x.y.z` 条目（按文件顺序）。
 
-    返回 None 表示**账本不可用**（派生工作区通常没有 CHANGELOG）：此时与历史版本相关的
-    两条判据自动降级为跳过，其余判据照跑。
+    返回 None 表示缺文件或没有可解析的版本条目；是否允许缺文件由调用方按工作区身份判断。
 
     这是历史集合的**唯一权威源**：任何手工清单都不得成为第二真源，否则「账本删条目」
     与「清单还留着」会互相打掩护。标题格式不对的条目由 `changelog_heading_offenders` 另报。
@@ -388,7 +451,7 @@ def changelog_versions(root=ROOT):
         return None
     versions = [m.group(1) for m in
                 (_CHANGELOG_ENTRY_RE.match(line) for line in
-                 path.read_text(encoding="utf-8").split("\n")) if m]
+                 osnorm.read_text(path).split("\n")) if m]
     return versions or None
 
 
@@ -396,7 +459,7 @@ def releases_versions(root=ROOT):
     """读取 append-only 发版账本；不可读时返回 ``None`` 供 check fail-closed。"""
     path = Path(root) / ".workspace" / "releases.json"
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(path))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, list) or not data:
@@ -407,6 +470,110 @@ def releases_versions(root=ROOT):
             return None
         versions.append(item["version"])
     return versions
+
+
+def dev_changelog_versions(root=ROOT):
+    """`CHANGELOG_DEV.md` 里所有四段条目标题 `## NN.X.Y.Z`（按文件顺序）。
+
+    dev 版本是四段：`NN` = 迭代轮次，`X.Y.Z` = 预计发布的正式版本。它**不是**政策版本，
+    所以本文件只走 dev_* 判据，三段判据（`changelog_versions` / `literal_offenders` /
+    `heading_offenders` / `changelog_heading_offenders`）一律不套到它上面——
+    套上去会把合法的 `## 44.3.8.0` 当成格式不合规的 `## 3.8.0` 误杀。
+
+    返回 None 表示文件不存在（旧模板工作区 / 尚未建立 dev 账本）。
+    """
+    path = Path(root) / DEV_CHANGELOG
+    if not path.is_file():
+        return None
+    versions = [m.group(1) for m in
+                (_DEV_ENTRY_RE.match(line) for line in
+                 osnorm.read_text(path).split("\n")) if m]
+    return versions or None
+
+
+def dev_ledger_versions(root=ROOT):
+    """`.workspace/release_dev.json` 的版本序列；格式非法时抛 ValueError（fail-closed）。"""
+    path = Path(root) / DEV_LEDGER
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(osnorm.read_text(path))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"dev 账本不可读：{exc}") from exc
+    if not isinstance(data, list) or not data:
+        raise ValueError("dev 账本必须是非空 JSON 数组（append-only）")
+    out = []
+    for item in data:
+        if not isinstance(item, dict):
+            raise ValueError("dev 账本含非对象条目")
+        version = str(item.get("version", ""))
+        m = _DEV_VERSION_RE.match(version)
+        if not m:
+            raise ValueError(f"dev 账本条目版本非法：{version!r}（须四段 NN.X.Y.Z）")
+        head = int(version.split(".")[0])
+        if item.get("round") != head:
+            raise ValueError(f"dev 账本条目 {version} 的 round={item.get('round')!r} ≠ 版本首段 {head}")
+        out.append(version)
+    return out
+
+
+def dev_heading_offenders(root=ROOT):
+    """`CHANGELOG_DEV.md` 的标题格式契约：版本型标题必须是四段 `NN.X.Y.Z`。
+
+    三段标题（`## 3.8.0`）出现在 dev 文件里意味着把政策版本写进了 dev 账本 —— 那是
+    两条版本链串味，必须红；`## 1. 概述` 这类编号小节不受约束。
+    """
+    path = Path(root) / DEV_CHANGELOG
+    if not path.is_file():
+        return []
+    out = []
+    for i, line in enumerate(osnorm.read_text(path).split("\n"), 1):
+        m = _CHANGELOG_HEADING_RE.match(line)
+        if not m or not _DEV_VERSIONISH_RE.match(m.group(1)):
+            continue
+        if _DEV_ENTRY_RE.match(line):
+            continue
+        out.append(
+            f"{DEV_CHANGELOG}:{i}: dev 条目标题格式不符（须四段 `## NN.X.Y.Z`）：{line.strip()[:80]}"
+            f"\n    → dev 版本不是政策版本；三段版本号只许出现在 CHANGELOG.md")
+    return out
+
+
+def dev_offenders(root=ROOT):
+    """dev 双账本判据：`release_dev.json` 末条 == `CHANGELOG_DEV.md` 首个标题。
+
+    一个文件有、另一个没有 → 红（账本与变更日志必须成对存在，否则「末条对首条」
+    这条判据会被静默跳过）；dev 版本允许高于政策版本（它是预期发布版本），
+    但**不允许**回退或重复（版本只升不降）。
+    """
+    out = dev_heading_offenders(root)
+    changelog = dev_changelog_versions(root)
+    try:
+        ledger = dev_ledger_versions(root)
+    except ValueError as exc:
+        return out + [f".workspace/release_dev.json: {exc}"]
+    if changelog is None and ledger is None:
+        return out                    # 没有 dev 账本（旧工作区）：不判
+    if changelog is None:
+        reason = ("没有任何四段条目（`## NN.X.Y.Z`）"
+                  if (Path(root) / DEV_CHANGELOG).is_file() else "缺失")
+        return out + [f"{DEV_CHANGELOG}: {reason}，但 .workspace/release_dev.json 存在"
+                      "（dev 账本必须有一份变更日志与之对账）"]
+    if ledger is None:
+        return out + [".workspace/release_dev.json: 缺失，但 CHANGELOG_DEV.md 存在"
+                      "（dev 版本必须经 `release.py --dev --apply` 入账）"]
+    if ledger[-1] != changelog[0]:
+        out.append(f".workspace/release_dev.json: 末条版本 {ledger[-1]} ≠ "
+                   f"{DEV_CHANGELOG} 首个标题 {changelog[0]}"
+                   "（dev 版本必须经 `release.py --dev --apply` 写入，不许手改其中一处）")
+    prev = None
+    for version in ledger:
+        tup = tuple(int(x) for x in version.split("."))
+        if prev is not None and tup <= prev:
+            out.append(f".workspace/release_dev.json: dev 版本必须严格递增（{version} 未高于前一条）")
+            break
+        prev = tup
+    return out
 
 
 def changelog_heading_offenders(root=ROOT):
@@ -421,7 +588,7 @@ def changelog_heading_offenders(root=ROOT):
     if not path.is_file():
         return []
     out = []
-    for i, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+    for i, line in enumerate(osnorm.read_text(path).split("\n"), 1):
         m = _CHANGELOG_HEADING_RE.match(line)
         if not m or not _CHANGELOG_VERSIONISH_RE.match(m.group(1)):
             continue
@@ -446,10 +613,27 @@ def _registered_lines(lines):
 
 
 def _doc_files(root):
+    """政策版本链的**文档扫描面**：`CHANGELOG_DEV.md` 故意不在其中。
+
+    dev 四段版本走 `dev_offenders()` 自己的判据；把它并进来会让三段判据误杀 dev 标题
+    （详见 `DEV_CHANGELOG` 附近的注释）。
+    """
     root = Path(root)
     names = ("README.md", "README_EN.md", "CONTRIBUTING.md", "SECURITY.md", "UPGRADE.md")
     paths = [root / n for n in names] + sorted((root / "docs").glob("*.md"))
     return [p for p in paths if p.is_file()]
+
+
+def _instance_without_changelog(root, instance):
+    if not instance:
+        return False
+    try:
+        (Path(root) / "CHANGELOG.md").lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        pass
+    return False
 
 
 def literal_offenders(root=ROOT, facts=None, ledger=None, status=None):
@@ -474,16 +658,24 @@ def literal_offenders(root=ROOT, facts=None, ledger=None, status=None):
     root = Path(root)
     facts = facts or collect(root)
     cur = facts["policy"]
-    if ledger is None:
-        ledger = changelog_versions(root)
-    history_set = set(ledger or ())
     instance = _instance(root, status)
+    check_membership = True
     out = []
+    if ledger is None:
+        try:
+            ledger = changelog_versions(root)
+        except (OSError, UnicodeError) as exc:
+            out.append(f"CHANGELOG.md: 无法读取账本：{exc}")
+        else:
+            check_membership = ledger is not None or not _instance_without_changelog(root, instance)
+            if ledger is None and check_membership:
+                out.append("CHANGELOG.md: 账本缺失或没有可解析的政策版本条目")
+    history_set = set(ledger or ())
     for path in _doc_files(root):
         rel = path.relative_to(root).as_posix()
         if _instance_user_doc(rel, instance):
             continue                     # 派生实例的 README/docs 是用户文档
-        lines = path.read_text(encoding="utf-8").split("\n")
+        lines = osnorm.read_text(path).split("\n")
         registered = _registered_lines(lines)
         fence = False
         for i, line in enumerate(lines, 1):
@@ -503,11 +695,11 @@ def literal_offenders(root=ROOT, facts=None, ledger=None, status=None):
                         f"{rel}:{i}: `<!-- history:{v} -->` 登记了**当前**政策版本"
                         f"（历史标记不得登记当前版本：当前版本只许出现在生成块内）："
                         f"{line.strip()[:100]}")
-                elif v not in history_set:
+                elif check_membership and v not in history_set:
                     out.append(
                         f"{rel}:{i}: `<!-- history:{v} -->` 登记的版本不在 CHANGELOG 账本里"
                         f"（删过条目？写错了？）：{line.strip()[:100]}")
-                elif v not in present:
+                if v not in present:
                     out.append(
                         f"{rel}:{i}: `<!-- history:{v} -->` 登记了 {v}，但本行没有这个版本字面量")
             for m in _SEMVER_RE.finditer(body):
@@ -523,7 +715,7 @@ def literal_offenders(root=ROOT, facts=None, ledger=None, status=None):
                     out.append(
                         f"{rel}:{i}: 历史政策版本 {v} 未登记：{line.strip()[:100]}"
                         f"\n    → 确属沿革就在行尾加 `<!-- history:{v} -->`（登记值须在 CHANGELOG 账本里）")
-                elif declared and body[m.start() - 1:m.start()] not in ("v", "V"):
+                elif check_membership and declared and body[m.start() - 1:m.start()] not in ("v", "V"):
                     # 结构判据：本行带 history 标记，另一个既非当前/也不在账本的**裸**版本号
                     # 只能是拼错或臆造（M5）。`vX.Y.Z` 是工具/插件命名空间（`plugin v1.4.3`），
                     # 本脚本不判；没有标记的纯散文（「现行治理基线为 9.9.9」）也不判 → N2。
@@ -558,7 +750,7 @@ def heading_offenders(root=ROOT, facts=None, status=None):
         rel = path.relative_to(root).as_posix()
         if _instance_user_doc(rel, instance):
             continue
-        out += heading_text_offenders(rel, path.read_text(encoding="utf-8"), facts["policy"])
+        out += heading_text_offenders(rel, osnorm.read_text(path), facts["policy"])
     return out
 
 
@@ -575,7 +767,7 @@ def dup_fact_offenders(root=ROOT, status=None):
         if not rules:
             continue
         inside = False
-        for i, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+        for i, line in enumerate(osnorm.read_text(path).split("\n"), 1):
             if _GEN_MARK_RE.match(line):
                 inside = not inside
                 continue
@@ -630,7 +822,7 @@ def clause_range_offenders(root=ROOT, facts=None, status=None):
         rel = path.relative_to(root).as_posix()
         if _instance_user_doc(rel, instance):
             continue
-        out += clause_range_text_offenders(rel, path.read_text(encoding="utf-8"),
+        out += clause_range_text_offenders(rel, osnorm.read_text(path),
                                            facts["clause_range"])
     return out
 
@@ -657,8 +849,12 @@ def check(root=ROOT):
     findings += clause_range_offenders(root, facts, status=status)
     findings += literal_offenders(root, facts, status=status)
     findings += heading_offenders(root, facts, status=status)
-    findings += changelog_heading_offenders(root)
-    if ledger := changelog_versions(root):
+    try:
+        findings += changelog_heading_offenders(root)
+        ledger = changelog_versions(root)
+    except (OSError, UnicodeError):
+        ledger = None                       # literal_offenders 已报告账本读取错误
+    if ledger:
         if ledger[0] != facts["policy"]:
             findings.append(
                 f"CHANGELOG.md: 顶层条目 {ledger[0]} ≠ 政策头 {facts['policy']}"
@@ -669,6 +865,9 @@ def check(root=ROOT):
     elif releases[-1] != facts["policy"]:
         findings.append(f".workspace/releases.json: 末条版本 {releases[-1]} ≠ 政策头 {facts['policy']}"
                         "（版本升级必须经 release.py）")
+    # dev 账本（四段版本）与政策账本互不影响：dev 判据只要求「账本末条 == CHANGELOG_DEV 首个标题」，
+    # 不要求 dev 版本等于政策版本——dev 的 X.Y.Z 是**预期发布版本**，可以高于当前政策版本。
+    findings += dev_offenders(root)
     return findings
 
 

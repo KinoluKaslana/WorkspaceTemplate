@@ -18,11 +18,13 @@
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import hmac
 import json
 import os
 import re
+import sys
 import tempfile
 import time
 import uuid
@@ -31,6 +33,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Any, Iterator, Mapping
+
+# 文本 I/O 与子进程解码的单一实现：osnorm。本模块是库（被 import 与按文件加载两种入口），
+# 所以先把脚本目录钉进 sys.path 再 import 兄弟模块；stdio 不在这里重配（库不改全局输出）。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
 
 STATE_VERSION = "v1"
 _RUNTIME_FILE = "runtime.json"
@@ -91,8 +100,8 @@ def _require_bool(value: object, name: str) -> None:
 def workspace_id_of(workspace: Path) -> str | None:
     """只读：bootstrap 里的 workspace_id（不创建）。"""
     try:
-        data = json.loads((Path(workspace) / ".workspace" / "bootstrap.json")
-                          .read_text(encoding="utf-8-sig"))
+        data = json.loads(osnorm.read_text(Path(workspace) / ".workspace" / "bootstrap.json",
+                                           bom=True))
     except (OSError, ValueError):
         return None
     wid = data.get("workspace_id")
@@ -111,7 +120,7 @@ def ensure_workspace_id(workspace: Path) -> str | None:
 
     def _read_id() -> str | None:
         try:
-            data = json.loads(boot.read_text(encoding="utf-8-sig"))
+            data = json.loads(osnorm.read_text(boot, bom=True))
         except (OSError, ValueError):
             return None
         wid = data.get("workspace_id")
@@ -126,16 +135,15 @@ def ensure_workspace_id(workspace: Path) -> str | None:
         if wid:
             return wid
         try:
-            data = json.loads(boot.read_text(encoding="utf-8-sig"))
+            data = json.loads(osnorm.read_text(boot, bom=True))
         except (OSError, ValueError):
             return None
         if not isinstance(data, dict):
             return None
         wid = str(uuid.uuid4())
         data["workspace_id"] = wid
-        tmp = boot.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        os.replace(tmp, boot)
+        # 发布语义不变（临时文件 + 原子替换），只是把原子写收进 osnorm 的唯一实现
+        osnorm.write_text(boot, json.dumps(data, ensure_ascii=False, indent=2) + "\n", newline="lf")
     return wid
 
 
@@ -221,10 +229,23 @@ def _chain_is_safe(workspace: Path, target: Path) -> bool:
 
 
 def _read_json_no_follow(path: Path) -> dict:
+    """读 runtime.json：拒绝跟随 symlink，且容忍 Windows 上的瞬时独占。
+
+    为什么需要重试（Windows 专属失败模式，与写侧 `_replace_with_retry` 同源）：
+    `os.replace` 走 MoveFileEx(REPLACE_EXISTING) 期间，目标文件处于 delete-pending，
+    此刻 `os.open(..., O_RDONLY)` 直接拿到 `PermissionError: [Errno 13]`（= WinError 5）。
+    对读者就是「文件明明存在却读不到」。窗口是微秒级，指数退避即可收敛；
+    POSIX 的 rename 没有这个窗口，所以这条路径在 Linux 上永远一次成功。
+    只重试分享冲突：文件真的不存在（ENOENT）立刻抛，不白等。
+    """
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags)
-    with os.fdopen(fd, "r", encoding="utf-8") as fh:
-        return json.loads(fh.read())
+
+    def _once() -> dict:
+        fd = os.open(path, flags)
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
+            return json.loads(fh.read())
+
+    return _retry_on_sharing(_once, budget=_READ_BUDGET)
 
 
 def _fsync_dir(path: Path) -> None:
@@ -241,6 +262,61 @@ def _fsync_dir(path: Path) -> None:
         pass
     finally:
         os.close(fd)
+
+
+# 并发发布的重试预算：Windows 上一次 os.replace 失败几乎都是「读侧正持有句柄」的
+# 短窗口（毫秒级），2s 足够收敛；超出就说明是真越权，必须抛。
+_REPLACE_BUDGET = 2.0
+_REPLACE_FIRST_DELAY = 0.01
+_REPLACE_MAX_DELAY = 0.2
+# 读侧用同一套预算：读写两侧对称，谁先耗尽谁抛（不允许一侧无限等另一侧）。
+_READ_BUDGET = _REPLACE_BUDGET
+# Windows: ERROR_ACCESS_DENIED(5) / ERROR_SHARING_VIOLATION(32) / ERROR_LOCK_VIOLATION(33)
+_WIN_SHARING_ERRORS = frozenset({5, 32, 33})
+_SHARING_ERRNOS = frozenset({errno.EACCES, errno.EPERM, errno.EBUSY})
+
+
+def _is_share_conflict(exc: OSError) -> bool:
+    """这个 OSError 是否属于「别人持有句柄」的可重试冲突。"""
+    if getattr(exc, "winerror", None) in _WIN_SHARING_ERRORS:
+        return True
+    return exc.errno in _SHARING_ERRNOS
+
+
+def _retry_on_sharing(op, *, budget: float = _REPLACE_BUDGET,
+                      clock=time.monotonic, sleep=time.sleep):
+    """在分享冲突上指数退避重试 `op()`；非冲突立刻抛，重试耗尽也抛。
+
+    读写两侧共用：写侧是 `os.replace`（MoveFileEx），读侧是 `os.open`（delete-pending
+    期间的 open 同样拿 WinError 5）。语义不变——重试的是同一个原子操作，绝不改成
+    非原子写或「先删再建」。
+    """
+    delay = _REPLACE_FIRST_DELAY
+    deadline = clock() + budget
+    while True:
+        try:
+            return op()
+        except OSError as exc:
+            if not _is_share_conflict(exc) or clock() >= deadline:
+                raise
+            sleep(min(delay, max(0.0, deadline - clock())))
+            delay = min(delay * 2, _REPLACE_MAX_DELAY)
+
+
+def _replace_with_retry(src: str | os.PathLike[str], dst: str | os.PathLike[str],
+                        *, budget: float = _REPLACE_BUDGET,
+                        clock=time.monotonic, sleep=time.sleep) -> None:
+    """原子替换 + 指数退避重试（总等待 ≤ budget，默认 2s）；重试耗尽才抛。
+
+    为什么需要（Windows 专属失败模式）：`os.replace` 走 MoveFileEx(REPLACE_EXISTING)，
+    目标文件只要被**任何**进程打开过（哪怕只读、哪怕不是本进程），就会
+    `PermissionError: [WinError 5] Access is denied`。本模块的读者（`read_state`）
+    打开 `runtime.json` 的窗口是微秒级，重试即可收敛；POSIX 的 rename 无此限制，
+    所以这条路径在 Linux 上永远一次成功，行为不变。
+    只在**分享冲突**上重试：真越权（只读文件、目录无权限）立刻抛，不白等 2 秒。
+    绝不改成非原子写：重试的是同一个 `os.replace`，语义仍是原子发布。
+    """
+    _retry_on_sharing(lambda: os.replace(src, dst), budget=budget, clock=clock, sleep=sleep)
 
 
 def _write_fd_synced(target: Path, payload: str) -> None:
@@ -410,7 +486,7 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
             try:
                 _write_fd_synced(tmp_dir / _RUNTIME_FILE, payload)
                 _fsync_dir(tmp_dir)
-                os.replace(tmp_dir, d)
+                _replace_with_retry(tmp_dir, d)
                 _fsync_dir(parent)
             except BaseException:
                 for child in tmp_dir.glob("*"):
@@ -430,7 +506,7 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
                     fh.write(payload)
                     fh.flush()
                     os.fsync(fh.fileno())
-                os.replace(tmp_path, d / _RUNTIME_FILE)
+                _replace_with_retry(tmp_path, d / _RUNTIME_FILE)
                 _fsync_dir(d)
             except BaseException:
                 try:
@@ -438,8 +514,11 @@ def bind(workspace: Path, workspace_id: str, ident: Identity, mode: str,
                 except OSError:
                     pass
                 raise
-
-    return read_state(workspace, workspace_id, ident, ephemeral=ephemeral)
+        # 收尾校验读留在锁内：锁外读会与本进程/兄弟进程刚发布的 os.replace 重叠，
+        # Windows 上那一段是 delete-pending → read_state 直接拿 PermissionError 退化成
+        # CORRUPT（多进程并发写时偶发一次，与「并发读」同源）。锁内读既避开该窗口，
+        # 又保证读到的是本次发布的结果。
+        return read_state(workspace, workspace_id, ident, ephemeral=ephemeral)
 
 
 _SID_RE = re.compile(r"\bS-\d+(?:-\d+){1,15}\b")
@@ -448,9 +527,7 @@ _SID_RE = re.compile(r"\bS-\d+(?:-\d+){1,15}\b")
 def _windows_sid(runner=None) -> str | None:
     """取当前用户的 SID（Windows）。取不到返回 None，绝不回退成用户名。"""
     import subprocess
-    run = runner or (lambda: subprocess.run(["whoami", "/user"], capture_output=True,
-                                            text=True, encoding="utf-8",
-                                            errors="replace", timeout=5))
+    run = runner or (lambda: osnorm.run_text(["whoami", "/user"], errors="replace", timeout=5))
     try:
         proc = run()
     except Exception:                                  # noqa: BLE001 - 采集失败不抛
@@ -487,8 +564,8 @@ def _machine_material() -> bytes | None:
         if _platform.system().lower() == "darwin":      # pragma: no cover - macOS
             try:
                 import subprocess
-                out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                                     capture_output=True, text=True, timeout=5).stdout
+                out = osnorm.run_text(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                      errors="replace", timeout=5).stdout
                 match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
                 if match:
                     material = match.group(1).encode("utf-8")
@@ -497,7 +574,7 @@ def _machine_material() -> bytes | None:
         else:
             for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
                 try:
-                    text = Path(candidate).read_text(encoding="utf-8").strip()
+                    text = osnorm.read_text(Path(candidate)).strip()
                 except OSError:
                     continue
                 if text:
@@ -576,7 +653,7 @@ def _local_scope_seed(env: Mapping[str, str] | None = None) -> bytes | None:
                 fh.write(seed)
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(tmp, path)
+            _replace_with_retry(tmp, path)
             _fsync_dir(path.parent)
         except OSError:
             pass
@@ -619,7 +696,12 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
 
     import platform as _platform
     system = _platform.system().lower()
-    if os.name == "nt":                                    # pragma: no cover - Windows
+    # 平台族**只认这一个真值源**（`platform.system()`），不再叠加 `os.name == "nt"`：
+    # 两个真值源会在「需要模拟别的平台」时打架——旧实现在 Windows 上即使把
+    # platform.system() 换成 Darwin 也照走 windows 分支，于是 ioreg 超时那条契约
+    # 在 Windows 上根本无法被用例覆盖（期望值只能硬编码成宿主平台，等于没测）。
+    # 真机上二者一致（Windows 的 platform.system() 恒为 "Windows"），行为不变。
+    if system == "windows":                                # pragma: no cover - Windows
         info["realm"] = "windows"
         # 身份用 SID，不用用户名：用户名可改、可重名，SID 才稳定
         info["sid"] = _windows_sid()
@@ -629,7 +711,7 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
                                 r"SOFTWARE\Microsoft\Cryptography") as key:
                 guid, _ = winreg.QueryValueEx(key, "MachineGuid")
                 info["machine_id"] = str(guid).encode("utf-8")
-        except OSError:
+        except (ImportError, OSError):                     # 非 Windows 模拟该分支时无 winreg
             info["machine_id"] = None
     else:
         try:
@@ -641,8 +723,8 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
             # macOS 的身份原料就是 IOPlatformUUID，不走 Linux 的 machine-id 文件
             try:
                 import subprocess
-                out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                                     capture_output=True, text=True, timeout=5).stdout
+                out = osnorm.run_text(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                      errors="replace", timeout=5).stdout
                 match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
                 if match:
                     info["machine_id"] = match.group(1).encode("utf-8")
@@ -652,7 +734,7 @@ def detect_platform_info(env: Mapping[str, str] | None = None) -> dict:
             info["realm"] = "wsl" if "microsoft" in _platform.release().lower() else "linux"
             for candidate in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
                 try:
-                    text = Path(candidate).read_text(encoding="utf-8").strip()
+                    text = osnorm.read_text(Path(candidate)).strip()
                 except OSError:
                     continue
                 if text:

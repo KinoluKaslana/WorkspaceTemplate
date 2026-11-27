@@ -12,19 +12,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+import osnorm  # noqa: E402
 from repo_identity import classify  # noqa: E402
 
 
 def push_urls(root: Path) -> list[str]:
-    proc = subprocess.run(
-        ["git", "-C", str(root), "remote", "get-url", "--push", "--all", "origin"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
+    proc = osnorm.run_text(["git", "-C", str(root), "remote", "get-url", "--push", "--all", "origin"], errors="replace")
     return proc.stdout.splitlines() if proc.returncode == 0 else []
 
 
 def assert_template_status(test: unittest.TestCase, root: Path) -> None:
-    boot = json.loads((root / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
+    boot = json.loads(osnorm.read_text(root / ".workspace/bootstrap.json", bom=False, newline="preserve"))
     source = (boot.get("template") or {}).get("source_repo")
     pushes = push_urls(root)
     if not pushes:
@@ -47,9 +45,9 @@ class TemplateStatusAuthority(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
         (root / ".workspace").mkdir()
-        (root / ".workspace/bootstrap.json").write_text(json.dumps({
+        osnorm.write_text(root / ".workspace/bootstrap.json", json.dumps({
             "workspace_status": status, "template": {"source_repo": self.SOURCE},
-        }), encoding="utf-8")
+        }), newline="lf")
         subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(root), "remote", "add", "origin", push], check=True)
         return root

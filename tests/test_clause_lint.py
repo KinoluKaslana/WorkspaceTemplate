@@ -7,6 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 LINT = ROOT / "scripts" / "clause_lint.py"
 POLICY = ROOT / "AGENT_RULES.md"
@@ -43,19 +46,19 @@ class ClauseLint(unittest.TestCase):
         (self.root / "scripts").mkdir()
         (self.root / ".workspace").mkdir()
         shutil.copy2(LINT, self.root / "scripts" / "clause_lint.py")
+        # R38e：clause_lint 的文本 I/O 走兄弟模块 osnorm（随 TEMPLATE_FILES 分发）
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.root / "scripts" / "osnorm.py")
         self.write(N_BODY, N_META)
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def write(self, body, meta):
-        (self.root / "AGENT_RULES.md").write_text(body, encoding="utf-8")
-        (self.root / ".workspace" / "clauses.meta.json").write_text(
-            json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+        osnorm.write_text(self.root / "AGENT_RULES.md", body, newline="lf")
+        osnorm.write_text(self.root / ".workspace" / "clauses.meta.json", json.dumps(meta, ensure_ascii=False, indent=1), newline="lf")
 
     def run_lint(self, *args):
-        return subprocess.run([sys.executable, str(self.root / "scripts" / "clause_lint.py"), *args],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return osnorm.run_text([sys.executable, str(self.root / "scripts" / "clause_lint.py"), *args], errors="replace")
 
     def test_t1_clean_baseline(self):
         p = self.run_lint()
@@ -141,6 +144,29 @@ class ClauseLint(unittest.TestCase):
         p = self.run_lint()
         self.assertEqual(p.returncode, 1)                        # 引号外：仍报 W2
         self.assertIn("W2", p.stdout)
+
+    def test_t13_clause_ref_section_mismatch_is_error(self):
+        """§<n> R<m> 的章节号必须与 AGENT_RULES.md 里该条款实际所在章节一致。"""
+        osnorm.write_text(self.root / ".workspace" / "SEQUENCE.md",
+                          "见 AGENT_RULES.md §12 R3 的规定。\n", newline="lf")
+        p = self.run_lint()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("E13", p.stdout)
+        self.assertIn("R3 实际在 §0", p.stdout)
+
+    def test_t14_unknown_clause_ref_is_error(self):
+        """引用不存在的条款号（幻觉/漂移）必须红。"""
+        osnorm.write_text(self.root / ".workspace" / "SEQUENCE.md",
+                          "见 AGENT_RULES.md §0 R999 的规定。\n", newline="lf")
+        p = self.run_lint()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("E12", p.stdout)
+
+    def test_t15_correct_clause_ref_passes(self):
+        osnorm.write_text(self.root / ".workspace" / "SEQUENCE.md",
+                          "见 AGENT_RULES.md §0 R3 的规定。\n", newline="lf")
+        p = self.run_lint()
+        self.assertEqual(p.returncode, 0, p.stdout)
 
     def test_t9_report_counts(self):
         p = self.run_lint("--report")

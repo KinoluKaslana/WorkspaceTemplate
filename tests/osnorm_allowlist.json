@@ -1,0 +1,28 @@
+{
+ "version": 2,
+ "doc": [
+  "R51 blocking 基线：entries、structural、subdomains、baseline 必须为空。",
+  "扫描逐处报告文件、行号和规则。账本计数不参与 blocking 判定。",
+  "以下为 R1–R6 历史账本校验与 oracle 的约定：",
+  "  baseline   每个 (file, rule) 的历史最低登记计数；只覆盖 entries 里的 (file, rule)。",
+  "  entries    「还没迁移、也没有 oracle」的存量违规（只许精确登记，count 必须等于实测）。",
+  "  structural 「结构性豁免」：位置永久保留，但理由由一条可执行 oracle 持续验证（S3）。",
+  "structural 的登记粒度是 (file, rule, target)，target = `函数名#序数`：序数是该函数内 R5 命中",
+  "按源码顺序的第几处（不写绝对行号——行号会漂移）。门禁对每条做四项机械校验：",
+  "  ① oracle 指向的用例真实存在且被 `unittest` 收集（Ran 1 test）；② 该用例当前通过（rc=0）；",
+  "  ③ 该 (file, rule) 的实测计数不得高于登记计数之和（count_baseline）；④ 目标能在真实代码里",
+  "定位到（函数存在且该序数处确实是声明的表达式类），且登记与实测严格一一对应。",
+  "R48/P5：a 类（verdict=a）的公共边界抽到顶层 `subdomains`，条目只留 `subdomain` 名 + 本条特有理由；",
+  " 门禁校验：每个 a 条目的 `subdomain` 必须在注册表里，且 reason 必须引用 `subdomains.<name>`，",
+  " 注册表边界文本不得再复制进任何 reason。`oracle` 可为字符串或字符串列表，",
+  " 列表里每个用例都必须被收集且当前通过。",
+  "R48/P5：`entries` 的 R39 过期批次已在 R44–R47 全部迁完（R47 起 entries=[]）；本轮选择**收紧**而不是续期——",
+  " `expires` 早于当前 dev 轮次（`.workspace/release_dev.json` 最大 round）的条目一律红；续期等于给",
+  " 已不存在的条目开无限延期口子。实例侧没有 dev 账本时不判该项（无轮次可比，显式跳过）。",
+  "R49：15 处迁移落地，entries、structural 和 subdomains 均归零。"
+ ],
+ "subdomains": {},
+ "baseline": {},
+ "entries": [],
+ "structural": []
+}

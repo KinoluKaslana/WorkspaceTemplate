@@ -31,12 +31,14 @@
 
 | 文件 | SHA-256 |
 |---|---|
-| `.workspace/hooks/hook.py` | `3c410f1b948b6152508e04bb478f50b8ad7e82c7f74fdca61d1ebc0b1cb7b704` |
-| `.workspace/hooks/gate_core.py` | `8da4614815ef3b54250b9fa8ce791b2da4ebd605f12bd50fc2d010b10fdaa8bb` |
-| `.workspace/hooks/wtarget.py` | `689672e6a96f28df9c486460766417567c505f11afc52c6db2b86fe719f97751` |
-| `.workspace/hooks/authz.py` | `2bf60ed12f50e845c087f8f6a7ae7089dfb5c24a1634f1525f85d3cc420a018a` |
-| `.workspace/hooks/cc_transcript.py` | `178cf53d025985281b3168e9c3d83ac50c6cbbf501f1235b0a53a396913dcf23` |
-| `.workspace/hooks/template_anchor.py` | `1e13a2d838a683037dfdf07c8f8e84c272d76286934738df4b4db2963218166d` |
+| `.workspace/hooks/osnorm_loader.py` | `d452ed3d537de928d08817dd39267fdb45b9a04970d1aee19566ad4502d64dab` |
+| `.workspace/hooks/hook.py` | `42b480fe7ba541efc040748693ea9d4dc320a99110a10ea67d1d7ba16e98a109` |
+| `.workspace/hooks/gate_core.py` | `98c4a068b2117b772bfabed1219fa6c37d1520a4214771e3fe8ea2f0b16ee9a4` |
+| `.workspace/hooks/wtarget.py` | `5dc87f762c08cb37546f2348056285f1908cf0d49174823274748305eec40b95` |
+| `.workspace/hooks/authz.py` | `6730e6be82b70ac73aedd383d7ecd2baf3272de4087f4e432864238ea3c3c6ab` |
+| `.workspace/hooks/cc_transcript.py` | `6226a2ee2e698576087d11f943262cab79144c6fdaf4dc14ead890716b57cffd` |
+| `.workspace/hooks/template_anchor.py` | `19cc3202f1fdd0de4c2b1c1cb987293e91f5c3b894bb5b4726ab5724373ec3d4` |
+| `.workspace/hooks/delegations.py` | `6c05c761fdf2a5e4d899c38dc80272b372fabdc1aa11a0f3fa9d8a942473613a` |
 | `.codex/hooks.json` | `0f5576327ed4373884115a9483d578283887894af391336a55d2744fc0972f68` |
 | `.claude/settings.json` | `dce37de09847d24e0e505146058726864281bfd9a30586d49183ced26329e7aa` |
 
@@ -147,7 +149,8 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | **docs-retrieval-maintenance** | 维护 `docs/` 检索链路（索引/别名表/命中报告）。入口 `.workspace/skills/docs-retrieval-maintenance/SKILL.md`（v1.1.0）。配套 `scripts/docs_index.py`（build/check/query）、`scripts/docs_hit_report.py`（判据集命中）、`scripts/docs_alias_audit.py`（死指针/指纹/来源合规/留一验证/`--restore`）、判据集 `tests/docs_probe.json`、缺口日志 `docs/.miss-log.jsonl`。触发：docs 改动、`check` 报 stale/unindexed、标题改名、命中低于阈值、用户报搜不到 |
 | **workspace-repo-sync** | 跨设备同步工作区自身仓库。入口 `.workspace/skills/workspace-repo-sync/SKILL.md`（v1.1.2）；机械入口 `python3 scripts/workspace_preflight.py [--json] [--strict]` 核验登记项（host/bootstrap_schema/根路径/python/gate/template_clone/skills/template_files/notes_index/docs_index/git/readme，条目以 `--json` 为准）。触发：换设备、另端改了 notes/TOOLS、疑似工具失效 |
 | **workspace-skill-authoring** | 把用户要的能力落成**工作区级（本地）skill**：缺口证据 → 重叠检查 → kebab 命名 → `_drafts/` 草稿 → 8 维契约 → 三处登记（REGISTRY 本地表 / TOOLS / bootstrap）→ 审批与试用。入口 `.workspace/skills/workspace-skill-authoring/SKILL.md`（v1.0.0）。触发：用户明确要求新建/修改本地 skill |
-| **release** | 模板发版机械闭环：dry-run → apply 事务/回滚 → verify → tag；入口 `.workspace/skills/release/SKILL.md`（v1.0.0），机械入口 `scripts/release.py`（纯 stdlib，默认 dry-run，绝不 push）。触发：升政策版本、打 tag、发版 |
+| **release** | 模板发版机械闭环：dry-run → apply 事务/回滚 → verify → tag；入口 `.workspace/skills/release/SKILL.md`（v1.1.0），机械入口 `scripts/release.py`（纯 stdlib，默认 dry-run，绝不 push）。**dev 四段版本账本**：`--dev [--round NN\|--version NN.X.Y.Z] [--dry-run\|--apply]` 只写 `CHANGELOG_DEV.md` + `.workspace/release_dev.json`（不写 `releases.json`、不改政策头、不 tag/push）；`--dev --verify` 对账「账本末条 == CHANGELOG_DEV 首条」；若 `.workspace/iterations/R<round>.md` 存在，账本条目追加 `iterations`（节数）与 `iterations_sha256`（文件 sha256）作为 S12 冻结锚。触发：升政策版本、打 tag、发版、记 dev 迭代版本 |
+| **commit-gate** | 提交前质量门：入口 `.workspace/skills/commit-gate/SKILL.md`（v1.1.0），机械入口 `scripts/check_all.py`（纯 stdlib，阶段表固定 1–17；`--fix` / `--check` / `--full` / `--json` / `--only`；只调度，不 commit/push、不改判据；全部阶段跑完后若有未推送提交且 dev 账本非空，打一行「尚未由用户放行」WARN，**不改退出码**）。强制顺序：`--fix` → `--check` → `--full`。触发：任何 `git commit` 之前、`release.py --apply` 之后、合并 main 之前 |
 | **skills 健康检查** | `python3 scripts/skill_audit.py [--strict]`：检查**模板层** `.workspace/skills/*` 与**本地层** `.workspace/skills-local/*` 的 frontmatter、触发语、semver、条款 ID 与路径引用、8 维契约、状态机（draft/approved/deprecated/removed）、审批证据（`approved_skill_sha256`）与 `REGISTRY.md`/`TOOLS.md` 双登记；维护节奏见 `skills/REGISTRY.md`「维护节奏」 |
 | **template-update（分支同步）** | v2.1.0 起支持指定模板分支：入口仍是 `.workspace/skills/template-update/SKILL.md`；机械入口 `scripts/template_sync.py --workspace . --branch <main|dev|alpha> [--apply --verify]`（dry-run 默认；用 `git worktree` 取目标提交快照，不动模板克隆工作树） |
 | **check_template.py SHA-256** | `bbfa379269a3a3982a3d65997f9dac31f30b0cb939167e98cdc09959bfccd489` |
@@ -170,13 +173,13 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 | 项 | 内容 |
 |---|---|
 | **类型** | Python 标准库 CLI |
-| **作用** | 判「现在到底有没有 gate 在跑」：`cc`/`codex` 看 `.workspace/.hook-state/<scope>/gate.log` 的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.dsh-gate.log` 的 `apply` 与 `.hook-state/<scope>/dsh-session-*.json`；`--require` 缺证据 → 退出码 1 |
+| **作用** | 判「现在到底有没有 gate 在跑」：`cc`/`codex` 看 `.workspace/.hook-state/<scope>/gate.log` 的 `client=`；`hermes` 看 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active`（机器级，不绑工作区）；`dsh` **必须同时**有 `.dsh-gate.log` 中同一工作区的新鲜 `apply` 事件与有效的 `.hook-state/<scope>/dsh-<sid>.json`；`--require` 缺证据 → 退出码 1 |
 | **位置** | `scripts/gate_status.py` |
-| **SHA-256** | `9a2a194abc1271ed8629015e1f1328926e02c4413af2a57916adb2b55e468e98` |
+| **SHA-256** | `c78b534978b044c82f5b960784051e3931d72ec00c7cd57e7fa2996c300ebdc2` |
 | **运行时** | §2 中已配置的 Python；无第三方依赖 |
 | **来源与信任边界** | 模板内置、只读日志与状态文件；证据是**运行期**的，插件没加载就没有证据——这正是要判的东西 |
-| **副作用/数据外发** | 默认只读 + stdout；`--record` **会写** 本机状态 `.workspace/.hook-state/<scope>/gate.json`（原子替换），不联网 |
-| **核验日期** | 2026-11-04 |
+| **副作用/数据外发** | 默认只读 + stdout；`--record` **会写** 本机状态 `.workspace/.hook-state/<scope>/gate.json`（原子替换）；`--migrate-legacy` 写本机历史快照并清理共享旧字段，均不联网 |
+| **核验日期** | 2026-11-26 |
 
 为什么需要：dsh **没有项目级自动发现**，不带 `--patch` 启动等于完全没有 gate（读证据、写前拦截、事后审计都不发生）；`cc`/`codex` 依赖项目受信，`hermes` 依赖 env + config 双开关。克隆下来文件齐全 ≠ 已经受管。
 
@@ -184,6 +187,20 @@ MCP 模式下不用 shell `python` 伪装成 MCP 环境。MCP 若不能访问 Wo
 <configured-python> scripts/gate_status.py --ttl-minutes 30
 <configured-python> scripts/gate_status.py --require dsh,cc --ttl-minutes 30 --json
 ```
+
+### 4.6 `sequence_check.py` — 计划侧 ↔ 账本互校（只读）
+
+| 项 | 内容 |
+|---|---|
+| **类型** | Python 标准库 CLI |
+| **作用** | S1–S13 计划/账本/git 历史/远端/迭代日志 互校：S1 轮次严格递增/无重复（**模板仓 dev 缺 `SEQUENCE.md` = 红**，SKIP 只留给实例侧/非模板仓） · S2 版本首段 == 轮次 · S3 landed ↔ `.workspace/release_dev.json` 双向（`landed-no-ledger` 须有**真在 git 里**的提交号；`land_status` 只认三值；§1 ↔ §2 一致；**历史锚**：历史账本/SEQUENCE 里出现过的落地轮次必须仍在，`landed-no-ledger` 也算；**落地即入账**：首次标 landed 的提交必须已含该轮账本条目） · S4 依赖不倒置/不悬空 · S5 范围引用的 WORKLIST 条目存在（**无文件 = 声明过的 SKIP；显式 `--worklist` 指错或不可读 = 红**） · S6 landed 数 == 账本条目数（另加历史下界，只增不减） · S7 **每条**账本 `summary` 与 `CHANGELOG_DEV.md` 段落逐字一致，**工作区 + git 锚两腿**（`commit: null` 时状态是独立的 `DEGRADED`，不算 FAIL 但显式打印） · S8 版本严格递增且已落地版本不可变 + **已提交历史版本全字段严格 append-only**（summary 改写/删除 = 红，无 prose_note 放行） · S9 **`landed` 与 `landed-no-ledger`** 三席确认齐全（`legacy` 只许 `LEGACY_ROUNDS = {44, 45}`；白名单外席位名如 `INTRUDER` → 红；`verified_by` 中英文方括号/全角逗号都解析） · S10 `_DEV` 文件分支归属（**模板身份只用 git 锚**，改 `.workspace/bootstrap.json` 关不掉；dev 必须有 / main 必须没有 / 其它分支与非模板仓告警；**无 `SEQUENCE.md` 时仍执行**） · S11 远端锚（`origin/<分支>` 是 HEAD 祖先；不可用 → WARN + 「仅有本地锚」） · **S12 迭代日志冻结锚**（账本条目带 `iterations_sha256` ⇒ `.workspace/iterations/R<round>.md` 当前 sha256 必须一致，landed 后回改 = 红；带 `iterations` ⇒ 文件必须存在、`## it<N>` 节数一致、编号 1..N 连续；两者都没有 ⇒ 不判，历史条目 legacy 豁免） · **S13 §1 landed 行整行冻结（append-only rows）**（`git log -- .workspace/SEQUENCE.md` 各历史 blob 的 §1 **数据行**并集必须在当前版本里**逐字**仍在；`范围`/`备注`/`确认` 说明文字改写、`提交` 换成另一真实提交、整行删除 → 红并打印缺行原文与来源提交；当前**追加**新行不红；判据建立前已发生的改写走代码白名单 `S13_PREEXISTING_EDITS`） |
+| **位置** | `scripts/sequence_check.py`（计划侧 `.workspace/SEQUENCE.md` 与迭代日志目录 `.workspace/iterations/` 都是 dev 专用，**刻意不进** `TEMPLATE_FILES`：实例不该继承研发路线图与尝试日志） |
+| **用法** | `python3 scripts/sequence_check.py [--json] [--root DIR] [--worklist PATH]` |
+| **退出码** | 0 全绿**或显式 skip**（实例侧 / 非模板仓无 `SEQUENCE.md`、候选无 `WORKLIST.md`），可含 `DEGRADED` / `WARN`；1 有 findings（含模板仓 dev 缺计划文件、`--json` 下同样是 JSON 对象）；2 用法或 IO |
+| **来源与信任边界** | 模板内置；只读 SEQUENCE.md / dev 账本 / `CHANGELOG_DEV.md` / `WORKLIST.md` / `.workspace/iterations/R<round>.md`，不写盘、不联网 |
+| **副作用/数据外发** | 无：只输出 stdout；`--json` = 「打印 JSON 到 stdout」（不是文件路径），任何结局都只输出一个 JSON 对象 |
+
+实例侧行为：派生工作区（非模板仓，git 历史里从未出现 `_DEV` 文件）没有 `.workspace/SEQUENCE.md`，本脚本**显式报告 skip 并 rc=0**——`check_all` 的阶段 `sequence` 因此不会把实例判红。例外有两处：① S10/S11 只依赖当前分支、git 历史与两份 `_DEV` 文件，**没有计划文件时仍执行**（template 工作区的 `main` 上没有 `SEQUENCE.md` 是合法态，删计划不能用来绕过「main 不得留 `_DEV` 文件」）；② 模板仓的 **dev 分支删掉计划文件是 FAIL**（删计划 + 账本写 `[]` 不能把 S1–S9 关成 SKIP）。
 
 ## 5. Notes 索引
 

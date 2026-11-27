@@ -4,17 +4,35 @@
 对应 R80（两个索引文件由 rebuild_index.py 生成，禁止手改）。
 做法：把 notes/ 复制到临时目录（去掉两个生成物），在那里跑同一份 rebuild_index.py，
 再逐字节比对生成结果与仓库里的文件。不修改仓库。
+
+**C2（索引自老化）的修法**：索引正文里不再出现「距今 N 天 / N 天后到期」这类**派生自今天**的
+值，只写绝对量（上次策展日、间隔、到期日）。所以比对侧**不需要**任何「剔除相对天数行」的豁免
+——只归一生成时刻（每次生成都不同，且不承载语义）。反过来把派生值从比对里剔掉是错的：索引每
+天仍会写出不同的字节，跨设备/跨时间对账时两份索引对不上，而检查却报绿。
+
 用法：python3 scripts/notes_index_check.py [--json]
 退出码：0 一致；1 有漂移（手改或忘记重跑）；2 用法/IO。
 """
+
 import argparse
 import json
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
+
 
 ROOT = Path(__file__).resolve().parent.parent
 NOTES = ROOT / "notes"
@@ -24,7 +42,11 @@ TS = re.compile(r"（\d{4}-\d{2}-\d{2} \d{2}:\d{2} [+-]\d{4}）")
 
 
 def _norm(text: str) -> str:
-    """生成时间戳每次不同，比对前抹掉；其余必须逐字节一致。"""
+    """只归一生成时刻（每次生成都不同，且不承载语义）；其余必须逐字节一致。
+
+    这里**故意不**再加「剔除相对天数」之类的日期豁免：C2 的措施是让 `rebuild_index.py`
+    不往索引里写派生自今天的值（见 load_curation），而不是放宽比对。
+    """
     return TS.sub("（<ts>）", text)
 
 
@@ -46,8 +68,7 @@ def main(argv):
         if boot.is_file():
             (Path(tmp) / ".workspace").mkdir(exist_ok=True)
             shutil.copy2(boot, Path(tmp) / ".workspace" / "bootstrap.json")
-        p = subprocess.run([sys.executable, "-B", str(dst / "rebuild_index.py")],
-                           capture_output=True, text=True, cwd=dst)
+        p = osnorm.run_text([sys.executable, "-B", str(dst / "rebuild_index.py")], cwd=dst)
         # rebuild_index 在「有警告 / 策展到期」时返回 1，但仍会产出文件；只有产出缺失才算失败
         if p.returncode not in (0, 1):
             print(json.dumps({"error": "rebuild-failed", "stderr": p.stderr[-400:]},
@@ -63,7 +84,7 @@ def main(argv):
             if not cur.is_file():
                 findings.append({"code": "E2", "message": f"仓库缺少 {name}（未运行 rebuild_index.py？）"})
                 continue
-            if _norm(fresh.read_text(encoding="utf-8")) != _norm(cur.read_text(encoding="utf-8")):
+            if _norm(osnorm.read_text(fresh)) != _norm(osnorm.read_text(cur)):
                 findings.append({"code": "E3", "message": f"{name} 与重建结果不一致（被手改或索引过期）"})
 
     if a.json:

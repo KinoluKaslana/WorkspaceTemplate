@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """wtarget.py — 离线「写目标窄识别器」（W1b 席，DeepSeek-V4-Pro）。
 
-纯 stdlib；不读盘；不调用外部进程；单条 <1ms（规格 §9）。
-
-独立模块：不得 import 进 hook.py / gate_core.py（接线是 W1 的事，需另开）。
+路径折叠只用标准库词法运算；分类无需装载器、磁盘探测或外部进程。
 
 对外接口：
     classify(command: str, cwd: str, gate_files: list[str]) -> dict
@@ -457,19 +455,50 @@ def _dd_of_targets(tokens: list[tuple[str, str]]) -> list[str]:
 
 # ---------------------------------------------------------------- 目标解析（规则 7/8）
 
+def _exchange_path(path: str, *, path_module=None) -> str:
+    """Pure lexical counterpart of osnorm.exchange_path for the offline classifier."""
+    host = os.path if path_module is None else path_module
+    if host.sep == "/":
+        return host.normpath(path)
+    text = path.replace(host.sep, "/")
+    if text.startswith("//?/"):
+        suffix = text[4:]
+        if re.match(r"^[A-Za-z]:", suffix):
+            text = suffix
+        elif suffix.upper().startswith("UNC/") or suffix.upper() == "UNC":
+            text = "//" + suffix[3:].lstrip("/")
+    folded = host.normpath(text).replace(host.sep, "/")
+    volume, tail = host.splitdrive(folded)
+    if re.fullmatch(r"[A-Za-z]:", volume):
+        return volume.upper() + tail
+    if volume.startswith("//") and tail == "/":
+        return volume
+    return folded
+
+
+def _glob_text(token: str) -> str:
+    # Only the recognized extended drive and UNC prefixes contain a literal '?'.
+    if os.path.sep == "\\" and re.match(
+            r"^//\?/(?:[A-Za-z]:/|UNC/)", token.replace("\\", "/"), re.IGNORECASE):
+        return token[4:]
+    return token
+
+
 def _resolve_target(token: str, cwd: str | None):
     """返回 (target_or_None, status)。status ∈ {"static","partial","unresolved"}。"""
     if token in _NULL_TARGETS or token in ("&1", "&2", "&0"):
         return None, "static"
-    if any(ch in _WILDCARD_CHARS for ch in token):
+    if any(ch in _WILDCARD_CHARS for ch in _glob_text(token)):
         return None, "unresolved"
     if "~" in token:
         return token, "partial"
-    if os.path.isabs(token):
-        return os.path.normpath(token), "static"
-    if cwd is None:
+    if cwd is None and not os.path.isabs(token):
         return token, "partial"
-    return os.path.normpath(os.path.join(cwd, token)), "static"
+    target = _exchange_path(os.path.join(cwd, token)) if cwd is not None else _exchange_path(token)
+    if os.path.sep == "\\" and not os.path.isabs(target):
+        # A different drive's current directory is unavailable to a lexical classifier.
+        return None, "unresolved"
+    return target, "static"
 
 
 # ---------------------------------------------------------------- 单段判定
@@ -562,7 +591,7 @@ def _classify_segment(tokens: list[tuple[str, str]], cwd: str | None):
 
 def classify(command: str, cwd: str, gate_files: list[str]) -> dict:
     """识别一条 Bash 命令的写目标（离线、窄、失败方向安全）。"""
-    gate_set = {os.path.normpath(g) for g in gate_files if isinstance(g, str)}
+    gate_set = {_exchange_path(g) for g in gate_files if isinstance(g, str)}
 
     if not isinstance(command, str) or not command.strip():
         return {"kind": "other", "targets": [], "gate_targets": [], "forms": [],
@@ -1052,16 +1081,27 @@ def classify_pwsh(command: str, cwd: str, gate_files: list[str],
     else:
         script_vars = _ps_prelude_vars(command, env)
 
-    def absolute(token: str) -> str:
+    def expand_home(path: str) -> str:
+        if os.path.sep == "\\":
+            return os.path.expanduser(path)  # ntpath uses only environment variables.
+        if path == "~" or path.startswith("~/"):
+            home = env.get("HOME")
+            if home is not None:
+                return (home.rstrip("/") + path[1:]) or "/"
+        return path
+
+    def absolute(token: str) -> str | None:
         v = str(token).strip().strip("'\"")
         mv = re.fullmatch(r"\$([A-Za-z_][A-Za-z0-9_]*)", v)
         if mv and mv.group(1) in script_vars:
             v = script_vars[mv.group(1)]
         v = _ps_env_expand(v, env)
-        v = os.path.expanduser(v)
+        v = expand_home(v)
+        if v.startswith("~"):
+            return None  # No environment expansion for this home path.
         if re.match(r"^[A-Za-z]:[\\/]", v) or v.startswith("\\\\"):
-            return os.path.normpath(v)
-        return os.path.normpath(os.path.join(cwd, v))
+            return _exchange_path(v)
+        return _exchange_path(os.path.join(cwd, v))
 
     resolved, unresolved = [], []
     for token in targets:
@@ -1070,17 +1110,21 @@ def classify_pwsh(command: str, cwd: str, gate_files: list[str],
         if mv and mv.group(1) in script_vars:
             tok = script_vars[mv.group(1)]
         tok = _ps_env_expand(tok, env)
-        if any(ch in tok for ch in ("$", "*", "?")) or tok.startswith("&"):
+        if any(ch in _glob_text(tok) for ch in ("$", "*", "?")) or tok.startswith("&"):
             unresolved.append(token)
         else:
-            resolved.append(absolute(tok))
+            target = absolute(tok)
+            if target is None or (os.path.sep == "\\" and not os.path.isabs(target)):
+                unresolved.append(token)
+            else:
+                resolved.append(target)
 
     if env_mutated and (resolved or targets):
         return {"kind": "unresolved", "targets": [], "gate_targets": [],
                 "forms": forms + unresolved_hits, "confidence": "opaque",
                 "reason": "env-mutated"}
 
-    gate_abs = {os.path.normpath(os.path.expanduser(g)) for g in gate_files}
+    gate_abs = {_exchange_path(expand_home(g)) for g in gate_files}
     if resolved:
         return {"kind": "write", "targets": sorted(set(resolved)),
                 "gate_targets": sorted({t for t in resolved if t in gate_abs}),

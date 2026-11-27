@@ -18,8 +18,30 @@ import sys
 import time
 from pathlib import Path
 
+
+def _utf8_stdio() -> None:
+    """stdout/stderr 输出编码钉成 UTF-8（管道与重定向场景）——单一实现是 osnorm。
+
+    为什么必须改**编码**而不只是 `errors="replace"`：父进程（测试、CI、release.py）
+    统一按 UTF-8 解码子进程输出；子进程若按 Windows locale（cp1252/cp936）写管道，
+    中文要么被就地替换成 `?`，要么被父进程解成乱码，断言里的中文直接对不上。
+    console 分支保持本机编码（只防崩）：真控制台上 reconfigure 成 UTF-8 会让
+    Windows 控制台按本地代码页误渲染，那里不需要为了管道语义牺牲显示。
+    """
+    module = _osnorm_loader.bootstrap_module()
+    if module is None:
+        return  # 不可用时只走 ASCII 字节路径（本 CLI 的 JSON 输出），与 locale 无关
+    try:
+        module.configure_stdio()
+    except Exception:                                                   # noqa: BLE001 - 输出层不许抛
+        pass
+
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gate_core as core  # noqa: E402
+import osnorm_loader as _osnorm_loader  # noqa: E402
+
+_utf8_stdio()
 
 WILDCARD_CHARS = set("*?[{")
 

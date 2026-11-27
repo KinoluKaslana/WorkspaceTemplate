@@ -3,6 +3,20 @@
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 > 账本标题格式（不改变历史条目语义）：可识别条目以行首 `##`、空白、`x.y.z` 开始；`x.y.z` 后可接日期或说明，但紧跟字符不得是数字、ASCII 字母、`.` 或 `-`。故 `## 3.7.0（日期，说明）` 可识别，`## 3.6.1beta`、`## 3.6.1.1`、`## 3.6.1-hotfix` 会被 `scripts/policy_facts.py --check` 拒绝；`###` 子标题不参与账本对账。
 
+## 3.8.1（2026-11-27）
+
+### 1. 发版与治理机制（R45–R46）
+
+- dev 四段版本机制与双账本（release_dev.json 与 releases.json 物理分离），发版前对账。
+- 三席辩论编排 + SEQUENCE.md 与 sequence_check 互校机制（S1–S13，含 S12 迭代日志冻结锚、S13 落地行冻结）。
+
+### 2. 守门语义（R47–R51）
+
+- stdio 三件套（R4 归零）：osnorm read_stdin_text/emit_stdout/emit_stderr，非法字节/空 stdin fail-closed（真 Windows 复验）。
+- R5 语义迁移（账本归零）：15 处路径键迁移为交换形态，sidecar 三段兼容读，比较基准开关与 gate_key oracle 四条，Linux/Windows/dsh 三端决策一致（真机双端键集合逐字相同）。
+- 真机闭环与治理单源：Windows 五项复验、dsh 双证收紧、bootstrap.gate 化石块可恢复迁移、C3/C4/C7/C9 治理收敛。
+- 闸门转 blocking（空白名单）：新增违规直接红且逐处定位，抬 baseline 不可解红；ASTRA 完备性审查四必修闭环，守护链边界随裁决入账。
+
 ## 3.8.0（2026-11-16）
 
 ### 1. doc-fact 契约：从「正则扫散文」改成「生成器单入口」

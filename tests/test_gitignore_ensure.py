@@ -7,9 +7,13 @@
 运行：python3 -B tests/test_gitignore_ensure.py
 """
 import importlib.util
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -30,11 +34,11 @@ class EnsureIgnore(unittest.TestCase):
 
     def test_appends_only_missing_lines_and_keeps_user_content(self):
         gi = self.ws / ".gitignore"
-        gi.write_text("node_modules/\n.workspace/.hook-state/\n", encoding="utf-8")
+        osnorm.write_text(gi, "node_modules/\n.workspace/.hook-state/\n", newline="lf")
         added, err = self.ts.ensure_ignore_lines(self.ws)
         self.assertIsNone(err)
         self.assertEqual(added, [".workspace/.local/"])
-        text = gi.read_text(encoding="utf-8")
+        text = osnorm.read_text(gi, bom=False, newline="preserve")
         self.assertTrue(text.startswith("node_modules/\n"), "用户内容被改了")
         self.assertEqual(text.count(".workspace/.local/"), 1)
         self.assertEqual(self.ts.ensure_ignore_lines(self.ws), ([], None), "重复追加")
@@ -44,7 +48,7 @@ class EnsureIgnore(unittest.TestCase):
         self.assertIsNone(err)
         self.assertIn(".workspace/.hook-state/", added)
         self.assertIn(".workspace/.local/", added)
-        text = (self.ws / ".gitignore").read_text(encoding="utf-8")
+        text = osnorm.read_text(self.ws / ".gitignore", bom=False, newline="preserve")
         self.assertIn(".workspace/.local/", text)
 
     def test_write_failure_is_reported_not_swallowed(self):
@@ -56,9 +60,9 @@ class EnsureIgnore(unittest.TestCase):
 
     def test_no_trailing_newline_is_respected(self):
         gi = self.ws / ".gitignore"
-        gi.write_text("a.txt", encoding="utf-8")
+        osnorm.write_text(gi, "a.txt", newline="lf")
         self.ts.ensure_ignore_lines(self.ws)
-        text = gi.read_text(encoding="utf-8")
+        text = osnorm.read_text(gi, bom=False, newline="preserve")
         self.assertTrue(text.startswith("a.txt\n"), f"粘连了：{text!r}")
 
 

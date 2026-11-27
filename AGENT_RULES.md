@@ -1,7 +1,7 @@
 # 通用 Workspace Agent 规则 <!-- id:R1 -->
 
 > **状态：模板默认生效。** 本文件是本 Workspace 的唯一权威通用政策源，适用于主 Agent 与经授权的子 Agent。
-> **模板政策版本：`3.8.0`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
+> **模板政策版本：`3.8.1`。** 规范性变更必须更新版本并记录到 [`CHANGELOG.md`](CHANGELOG.md)；业务事实、工具版本和运行时状态只更新 `WORKSPACE.md`、`TOOLS.md` 或 `.workspace/bootstrap.json`。
 > `AGENTS.md`、`CLAUDE.md` 和 `HERMES.md` 只是客户端入口，不复制通用政策。`TOOLS.md` 是环境事实登记表，不扩大授权。
 
 ---
@@ -211,9 +211,9 @@ gate 是否在跑取决于 **harness 的启动方式**，不是工作区的属�
 `--patch .dsh/workspace-gate/cordis.yml` 启动就等于没有 gate），hermes 需要 `HERMES_ENABLE_PROJECT_PLUGINS=true`
 与 config `plugins.enabled` 同时成立，cc/codex 依赖项目受信。「工作区里文件都在」不能推断「已经受管」。
 
-1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行（`<scope>` 是本机分片目录，见下）；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 的 `apply` 事件与 `.hook-state/<scope>/dsh-session-*.json` 账本。**`<scope>`** 由本机身份派生（`scripts/local_state.py` 的 `machine_scope()`，12 位十六进制）；工作区缺该脚本时**必须**由 hook 自带的最小身份读取派生（`gate_core._fallback_scope()`）。缺脚本不构成退回共享 `unknown` 桶的理由（同桶会让跨机隔离失效）；取不到机器身份时改用本机持久种子（用户状态目录下的 `workspace-template/scope-seed`，不在工作区内）派生，两者都拿不到才为 `unknown`。`<scope>` 之外的目录（含旧布局根目录）**只作只读兼容**：旧根目录的证据在过渡期仍认，其他机器的 `<scope>` **不得**当作本机证据。 <!-- id:R114 -->
+1. 每个 Agent 读完 `.workspace/bootstrap.json` 后，必须用 §5 的已配置 Python 对**当前 harness** 运行 `scripts/gate_status.py --require <harness> --ttl-minutes 30`，并且只认**运行期证据**：`cc`/`codex` 认 `.workspace/.hook-state/<scope>/gate.log` 的 `client=` 行（`<scope>` 是本机分片目录，见下）；`hermes` 认 `$HERMES_HOME/logs/workspace-gate-plugin.log` 的 `workspace-gate active` 行（机器级，不绑工作区）；`dsh` 必须**同时**有 `.workspace/.dsh-gate.log` 中同一工作区的新鲜 `apply` 事件与 `.hook-state/<scope>/dsh-<sid>.json` 中新鲜的有效证据。**`<scope>`** 由本机身份派生（`scripts/local_state.py` 的 `machine_scope()`，12 位十六进制）；工作区缺该脚本时**必须**由 hook 自带的最小身份读取派生（`gate_core._fallback_scope()`）。缺脚本不构成退回共享 `unknown` 桶的理由（同桶会让跨机隔离失效）；取不到机器身份时改用本机持久种子（用户状态目录下的 `workspace-template/scope-seed`，不在工作区内）派生，两者都拿不到才为 `unknown`。`<scope>` 之外的目录（含旧布局根目录）**只作只读兼容**：旧根目录的证据在过渡期仍认，其他机器的 `<scope>` **不得**当作本机证据。 <!-- id:R114 -->
 2. 没有证据时，必须在第一条受管写入之前向用户报告「当前 harness 的 gate 未接线」并给出该 harness 的启用命令，由用户决定先接线还是明确接受无 gate 继续；不得把工作区当作已受管继续写入。 <!-- id:R115 -->
-3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入**本机状态** `.workspace/.hook-state/<scope>/gate.json`；`bootstrap.json` 的 `gate` 节是旧位置，**不得**再写入，只作读取兼容。机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。 <!-- id:R116 -->
+3. 用户作出决定后，必须把 `gate.status`（`configured` / `unconfigured`）、harness、决定来源与核验时间写入**本机状态** `.workspace/.hook-state/<scope>/gate.json`；`bootstrap.json` 的 `gate` 节是旧位置，**不得**再写入或作为本机结论使用；可用 `scripts/gate_status.py --migrate-legacy` 将旧值归档到本机后删除旧字段。机械入口 `python3 scripts/gate_status.py --record --require <harness>`（无证据时拒绝记录 `configured`）。 <!-- id:R116 -->
 4. `gate.status` 已是 `configured` 时，后续 Agent 必须只复核证据是否在 TTL 内，不重复询问；状态翻转只能由用户明确要求。 <!-- id:R117 -->
 5. gate 缺失不阻断问答/只读任务，但任何受管写入之前必须有结论：接线，或用户明确接受无 gate。 <!-- id:R118 -->
 

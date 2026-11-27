@@ -34,6 +34,18 @@ import re
 import sys
 from pathlib import Path
 
+
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
+
+
 MARKER_RE = re.compile(r"\s*<!--\s*id:(R\d+)\s*-->\s*$")
 OVERRIDE_RE = re.compile(r"overrides:\s*(R\d+)")
 EXTENDS_RE = re.compile(r"extends:\s*(R\d+)")
@@ -43,6 +55,7 @@ EXTENDS_RE = re.compile(r"extends:\s*(R\d+)")
 # user homepage (reported as REPLACED, not TAMPERED).
 TEMPLATE_FILES = [
     "AGENT_RULES.md",
+    "CHANGELOG_DEV.md",
     "LICENSE",
     "SECURITY.md",
     "CONTRIBUTING.md",
@@ -96,6 +109,7 @@ TEMPLATE_FILES = [
     "scripts/release.py",
     ".workspace/skills/release/SKILL.md",
     ".workspace/releases.json",
+    ".workspace/release_dev.json",
     "tests/test_release.py",
     "scripts/notes_index_check.py",
     "scripts/secret_scan.py",
@@ -117,6 +131,10 @@ TEMPLATE_FILES = [
     ".hermes/plugins/workspace-gate/plugin.yaml",
     ".hermes/plugins/workspace-gate/__init__.py",
     ".hermes/plugins/workspace-gate/selfcheck.py",
+    # R41：osnorm 必须排在所有 hooks **之前**下发。同步是逐文件 copy2，先落 hooks
+    # 会造成「新 hooks + 旧/无 osnorm」的可见窗口（装载器会 fail-closed，但窗口不该存在）。
+    "scripts/osnorm.py",
+    ".workspace/hooks/osnorm_loader.py",
     ".workspace/hooks/hook.py",
     ".workspace/hooks/gate_core.py",
     ".workspace/hooks/wtarget.py",
@@ -136,6 +154,23 @@ TEMPLATE_FILES = [
     "tests/test_registry_freshness.py",
     "tests/test_gitignore_ensure.py",
     "tests/test_regression_ledger.py",
+    # R38a：osnorm 归一化层（R38e 起 10 个脚本已迁入为唯一实现；
+    # R41 起 `scripts/osnorm.py` 本体上移到 hooks 之前，理由见该处注释）
+    "tests/test_osnorm_cases.json",
+    "tests/test_osnorm_properties.py",
+    "tests/test_osnorm_single_source.py",
+    # 方案 C（三席 V7）：账本进哈希锁定 —— 抬高 count/baseline 必留 HASH-DIFF
+    "tests/osnorm_allowlist.json",
+    # R38f：BOM / 换行的机械统一（§3.1 的清理入口 + 它自己的契约测试）
+    "scripts/encoding_guard.py",
+    "tests/test_encoding_guard.py",
+    # 提交前统一门禁：单一入口（阶段顺序固定），CI 治理 job 跑同一条命令
+    "scripts/check_all.py",
+    ".workspace/skills/commit-gate/SKILL.md",
+    # R46：计划侧 ↔ 事实侧互校（S1–S8）。依赖 osnorm（本表中已在其前）；`.workspace/SEQUENCE.md`
+    # **刻意不进**本表 —— 研发路线图是 dev 专用，实例不该继承。
+    "scripts/sequence_check.py",
+    "tests/test_sequence_check.py",
 ]
 README_EXEMPT = {"README.md", "README_EN.md"}
 # The registry cannot meaningfully hash itself; build_registry skips it.
@@ -152,7 +187,7 @@ def sha256(path: Path) -> str:
 
 def scan_clauses(path: Path) -> dict[str, str]:
     reg: dict[str, str] = {}
-    for ln in path.read_text(encoding="utf-8").splitlines():
+    for ln in osnorm.read_text(path).splitlines():
         m = MARKER_RE.search(ln)
         if m:
             reg[m.group(1)] = strip_marker(ln)
@@ -208,7 +243,7 @@ def verify_clause_level(ws: Path, registry: dict) -> list[str]:
             if cid not in reg_clauses:
                 findings.append(f"[clause] ADDED {rel}#{cid}: {cur[cid][:60]}")
         # duplicate + reorder detection over the file's marker sequence
-        ids = [m.group(1) for ln in p.read_text(encoding="utf-8").splitlines() if (m := MARKER_RE.search(ln))]
+        ids = [m.group(1) for ln in osnorm.read_text(p).splitlines() if (m := MARKER_RE.search(ln))]
         if len(ids) != len(set(ids)):
             dupes = sorted({i for i in ids if ids.count(i) > 1})
             findings.append(f"[clause] DUPLICATE {rel}: {dupes}")
@@ -246,7 +281,7 @@ def verify_custom_refs(ws_root: Path, registry: dict, custom_glob: str) -> list[
         all_ids.update(entry.get("clauses", {}).keys())
     for p in sorted(ws_root.glob(custom_glob)):
         rel = p.relative_to(ws_root).as_posix()
-        text = p.read_text(encoding="utf-8")
+        text = osnorm.read_text(p)
         for m in OVERRIDE_RE.finditer(text):
             if m.group(1) not in all_ids:
                 findings.append(f"[custom] {rel}: overrides 指向不存在的条款 {m.group(1)}（模板条款已删除或改写）")
@@ -282,10 +317,8 @@ def verify_vs_template(ws: Path, tpl: Path, trust: bool = True) -> tuple[list[st
 
     git_bin = os.environ.get("GIT_BIN") or "git"
     try:
-        st = subprocess.run([git_bin, "-C", str(tpl), "status", "--porcelain"],
-                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-        head = subprocess.run([git_bin, "-C", str(tpl), "rev-parse", "HEAD"],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        st = osnorm.run_text([git_bin, "-C", str(tpl), "status", "--porcelain"], timeout=30)
+        head = osnorm.run_text([git_bin, "-C", str(tpl), "rev-parse", "HEAD"], timeout=30)
     except (OSError, subprocess.TimeoutExpired) as exc:
         findings.append(f"[trust] git check failed on template clone: {exc}（可设置 GIT_BIN 指向 git 绝对路径）")
         return findings, info, meta
@@ -343,7 +376,7 @@ def main() -> int:
     if not reg_path.is_file():
         print(json.dumps({"error": f"registry not found: {reg_path}"}))
         return 2
-    registry = json.loads(reg_path.read_text(encoding="utf-8"))
+    registry = json.loads(osnorm.read_text(reg_path))
 
     findings: list[str] = []
     info: list[str] = []
@@ -369,7 +402,8 @@ def main() -> int:
         report["template_anchor"] = template_meta
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if args.json:
-        Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        osnorm.write_text(Path(args.json), json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                          newline="preserve")
     return 0 if not findings else 1
 
 

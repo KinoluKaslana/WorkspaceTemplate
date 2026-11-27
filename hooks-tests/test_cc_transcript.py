@@ -16,6 +16,9 @@
 运行：python3 -B hooks-tests/test_cc_transcript.py
 """
 import json
+import builtins
+import functools
+import ntpath
 import os
 
 os.environ.setdefault("PYTHONUTF8", "1")   # 子进程 stdio 统一 UTF-8（Windows 默认不是）
@@ -24,7 +27,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
+from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
 HOOKS = HERE.parent / ".workspace" / "hooks"
@@ -272,7 +277,7 @@ class CcTranscript(unittest.TestCase):
         self.assertTrue(write["would_deny"], write)
         self.assertEqual(write["targets"], [str(self.ws / "TEST-GATE.md")])
         # 读全该文件后同命令 → 放行（同会话重写转录，从头分析）
-        body = (self.ws / "TEST-GATE.md").read_bytes().decode()
+        body = (self.ws / "TEST-GATE.md").read_bytes().decode("utf-8")
         lines = body.rstrip("\n").split("\n")
         numbered = "\n".join(f"{i+1}\t{l}" for i, l in enumerate(lines))
         Path(path).write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in _records(
@@ -701,6 +706,180 @@ class CcTranscript(unittest.TestCase):
                            start_offset=res["offset"])
         self.assertFalse([e for e in again["events"]
                           if e.get("reason") == "transcript-cwd-missing"], again["events"])
+
+
+class SidecarCompatR48(unittest.TestCase):
+    """R48/P2：sidecar 三段兼容读（新键 → 旧键 → 原始绝对路径）。
+
+    R49 写侧使用交换形态。旧 sidecar 里的相对键和早期绝对键仍须可读。
+    这里验证「三段各自可读」「优先级」「写侧换键后旧账仍可读」
+    与「两 cwd 写法同键」；夹具用 `C:\\ws` 形态让新旧键在 POSIX 上也真正不同（Windows 上
+    两者会重合，断言按运行时结果自适应）。
+    """
+
+    WS = "C:\\ws"
+    GATE = "C:\\ws\\a\\b.md"
+    VALUE = {"coverage": [[1, 2]], "revision": "post-write", "total": 2, "sha": "0" * 64}
+
+    def setUp(self):
+        self.new = ct._exchange_gate_key(self.WS, self.GATE)
+        self.old = ct._legacy_gate_key(self.WS, self.GATE)
+        self.absolute = self.GATE
+
+    def test_three_way_fixture_is_readable(self):
+        """三种键分别通过 sidecar 实际落盘、重载后读回同一条账。"""
+        cases = (("new", self.new), ("old", self.old), ("absolute-raw", self.GATE))
+        with tempfile.TemporaryDirectory(prefix="sidecar-r49-") as tmp:
+            for name, key in cases:
+                with self.subTest(stage=name, key=key), mock.patch.object(
+                    ct, "offset_path", return_value=os.path.join(tmp, name + ".json")
+                ):
+                    self.assertIsInstance(key, str)
+                    ct.save_state(self.WS, name, 12, {}, {}, {key: self.VALUE})
+                    state = ct.load_state(self.WS, name)
+                    self.assertEqual(state["offset"], 12)
+                    self.assertEqual(state["books"], {key: self.VALUE})
+                    self.assertEqual(ct._book_entry(self.WS, state["books"], self.GATE), self.VALUE)
+
+    def test_lookup_order_new_then_old_then_absolute(self):
+        keys = list(ct._book_lookup_keys(self.WS, self.GATE))
+        self.assertEqual(keys[0], self.new, keys)
+        self.assertEqual(keys[-1], self.GATE, keys)
+        self.assertIn(self.old, keys)
+        if self.new != self.old:
+            self.assertLess(keys.index(self.new), keys.index(self.old), keys)
+
+    def test_precedence_and_fallbacks(self):
+        books = {self.absolute: {"stage": "absolute"}}
+        if self.old != self.absolute:
+            books[self.old] = {"stage": "old"}
+        books[self.new] = {"stage": "new"}
+        self.assertEqual(ct._book_entry(self.WS, books, self.GATE), {"stage": "new"})
+        books.pop(self.new)
+        if self.old != self.new:
+            self.assertEqual(ct._book_entry(self.WS, books, self.GATE), {"stage": "old"})
+            books.pop(self.old)
+        self.assertEqual(ct._book_entry(self.WS, books, self.GATE), {"stage": "absolute"})
+
+    def test_frozen_old_key_wins_over_current_writer(self):
+        books = {"frozen-old": self.VALUE, "current-writer": {"stage": "writer"},
+                 self.absolute: {"stage": "raw"}}
+        with mock.patch.object(ct, "_legacy_gate_key", return_value="frozen-old"), \
+                mock.patch.object(ct, "gate_key", return_value="current-writer"):
+            self.assertEqual(ct._book_entry(self.WS, books, self.GATE), self.VALUE)
+
+    def test_new_key_hit_does_not_evaluate_lower_priority_keys(self):
+        with mock.patch.object(ct, "gate_key", side_effect=ValueError("writer drift")), \
+                mock.patch.object(ct, "_legacy_gate_key") as legacy:
+            self.assertEqual(ct._book_entry(self.WS, {self.new: self.VALUE}, self.GATE),
+                             self.VALUE)
+            legacy.assert_not_called()
+
+    def test_new_writer_still_reads_old_sidecar(self):
+        books = ct._persist_books(self.WS, {self.GATE: self.VALUE})
+        self.assertEqual(books, {self.new: self.VALUE})
+        self.assertEqual(ct._book_entry(self.WS, books, self.GATE), self.VALUE)
+        self.assertEqual(ct._book_entry(self.WS, {self.old: self.VALUE}, self.GATE), self.VALUE)
+
+    def test_two_cwd_spellings_same_key(self):
+        with tempfile.TemporaryDirectory(prefix="sidecar-cwd-") as tmp:
+            gate = os.path.join(tmp, "a", "b.md")
+            spellings = (tmp, tmp + os.sep, os.path.join(tmp, "."),
+                         os.path.join(tmp, "sub", ".."))
+            for ws in spellings:
+                with self.subTest(ws=ws):
+                    self.assertEqual(ct._legacy_gate_key(ws, gate), "a/b.md")
+                    self.assertEqual(ct._exchange_gate_key(ws, gate), "a/b.md")
+
+    def test_cross_root_has_no_new_key(self):
+        self.assertIsNone(ct._exchange_gate_key("C:/ws", "D:/x/a.md"),
+                          "跨盘不得伪造相对新键（posix.relpath 不抛，必须显式判根）")
+        self.assertIsNone(ct._exchange_gate_key("/ws", "relative/a.md"),
+                          "相对输入不产新键（canonical_path 缺 base 会拒）")
+        self.assertEqual(ct._exchange_gate_key("C:/ws", "C:/ws/a/../b.md"), "b.md")
+        self.assertIsNone(ct._exchange_gate_key("//HOST/One/ws", "//host/Two/ws/g.md"))
+
+    def test_unc_volume_case_and_literal_path_segments(self):
+        self.assertEqual(
+            ct._exchange_gate_key("//HOST/Share/ws", "//host/share/ws/rules/g.md"),
+            "rules/g.md")
+        self.assertEqual(
+            ct._exchange_gate_key("//HOST/Share/WS", "//host/share/ws/Rules/g.md"),
+            "../ws/Rules/g.md")
+        self.assertEqual(ct._exchange_gate_key("//HOST/Share", "//host/share/g.md"), "g.md")
+
+    def test_cross_volume_reads_frozen_absolute_key(self):
+        ws, gate = r"C:\ws", r"d:\rules\g.md"
+        with mock.patch.object(ct, "os", mock.Mock(path=ntpath, sep="\\")):
+            self.assertEqual(ct._book_entry(ws, {"d:/rules/g.md": self.VALUE}, gate), self.VALUE)
+            books = ct._persist_books(ws, {gate: self.VALUE})
+            self.assertEqual(books, {"D:/rules/g.md": self.VALUE})
+            self.assertEqual(ct._book_entry(ws, books, gate), self.VALUE)
+
+        self._replay_ntpath_sidecars()
+
+    def _replay_ntpath_sidecars(self):
+        ws = r"c:\WS"
+        cases = [
+            (r"\\?\c:\WS\a\b.md", "a/b.md", "//?/c:/WS/a/b.md", "C:/WS/a/b.md"),
+            (r"d:\rules\g.md", "D:/rules/g.md", "d:/rules/g.md", "D:/rules/g.md"),
+        ]
+        native_os = mock.Mock(wraps=os, path=ntpath, sep="\\")
+        osn = ct._osn()
+        windows_osn = mock.Mock(wraps=osn, collapse_host_path=functools.partial(
+            osn.collapse_host_path, path_module=ntpath))
+        windows_osn.run_text.return_value = SimpleNamespace(
+            returncode=0, stdout=" M a/b.md\0 M other.md\0")
+        content = b"after write\n"
+        sid = "ntpath-sidecar"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "transcript.jsonl"
+            offset = Path(tmp) / "sidecar.json"
+            gate_disk = Path(tmp) / "gate.md"
+            gate_disk.write_bytes(content)
+            for raw, new, legacy, target in cases:
+                steps = [
+                    ("Bash", {"command": "echo x > a/b.md"}, "", False),
+                    ("Bash", {"command": f'echo x > "//?/{target}"'}, "", False),
+                    ("Read", {"file_path": target}, _numbered(content), False),
+                ]
+                # On the same volume the first write already hits the gate.
+                if new == "a/b.md":
+                    steps.pop(0)
+                osn.write_text(path, "".join(json.dumps(r) + "\n"
+                                             for r in _records(sid, steps, cwd=ws)))
+                for key in (new, legacy, raw):
+                    with self.subTest(gate=raw, key=key), mock.patch.object(
+                            ct, "offset_path", return_value=str(offset)):
+                        ct.save_state(ws, sid, 12, {}, {}, {key: self.VALUE})
+                        state = ct.load_state(ws, sid)
+                        self.assertEqual((state["offset"], state["books"]), (12, {key: self.VALUE}))
+
+                        def open_gate(name, *args, **kwargs):
+                            return builtins.open(gate_disk if name == ntpath.normpath(raw) else name,
+                                                 *args, **kwargs)
+
+                        with mock.patch.object(ct, "os", native_os), \
+                                mock.patch.object(ct.wtarget, "os", native_os), \
+                                mock.patch.object(ct, "_osn", return_value=windows_osn), \
+                                mock.patch.object(ct, "validate_path", return_value=(True, "")), \
+                                mock.patch.object(ct, "_real", side_effect=lambda p:
+                                                  ntpath.realpath(p) if p == ws else p), \
+                                mock.patch.object(ct, "open", side_effect=open_gate, create=True):
+                            self.assertEqual(ct._legacy_gate_key(ws, raw), legacy)
+                            run = ct.analyze(ws, sid, str(path), ws, gate_rel=raw, books=state["books"])
+                        writes = [e for e in run["events"] if e["type"] == "cc-bash-write"]
+                        self.assertEqual(writes[-1]["targets"], [target])
+                        self.assertEqual((writes[-1]["revision"], writes[-1]["read_state"],
+                                          writes[-1]["would_deny"]), ("persisted", "complete", False))
+                        self.assertEqual([e["files"] for e in run["events"]
+                                          if e.get("reason") == "changed-but-untargeted"],
+                                         [["c:/WS/other.md"]])
+                        ct.save_state(ws, sid, run["offset"], run["stats"], run["pending"], run["books"])
+                        self.assertEqual(ct.load_state(ws, sid)["books"], {
+                            new: {"coverage": [[1, 2]], "revision": "post-write",
+                                  "total": 2, "sha": ct._content_fingerprint(content)}
+                        })
 
 
 if __name__ == "__main__":

@@ -298,7 +298,7 @@ chcp 65001 > $null
 1. `gate_core` 顶部 `import fcntl`：Windows 没有 → hook 一启动就崩 → 插件按 advisory 放行（**实测首跑真的把文件写出来了**）。改为 `fcntl`/`msvcrt.locking` 双实现。
 2. 插件按 `python3` 找解释器：Windows 只有 `python`，spawn 失败 → 静默放行。改为按平台探测 + 环境变量覆盖。
 3. 探测到 `python` 也可能是 **WindowsApps 的 Store 存根**（退出码 0、零输出、什么都不做）→ 现在用 `-c "import sys;print(sys.version_info[0])"` 实测，必须打印 `3` 才算可用。
-4. **stdin/stdout 编码**：Windows 默认 GBK，而客户端传 UTF-8 → `json.load(sys.stdin)` 直接 `JSONDecodeError`（表现为读永远记不上、deny 文案乱码）。现在 `sys.stdin/stdout/stderr.reconfigure(encoding="utf-8")`。
+4. **stdin/stdout 编码**：当时 Windows 管道默认用本地码页，而客户端传 UTF-8，造成 payload 解析失败和 deny 文案乱码。R47 起，hook 经 osnorm 严格解码 UTF-8 管道输入，按 UTF-8 写出管道响应。
 
 > 第 4 条是最隐蔽的一条：hook 退出码 0、stderr 空，看起来「跑过了」，实际什么都没做。
 

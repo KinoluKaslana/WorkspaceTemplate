@@ -13,13 +13,14 @@ dsh **没有项目级自动发现**——不带 `--patch .dsh/workspace-gate/cor
 | cc | `.claude/settings.json`（项目受信后自动加载） | `.workspace/.hook-state/<scope>/gate.log` 里 `client=cc` |
 | codex | `.codex/hooks.json` | 同上，`client=codex` |
 | hermes | `HERMES_ENABLE_PROJECT_PLUGINS=true` + config `plugins.enabled` | 同上，`client=hermes` |
-| dsh | **每次启动**都要 `--patch`（无自动发现） | `.workspace/.dsh-gate.log` 的 `apply` 事件 + `.hook-state/<scope>/dsh-session-*.json` |
+| dsh | **每次启动**都要 `--patch`（无自动发现） | `.workspace/.dsh-gate.log` 的 `apply` 事件 + `.hook-state/<scope>/dsh-*.json` |
 
 退出码：0 = 满足要求（或没给 `--require`）；1 = `--require` 里的 harness 没证据。
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -28,35 +29,63 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+
+# 文本 I/O 与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被
+# importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+osnorm.configure_stdio()
+
+
 STATE_DIR = Path(".workspace") / ".hook-state"
 GATE_STATE_FILE = "gate.json"
 
 
 def _machine_scope(workspace: Path) -> str:
-    """本机作用域键：local_state 优先，缺失时与 gate_core 的自足兜底完全同源。"""
+    """本机作用域键：**唯一来源**是 hooks 决策核心 `gate_core.machine_scope`。
+
+    R48/P5-C8（原 O4）：这里曾复制一份「local_state 优先 + gate_core 兜底」的算法，
+    两处对「两者都取不到」的收尾不同（gate_status 给 `unknown`，gate_core 给空串，状态
+    目录就落回共享根）。现在先委托 gate_core，只在其不可导入（半同步/旧实例）时按同源
+    顺序兜底；对同机 scope 必须逐字相同，差异由 `tests/test_gate_status.py` 钉住。
+    """
+    try:
+        hooks = Path(workspace) / ".workspace" / "hooks"
+        if str(hooks) not in sys.path:
+            sys.path.insert(0, str(hooks))
+        import gate_core
+        scope = gate_core.machine_scope(str(Path(workspace)))
+        if scope:
+            return scope
+    except Exception:
+        pass
     try:
         scripts = Path(workspace) / "scripts"
         if (scripts / "local_state.py").is_file():
             if str(scripts) not in sys.path:
                 sys.path.insert(0, str(scripts))
             import local_state
-            return local_state.machine_scope()
+            scope = local_state.machine_scope()
+            if scope:
+                return scope
     except Exception:
         pass
-    try:
-        hooks = Path(workspace) / ".workspace" / "hooks"
-        if str(hooks) not in sys.path:
-            sys.path.insert(0, str(hooks))
-        from gate_core import _fallback_scope
-        return _fallback_scope() or "unknown"
-    except Exception:
-        return "unknown"
+    return "unknown"
 
 
 def _state_dirs(workspace: Path) -> list[Path]:
     """本机作用域目录（优先）+ 旧布局根（只读兼容）。"""
     roots = [workspace / STATE_DIR / _machine_scope(workspace), workspace / STATE_DIR]
     return [d for d in roots if d.is_dir()]
+
+
+def gate_record_path(workspace: Path) -> Path:
+    return workspace / STATE_DIR / _machine_scope(workspace) / GATE_STATE_FILE
+
+
 CLIENTS = ("cc", "codex", "hermes", "dsh")
 FUTURE_SKEW_MIN = 2.0     # 时间戳比现在超前超过这个分钟数 → 不算证据（时钟回拨 / 伪造）
 GATE_LOG_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) .*client=(\w+)")
@@ -84,19 +113,28 @@ def _age_minutes(ts: float) -> float:
     return round((time.time() - ts) / 60.0, 1)
 
 
+def _same_workspace(path, workspace: Path) -> bool:
+    if not isinstance(path, str) or not Path(path).is_absolute():
+        return False
+    try:
+        return Path(path).resolve() == workspace
+    except (OSError, ValueError, RuntimeError):
+        return False
+
+
 def collect(workspace: Path) -> dict:
     """返回 {client: {"last_seen_minutes": float, "sources": [...], "sessions": n}}。"""
-    state = workspace / STATE_DIR
+    workspace = workspace.resolve()
     out: dict[str, dict] = {c: {"sources": [], "sessions": 0, "last_seen_minutes": None} for c in CLIENTS}
 
     for gate_log in [d / "gate.log" for d in _state_dirs(workspace)]:
       if gate_log.is_file():
-        for line in gate_log.read_text(encoding="utf-8", errors="replace").splitlines()[-4000:]:
+        for line in osnorm.read_text(gate_log, errors="replace").splitlines()[-4000:]:
             m = GATE_LOG_RE.match(line)
             if not m:
                 continue
             stamp, client = m.group(1), m.group(2)
-            if client not in out:
+            if client not in out or client == "dsh":
                 continue
             ts = _parse_stamp(stamp)
             age = None if ts is None else _age_minutes(ts)
@@ -114,46 +152,53 @@ def collect(workspace: Path) -> dict:
     dsh_log = workspace / ".workspace" / ".dsh-gate.log"
     if dsh_log.is_file():
         newest = None
-        for line in dsh_log.read_text(encoding="utf-8", errors="replace").splitlines()[-2000:]:
+        for line in osnorm.read_text(dsh_log, errors="replace").splitlines()[-2000:]:
             try:
                 rec = json.loads(line)
             except ValueError:
                 continue
-            if rec.get("event") != "apply":
+            if not isinstance(rec, dict) or rec.get("event") != "apply":
+                continue
+            if not _same_workspace(rec.get("cwd"), workspace):
                 continue
             ts = _parse_iso(rec.get("at"))
-            if ts is not None and (newest is None or ts > newest):
+            if (ts is not None and _age_minutes(ts) >= -FUTURE_SKEW_MIN
+                    and (newest is None or ts > newest)):
                 newest = ts
         if newest is not None:
-            age = _age_minutes(newest)
-            if age >= -FUTURE_SKEW_MIN:
-                dsh_apply_age = age
+            dsh_apply_age = _age_minutes(newest)
 
-    ledgers = sorted(p for d in _state_dirs(workspace) for p in d.glob("dsh-session-*.json"))
+    ledgers = sorted(p for d in _state_dirs(workspace) for p in d.glob("dsh-*.json"))
     ledger_age = None
     for p in ledgers:
         # 账本里的 events[].ts / anchors.().ts 是 hook 自己写的事件时间——只有它算证据；
         # 文件 mtime 一律不算（touch 一下就把「很久以前」变成「刚刚」）。
         ts = None
         try:
-            rec = json.loads(p.read_text(encoding="utf-8"))
+            rec = json.loads(osnorm.read_text(p))
         except (ValueError, OSError):
-            rec = {}
-        for ev in (rec.get("events") or []):
-            cand = _parse_stamp(str((ev or {}).get("ts") or ""))
-            if cand is not None and (ts is None or cand > ts):
-                ts = cand
-        for anc in (rec.get("anchors") or {}).values():
-            cand = _parse_stamp(str((anc or {}).get("ts") or ""))
-            if cand is not None and (ts is None or cand > ts):
+            continue
+        if not isinstance(rec, dict):
+            continue
+        if "workspace_root" in rec and not _same_workspace(rec["workspace_root"], workspace):
+            continue
+        events = rec.get("events")
+        anchors = rec.get("anchors")
+        entries = events.copy() if isinstance(events, list) else []
+        if isinstance(anchors, dict):
+            entries.extend(anchors.values())
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            cand = _parse_stamp(str(entry.get("ts") or ""))
+            if (cand is not None and _age_minutes(cand) >= -FUTURE_SKEW_MIN
+                    and (ts is None or cand > ts)):
                 ts = cand
         if ts is None:
             # 账本里没有任何 hook 写的事件/锚时间 → 这份账本不构成证据。
             # 不要回退文件 mtime：`touch` 一下就能把「很久以前」变成「刚刚」（SOL/PRO 一致）。
             continue
         age = _age_minutes(ts)
-        if age < -FUTURE_SKEW_MIN:
-            continue
         if ledger_age is None or age < ledger_age:
             ledger_age = age
     out["dsh"]["sessions"] = len(ledgers)
@@ -167,7 +212,7 @@ def collect(workspace: Path) -> dict:
         try:
             # 「active」只在插件加载时写一次，后面全是逐次记账；所以取"最后一条带时间戳的行"求活跃度，
             # 而不是文件 mtime——mtime 会被后续无关写入（甚至 touch）刷新，那就不叫证据了。
-            text = hermes_log.read_text(encoding="utf-8", errors="replace")[-2_000_000:]
+            text = osnorm.read_text(hermes_log, errors="replace")[-2_000_000:]
         except OSError:
             text = ""
         last_ts = None
@@ -192,15 +237,46 @@ def collect(workspace: Path) -> dict:
     return out
 
 
+def _migrate_legacy(ws: Path) -> dict:
+    """先原子归档共享旧值，再原子清理；重试复用同一份历史。"""
+    boot_path = ws / ".workspace" / "bootstrap.json"
+    original = osnorm.read_text(boot_path, bom=True)
+    boot = json.loads(original)
+    if not isinstance(boot, dict):
+        raise ValueError("bootstrap.json 顶层必须为对象")
+    migrated = "gate" in boot
+    record = gate_record_path(ws)
+    snapshot = None
+    if migrated:
+        history = json.dumps(boot["gate"], ensure_ascii=False, indent=2) + "\n"
+        digest = hashlib.sha256(history.encode("utf-8")).hexdigest()
+        snapshot = record.parent / "gate-history" / f"bootstrap-gate-{digest}.json"
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        if not snapshot.is_file() or snapshot.read_bytes() != history.encode("utf-8"):
+            osnorm.write_text(snapshot, history, newline="lf")
+        # 归档期间若共享文件已变，保留新内容，由下一次调用重新读取。
+        if osnorm.read_text(boot_path, bom=True) != original:
+            raise ValueError("归档期间 bootstrap.json 已改变，请重试")
+        del boot["gate"]
+        osnorm.write_text(boot_path, json.dumps(boot, ensure_ascii=False, indent=2) + "\n",
+                          newline="lf")
+    return {"migrated": migrated, "removed_source": "bootstrap.gate" if migrated else None,
+            "snapshot": str(snapshot) if snapshot else None,
+            "source": "gate.json" if record.is_file() else "none"}
+
+
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="gate 接线状态（只读）")
+    ap = argparse.ArgumentParser(description="gate 接线状态（默认只读）")
     ap.add_argument("--workspace", default=".", help="工作区根目录")
     ap.add_argument("--json", action="store_true", help="机器可读输出")
     ap.add_argument("--require", default="", help="要求已接线的 harness，逗号分隔（cc,codex,hermes,dsh）")
     ap.add_argument("--ttl-minutes", type=float, default=30.0,
                     help="只把最近 N 分钟内出现的证据算作「当前活动」（政策 §15 用 30；必须为正）")
-    ap.add_argument("--record", action="store_true",
+    write = ap.add_mutually_exclusive_group()
+    write.add_argument("--record", action="store_true",
                     help="把结论写入本机状态 .workspace/.hook-state/<scope>/gate.json（对应 AGENT_RULES §15）")
+    write.add_argument("--migrate-legacy", action="store_true",
+                       help="归档共享 bootstrap.gate 旧字段后删除，保留本机 gate.json")
     ap.add_argument("--user-decision", default="",
                     help="记录用户决定来源（--record 用）；无证据时必填")
     ap.add_argument("--force", action="store_true",
@@ -211,6 +287,22 @@ def main(argv: list[str]) -> int:
     if not ws.is_dir():
         print(f"不是目录：{ws}", file=sys.stderr)
         return 2
+    if args.migrate_legacy:
+        if args.require or args.force or args.user_decision:
+            ap.error("--migrate-legacy 不接受 --require、--force 或 --user-decision")
+        try:
+            result = _migrate_legacy(ws)
+        except (OSError, ValueError) as exc:
+            print(f"迁移失败：{exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False))
+        else:
+            print("已删除 bootstrap.gate" if result["migrated"] else "没有 bootstrap.gate")
+            if result["snapshot"]:
+                print(f"本机历史快照：{result['snapshot']}")
+            print(f"本机结论来源：{result['source']}")
+        return 0
     if args.ttl_minutes <= 0:
         # TTL=0 会让「很久以前的证据」永远算活跃（SOL R1-4）；证据必须有时效。
         print("--ttl-minutes 必须为正（0 不表示「不看时间」，表示非法）", file=sys.stderr)
@@ -271,14 +363,17 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
     - 无 `--require` 不记录：不知道在判哪个 harness，写进去就是假事实。
     - 有证据 → `configured`；缺证据 → 拒绝，除非 `--force` **且**给了用户决定来源。
     - 结论按机器分片：别的机器同步过来的 gate.json 不会被当成本机结论。
-    - `bootstrap.gate` 是旧位置，只读用于翻转检测，不再写入。
     """
     if not required:
         print("--record 必须同时给 --require <harness>（记录的是「哪一端接线了」）", file=sys.stderr)
         return 2
     boot_path = ws / ".workspace" / "bootstrap.json"
-    if not boot_path.is_file():
-        print(f"没有 {boot_path}，不记录", file=sys.stderr)
+    try:
+        boot = json.loads(osnorm.read_text(boot_path, bom=True))
+        if not isinstance(boot, dict):
+            raise ValueError("bootstrap.json 顶层必须为对象")
+    except (OSError, ValueError) as exc:
+        print(f"无法读取 {boot_path}，不记录：{exc}", file=sys.stderr)
         return 2
     if missing:
         if not args.force:
@@ -289,22 +384,14 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
         if not args.user_decision.strip():
             print("--force 记录 unconfigured 必须给 --user-decision（用户决定来源）", file=sys.stderr)
             return 2
-    try:
-        boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
-    except ValueError:
-        print(f"{boot_path} 不是合法 JSON，不记录", file=sys.stderr)
-        return 2
-
     status = "unconfigured" if missing else "configured"
     old = {}
-    sp = ws / STATE_DIR / _machine_scope(ws) / GATE_STATE_FILE
+    sp = gate_record_path(ws)
     if sp.is_file():
         try:
-            old = json.loads(sp.read_text(encoding="utf-8")) or {}
+            old = json.loads(osnorm.read_text(sp)) or {}
         except ValueError:
             old = {}
-    elif isinstance(boot.get("gate"), dict):
-        old = boot["gate"]          # 旧位置：只用于翻转检测
     old_h = set(old.get("harness") or [])
     changed = bool(old.get("status")) and (status != old.get("status") or old_h != set(required))
     if changed and not args.user_decision.strip():
@@ -323,15 +410,12 @@ def _record(ws: Path, data: dict, required: list[str], missing: list[str],
         "ttl_minutes": args.ttl_minutes,
         "decision_source": args.user_decision.strip() or "runtime-evidence",
         "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "machine_scope": _machine_scope(ws),
+        "machine_scope": sp.parent.name,
     }
     sp.parent.mkdir(parents=True, exist_ok=True)
-    tmp = sp.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, sp)      # 原子替换：避免写一半的结论被别的工具读到
+    # 原子发布：避免写一半的结论被别的工具读到（临时文件同目录、写完 fsync 再 replace）
+    osnorm.write_text(sp, json.dumps(record, ensure_ascii=False, indent=2) + "\n", newline="lf")
     print(f"已记录 gate.status={status}（harness={','.join(required)}）→ {sp}")
-    if isinstance(boot.get("gate"), dict) and boot["gate"].get("status"):
-        print("注：bootstrap.json 的 gate 节是旧位置，已不再写入；以 gate.json 为准", file=sys.stderr)
     return 0 if status == "configured" else 1
 
 

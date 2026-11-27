@@ -24,10 +24,14 @@ SRC = Path(__file__).resolve().parent.parent
 SCRIPT = "scripts/workspace_preflight.py"
 HOST = socket.gethostname()
 
+# 文本 I/O 单一实现：osnorm（R1/R2 门禁的唯一入口）。夹具与被测产物都经它读写。
+if str(SRC / "scripts") not in sys.path:
+    sys.path.insert(0, str(SRC / "scripts"))
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
 
 def run(ws: Path, *args):
-    p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(ws), "--json", *args],
-                       cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    p = osnorm.run_text([sys.executable, "-B", SCRIPT, "--workspace", str(ws), "--json", *args], cwd=ws, errors="replace")
     try:
         data = json.loads(p.stdout)
     except Exception:
@@ -43,23 +47,22 @@ def base_ws(tmp: Path) -> Path:
     (ws / "notes").mkdir()
     shutil.copyfile(SRC / "scripts" / "workspace_preflight.py", ws / "scripts" / "workspace_preflight.py")
     shutil.copyfile(SRC / "scripts" / "repo_identity.py", ws / "scripts" / "repo_identity.py")
+    # R40b：workspace_preflight 的文本 I/O 走兄弟模块 osnorm，夹具必须一起分发
+    shutil.copyfile(SRC / "scripts" / "osnorm.py", ws / "scripts" / "osnorm.py")
     # 用桩代替真实 verify_rules，避免夹具依赖模板完整清单
-    (ws / "scripts" / "verify_rules.py").write_text(
-        'TEMPLATE_FILES = ["AGENT_RULES.md", ".workspace/skills/demo/SKILL.md"]\n', encoding="utf-8")
-    (ws / ".workspace" / "skills" / "demo" / "SKILL.md").write_text(
-        "---\nname: demo\ndescription: \"Use when demo.\"\nversion: 1.0.0\n---\n", encoding="utf-8")
-    (ws / "skills" / "REGISTRY.md").write_text(
-        "| demo | x | `.workspace/skills/demo/SKILL.md` | workspace-skills |\n", encoding="utf-8")
-    (ws / "notes" / "INDEX.md").write_text("# idx\n", encoding="utf-8")
-    (ws / "TOOLS.md").write_text(f"| Workspace 根目录 | `{HOST}` `{ws}` |\n| **demo** | 已登记 |\n", encoding="utf-8")
-    (ws / "AGENT_RULES.md").write_text("# rules\n", encoding="utf-8")
+    osnorm.write_text(ws / "scripts" / "verify_rules.py", 'TEMPLATE_FILES = ["AGENT_RULES.md", ".workspace/skills/demo/SKILL.md"]\n', newline="lf")
+    osnorm.write_text(ws / ".workspace" / "skills" / "demo" / "SKILL.md", "---\nname: demo\ndescription: \"Use when demo.\"\nversion: 1.0.0\n---\n", newline="lf")
+    osnorm.write_text(ws / "skills" / "REGISTRY.md", "| demo | x | `.workspace/skills/demo/SKILL.md` | workspace-skills |\n", newline="lf")
+    osnorm.write_text(ws / "notes" / "INDEX.md", "# idx\n", newline="lf")
+    osnorm.write_text(ws / "TOOLS.md", f"| Workspace 根目录 | `{HOST}` `{ws}` |\n| **demo** | 已登记 |\n", newline="lf")
+    osnorm.write_text(ws / "AGENT_RULES.md", "# rules\n", newline="lf")
     boot = {
         "workspace_status": "active",
         "python": {"mode": "local-venv", "runtime": {"identifier": ".venv-999"}, "version": "9.9.9"},
         "template": {"source_repo": "https://example.com/t.git", "local_clone": str(tmp / "tpl")},
         "git": {"status": "initialized", "remote": ""},
     }
-    (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False, indent=1), encoding="utf-8")
+    osnorm.write_text(ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False, indent=1), newline="lf")
     return ws
 
 
@@ -94,39 +97,28 @@ class Preflight(unittest.TestCase):
         self.assertEqual(data.get("mismatch"), 0, data)
         self.assertEqual(rc, 0, data)
 
-    def test_p23_legacy_gate_note_is_visible_and_non_blocking(self):
-        """旧 bootstrap.gate 与本机 gate.json 不一致：提示并进 gate 行，不新增行、不影响退出码。"""
-        tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
-        self.addCleanup(shutil.rmtree, tmp, True)
-        ws = base_ws(tmp)
-        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps({
-            "workspace_status": "active",
-            "python": {"mode": "local-venv", "runtime": {"identifier": ".venv-999"}, "version": "9.9.9"},
-            "git": {"status": "initialized", "remote": ""},
-            "gate": {"status": "configured", "harness": ["cc"]},
-        }), encoding="utf-8")
-        gj = ws / ".workspace" / ".hook-state" / "unknown" / "gate.json"
-        gj.parent.mkdir(parents=True, exist_ok=True)
-        gj.write_text(json.dumps({"schema": 1, "status": "unconfigured", "harness": [],
-                                  "machine_scope": "unknown"}), encoding="utf-8")
-        rc, data = run(ws)
-        gate_row = [i for i in data["items"] if i["id"] == "gate"][0]
-        self.assertIn("旧 bootstrap.gate", gate_row["action"], "legacy 提示被丢弃")
-        self.assertFalse([i for i in data["items"] if i["id"] == "gate_legacy"],
-                         "不得新增 gate_legacy 行")
-        # 该提示本身不得把 gate 行从 warn 抬成 mismatch（其它项的 mismatch 与本条无关）
-        self.assertEqual(gate_row["status"], "warn", gate_row)
-        rc_strict, data_strict = run(ws, "--strict")
-        self.assertEqual(
-            [i["id"] for i in data_strict["items"] if i["id"] == "gate_legacy"], [],
-            "gate_legacy 不得成为独立行（否则 --strict 会被它顶红）")
-        # 直接对照：把旧 bootstrap.gate 改成与本机一致（提示消失）后，--strict 退出码必须不变
-        boot = json.loads((ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
-        boot["gate"] = {"status": "unconfigured", "harness": []}
-        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
-        rc_strict_no_note, _ = run(ws, "--strict")
-        self.assertEqual(rc_strict, rc_strict_no_note,
-                         "legacy 提示改变了 --strict 退出码（应非阻断）")
+    def test_p23_gate_source_ignores_legacy_bootstrap(self):
+        ws = self.ws
+        boot_path = ws / ".workspace" / "bootstrap.json"
+        boot = json.loads(osnorm.read_text(boot_path))
+        boot["gate"] = {"status": "configured", "harness": ["hermes"], "ttl_minutes": "garbage"}
+        osnorm.write_text(boot_path, json.dumps(boot), newline="lf")
+        _, data = run(ws)
+        gate = next(item for item in data["items"] if item["id"] == "gate")
+        self.assertEqual((gate["source"], gate["recorded"], gate["status"]),
+                         ("none", "未记录", "warn"))
+        self.assertEqual(gate["legacy_source"], "bootstrap.gate")
+        self.assertIn("bootstrap.gate", gate["action"])
+
+        shutil.copyfile(SRC / "scripts/gate_status.py", ws / "scripts/gate_status.py")
+        osnorm.run_text([sys.executable, str(ws / "scripts/gate_status.py"),
+                         "--workspace", str(ws), "--record", "--require", "codex",
+                         "--force", "--user-decision", "接受无 gate"])
+        _, data = run(ws)
+        gate = next(item for item in data["items"] if item["id"] == "gate")
+        self.assertEqual((gate["source"], gate["recorded"], gate["status"]),
+                         ("gate.json", "unconfigured", "warn"))
+        self.assertEqual(gate["legacy_source"], "bootstrap.gate")
 
     def test_p2_missing_venv(self):
         rc, data = run(self.ws)
@@ -142,21 +134,21 @@ class Preflight(unittest.TestCase):
         sys.path.insert(0, str(SRC / "scripts"))
         import local_state as ls
         wid = "11111111-2222-3333-4444-555555555555"
-        boot = json.loads((ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot.pop("python", None)
         boot["workspace_id"] = wid
-        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(ws / ".workspace" / "bootstrap.json", json.dumps(boot), newline="lf")
         ident = ls.resolve_identity({}, ls.detect_platform_info())
         if ident is None:
             self.skipTest("本机身份不可得")
         cid = ls.context_id(wid, ident)
         d = ws / ".workspace" / ".local" / "v1" / cid
         d.mkdir(parents=True)
-        (d / "runtime.json").write_text(json.dumps({
+        osnorm.write_text(d / "runtime.json", json.dumps({
             "schema": "v1", "workspace_id": wid, "context_id": cid, "realm": ident.realm,
             "root_binding": ls._root_binding(ws, cid), "mode": "mcp",
             "venv_relpath": None, "version": "", "bound_at": "2026-11-11T00:00:00Z",
-        }), encoding="utf-8")
+        }), newline="lf")
         rc, data = run(ws)
         item = [i for i in data["items"] if i["id"] == "python"][0]
         self.assertEqual(item["status"], "n/a", item)
@@ -166,9 +158,9 @@ class Preflight(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp(prefix="pfl-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         ws = base_ws(tmp)
-        boot = json.loads((ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["schema_version"] = 9
-        (ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(ws / ".workspace" / "bootstrap.json", json.dumps(boot), newline="lf")
         rc, data = run(ws)
         item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
         self.assertEqual(item["status"], "mismatch", item)
@@ -180,15 +172,15 @@ class Preflight(unittest.TestCase):
         ws = base_ws(tmp)
         boot_p = ws / ".workspace" / "bootstrap.json"
         for bad in (True, 1.0, "1"):
-            boot = json.loads(boot_p.read_text(encoding="utf-8"))
+            boot = json.loads(osnorm.read_text(boot_p, bom=False, newline="preserve"))
             boot["schema_version"] = bad
-            boot_p.write_text(json.dumps(boot), encoding="utf-8")
+            osnorm.write_text(boot_p, json.dumps(boot), newline="lf")
             rc, data = run(ws)
             item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
             self.assertEqual(item["status"], "mismatch", f"{bad!r} 被当成合法版本：{item}")
-        boot = json.loads(boot_p.read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(boot_p, bom=False, newline="preserve"))
         boot["schema_version"] = 1
-        boot_p.write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(boot_p, json.dumps(boot), newline="lf")
         rc, data = run(ws)
         item = [i for i in data["items"] if i["id"] == "bootstrap_schema"][0]
         self.assertEqual(item["status"], "ok", "整数 1 应有可见的 OK 行")
@@ -201,22 +193,20 @@ class Preflight(unittest.TestCase):
         if not shutil.which("git"):
             self.skipTest("未安装 git")
         subprocess.run(["git", "-C", str(ws), "init", "-q"], check=True)
-        (ws / ".gitignore").write_text(".workspace/.hook-state/\n.workspace/.local/\n",
-                                       encoding="utf-8")
+        osnorm.write_text(ws / ".gitignore", ".workspace/.hook-state/\n.workspace/.local/\n", newline="lf")
         rc, data = run(ws)
         item = [i for i in data["items"] if i["id"] == "git"][0]
         self.assertTrue(item["actual"].get("local_state_ignored"), item)
 
     def test_p3_skills_mismatch(self):
         (self.ws / ".workspace" / "skills" / "extra").mkdir()
-        (self.ws / ".workspace" / "skills" / "extra" / "SKILL.md").write_text(
-            "---\nname: extra\n---\n", encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "skills" / "extra" / "SKILL.md", "---\nname: extra\n---\n", newline="lf")
         rc, data = run(self.ws)
         self.assertEqual(rc, 1, data)
         self.assertIn("skills", {i["id"] for i in data["items"] if i["status"] == "mismatch"})
 
     def test_p4_no_host_line_warns(self):
-        (self.ws / "TOOLS.md").write_text("| 其它主机 | `/home/x/ws` |\n", encoding="utf-8")
+        osnorm.write_text(self.ws / "TOOLS.md", "| 其它主机 | `/home/x/ws` |\n", newline="lf")
         rc, data = run(self.ws)
         st = {i["id"]: i["status"] for i in data["items"]}
         self.assertEqual(st["workspace_root"], "warn")
@@ -238,15 +228,15 @@ class Preflight(unittest.TestCase):
         """模板正主存在本机 runtime.json 时只 warn，并给出沙箱操作指引。"""
         _require_git()
         boot_p = self.ws / ".workspace" / "bootstrap.json"
-        boot = json.loads(boot_p.read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(boot_p, bom=False, newline="preserve"))
         boot["template"]["source_repo"] = "https://example.com/template.git"
-        boot_p.write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(boot_p, json.dumps(boot), newline="lf")
         subprocess.run(["git", "-C", str(self.ws), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(self.ws), "remote", "add", "origin",
                         "git@example.com:template.git"], check=True)
         runtime = self.ws / ".workspace" / ".local" / "v1" / "host" / "runtime.json"
         runtime.parent.mkdir(parents=True)
-        runtime.write_text("{}\n", encoding="utf-8")
+        osnorm.write_text(runtime, "{}\n", newline="lf")
         _, data = run(self.ws)
         row = next(i for i in data["items"] if i["id"] == "template_runtime")
         self.assertEqual(row["status"], "warn", row)
@@ -261,7 +251,7 @@ class Preflight(unittest.TestCase):
                         "https://example.com/derived.git"], check=True)
         runtime = self.ws / ".workspace" / ".local" / "v1" / "host" / "runtime.json"
         runtime.parent.mkdir(parents=True)
-        runtime.write_text("{}\n", encoding="utf-8")
+        osnorm.write_text(runtime, "{}\n", newline="lf")
         _, data = run(self.ws)
         row = next(i for i in data["items"] if i["id"] == "template_runtime")
         self.assertEqual(row["status"], "ok", row)
@@ -273,7 +263,7 @@ class Preflight(unittest.TestCase):
         scripts = self.ws / ".venv-999" / "Scripts"
         scripts.mkdir(parents=True)
         stub = scripts / "python.exe"
-        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        osnorm.write_text(stub, f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', newline="lf")
         stub.chmod(0o755)
         rc, data = run(self.ws)
         py = [i for i in data["items"] if i["id"] == "python"][0]
@@ -283,8 +273,7 @@ class Preflight(unittest.TestCase):
 
     def _layout_only(self):
         import subprocess as sp
-        p = sp.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"],
-                   cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        p = osnorm.run_text([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"], cwd=self.ws, errors="replace")
         return p.returncode, json.loads(p.stdout)
 
     def test_p24_unrunnable_interpreter_degrades_not_crash(self):
@@ -293,46 +282,44 @@ class Preflight(unittest.TestCase):
         d = self.ws / ".venv-999" / "bin"
         d.mkdir(parents=True, exist_ok=True)
         stub = d / "python"
-        stub.write_text("not an executable\n", encoding="utf-8")
+        osnorm.write_text(stub, "not an executable\n", newline="lf")
         stub.chmod(0o644)
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ".venv-999"}}
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
-        p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"],
-                           cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
+        p = osnorm.run_text([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"], cwd=self.ws, errors="replace")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         data = json.loads(p.stdout)          # 没崩：stdout 仍是合法 JSON
         self.assertIsNone(data["version"], data)
 
     def test_p20_readme_undecided_after_git_init_warns(self):
         """建仓后必须有过 README 决策；只 warn 不 mismatch（它不阻塞，但必须被看见）。"""
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["git"] = {"status": "initialized", "remote": "", "default_branch": "main"}
         boot.pop("readme", None)
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
         rc, data = run(self.ws)
         item = [i for i in data["items"] if i["id"] == "readme"][0]
         self.assertEqual(item["status"], "warn", item)
         self.assertIn("--record-readme", item["action"])
 
     def test_p21_readme_bad_status_is_mismatch(self):
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["readme"] = {"status": "whatever"}
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
         rc, data = run(self.ws)
         self.assertEqual(rc, 1, data)
         self.assertIn("readme", {i["id"] for i in data["items"] if i["status"] == "mismatch"})
 
     def test_p22_record_readme_writes_and_verifies(self):
         """机械入口：--record-readme 写 bootstrap.readme，随后 preflight 该项转 ok。"""
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["git"] = {"status": "initialized", "remote": "", "default_branch": "main"}
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
         import subprocess as sp
-        p = sp.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--record-readme", "provided"],
-                   cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        p = osnorm.run_text([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--record-readme", "provided"], cwd=self.ws, errors="replace")
         self.assertEqual(p.returncode, 0, p.stderr)
-        saved = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))["readme"]
+        saved = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))["readme"]
         self.assertEqual(saved["status"], "generated-provided")
         self.assertTrue(saved["decided_at"])
         rc, data = run(self.ws)
@@ -341,8 +328,7 @@ class Preflight(unittest.TestCase):
 
     def test_p23_record_readme_rejects_bad_mode(self):
         import subprocess as sp
-        p = sp.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--record-readme", "auto-magic"],
-                   cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        p = osnorm.run_text([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--record-readme", "auto-magic"], cwd=self.ws, errors="replace")
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
 
     def test_p16_bootstrap_with_bom(self):
@@ -352,8 +338,8 @@ class Preflight(unittest.TestCase):
         `JSONDecodeError: Unexpected UTF-8 BOM`，preflight 连报告都出不来。
         """
         boot = self.ws / ".workspace" / "bootstrap.json"
-        raw = boot.read_bytes()
-        boot.write_bytes(b"\xef\xbb\xbf" + raw)
+        raw = osnorm.read_bytes(boot)
+        osnorm.write_bytes(boot, b"\xef\xbb\xbf" + raw)
         rc, data = run(self.ws)
         self.assertNotIn("raw", data, data)              # 能解析出报告，而不是 JSONDecodeError
         self.assertIsInstance(data.get("items"), list)
@@ -363,11 +349,11 @@ class Preflight(unittest.TestCase):
         stub_dir = self.ws / "bin"
         stub_dir.mkdir(parents=True)
         stub = stub_dir / "python"
-        stub.write_text(f'#!/bin/sh\necho 9.9.9\n', encoding="utf-8")
+        osnorm.write_text(stub, f'#!/bin/sh\necho 9.9.9\n', newline="lf")
         stub.chmod(0o755)
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["python"] = {"mode": "mcp", "runtime": {"mcp_server": "x", "mcp_tool": "y", "identifier": None}}
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
         rc, data = self._layout_only()
         self.assertEqual(rc, 0, data)
         self.assertEqual(data["layout"], "n/a")
@@ -379,11 +365,11 @@ class Preflight(unittest.TestCase):
         stub_dir = self.ws / "bin"
         stub_dir.mkdir(parents=True)
         stub = stub_dir / "python"
-        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        osnorm.write_text(stub, f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', newline="lf")
         stub.chmod(0o755)
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["python"] = {"mode": "local-venv", "runtime": {"identifier": ""}}
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
         rc, data = self._layout_only()
         self.assertEqual(rc, 3, data)
         self.assertEqual(data["layout"], "none")
@@ -391,13 +377,13 @@ class Preflight(unittest.TestCase):
 
     def test_p19_uv_reports_tool_availability(self):
         """uv 模式除了布局，还要报 uv 工具是否可用（否则 exit 0 会被当成"uv 环境健康"）。"""
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["python"] = {"mode": "uv", "runtime": {"identifier": ".venv-999"}}
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
         d = self.ws / ".venv-999" / "bin"
         d.mkdir(parents=True)
         stub = d / "python"
-        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        osnorm.write_text(stub, f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', newline="lf")
         stub.chmod(0o755)
         rc, data = self._layout_only()
         self.assertEqual(rc, 0, data)
@@ -406,9 +392,9 @@ class Preflight(unittest.TestCase):
 
     def test_p13_layout_only_mcp_not_applicable(self):
         """MCP 模式没有本地 venv：布局不适用，exit 0（不能报 3 让自动化当故障）。"""
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["python"] = {"mode": "mcp", "runtime": {"mcp_server": "x", "mcp_tool": "y"}}
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
         rc, data = self._layout_only()
         self.assertEqual(rc, 0, data)
         self.assertEqual(data["mode"], "mcp")
@@ -416,9 +402,9 @@ class Preflight(unittest.TestCase):
         self.assertFalse(data["applicable"])
 
     def test_p14_layout_only_unconfigured(self):
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["python"] = {"mode": "unconfigured"}
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
         rc, data = self._layout_only()
         self.assertEqual(rc, 3, data)
         self.assertFalse(data["applicable"])
@@ -426,13 +412,13 @@ class Preflight(unittest.TestCase):
 
     def test_p15_layout_only_uv_mode_uses_same_rules(self):
         """uv 模式照样是本地 venv，布局规则与 local-venv 相同。"""
-        boot = json.loads((self.ws / ".workspace" / "bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(self.ws / ".workspace" / "bootstrap.json", bom=False, newline="preserve"))
         boot["python"] = {"mode": "uv", "runtime": {"identifier": ".venv-999"}}
-        (self.ws / ".workspace" / "bootstrap.json").write_text(json.dumps(boot, ensure_ascii=False), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False), newline="lf")
         d = self.ws / ".venv-999" / "bin"
         d.mkdir(parents=True)
         stub = d / "python"
-        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        osnorm.write_text(stub, f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', newline="lf")
         stub.chmod(0o755)
         rc, data = self._layout_only()
         self.assertEqual(rc, 0, data)
@@ -445,10 +431,9 @@ class Preflight(unittest.TestCase):
         scripts = self.ws / ".venv-999" / "Scripts"
         scripts.mkdir(parents=True)
         stub = scripts / "python.exe"
-        stub.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        osnorm.write_text(stub, f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', newline="lf")
         stub.chmod(0o755)
-        p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"],
-                           cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        p = osnorm.run_text([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"], cwd=self.ws, errors="replace")
         self.assertEqual(p.returncode, 0, p.stderr)
         data = json.loads(p.stdout)
         self.assertEqual(data["layout"], "windows")
@@ -457,8 +442,7 @@ class Preflight(unittest.TestCase):
 
     def test_p11_layout_only_missing(self):
         """--layout-only：找不到解释器时 layout=none、exit 3，且不伪造版本。"""
-        p = subprocess.run([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"],
-                           cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        p = osnorm.run_text([sys.executable, "-B", SCRIPT, "--workspace", str(self.ws), "--layout-only"], cwd=self.ws, errors="replace")
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
         data = json.loads(p.stdout)
         self.assertEqual(data["layout"], "none")
@@ -486,7 +470,7 @@ class VenvLayout(unittest.TestCase):
     def _touch(self, *parts):
         f = self.venv.joinpath(*parts)
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text("", encoding="utf-8")
+        osnorm.write_text(f, "", newline="lf")
         return f
 
     def test_p7_posix_layout(self):

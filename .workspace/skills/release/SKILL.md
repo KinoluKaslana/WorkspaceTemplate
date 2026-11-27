@@ -1,7 +1,7 @@
 ---
 name: release
-description: "Use when any request asks to raise the policy version, create a release tag, or publish WorkspaceTemplate. 任何升政策版本、打 tag、发版请求都必须使用。"
-version: 1.0.0
+description: "Use when any request asks to raise the policy version, create a release tag, publish WorkspaceTemplate, or record a dev iteration version (NN.X.Y.Z). 任何升政策版本、打 tag、发版、记 dev 四段版本的请求都必须使用。"
+version: 1.1.0
 ---
 
 # Release — 模板发版机械闭环
@@ -43,6 +43,41 @@ git push origin HEAD && git push origin vX.Y.Z
 
 强制顺序：`--dry-run` → 人工确认 → `--apply` → `--verify` → `--tag --apply` → 人工 push → 实例同步。禁止手改版本号、CHANGELOG 条目或 `releases.json`；任一步失败立即停工，不许跳过继续。
 
+## dev 发版（四段版本 `NN.X.Y.Z`）
+
+dev 迭代有**自己的版本链**，与政策版本链物理分离：
+
+| 链 | 版本形态 | 事实位 | 对账命令 |
+|---|---|---|---|
+| 政策（main） | 三段 `X.Y.Z` | `AGENT_RULES.md:4` / `CHANGELOG.md` 顶层 / `bootstrap.current_policy_version` / `.workspace/releases.json` 末条 | `scripts/version_check.py`、`scripts/policy_facts.py --check` |
+| dev | 四段 `NN.X.Y.Z` | `CHANGELOG_DEV.md` 首个标题 / `.workspace/release_dev.json` 末条 | `scripts/release.py --dev --verify`、`scripts/policy_facts.py --check` |
+
+- `NN` = 迭代轮次（从 1 起），`X.Y.Z` = 本轮**预计发布**的正式版本，必须等于当前政策版本的后三段。
+  **dev 版本不是政策版本**：`AGENT_RULES.md` 头部、README 徽章、`version_check` 永远只认三段号。
+- 空账本时的基线轮次是 44（首个 dev 版本 `44.3.8.0` 收录 R35–R44）。
+
+```bash
+.venv/bin/python -B scripts/release.py --dev --dry-run               # 派生本轮版本，不写盘
+.venv/bin/python -B scripts/release.py --dev --apply --summary "…"   # 只写 CHANGELOG_DEV.md + release_dev.json
+.venv/bin/python -B scripts/release.py --dev --verify                # 账本末条 == CHANGELOG_DEV 首条
+.venv/bin/python -B scripts/release.py --dev --list                  # 打印 dev 账本
+```
+
+- 显式推进轮次：`--dev --round 45`（等价 `--dev --version 45.X.Y.Z`）；不给参数时派生
+  `<账本末条轮次>.<政策版本>`，所以同一轮次二次 `--apply` 必被拒（版本只升不降）。
+- `--dev --apply` **不要求工作树干净**（dev 账本是开发树里的中间产物），但仍会刷新
+  生成块 / docs 索引 / 条款注册表（两个 dev 文件都在 `TEMPLATE_FILES` 里，不重建注册表会立刻 `HASH-DIFF`）。
+- **绝不**写 `releases.json`、不改 `AGENT_RULES.md` / `bootstrap.json`、不打 tag、不 push。
+
+## 发版前 dev/main 对账（5 项，逐条跑，任一不成立就不发）
+
+1. `scripts/release.py --dev --verify` rc=0：dev 账本末条 == `CHANGELOG_DEV.md` 首个标题。
+2. `scripts/policy_facts.py --check` ok：政策版本字面量只出现在生成块内；dev 双账本成对且递增。
+3. `scripts/version_check.py` ok：政策头 / `CHANGELOG.md` 顶层 / bootstrap 仍是**同一个三段版本**（dev 没串味）。
+4. `git log --oneline <dev 基线>..HEAD` 的每个提交都能在 `CHANGELOG_DEV.md` 对应轮次里找到落点
+   （找不到 = 这轮改动没被记录，补条目而不是补提交信息）。
+5. `scripts/check_all.py --check` 10/10：登记、生成物、索引、条款、版本五项全绿后再 `--full`。
+
 ## 失败与回滚
 
 | 失败特征（exit code / 输出特征） | 处置（回滚到哪个状态 + 自验命令） |
@@ -56,6 +91,7 @@ git push origin HEAD && git push origin vX.Y.Z
 ```bash
 .venv/bin/python -B scripts/release.py --verify  # 期望 exit 0
 .venv/bin/python -B scripts/release.py --list    # 期望末条版本等于政策头
+.venv/bin/python -B scripts/release.py --dev --verify  # 期望 exit 0：dev 账本末条 == CHANGELOG_DEV 首条
 ```
 
 ## 维护

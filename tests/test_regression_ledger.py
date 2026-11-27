@@ -35,6 +35,7 @@ SCRIPTS = ROOT / "scripts"
 PLUGIN_YAML = Path(".hermes/plugins/workspace-gate/plugin.yaml")
 
 sys.path.insert(0, str(SCRIPTS))
+import osnorm  # noqa: E402
 from repo_identity import classify, repair  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("_policy_facts_ledger", SCRIPTS / "policy_facts.py")
@@ -110,21 +111,19 @@ class PolicyFactsLedger(unittest.TestCase):
     @staticmethod
     def append(root: Path, rel: str, *lines: str) -> None:
         path = root / rel
-        text = path.read_text(encoding="utf-8").rstrip("\n")
-        path.write_text(text + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+        text = osnorm.read_text(path, bom=False, newline="preserve").rstrip("\n")
+        osnorm.write_text(path, text + "\n" + "\n".join(lines) + "\n", newline="lf")
 
     @staticmethod
     def replace(root: Path, rel: str, old: str, new: str) -> None:
         path = root / rel
-        text = path.read_text(encoding="utf-8")
+        text = osnorm.read_text(path, bom=False, newline="preserve")
         assert old in text, f"{rel} 里找不到 {old!r}"
-        path.write_text(text.replace(old, new, 1), encoding="utf-8")
+        osnorm.write_text(path, text.replace(old, new, 1), newline="lf")
 
     def check(self, root: Path) -> tuple[int, str]:
         """生产入口：副本里的 `--check`（不用 `check()`，CLI 才是门禁口径）。"""
-        proc = subprocess.run(
-            [sys.executable, "-B", str(root / "scripts" / "policy_facts.py"), "--check"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        proc = osnorm.run_text([sys.executable, "-B", str(root / "scripts" / "policy_facts.py"), "--check"], errors="replace")
         return proc.returncode, proc.stdout + proc.stderr
 
     def assert_red(self, root: Path, needle: str) -> str:
@@ -238,10 +237,9 @@ class PolicyFactsLedger(unittest.TestCase):
             with self.subTest(rel=rel, line=line):
                 case = self.case()
                 boot = case / ".workspace/bootstrap.json"
-                data = json.loads(boot.read_text(encoding="utf-8"))
+                data = json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))
                 data["workspace_status"] = "active"
-                boot.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-                                encoding="utf-8")
+                osnorm.write_text(boot, json.dumps(data, ensure_ascii=False, indent=2) + "\n", newline="lf")
                 self.append(case, rel, line)
                 self.assert_green(case)
 
@@ -333,11 +331,8 @@ class PolicyFactsLedger(unittest.TestCase):
             with self.subTest(noun=noun, area="generated"):
                 case = self.case()
                 path = case / "docs/tools.md"
-                path.write_text(
-                    path.read_text(encoding="utf-8")
-                    + f"\n{pf.BEGIN}\n工具层 {noun} {self.scripts} 个。R2–R8。\n{pf.END}\n",
-                    encoding="utf-8",
-                )
+                osnorm.write_text(path, osnorm.read_text(path, bom=False, newline="preserve")
+                    + f"\n{pf.BEGIN}\n工具层 {noun} {self.scripts} 个。R2–R8。\n{pf.END}\n", newline="lf")
                 self.assertEqual(pf.dup_fact_offenders(case), [],
                                  "生成块内的 scripts 形态或无关 R2–R8 被误伤")
 
@@ -399,8 +394,7 @@ class PyenvActivationLedger(unittest.TestCase):
 
     def setUp(self):
         try:
-            self.source = json.loads((ROOT / ".workspace/bootstrap.json")
-                                    .read_text(encoding="utf-8"))["template"]["source_repo"]
+            self.source = json.loads(osnorm.read_text(ROOT / ".workspace/bootstrap.json", bom=False, newline="preserve"))["template"]["source_repo"]
         except Exception as exc:                                    # noqa: BLE001
             self.skipTest(f"读不到模板源仓库地址：{exc}")
         self._tmp = tempfile.TemporaryDirectory(prefix="pyenv-ledger-")
@@ -414,8 +408,7 @@ class PyenvActivationLedger(unittest.TestCase):
         boot = {"schema_version": 1, "workspace_status": "template",
                 "python": {"mode": "unconfigured"}, "template": {"source_repo": self.source}}
         boot_path = ws / ".workspace/bootstrap.json"
-        boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n",
-                             encoding="utf-8")
+        osnorm.write_text(boot_path, json.dumps(boot, ensure_ascii=False, indent=2) + "\n", newline="lf")
         subprocess.run(["git", "init", "-q", str(ws)], check=True)
         if origin is not None:
             subprocess.run(["git", "-C", str(ws), "remote", "add", "origin", origin],
@@ -424,14 +417,12 @@ class PyenvActivationLedger(unittest.TestCase):
 
     @staticmethod
     def apply(ws: Path) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            [sys.executable, "-B", str(SCRIPTS / "pyenv_init.py"), "--workspace", str(ws),
+        return osnorm.run_text([sys.executable, "-B", str(SCRIPTS / "pyenv_init.py"), "--workspace", str(ws),
              "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python",
-             "--apply", "--json"],
-            capture_output=True, text=True, encoding="utf-8")
+             "--apply", "--json"], errors="strict")
 
     def status(self, ws: Path) -> str:
-        return json.loads((ws / ".workspace/bootstrap.json").read_text(encoding="utf-8")
+        return json.loads(osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve")
                           )["workspace_status"]
 
     def test_r15_01_template_clone_stays_template(self):

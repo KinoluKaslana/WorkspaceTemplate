@@ -29,6 +29,18 @@ from pathlib import Path
 
 from verify_rules import TEMPLATE_FILES
 
+
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
+
+
 MARKER_RE = re.compile(r"\s*<!--\s*id:(R\d+)\s*-->\s*$")
 CLAUSE_RE = re.compile(r"^(\d+\.|[-*]\s|\d+[)、.])")
 HEADING_RE = re.compile(r"^#{1,6}\s")
@@ -57,7 +69,7 @@ def next_free_id(used: set[str]) -> str:
 
 def scan(path: Path) -> tuple[list[str], dict[str, str]]:
     """Return (marked_lines, registry {id: clause_text})."""
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = osnorm.read_text(path).splitlines()
     out: list[str] = []
     reg: dict[str, str] = {}
     for ln in lines:
@@ -97,7 +109,7 @@ def mark_file(path: Path, used: set[str] | None = None, dry: bool = False) -> tu
         else:
             out.append(ln)
     if not dry and added:
-        path.write_text("\n".join(out) + "\n", encoding="utf-8")
+        osnorm.write_text(path, "\n".join(out) + "\n", newline="preserve")
     return added, reg
 
 
@@ -159,14 +171,15 @@ def main() -> int:
         regs = build_registry(root)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        osnorm.write_text(out, json.dumps(regs, ensure_ascii=False, indent=2) + "\n",
+                          newline="preserve")
         print(f"OK: marked {total} new clauses; registry -> {out} ({len(regs)} files)")
         return 0
 
     if args.mode == "check":
         unmarked = 0
         for p in paths:
-            for i, ln in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            for i, ln in enumerate(osnorm.read_text(p).splitlines(), 1):
                 if is_trackable(ln) and not MARKER_RE.search(ln):
                     print(f"UNMARKED {p}:{i}: {ln.strip()[:80]}")
                     unmarked += 1
@@ -177,7 +190,8 @@ def main() -> int:
         regs = build_registry(root)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(regs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        osnorm.write_text(out, json.dumps(regs, ensure_ascii=False, indent=2) + "\n",
+                          newline="preserve")
         print(f"OK: registry rebuilt -> {out} ({len(regs)} files)")
         return 0
     return 0

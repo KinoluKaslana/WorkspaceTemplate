@@ -10,9 +10,21 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+import osnorm  # noqa: E402
 from repo_identity import classify, convert_format, normalize_encoding, repair  # noqa: E402
 
 SOURCE = "https://github.com/KinoluKaslana/WorkspaceTemplate"
+
+
+def _safe_symlink(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    """建符号链接；本机无此权限（未开开发者模式的 Windows）时跳过夹具。
+
+    跳过的是夹具能力而不是判据：T-d 要证明「经 symlink 的 base 解析被拒」，没有样本就造不出证据。
+    """
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:      # pragma: no cover - 平台相关
+        raise unittest.SkipTest(f"本机不支持创建符号链接（{exc}）")
 
 
 class RepoIdentityPipeline(unittest.TestCase):
@@ -52,7 +64,7 @@ class RepoIdentityPipeline(unittest.TestCase):
             outside.mkdir()
             self.assertIsNone(repair("localrepo"))                         # T-b
             self.assertIsNone(repair("../outside", base=root))             # T-c
-            (root / "outside-link").symlink_to(outside, target_is_directory=True)
+            _safe_symlink(root / "outside-link", outside, target_is_directory=True)
             self.assertIsNone(repair("outside-link", base=root))           # T-d
 
     def test_idempotence(self):
@@ -103,7 +115,7 @@ class ActivationAtomicity(unittest.TestCase):
         (ws / ".workspace").mkdir(parents=True)
         boot = {"schema_version": 1, "workspace_status": "template",
                 "python": {"mode": "unconfigured"}, "template": {"source_repo": SOURCE}}
-        (ws / ".workspace/bootstrap.json").write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(ws / ".workspace/bootstrap.json", json.dumps(boot), newline="lf")
         subprocess.run(["git", "init", "-q", str(ws)], check=True)
         subprocess.run(["git", "-C", str(ws), "remote", "add", "origin", origin], check=True)
         return ws
@@ -112,10 +124,8 @@ class ActivationAtomicity(unittest.TestCase):
         ws = self._workspace("https://[bad/o/r")
         boot = ws / ".workspace/bootstrap.json"
         before = boot.read_bytes()
-        result = subprocess.run(
-            [sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
-             "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"],
-            capture_output=True, text=True)
+        result = osnorm.run_text([sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
+             "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"], errors="replace")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(boot.read_bytes(), before)
         self.assertFalse((ws / ".workspace/.local").exists())
@@ -125,12 +135,10 @@ class ActivationAtomicity(unittest.TestCase):
         for origin, active in ((SOURCE, False), ("https://example.invalid/o/r", True)):
             with self.subTest(origin=origin):
                 ws = self._workspace(origin)
-                result = subprocess.run(
-                    [sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
-                     "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"],
-                    capture_output=True, text=True)
+                result = osnorm.run_text([sys.executable, "-B", str(ROOT / "scripts/pyenv_init.py"), "--workspace", str(ws),
+                     "--mode", "mcp", "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"], errors="replace")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                boot = json.loads((ws / ".workspace/bootstrap.json").read_text())
+                boot = json.loads(osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve"))
                 self.assertEqual(boot["workspace_status"] == "active", active)
                 if not active:
                     self.assertIn("remote set-url", json.loads(result.stdout)["hint"])

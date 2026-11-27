@@ -8,13 +8,14 @@
 
 | 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |
 |---|---|---|---|---|
-| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（9 入口：delivery-closure / docs-retrieval-maintenance / git-init / legacy-workspace-upgrade / release / template-update / workspace-init / workspace-repo-sync / workspace-skill-authoring） | `TOOLS.md`「workspace-skills」小节 |
+| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记（工作区自维护技能，随模板/工作区演进） | 已登记（10 入口：commit-gate / delivery-closure / docs-retrieval-maintenance / git-init / legacy-workspace-upgrade / release / template-update / workspace-init / workspace-repo-sync / workspace-skill-authoring） | `TOOLS.md`「workspace-skills」小节 |
 | `workspace-skills-local` | `.workspace/skills-local/` | 无路由器；每 skill 独立登记（用户所有） | 已登记（0 个本地 skill） | `TOOLS.md` §4.6 |
 
 ## Skill 入口
 
 | 路由 ID | 触发摘要 | 入口 | 所属命名空间 |
 |---|---|---|---|
+| commit-gate | Use when a git commit is imminent — before committing, right after `release.py --apply`, before merging into main, or whenever 「提交前检查」 comes up；不用于发版版本记录（那是 release）。提交前质量门：一条命令跑完全部格式修复与判据检查。 | `.workspace/skills/commit-gate/SKILL.md` | workspace-skills |
 | delivery-closure | Use before declaring any task-mode deliverable complete (persistent artifacts produced). 声明任务完成前的交付闭环检查——产物清点/note 判定/索引回写/部署验证六步机械流程时使用。 | `.workspace/skills/delivery-closure/SKILL.md` | workspace-skills |
 | docs-retrieval-maintenance | Use when docs/ changed, the retrieval index is stale, an alias target was renamed, or the hit report drops. 维护 docs 检索索引与别名表：索引可全自动，别名仅在有真实查询缺口日志时可自主新增（用户不手改）。 | `.workspace/skills/docs-retrieval-maintenance/SKILL.md` | workspace-skills |
 | git-init | Use when the user asks to create/initialize a git repository for a workspace that previously declined one (bootstrap git.status=declined), or to re-record git info in bootstrap. 为此前未建仓的工作区创建 git 仓库并登记 bootstrap 时使用。 | `.workspace/skills/git-init/SKILL.md` | workspace-skills |

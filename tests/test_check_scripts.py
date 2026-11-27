@@ -10,6 +10,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ("version_check.py", "notes_index_check.py", "secret_scan.py")
 
@@ -21,25 +24,23 @@ class Base(unittest.TestCase):
         (self.root / "scripts").mkdir()
         for name in SCRIPTS:
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
+        # R38e：version_check / notes_index_check 的文本 I/O 走兄弟模块 osnorm
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.root / "scripts" / "osnorm.py")
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def run_script(self, name, *args):
-        return subprocess.run([sys.executable, "-B", str(self.root / "scripts" / name), *args],
-                              capture_output=True, text=True, encoding="utf-8", cwd=self.root)
+        return osnorm.run_text([sys.executable, "-B", str(self.root / "scripts" / name), *args], cwd=self.root, errors="strict")
 
 
 class VersionCheck(Base):
     def write(self, policy="3.4.0", changelog="3.4.0", boot="3.4.0"):
-        (self.root / "AGENT_RULES.md").write_text(
-            f"# 规则\n\n> 状态。\n> **模板政策版本：`{policy}`。** 变更记录到 CHANGELOG。\n", encoding="utf-8")
-        (self.root / "CHANGELOG.md").write_text(f"# Changelog\n\n## {changelog}（2026-11-02）条目\n",
-                                                encoding="utf-8")
+        osnorm.write_text(self.root / "AGENT_RULES.md", f"# 规则\n\n> 状态。\n> **模板政策版本：`{policy}`。** 变更记录到 CHANGELOG。\n", newline="lf")
+        osnorm.write_text(self.root / "CHANGELOG.md", f"# Changelog\n\n## {changelog}（2026-11-02）条目\n", newline="lf")
         if boot is not None:
             (self.root / ".workspace").mkdir(exist_ok=True)
-            (self.root / ".workspace" / "bootstrap.json").write_text(
-                json.dumps({"template": {"current_policy_version": boot}}), encoding="utf-8")
+            osnorm.write_text(self.root / ".workspace" / "bootstrap.json", json.dumps({"template": {"current_policy_version": boot}}), newline="lf")
 
     def test_green(self):
         self.write()
@@ -77,7 +78,7 @@ class VersionCheck(Base):
 
     def test_missing_changelog_entry_is_red(self):
         self.write()
-        (self.root / "CHANGELOG.md").write_text("# Changelog\n\n没有版本标题\n", encoding="utf-8")
+        osnorm.write_text(self.root / "CHANGELOG.md", "# Changelog\n\n没有版本标题\n", newline="lf")
         p = self.run_script("version_check.py")
         self.assertEqual(p.returncode, 1)
         self.assertIn("E2", p.stdout)
@@ -90,14 +91,11 @@ class NotesIndexCheck(Base):
         notes.mkdir()
         shutil.copy2(ROOT / "notes" / "rebuild_index.py", notes / "rebuild_index.py")
         shutil.copy2(ROOT / "notes" / "_TEMPLATE.md", notes / "_TEMPLATE.md")
-        (notes / "demo-note.md").write_text(
-            "---\nname: demo-note\ndescription: 演示 note\ncategory: method\n"
-            "techniques: [alpha]\nkeywords: [alpha]\nstatus: active\n---\n\n正文\n",
-            encoding="utf-8")
+        osnorm.write_text(notes / "demo-note.md", "---\nname: demo-note\ndescription: 演示 note\ncategory: method\n"
+            "techniques: [alpha]\nkeywords: [alpha]\nstatus: active\n---\n\n正文\n", newline="lf")
 
     def build(self):
-        p = subprocess.run([sys.executable, "-B", "rebuild_index.py"],
-                           cwd=self.root / "notes", capture_output=True, text=True, encoding="utf-8", errors="replace")
+        p = osnorm.run_text([sys.executable, "-B", "rebuild_index.py"], cwd=self.root / "notes", errors="replace")
         self.assertIn(p.returncode, (0, 1), p.stderr)   # 1 = 有警告/策展到期，仍产出文件
 
     def test_green_after_build(self):
@@ -107,7 +105,7 @@ class NotesIndexCheck(Base):
     def test_hand_edited_index_is_red(self):
         self.build()
         idx = self.root / "notes" / "INDEX.md"
-        idx.write_text(idx.read_text(encoding="utf-8") + "\n手加一行\n", encoding="utf-8")
+        osnorm.write_text(idx, osnorm.read_text(idx, bom=False, newline="preserve") + "\n手加一行\n", newline="lf")
         p = self.run_script("notes_index_check.py")
         self.assertEqual(p.returncode, 1)
         self.assertIn("E3", p.stdout)
@@ -115,9 +113,8 @@ class NotesIndexCheck(Base):
     def test_curation_state_from_bootstrap_is_compared(self):
         """索引头部会写策展状态；检查必须带上 bootstrap，否则永远误报。"""
         (self.root / ".workspace").mkdir(exist_ok=True)
-        (self.root / ".workspace" / "bootstrap.json").write_text(
-            '{"notes": {"curation": {"count_threshold": 25, "interval_days": 90,'
-            ' "last_curated_at": "2026-11-02"}}}', encoding="utf-8")
+        osnorm.write_text(self.root / ".workspace" / "bootstrap.json", '{"notes": {"curation": {"count_threshold": 25, "interval_days": 90,'
+            ' "last_curated_at": "2026-11-02"}}}', newline="lf")
         self.build()
         self.assertEqual(self.run_script("notes_index_check.py").returncode, 0)
 
@@ -126,17 +123,72 @@ class NotesIndexCheck(Base):
         self.assertEqual(p.returncode, 1)
         self.assertIn("E2", p.stdout)
 
+    # ---- C2：索引不得随日期漂移 ---------------------------------------------------------
+
+    def _curated(self, last="2026-11-02", interval=90):
+        (self.root / ".workspace").mkdir(exist_ok=True)
+        (self.root / ".workspace" / "bootstrap.json").write_bytes(
+            ('{"notes": {"curation": {"count_threshold": 25, "interval_days": %d,'
+             ' "last_curated_at": "%s"}}}' % (interval, last)).encode("utf-8"))
+
+    def test_index_has_no_today_derived_values(self):
+        """索引只写绝对量（上次策展日 / 间隔 / 到期日），不写「距今 N 天」。"""
+        self._curated()
+        self.build()
+        idx = (self.root / "notes" / "INDEX.md").read_bytes().decode("utf-8")
+        self.assertNotIn("距今", idx)
+        self.assertNotIn("天后到期", idx)
+        self.assertIn("上次策展 2026-11-02", idx)
+        self.assertIn("到期日 2027-01-31", idx)
+        self.assertEqual(self.run_script("notes_index_check.py").returncode, 0)
+
+    def test_status_line_does_not_drift_with_today(self):
+        """同一份 bootstrap 在两个不同的「今天」下必须产出同一行文案（隔天不再必红）。"""
+        import datetime as dtm
+        import importlib.util
+        import types
+
+        self._curated()
+        spec = importlib.util.spec_from_file_location(
+            "_notes_rebuild_probe", self.root / "notes" / "rebuild_index.py")
+        mod = importlib.util.module_from_spec(spec)          # type: ignore[arg-type]
+        spec.loader.exec_module(mod)                          # type: ignore[union-attr]
+
+        class Frozen(dtm.date):
+            _today = dtm.date(2026, 11, 20)
+
+            @classmethod
+            def today(cls):
+                return cls._today
+
+        def line_for(day):
+            Frozen._today = day
+            shim = types.SimpleNamespace(date=Frozen, datetime=dtm.datetime,
+                                         timedelta=dtm.timedelta)
+            saved = getattr(mod, "dt")
+            setattr(mod, "dt", shim)
+            try:
+                return mod.load_curation(1)
+            finally:
+                setattr(mod, "dt", saved)
+
+        line_a, due_a = line_for(dtm.date(2026, 11, 20))
+        line_b, due_b = line_for(dtm.date(2027, 3, 1))
+        self.assertEqual(line_a, line_b, "文案随日期漂移了")
+        self.assertFalse(due_a)
+        self.assertTrue(due_b, "过了到期日必须仍能判到期（只是不写进索引）")
+
 
 class SecretScan(Base):
     def test_clean_tree_is_green(self):
-        (self.root / "README.md").write_text("token 这个词在文档里不算凭据\n", encoding="utf-8")
+        osnorm.write_text(self.root / "README.md", "token 这个词在文档里不算凭据\n", newline="lf")
         self.assertEqual(self.run_script("secret_scan.py").returncode, 0)
 
     def test_private_key_block_is_red(self):
         # 字面量拆开写，避免本测试文件自己被 secret_scan 命中
         head = "-----BEGIN RSA" + " PRIVATE KEY-----"
         tail = "-----END RSA" + " PRIVATE KEY-----"
-        (self.root / "leak.txt").write_text(f"{head}\nMIIE...\n{tail}\n", encoding="utf-8")
+        osnorm.write_text(self.root / "leak.txt", f"{head}\nMIIE...\n{tail}\n", newline="lf")
         p = self.run_script("secret_scan.py")
         self.assertEqual(p.returncode, 1)
         self.assertIn("private-key", p.stdout)
@@ -144,14 +196,14 @@ class SecretScan(Base):
     def test_secretscanignore_is_honoured(self):
         fake = "AKIA" + "IOSFODNN7EXAMPLE"
         (self.root / "vendor").mkdir()
-        (self.root / "vendor" / "example.md").write_text(f'AWS = "{fake}"\n', encoding="utf-8")
+        osnorm.write_text(self.root / "vendor" / "example.md", f'AWS = "{fake}"\n', newline="lf")
         self.assertEqual(self.run_script("secret_scan.py").returncode, 1)
-        (self.root / ".secretscanignore").write_text("# 第三方示例\nvendor\n", encoding="utf-8")
+        osnorm.write_text(self.root / ".secretscanignore", "# 第三方示例\nvendor\n", newline="lf")
         self.assertEqual(self.run_script("secret_scan.py").returncode, 0)
 
     def test_aws_key_is_red_and_masked(self):
         fake = "AKIA" + "IOSFODNN7EXAMPLE"
-        (self.root / "conf.py").write_text(f'AWS = "{fake}"\n', encoding="utf-8")
+        osnorm.write_text(self.root / "conf.py", f'AWS = "{fake}"\n', newline="lf")
         p = self.run_script("secret_scan.py")
         self.assertEqual(p.returncode, 1)
         self.assertIn("aws-akid", p.stdout)

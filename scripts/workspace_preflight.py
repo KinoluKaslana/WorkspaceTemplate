@@ -15,6 +15,7 @@
   template_clone  template.local_clone 是否存在、remote 是否与 source_repo 一致、HEAD 分支
   skills          目录 ↔ REGISTRY.md ↔ TOOLS.md 三方一致
   template_files  TEMPLATE_FILES 是否齐全
+  text_encoding   模板层/用户可编辑文件的 BOM 与换行（WARN，附一条 --fix 命令）
   notes_index     notes/INDEX.md 是否存在
   docs_index      docs/ 存在时索引是否新鲜（不存在则 n/a）
   git             remote / 当前分支 / 上游 / ahead-behind / 脏文件数 / .hook-state 与 .local 是否被忽略
@@ -35,7 +36,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+# 文本 I/O、子进程解码与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）
+# 与被 importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
 from repo_identity import classify as classify_repo
+
+osnorm.configure_stdio()
+
 
 OK, WARN, BAD, NA = "ok", "warn", "mismatch", "n/a"
 
@@ -48,9 +59,7 @@ def sh(*args: str, cwd: Path | None = None) -> tuple[int, str]:
       或没有执行权限的普通文件）时，只应**降级**（版本未知），不该让整个预检崩掉。
     """
     try:
-        p = subprocess.run(list(args), cwd=str(cwd) if cwd else None,
-                           capture_output=True, text=True,
-                           encoding="utf-8", errors="replace")
+        p = osnorm.run_text(list(args), cwd=str(cwd) if cwd else None, errors="replace")
     except (OSError, subprocess.SubprocessError) as e:
         return 127, f"{type(e).__name__}: {e}"
     return p.returncode, (p.stdout or p.stderr or "").strip()
@@ -134,19 +143,6 @@ def _origin_push_urls(ws: Path) -> list[str]:
     return [line.strip() for line in out.splitlines() if line.strip()] if rc == 0 else []
 
 
-def _legacy_gate_note(ws: Path, boot: dict, record: dict) -> str:
-    """新 gate.json 与旧 bootstrap.gate 结论不一致时给一句提示（非阻断）。"""
-    legacy = boot.get("gate") or {}
-    if not isinstance(legacy, dict) or not legacy.get("status") or not record:
-        return ""
-    if (legacy.get("status") != record.get("status")
-            or sorted(legacy.get("harness") or []) != sorted(record.get("harness") or [])):
-        return (f"旧 bootstrap.gate={legacy.get('status')}/{(legacy.get('harness') or [])} "
-                f"与本机 gate.json={record.get('status')}/{(record.get('harness') or [])} 不一致；"
-                f"以 gate.json 为准（旧位置只读兼容）")
-    return ""
-
-
 def _python_state(ws: Path, boot: dict) -> dict:
     """运行时状态：本机 `.local` 优先（python.mode 已下沉），bootstrap.python 仅旧位置兼容。"""
     try:
@@ -171,27 +167,17 @@ def _python_state(ws: Path, boot: dict) -> dict:
     return {"source": "none"}
 
 
-def _gate_record(ws: Path, boot: dict) -> dict:
-    """gate 结论：本机分片 `gate.json` 优先；`bootstrap.gate` 只作旧位置兼容。"""
-    scope = "unknown"
+def _gate_record(ws: Path) -> dict:
+    """只读取本机分片的结论，并报告来源。"""
     try:
-        scripts = Path(ws) / "scripts"
-        if (scripts / "gate_status.py").is_file() and str(scripts) not in sys.path:
-            sys.path.insert(0, str(scripts))
-        import gate_status as _gs
-        scope = _gs._machine_scope(Path(ws))
-    except Exception:
-        scope = "unknown"
-    try:
-        sp = Path(ws) / ".workspace" / ".hook-state" / scope / "gate.json"
-        if sp.is_file():
-            data = json.loads(sp.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return data
-    except Exception:
+        from gate_status import gate_record_path
+
+        data = json.loads(osnorm.read_text(gate_record_path(ws)))
+        if isinstance(data, dict):
+            return {**data, "source": "gate.json"}
+    except (ImportError, OSError, ValueError):
         pass
-    legacy = boot.get("gate") or {}
-    return legacy if isinstance(legacy, dict) else {}
+    return {"source": "none"}
 
 
 def main(argv: list[str]) -> int:
@@ -212,7 +198,7 @@ def main(argv: list[str]) -> int:
     if not boot_p.is_file():
         print(json.dumps({"error": "not-a-workspace", "workspace": str(ws)}, ensure_ascii=False))
         return 1
-    boot = json.loads(boot_p.read_text(encoding="utf-8-sig"))
+    boot = json.loads(osnorm.read_text(boot_p, bom=True))
     if a.record_readme:
         mode = a.record_readme.strip().lower()
         allowed = {"auto": "generated-auto", "provided": "generated-provided", "declined": "declined"}
@@ -222,7 +208,8 @@ def main(argv: list[str]) -> int:
         rd = boot.setdefault("readme", {})
         rd.update({"status": allowed[mode], "mode": mode,
                    "decided_at": dt.datetime.now().isoformat(timespec="seconds")})
-        boot_p.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        osnorm.write_text(boot_p, json.dumps(boot, ensure_ascii=False, indent=2) + "\n",
+                          newline="lf")
         print(json.dumps({"readme": rd}, ensure_ascii=False))
         return 0
     if a.layout_only:
@@ -259,7 +246,7 @@ def main(argv: list[str]) -> int:
         print(json.dumps(info, ensure_ascii=False))
         return 0 if info["interpreter"] else 3
     tools_p = ws / "TOOLS.md"
-    tools = tools_p.read_text(encoding="utf-8") if tools_p.is_file() else ""
+    tools = osnorm.read_text(tools_p) if tools_p.is_file() else ""
     rows: list[dict] = []
 
     host = socket.gethostname() or platform.node()
@@ -348,8 +335,7 @@ def main(argv: list[str]) -> int:
         ))
 
     # 2b) Gate 接线（§15）：登记状态 vs 运行期证据
-    gate = _gate_record(ws, boot)
-    _legacy_note = _legacy_gate_note(ws, boot, gate)
+    gate = _gate_record(ws)
     g_status = gate.get("status")
     g_harness = [h for h in (gate.get("harness") or []) if h]
     want = [h.strip() for h in (getattr(a, "harness", "") or "").split(",") if h.strip()]
@@ -367,7 +353,7 @@ def main(argv: list[str]) -> int:
                          "当前 harness 不在已登记的接线结论里：先按 §15 核验该端并 --record"))
     elif not g_harness:
         rows.append(item("gate", "configured（缺 harness）", "", BAD,
-                         "bootstrap.gate.harness 为空：重新用 --record 写入"))
+                         "gate.json 的 harness 为空：重新用 --record 写入"))
     else:
         ttl = min(float(gate.get("ttl_minutes") or 30), 30.0)
         rc, out = sh(sys.executable, str(Path(__file__).resolve().parent / "gate_status.py"),
@@ -392,12 +378,11 @@ def main(argv: list[str]) -> int:
                                            else "声明已接线但没有任何证据：确认 harness 启动方式（dsh 需 --patch）")))
 
 
-    # 非阻断：把「旧 bootstrap.gate 与本机 gate.json 不一致」并进 gate 行说明（不新增行、不影响 --strict）
-    if _legacy_note:
-        for _row in rows:
-            if _row.get("id") == "gate":
-                _row["action"] = ((_row.get("action") or "") + "；" if _row.get("action") else "") + _legacy_note
-                break
+    rows[-1]["source"] = gate["source"]
+    if "gate" in boot:
+        rows[-1]["legacy_source"] = "bootstrap.gate"
+        rows[-1]["action"] = (rows[-1]["action"] +
+            " 发现旧位置 bootstrap.gate，可用 gate_status.py --migrate-legacy 归档并清理。").strip()
 
     # 3) 模板克隆
     tpl = boot.get("template") or {}
@@ -440,7 +425,7 @@ def main(argv: list[str]) -> int:
     if not audited:
         disk = {p.parent.name for p in (ws / ".workspace" / "skills").glob("*/SKILL.md")}
         reg_p = ws / "skills" / "REGISTRY.md"
-        reg = reg_p.read_text(encoding="utf-8") if reg_p.is_file() else ""
+        reg = osnorm.read_text(reg_p) if reg_p.is_file() else ""
         reg_entries = set(re.findall(r"\.workspace/skills/([A-Za-z0-9_-]+)/SKILL\.md", reg))
         if disk != reg_entries:
             rows.append(item("skills", sorted(reg_entries), sorted(disk), BAD,
@@ -467,6 +452,32 @@ def main(argv: list[str]) -> int:
     except Exception as e:                                    # noqa: BLE001
         rows.append(item("template_files", "verify_rules 不可导入", repr(e)[:120], BAD,
                          "先同步模板层（scripts/verify_rules.py 缺失或损坏）"))
+
+    # 5b) 文本编码（BOM / 换行）：只 WARN，**绝不阻断**。
+    #     理由（规格 §3.1）：BOM/CRLF 由外部编辑器产生，读侧已容忍（osnorm BOM_POLICY），
+    #     写侧永不产生；剩下的清理是一个机械命令，不该把工作区判成「不可用」。
+    guard = ws / "scripts" / "encoding_guard.py"
+    if guard.is_file():
+        rc, out = sh(str(sys.executable), "-B", str(guard), "--check",
+                     "--root", str(ws), "--json", cwd=ws)
+        try:
+            enc = json.loads(out)
+        except ValueError:
+            enc = None
+        hits = [f["path"] for f in (enc or {}).get("findings", [])] if isinstance(enc, dict) else []
+        if rc == 0:
+            rows.append(item("text_encoding", "UTF-8(no BOM) + LF",
+                             {"scanned": (enc or {}).get("scanned")}, OK))
+        elif isinstance(enc, dict):
+            rows.append(item("text_encoding", "BOM/CRLF 会污染判据与 diff",
+                             {"files": len(hits), "first": hits[:3]}, WARN,
+                             "一条命令统一：python3 scripts/encoding_guard.py --fix"))
+        else:
+            rows.append(item("text_encoding", "encoding_guard 无法运行", out[:120], WARN,
+                             "先同步模板层（scripts/encoding_guard.py 损坏），再重跑本预检"))
+    else:
+        rows.append(item("text_encoding", "—", "no scripts/encoding_guard.py", NA,
+                         "旧工作区：template_sync.py --apply 取回该脚本后可自动扫描"))
 
     # 6) notes 索引
     idx = ws / "notes" / "INDEX.md"
@@ -534,6 +545,8 @@ def main(argv: list[str]) -> int:
     else:
         for r in rows:
             print(f'{r["status"].upper():8s} {r["id"]:15s} {json.dumps(r["recorded"], ensure_ascii=False)[:70]}')
+            if "source" in r:
+                print(f'         来源：{r["source"]}')
             if r["action"]:
                 print(f'         → {r["action"]}')
         print(f'结论: {"OK" if out["ok"] else "需裁决"}（mismatch={len(bad)} warn={len(warn)}）')

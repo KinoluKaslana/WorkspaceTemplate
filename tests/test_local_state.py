@@ -9,6 +9,8 @@ context 目录无多余文件 / mode 词表 / HMAC 固定向量 / 首次绑定 f
 运行：python3 -B tests/test_local_state.py
 """
 import json
+import hashlib
+import hmac
 import multiprocessing
 import os
 import shutil
@@ -21,10 +23,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
+import osnorm  # noqa: E402
 
 import local_state as ls  # noqa: E402
 
 WSID = "11111111-2222-3333-4444-555555555555"
+
+
+def _safe_symlink(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    """建符号链接；本机没有该权限（非管理员且未开开发者模式的 Windows）时跳过用例。
+
+    跳过的是**夹具能力**（SeCreateSymbolicLinkPrivilege），不是被测属性：
+    `_chain_is_safe` 的拒绝逻辑在 Windows 上同样必须成立，只是这台机器造不出样本。
+    """
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:      # pragma: no cover - 平台相关
+        raise unittest.SkipTest(f"本机不支持创建符号链接（{exc}）")
 
 
 def ident(material=b"machine-A", principal="1000", realm="linux") -> "ls.Identity":
@@ -114,9 +129,9 @@ class LocalStateTest(unittest.TestCase):
         i = ident()
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         f = ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json"
-        data = json.loads(f.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(f, bom=False, newline="preserve"))
         data["workspace_id"] = "deadbeef-dead-dead-dead-deaddeadbeef"
-        f.write_text(json.dumps(data), encoding="utf-8")
+        osnorm.write_text(f, json.dumps(data), newline="lf")
         res = ls.read_status(self.ws, WSID, i, ephemeral=False)
         self.assertEqual(res["status"], "CORRUPT")
         self.assertIn("workspace", res["reason"])
@@ -124,8 +139,7 @@ class LocalStateTest(unittest.TestCase):
     def test_06_corrupt_json(self):
         i = ident()
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
-        (ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json").write_text(
-            "{not json", encoding="utf-8")
+        osnorm.write_text(ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json", "{not json", newline="lf")
         self.assertEqual(ls.read_status(self.ws, WSID, i, ephemeral=False)["status"], "CORRUPT")
 
     def test_07_identity_unavailable(self):
@@ -159,13 +173,20 @@ class LocalStateTest(unittest.TestCase):
     def test_09_no_plaintext_paths(self):
         i = ident()
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
-        text = (ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json").read_text(
-            encoding="utf-8")
+        text = osnorm.read_text(ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json", bom=False, newline="preserve")
         for bad in (str(self.ws), str(self.ws.resolve()), str(Path.home())):
             self.assertNotIn(bad, text)
 
     # ---- 并发与写入完整性 -----------------------------------------------
     def test_10_concurrent_read_never_sees_partial_json(self):
+        """并发读：每次拿到的都必须是**完整** payload。
+
+        读走产品自己的读路径（`_read_json_no_follow`），不裸用 `read_text()`：
+        Windows 上 `os.replace` 的瞬间目标文件处于 delete-pending，裸 `open()`
+        拿到 `PermissionError: [Errno 13]`（文件明明存在却读不到）—— 那是产品读路径
+        必须吸收的**瞬时独占**，不是「读到半截」。判据不变且更强：从第一次成功读
+        之后，任何异常或非完整 payload 都算撕裂。
+        """
         i = ident()
         stop = threading.Event()
         errors = []
@@ -174,12 +195,16 @@ class LocalStateTest(unittest.TestCase):
         def reader():
             f = ls.context_dir(self.ws, WSID, i, ephemeral=False) / "runtime.json"
             while not stop.is_set():
-                if f.exists():
-                    try:
-                        json.loads(f.read_text(encoding="utf-8"))
-                        reads[0] += 1
-                    except Exception as exc:      # noqa: BLE001
-                        errors.append(f"{type(exc).__name__}: {exc}")
+                try:
+                    data = ls._read_json_no_follow(f)
+                except FileNotFoundError:
+                    continue      # 首次发布前还没有文件；发布是原子的，不存在半截形态
+                except Exception as exc:      # noqa: BLE001
+                    errors.append(f"{type(exc).__name__}: {exc}")
+                    continue
+                if not isinstance(data, dict) or data.get("schema") != ls.STATE_VERSION:
+                    errors.append(f"partial-json: {str(data)[:80]}")
+                reads[0] += 1
 
         t = threading.Thread(target=reader, daemon=True)
         t.start()
@@ -269,8 +294,8 @@ class LocalStateTest(unittest.TestCase):
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         d = ls.context_dir(self.ws, WSID, i, ephemeral=False)
         bad = {"schema": "v1", "workspace_id": "other", "context_id": "zzz"}
-        (d / "runtime (conflicted copy).json").write_text(json.dumps(bad), encoding="utf-8")
-        (d / "runtime.sync-conflict-20260101.json").write_text(json.dumps(bad), encoding="utf-8")
+        osnorm.write_text(d / "runtime (conflicted copy).json", json.dumps(bad), newline="lf")
+        osnorm.write_text(d / "runtime.sync-conflict-20260101.json", json.dumps(bad), newline="lf")
         self.assertEqual(ls.read_status(self.ws, WSID, i, ephemeral=False)["status"], "BOUND")
 
     def test_19_context_dir_has_no_extra_files(self):
@@ -291,27 +316,27 @@ class LocalStateTest(unittest.TestCase):
             (ws / ".workspace").mkdir(parents=True)
             ls.bind(ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
             f = ls.state_root(ws) / cid / "runtime.json"
-            data = json.loads(f.read_text(encoding="utf-8"))
+            data = json.loads(osnorm.read_text(f, bom=False, newline="preserve"))
             if kind == "bad-json":
-                f.write_text("{not json", encoding="utf-8")
+                osnorm.write_text(f, "{not json", newline="lf")
             elif kind == "unknown-schema":
                 data["schema"] = "v2"
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "missing-fields":
                 data.pop("version")
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "invalid-fields":
                 data["mode"] = "bogus"
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "workspace-mismatch":
                 data["workspace_id"] = "deadbeef-dead-dead-dead-deaddeadbeef"
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "context-mismatch":
                 data["context_id"] = "0" * 64
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "realm-mismatch":
                 data["realm"] = "windows"
-                f.write_text(json.dumps(data), encoding="utf-8")
+                osnorm.write_text(f, json.dumps(data), newline="lf")
             elif kind == "missing-runtime":
                 f.unlink()
             return ws
@@ -410,17 +435,45 @@ class LocalStateTest(unittest.TestCase):
         self.assertIsNone(ls.resolve_identity({"WORKSPACE_CONTEXT_SEED": ""}, info))
 
     def test_23_hmac_fixed_vectors(self):
+        """HMAC 公式里**跨平台可复现**的那一半用固定向量钉死，路径绑定只钉口径。
+
+        `context_id` 的输入全是字面量（workspace_id / material / principal / realm），
+        任何平台都必须给出同一个值 —— 那是真正的固定向量。
+        `_root_binding` 的输入含 `os.path.realpath(workspace)`：Windows 上会多出盘符、
+        分隔符变反斜杠（`/tmp/x` → `C:\\tmp\\x`），**不存在跨平台相同的常量**。旧用例
+        把 Linux 上的哈希写死（b0a4543e…），等于把「Linux 机器身份」当成判据 —— 在
+        Windows 上必然红。改成可判定断言：长度/字符集、同输入同值、不同路径与不同
+        cid 必须不同、同一目录的不同写法（`a` 与 `a/.`）必须同值、且等于按文档口径
+        独立算出的 realpath-byte HMAC。
+        """
         i = ident()
         self.assertEqual(ls.context_id(WSID, i),
                          "0f60a5ad61a652706f636371a446785f2d3960f5e63186f1c6f335365a220a59")
-        self.assertEqual(
-            ls._root_binding(Path("/tmp/fixed-ws"), ls.context_id(WSID, i)),
-            "b0a4543e93ee16c8a22102b5876ee5da743eecd98ad052a0c1c2002cd31f473a")
         # realm 是公式的一部分：同 material/principal、不同 realm 必须得到不同 context_id
         win = ident(realm="windows")
         self.assertNotEqual(ls.context_id(WSID, i), ls.context_id(WSID, win))
         self.assertEqual(ls.context_id(WSID, win),
                          "393e753d11f05c8c9b9fc05f3de769076aee8146aaf3476f5b0d18f9896b3d7a")
+
+        cid = ls.context_id(WSID, i)
+        a = self.tmp / "bind-a"
+        b = self.tmp / "bind-b"
+        a.mkdir()
+        b.mkdir()
+        binding = ls._root_binding(a, cid)
+        self.assertRegex(binding, r"^[0-9a-f]{64}$", "root_binding 必须是 64 位小写 hex")
+        self.assertEqual(binding, ls._root_binding(a, cid), "同输入必须同值（同平台可复现）")
+        self.assertEqual(binding, ls._root_binding(Path(str(a) + os.sep + "."), cid),
+                         "同一目录的不同写法必须绑到同一个值（realpath 归一）")
+        self.assertNotEqual(binding, ls._root_binding(b, cid), "不同工作区路径必须不同值")
+        self.assertNotEqual(binding, ls._root_binding(a, ls.context_id(WSID, win)),
+                            "不同 context 必须不同值")
+        # 口径复算：cid 作 key、realpath(workspace) 的**字节流**作消息（不是 str(path) 原样）
+        self.assertEqual(binding,
+                         hmac.new(cid.encode("ascii"),
+                                  os.fsencode(os.path.realpath(os.fspath(a))),
+                                  hashlib.sha256).hexdigest(),
+                         "root_binding 口径必须是 realpath 字节流，不是原生字符串")
 
     def test_30_machine_scope_falls_back_to_local_seed(self):
         """取不到 machine-id 时用本机持久种子：两台机器（不同状态目录）必须得到不同 scope。"""
@@ -483,7 +536,13 @@ class LocalStateTest(unittest.TestCase):
             ls._MATERIAL_CACHE = old
 
     def test_34_detect_platform_info_never_raises_on_timeout(self):
-        """Darwin 的 ioreg 超时不得穿透（契约是「不抛异常」）。"""
+        """Darwin 的 ioreg 超时不得穿透（契约是「不抛异常」）。
+
+        平台族由 `platform.system()` **单点**决定（产品侧已收敛成唯一真值源），所以
+        任何宿主都能真实走一遍 Darwin 分支；旧用例在 Windows 上必红的原因不是
+        「期望写错」这么简单——产品当时还以 `os.name == "nt"` 为第二真值源，patch 掉
+        `platform.system()` 也不生效。现在期望值 `macos` 是真能判定的。
+        """
         import platform as _platform
         import subprocess as _subprocess
         old_sys, old_run = _platform.system, _subprocess.run
@@ -500,6 +559,7 @@ class LocalStateTest(unittest.TestCase):
             _subprocess.run = old_run
         self.assertIsInstance(info, dict)
         self.assertEqual(info.get("realm"), "macos")
+        self.assertIsNone(info.get("machine_id"), "ioreg 超时后不得编造 machine_id")
 
     def test_35_stale_lock_is_reclaimed(self):
         """持锁进程崩溃残留的 .lock（>10s）必须被回收，否则永远 unknown。"""
@@ -522,28 +582,28 @@ class LocalStateTest(unittest.TestCase):
 
     def test_36_workspace_id_created_once_and_readonly_variant(self):
         boot = self.ws / ".workspace" / "bootstrap.json"
-        boot.write_text(json.dumps({"workspace_status": "template"}), encoding="utf-8")
+        osnorm.write_text(boot, json.dumps({"workspace_status": "template"}), newline="lf")
         self.assertIsNone(ls.workspace_id_of(self.ws), "只读取值不应凭空造 id")
         self.assertNotIn("workspace_id",
-                         json.loads(boot.read_text(encoding="utf-8")), "只读取值写了盘")
+                         json.loads(osnorm.read_text(boot, bom=False, newline="preserve")), "只读取值写了盘")
         wid = ls.ensure_workspace_id(self.ws)
         self.assertRegex(wid or "", r"^[0-9a-f-]{36}$")
         self.assertEqual(ls.ensure_workspace_id(self.ws), wid, "ensure 不幂等")
         self.assertEqual(ls.workspace_id_of(self.ws), wid)
-        data = json.loads(boot.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))
         self.assertEqual(data["workspace_id"], wid)
         self.assertEqual(data["workspace_status"], "template", "不得顺手改别的字段")
 
     def test_38_concurrent_workspace_id_converges(self):
         """多进程首次 ensure：所有返回值必须一致，且等于落盘值。"""
         boot = self.ws / ".workspace" / "bootstrap.json"
-        boot.write_text(json.dumps({"workspace_status": "template", "sentinel": 1}), encoding="utf-8")
+        osnorm.write_text(boot, json.dumps({"workspace_status": "template", "sentinel": 1}), newline="lf")
         ctx = multiprocessing.get_context("spawn")
         with ctx.Pool(6) as pool:
             ids = pool.map(_wid_worker, [str(self.ws)] * 6)
         self.assertTrue(all(ids), f"有进程拿不到 id：{ids}")
         self.assertEqual(len(set(ids)), 1, f"并发首次 ensure 产生多个 id：{set(ids)}")
-        data = json.loads(boot.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))
         self.assertEqual(data["workspace_id"], ids[0])
         self.assertEqual(data["sentinel"], 1, "不得改动其他字段")
 
@@ -587,7 +647,7 @@ class LocalStateTest(unittest.TestCase):
         """
         import threading
         boot = self.ws / ".workspace" / "bootstrap.json"
-        boot.write_text(json.dumps({"workspace_status": "template"}), encoding="utf-8")
+        osnorm.write_text(boot, json.dumps({"workspace_status": "template"}), newline="lf")
         real_uuid4 = ls.uuid.uuid4
         counter = [0]
 
@@ -614,7 +674,7 @@ class LocalStateTest(unittest.TestCase):
             ls.uuid.uuid4 = real_uuid4
         self.assertEqual(len(results), 2)
         self.assertEqual(len(set(results)), 1, f"并发首次 ensure 返回了不同 id：{results}")
-        self.assertEqual(json.loads(boot.read_text(encoding="utf-8"))["workspace_id"], results[0])
+        self.assertEqual(json.loads(osnorm.read_text(boot, bom=False, newline="preserve"))["workspace_id"], results[0])
         self.assertEqual(counter[0], 1, "锁没有起作用：uuid 被生成了不止一次")
 
     def test_41_written_state_has_no_absolute_strings(self):
@@ -625,7 +685,7 @@ class LocalStateTest(unittest.TestCase):
                       decision_source="local-venv（用户选择）")
         self.assertEqual(res["status"], "BOUND")
         path = ls.context_dir(self.ws, WSID, ident(), ephemeral=False) / "runtime.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(path, bom=False, newline="preserve"))
 
         offenders: list[str] = []
 
@@ -650,7 +710,7 @@ class LocalStateTest(unittest.TestCase):
     def test_15_symlink_escape_refused(self):
         outside = self.tmp / "outside"
         outside.mkdir()
-        (self.ws / ".workspace" / ".local").symlink_to(outside, target_is_directory=True)
+        _safe_symlink(self.ws / ".workspace" / ".local", outside, target_is_directory=True)
         with self.assertRaises(ValueError):
             ls.bind(self.ws, WSID, ident(), "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         self.assertEqual(list(outside.iterdir()), [], "不得通过 symlink 写工作区外")
@@ -673,7 +733,7 @@ class LocalStateTest(unittest.TestCase):
         ls.bind(self.ws, WSID, i, "local-venv", ".venv-312", "3.12.7", ephemeral=False)
         d = ls.context_dir(self.ws, WSID, i, ephemeral=False)
         outside_file = self.tmp / "outside.json"
-        outside_file.write_text(json.dumps({"schema": "v1"}), encoding="utf-8")
+        osnorm.write_text(outside_file, json.dumps({"schema": "v1"}), newline="lf")
         (d / "runtime.json").unlink()
         (d / "runtime.json").symlink_to(outside_file)
         res = ls.read_status(self.ws, WSID, i, ephemeral=False)

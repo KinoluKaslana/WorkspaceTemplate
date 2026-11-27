@@ -22,6 +22,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / ".workspace" / "hooks"
 
@@ -70,10 +73,18 @@ class PwshWrites(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
         shutil.copytree(HOOKS, self.ws / ".workspace" / "hooks")
-        shutil.copy2(ROOT / "AGENT_RULES.md", self.ws / "AGENT_RULES.md")
-        (self.ws / ".workspace" / "bootstrap.json").write_text(
-            json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
-                        "template": {"source_repo": "https://example.invalid/t"}}), encoding="utf-8")
+        # R41：hooks 经装载器使用 scripts/osnorm.py —— 实例 fixture 必须带上，否则 fail-closed。
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
+        # 治理文件按 **LF** 落到 fixture：门禁的内容锚定是**字节级全等**，且政策明确
+        # 「行尾规范化差异按不可判定处理，不做哈希前归一化」（gate_core.py 模块头）。
+        # 仓库用 `.gitattributes: * text=auto eol=lf` 钉死 LF，所以 LF 才是被支持的
+        # 配置；若把 CRLF 检出原样拷进来，测到的是「检出事故」而不是判据 —— 在 Windows
+        # 上表现为 `test_after_full_read_write_is_allowed` 假红（deny != allow）。
+        rules = (ROOT / "AGENT_RULES.md").read_bytes().replace(b"\r\n", b"\n")
+        (self.ws / "AGENT_RULES.md").write_bytes(rules)
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps({"workspace_status": "active", "python": {"mode": "mcp"},
+                        "template": {"source_repo": "https://example.invalid/t"}}), newline="lf")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -82,9 +93,7 @@ class PwshWrites(unittest.TestCase):
         payload = {"client": "dsh", "dsh_tool": "pwsh", "hook_event_name": "PreToolUse",
                    "session_id": "pwsh-case", "cwd": str(self.ws), "tool_name": "Bash",
                    "tool_input": {"command": command}}
-        p = subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "pre_bash"],
-                           input=json.dumps(payload), capture_output=True, text=True, encoding="utf-8",
-                           env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
+        p = osnorm.run_text([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "pre_bash"], input=json.dumps(payload), env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws, errors="strict")
         out = p.stdout.strip()
         if not out:
             return "allow", ""
@@ -115,7 +124,7 @@ class PwshWrites(unittest.TestCase):
         self.assertIn("无法静态确定", reason)
 
     def test_after_full_read_write_is_allowed(self):
-        raw = (self.ws / "AGENT_RULES.md").read_text(encoding="utf-8")
+        raw = osnorm.read_text(self.ws / "AGENT_RULES.md", bom=False, newline="preserve")
         lines = raw.split("\n")
         physical = len(lines) - 1 if raw.endswith("\n") else len(lines)
         numbered = "\n".join(f"{i + 1}: {l}" for i, l in enumerate(lines[:physical]))
@@ -126,10 +135,9 @@ class PwshWrites(unittest.TestCase):
                 "cwd": str(self.ws), "tool_name": "read",
                 "tool_input": {"file_path": target, "offset": 1, "limit": physical},
                 "tool_response": {"isError": False, "content": [{"type": "text", "text": text}]}}
-        subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "post_read"],
-                       input=json.dumps(post), capture_output=True, text=True, encoding="utf-8",
-                       env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
-        self.assertEqual(self.decision("Set-Content -Path 'after.txt' -Value 'hi'")[0], "allow")
+        osnorm.run_text([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), "post_read"], input=json.dumps(post), env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws, errors="strict")
+        decision, reason = self.decision("Set-Content -Path 'after.txt' -Value 'hi'")
+        self.assertEqual(decision, "allow", f"完整读取治理文件后仍被拦（{reason}）")
 
 
 if __name__ == "__main__":

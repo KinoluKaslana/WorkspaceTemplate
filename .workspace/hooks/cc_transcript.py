@@ -47,12 +47,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import os
+import posixpath
 import re
-import subprocess
 import tempfile
+from typing import Any, Iterator
 
 import wtarget
+import osnorm_loader as _osnorm_loader
 
 # 测试可用 CC_TRANSCRIPT_ROOT 指向临时目录；生产默认 CC 的 projects 根。
 PROJECTS_ROOT = os.path.expanduser(os.environ.get("CC_TRANSCRIPT_ROOT") or "~/.claude/projects")
@@ -66,6 +69,11 @@ _REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>\s*$", re.S)
 
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _osn(ws: str | None = None) -> Any:
+    """经装载器取 osnorm（**禁止裸 import**）。"""
+    return _osnorm_loader.load(ws)
 
 
 def digest_command(command: str) -> str:
@@ -243,18 +251,77 @@ def _content_fingerprint(raw: bytes) -> str:
 
 
 def gate_key(ws: str, gate: str) -> str:
-    """持久化账本的键：gate 相对工作区的路径（sidecar 不存绝对路径）。"""
+    """持久化账本的交换键，同卷用相对键，跨卷保留绝对键。"""
+    return _exchange_gate_key(ws, gate) or _absolute_gate_key(ws, gate)
+
+
+def _absolute_gate_key(ws: str, gate: str) -> str:
+    osn = _osn(ws)
+    if os.path is ntpath:
+        return osn.exchange_path(gate, path_module=ntpath)
     try:
-        return os.path.relpath(os.path.normpath(gate), os.path.normpath(ws)).replace(os.sep, "/")
+        return osn.canonical_path(gate)
+    except osn.PathFormError:
+        return osn.collapse_host_path(gate)
+
+
+def _exchange_gate_key(ws: str, gate: str) -> str | None:
+    """在同卷的交换形态路径上计算 R49 相对键。"""
+    osn = _osn(ws)
+    if os.path is ntpath:
+        return osn.host_relative_key(gate, ws, path_module=ntpath) if all(
+            ntpath.isabs(p) for p in (gate, ws)) else None
+    if (os.path is posixpath and all(p.startswith("/") and not p.startswith("//")
+                                    and "\x00" not in p for p in (ws, gate))):
+        # POSIX 文件名的尾空格和反斜杠是字面字符，必须保留其账本身份。
+        return posixpath.relpath(osn.collapse_path(gate), osn.collapse_path(ws))
+    try:
+        gate_canon = osn.canonical_path(gate)
+        ws_canon = osn.canonical_path(ws)
+    except osn.PathFormError:
+        return None
+    gate_volume, gate_tail = ntpath.splitdrive(gate_canon)
+    ws_volume, ws_tail = ntpath.splitdrive(ws_canon)
+    if gate_volume.lower() != ws_volume.lower():
+        return None
+    # 盘符和 UNC 共享名只参与卷比较，根后的路径段保留字面大小写。
+    return posixpath.relpath(gate_tail or "/", ws_tail or "/")
+
+
+def _legacy_gate_key(ws: str, gate: str) -> str:
+    """冻结 R49 前的持久化键格式，仅供 sidecar 兼容读取。
+
+    保留宿主相对键与跨卷绝对键的原有拼写规则。R5 登记的 15 处迁移对象里，
+    此处对应的迁移目标是写侧 `gate_key#1`，本函数属于旧数据格式的解码边界。
+    """
+    try:
+        rel = os.path.relpath(os.path.normpath(gate), os.path.normpath(ws))
     except ValueError:
         return os.path.normpath(gate).replace(os.sep, "/")
+    return rel.replace(os.sep, "/")
+
+
+def _book_lookup_keys(ws: str, gate: str) -> Iterator[str]:
+    """按新键、冻结旧键、原始绝对键的顺序惰性生成候选。"""
+    new = _exchange_gate_key(ws, gate) or _absolute_gate_key(ws, gate)
+    if new:
+        yield new
+    old = _legacy_gate_key(ws, gate)
+    if old and old != new:
+        yield old
+    if gate and gate not in (new, old):
+        yield gate
+    # 旧绝对键也可能来自旧 resolver 的宿主规范拼写。
+    native = os.path.normpath(gate)
+    if native and native not in (new, old, gate):
+        yield native
 
 
 def _book_entry(ws: str, books: object, gate: str) -> dict | None:
-    """从持久化账本取某 gate 的旧读账（键为相对路径，容错绝对路径）。"""
+    """从持久化账本取某 gate 的旧读账（三段兼容：新键 → 旧键 → 原始绝对路径）。"""
     if not isinstance(books, dict):
         return None
-    for key in (gate_key(ws, gate), gate):
+    for key in _book_lookup_keys(ws, gate):
         entry = books.get(key)
         if isinstance(entry, dict):
             return entry
@@ -416,12 +483,14 @@ def _adopt_post_write_revision(step: dict, book: dict) -> bool:
 def git_changed_files(ws: str) -> list[str] | None:
     """工作区未提交变更（含未跟踪）的绝对路径；非 git 仓返回 None。"""
     try:
-        out = subprocess.run(["git", "-C", ws, "status", "--porcelain", "-z"],
-                             capture_output=True, text=True, timeout=10)
+        # 恒捕获 + UTF-8 由 osnorm.run_text 固定；`-z` 输出的 NUL 分隔原样保留。
+        out = _osn(ws).run_text(["git", "-C", ws, "status", "--porcelain", "-z"],
+                                errors="replace", timeout=10)
     except Exception:
         return None
     if out.returncode != 0:
         return None
+    osn = _osn(ws)
     items, parts = [], out.stdout.split("\0")
     idx = 0
     while idx < len(parts):
@@ -432,14 +501,15 @@ def git_changed_files(ws: str) -> list[str] | None:
         path = entry[3:]
         if entry[:2].strip() in ("R", "C") and idx < len(parts):
             idx += 1
-        items.append(os.path.normpath(os.path.join(ws, path)))
+        items.append(osn.collapse_host_path(os.path.join(ws, path)))
     return items
 
 
 def _custom_conf(ws: str) -> dict:
     try:
-        with open(os.path.join(ws, ".workspace", "gate.custom.json"), encoding="utf-8") as fh:
-            conf = json.load(fh)
+        # bom=False：与原 `open(..., encoding="utf-8")` 一致（不剥 BOM）。
+        conf = json.loads(_osn(ws).read_text(
+            os.path.join(ws, ".workspace", "gate.custom.json"), bom=False))
         return conf if isinstance(conf, dict) else {}
     except Exception:
         return {}
@@ -449,15 +519,18 @@ def command_text_enabled(ws: str) -> bool:
     return bool(_custom_conf(ws).get("audit_command_text"))
 
 
-def resolve_gate_files(ws: str, gate_rel: str | None = None) -> list[str]:
+def resolve_gate_files(ws: str, gate_rel: str | None = None, *, raw: bool = False) -> list[str]:
     """gate 文件列表：显式参数 > `gate.custom.json.gate_files` > AGENT_RULES.md。"""
+    def path_form(path: str) -> str:
+        return path if raw else _osn(ws).collapse_host_path(path)
+
     if gate_rel:
-        return [os.path.normpath(os.path.join(ws, gate_rel))]
+        return [path_form(os.path.join(ws, gate_rel))]
     conf = _custom_conf(ws)
     names = conf.get("gate_files")
     if not isinstance(names, list) or not names:
         names = [DEFAULT_GATE]
-    return [os.path.normpath(os.path.join(ws, str(n))) for n in names]
+    return [path_form(os.path.join(ws, str(n))) for n in names]
 
 
 def _reference_revision(steps: list[dict], gate: str, cwd: str) -> list[str] | None:
@@ -466,16 +539,20 @@ def _reference_revision(steps: list[dict], gate: str, cwd: str) -> list[str] | N
     CC 没有写前拦截：审计时文件已被本次会话改写，拿磁盘现状对照会把「先读全再写」
     误判成「没读」。只接受 offset==1 且（无 limit 或行数≥磁盘现有行）的读。
     """
+    osn = _osn(cwd)
+    gate_path = os.path.normpath(gate)
+    gate = osn.exchange_path(gate, path_module=os.path)
     for step in steps:
         if step["kind"] == "Read":
-            target = os.path.normpath(os.path.join(cwd, str(step["input"].get("file_path") or "")))
-            if target != gate or int(step["input"].get("offset") or 1) != 1:
+            target = osn.collapse_host_path(os.path.join(cwd, str(step["input"].get("file_path") or "")))
+            if (osn.exchange_path(target, path_module=os.path) != gate
+                    or int(step["input"].get("offset") or 1) != 1):
                 continue
             lines = _read_lines(step)
             if not lines:
                 continue
             try:
-                with open(gate, "rb") as fh:
+                with open(gate_path, "rb") as fh:
                     disk = total_lines(fh.read())
             except OSError:
                 disk = 0
@@ -483,7 +560,7 @@ def _reference_revision(steps: list[dict], gate: str, cwd: str) -> list[str] | N
                 return lines
         elif step["kind"] == "Bash":
             res = wtarget.classify(str(step["input"].get("command") or ""), cwd, [gate])
-            if gate in [os.path.normpath(t) for t in res.get("targets", [])]:
+            if gate in [osn.exchange_path(t, path_module=os.path) for t in res.get("targets", [])]:
                 return None  # 已出现 gate 写入，后面的读不算「写前参考」
     return None
 
@@ -571,8 +648,9 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
                 "books": dict(baseline),
                 "stats": {"steps": 0, "incomplete": bool(read["incomplete"])}}
 
-    gates = resolve_gate_files(ws, gate_rel)
-    gate_set = {os.path.normpath(g) for g in gates}
+    osn = _osn(ws)
+    gates = {osn.exchange_path(gate, path_module=os.path): gate
+             for gate in resolve_gate_files(ws, gate_rel, raw=True)}
 
     # F3：先预扫本轮 Bash 的静态写目标，再建 books。gate 在本轮「被写且无读」时参考修订
     # 必须取持久化账本——写操作本身就改了磁盘，按写后磁盘重取修订会与账本指纹不符，
@@ -588,14 +666,15 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
         res = wtarget.classify(command, cwd, gates)
         classified[step["id"]] = res
         for target in res.get("targets", []):
-            if os.path.normpath(target) in gate_set:
-                written_gates.add(os.path.normpath(target))
+            target = osn.exchange_path(target, path_module=os.path)
+            if target in gates:
+                written_gates.add(target)
 
     # 本轮读账：每格 = 本轮参考修订 + 继承自上一轮的覆盖区间。
     books_state: dict[str, dict] = {}
-    for gate in gates:
-        ref_lines = _reference_revision(steps, gate, cwd)
-        prev = _book_entry(ws, baseline, gate)
+    for gate, gate_path in gates.items():
+        ref_lines = _reference_revision(steps, gate_path, cwd)
+        prev = _book_entry(ws, baseline, gate_path)
         if ref_lines:
             raw, source = ("\n".join(ref_lines)).encode("utf-8"), "transcript"
             total = total_lines(raw)
@@ -613,7 +692,7 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
         else:
             # 既未读也未写（或账本里没有该 gate）：用磁盘现状检测外部改动。
             try:
-                with open(gate, "rb") as fh:
+                with open(os.path.normpath(gate_path), "rb") as fh:
                     raw = fh.read()
             except OSError:
                 raw = b""
@@ -635,8 +714,8 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
         if step.get("sidechain"):
             stats["sidechain"] += 1
         if step["kind"] == "Read":
-            target = os.path.normpath(os.path.join(cwd, str(step["input"].get("file_path") or "")))
-            book = books_state.get(target)
+            target = osn.collapse_host_path(os.path.join(cwd, str(step["input"].get("file_path") or "")))
+            book = books_state.get(osn.exchange_path(target, path_module=os.path))
             if not book:
                 continue
             if book.get("consumed") and not _adopt_post_write_revision(step, book):
@@ -656,7 +735,7 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
         res = classified.get(step["id"]) or wtarget.classify(command, cwd, gates)
         states = {gate: _read_state(book["coverage"], book["total"])
                   for gate, book in books_state.items()}
-        targets = [os.path.normpath(t) for t in res.get("targets", [])]
+        targets = [osn.exchange_path(t, path_module=os.path) for t in res.get("targets", [])]
         gate_targets = [g for g in gates if g in targets]
         if gate_targets:
             would = any(states[g] != "complete" for g in gate_targets)
@@ -710,7 +789,7 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
     # 放行，许可永不撤销。顺序敏感：只有**最后一次写之后**的读能重建 coverage。
     for gate, step_no in last_write_at.items():
         try:
-            with open(gate, "rb") as fh:
+            with open(os.path.normpath(gates[gate]), "rb") as fh:
                 post_raw = fh.read()
         except OSError:
             post_raw = b""
@@ -719,8 +798,8 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
         for step in steps[step_no + 1:]:
             if step["kind"] != "Read":
                 continue
-            target = os.path.normpath(os.path.join(cwd, str(step["input"].get("file_path") or "")))
-            if target != gate:
+            target = osn.collapse_host_path(os.path.join(cwd, str(step["input"].get("file_path") or "")))
+            if osn.exchange_path(target, path_module=os.path) != gate:
                 continue
             iv = _verified_interval(step, post_raw, post_total)
             if iv:
@@ -732,17 +811,19 @@ def analyze(ws: str, session_id: str, transcript_path: object, cwd: str,
 
     changed = git_changed_files(ws)
     if changed is not None:
-        covered = {os.path.normpath(t) for ev in writes for t in ev.get("targets", [])}
-        uncovered = [p for p in changed if os.path.normpath(p) not in covered]
+        covered = {osn.exchange_path(t, path_module=os.path)
+                   for ev in writes for t in ev.get("targets", [])}
+        uncovered = [p for p in changed if osn.exchange_path(p, path_module=os.path) not in covered]
         if uncovered:
             events.append({"type": "cc-bash-gap", "reason": "changed-but-untargeted",
                            "source": "transcript", "files": sorted(uncovered)[:20]})
     return {"events": events, "offset": read["offset"], "pending": new_pending,
-            "books": _persist_books(ws, books_state), "stats": stats}
+            "books": _persist_books(ws, {gates[g]: book for g, book in books_state.items()}),
+            "stats": stats}
 
 
 def _persist_books(ws: str, books_state: dict[str, dict]) -> dict:
-    """把本轮读账折成 sidecar 形态：`{gate 相对路径: {coverage, revision, total, sha}}`。
+    """把本轮读账折成 sidecar 形态：`{gate 交换键: {coverage, revision, total, sha}}`。
 
     只留可复用的最小字段（不落 raw 正文），区间先合并以免 sidecar 随 Stop 轮数膨胀。
     """
@@ -777,8 +858,7 @@ def load_state(ws: str, session_id: str) -> dict:
         if os.path.isfile(legacy):
             path = legacy
     try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
+        data = json.loads(_osn(ws).read_text(path, bom=False))
         if isinstance(data, dict):
             return {"offset": int(data.get("offset") or 0),
                     "pending": data.get("pending") if isinstance(data.get("pending"), dict) else {},
@@ -800,7 +880,7 @@ def save_state(ws: str, session_id: str, offset: int, stats: dict, pending: dict
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump({"offset": int(offset), "stats": stats, "pending": pending,
                        "books": keep}, fh, ensure_ascii=False)
-        os.replace(tmp, path)
+        _osn(ws).replace_retry(tmp, path)
     except Exception:
         pass
 

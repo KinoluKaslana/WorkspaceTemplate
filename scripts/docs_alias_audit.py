@@ -26,11 +26,21 @@ import argparse
 import glob
 import hashlib
 import json
-import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
+
+
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
+
 
 ROOT = Path(__file__).resolve().parent.parent
 ALIASES = ROOT / "docs" / ".aliases.json"
@@ -47,18 +57,18 @@ def fp(path: Path) -> str:
 
 
 def hit_stats(top: int, no_alias: bool = False) -> tuple[int, list[dict], str | None]:
-    cases = json.loads(PROBE.read_text(encoding="utf-8"))["cases"]
-    env = {**os.environ, **({"DOCS_INDEX_NO_ALIAS": "1"} if no_alias else {})}
+    cases = json.loads(osnorm.read_text(PROBE))["cases"]
+    env = {"DOCS_INDEX_NO_ALIAS": "1"} if no_alias else {}
     hit, miss = 0, []
     for c in cases:
-        r = subprocess.run([sys.executable, "-B", str(QUERY), "query", c["title"], "--json", "--top", str(top)],
-                           cwd=ROOT, capture_output=True, text=True, env=env)
+        r = osnorm.run_text([sys.executable, "-B", str(QUERY), "query", c["title"], "--json",
+                             "--top", str(top)], cwd=ROOT, env=env)
         if r.returncode == 3:
             return 0, [], "stale"
         res = json.loads(r.stdout or "{}").get("results", [])
         ok = False
         for x in res:
-            body = "\n".join((ROOT / x["path"]).read_text(encoding="utf-8").split("\n")[x["lines"][0] - 1:x["lines"][1]])
+            body = "\n".join(osnorm.read_text(ROOT / x["path"]).split("\n")[x["lines"][0] - 1:x["lines"][1]])
             if all(k.lower() in body.lower() for k in c["expect"]):
                 ok = True
                 break
@@ -72,7 +82,7 @@ def hit_stats(top: int, no_alias: bool = False) -> tuple[int, list[dict], str | 
 def load_miss_log() -> dict[str, dict]:
     out = {}
     if MISSLOG.is_file():
-        for line in MISSLOG.read_text(encoding="utf-8").splitlines():
+        for line in osnorm.read_text(MISSLOG).splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -108,9 +118,9 @@ def main(argv: list[str]) -> int:
     if not INDEX.is_file():
         print(json.dumps({"error": "index-missing"}, ensure_ascii=False))
         return 2
-    idx = json.loads(INDEX.read_text(encoding="utf-8"))
+    idx = json.loads(osnorm.read_text(INDEX))
     heads = {(s["path"], s["heading"]) for s in idx["sections"]}
-    aliases = json.loads(ALIASES.read_text(encoding="utf-8")).get("aliases") or [] if ALIASES.is_file() else []
+    aliases = json.loads(osnorm.read_text(ALIASES)).get("aliases") or [] if ALIASES.is_file() else []
     misslog = load_miss_log()
 
     dead, drift, sourceless, redundant = [], [], [], []
@@ -134,7 +144,7 @@ def main(argv: list[str]) -> int:
         elif src != "probe-only":
             sourceless.append({"index": i, "reason": "source-undeclared"})
 
-    total_cases = len(json.loads(PROBE.read_text(encoding="utf-8"))["cases"])
+    total_cases = len(json.loads(osnorm.read_text(PROBE))["cases"])
     minimum = a.min if a.min is not None else max(1, -(-total_cases * 9 // 10))   # 默认 90% 向下取整
     hit, miss, err = hit_stats(a.top)
     if err == "stale":
@@ -143,14 +153,15 @@ def main(argv: list[str]) -> int:
 
     # 留一验证：逐条禁用后仍达标 → 冗余
     for i, al in enumerate(aliases):
-        saved = ALIASES.read_text(encoding="utf-8")
+        saved = osnorm.read_text(ALIASES, newline="preserve")
         try:
             data = json.loads(saved)
             data["aliases"] = [x for j, x in enumerate(aliases) if j != i]
-            ALIASES.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            osnorm.write_text(ALIASES, json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                              newline="preserve")
             h2, _, e2 = hit_stats(a.top)
         finally:
-            ALIASES.write_text(saved, encoding="utf-8")
+            osnorm.write_text(ALIASES, saved, newline="preserve")
         if e2 is None and h2 >= minimum:
             redundant.append({"index": i, "phrases": al.get("phrases"),
                               "hit_without_it": h2})

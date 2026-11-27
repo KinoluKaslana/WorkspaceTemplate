@@ -12,6 +12,18 @@ import re
 import sys
 from pathlib import Path
 
+
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
+
+
 ROOT = Path(__file__).resolve().parent.parent
 POLICY = ROOT / "AGENT_RULES.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
@@ -30,7 +42,7 @@ def main(argv):
     if not POLICY.is_file():
         print("缺少 AGENT_RULES.md", file=sys.stderr)
         return 2
-    policy_text = POLICY.read_text(encoding="utf-8")
+    policy_text = osnorm.read_text(POLICY)
     m = BANNED.search(policy_text)
     policy = m.group(1) if m else None
 
@@ -40,7 +52,7 @@ def main(argv):
 
     changelog = None
     if CHANGELOG.is_file():
-        for line in CHANGELOG.read_text(encoding="utf-8").splitlines():
+        for line in osnorm.read_text(CHANGELOG).splitlines():
             mm = re.match(r"^##\s+(\d+\.\d+\.\d+)", line)
             if mm:
                 changelog = mm.group(1)
@@ -53,7 +65,7 @@ def main(argv):
     recorded = None
     if BOOT.is_file():
         try:
-            boot = json.loads(BOOT.read_text(encoding="utf-8-sig"))
+            boot = json.loads(osnorm.read_text(BOOT, bom=True))
             recorded = ((boot.get("template") or {}).get("current_policy_version") or "").strip() or None
         except json.JSONDecodeError:
             findings.append({"code": "E3", "message": "bootstrap.json 不是合法 JSON"})

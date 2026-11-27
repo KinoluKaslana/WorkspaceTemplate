@@ -16,6 +16,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 HOOK_DIR = ROOT / ".workspace" / "hooks"
 RULES = ROOT / "AGENT_RULES.md"
@@ -27,12 +30,13 @@ class DshGate(unittest.TestCase):
         self.ws = Path(self.tmp.name) / "ws"
         (self.ws / ".workspace").mkdir(parents=True)
         shutil.copytree(HOOK_DIR, self.ws / ".workspace" / "hooks")
+        # R41：hooks 经装载器使用 scripts/osnorm.py —— 实例 fixture 必须带上，否则 fail-closed。
+        (self.ws / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
         shutil.copy2(RULES, self.ws / "AGENT_RULES.md")
-        (self.ws / ".workspace" / "bootstrap.json").write_text(
-            json.dumps({"workspace_status": "active",
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps({"workspace_status": "active",
                         "python": {"mode": "mcp"},
-                        "template": {"source_repo": "https://example.invalid/t"}}),
-            encoding="utf-8")
+                        "template": {"source_repo": "https://example.invalid/t"}}), newline="lf")
         # dsh 侧插件文件（端到端用）
         shutil.copytree(ROOT / ".dsh", self.ws / ".dsh")
 
@@ -43,9 +47,7 @@ class DshGate(unittest.TestCase):
         payload = {"client": "dsh", "cwd": str(self.ws),
                    "hook_event_name": "PreToolUse" if event.startswith("pre") else "PostToolUse",
                    **data}
-        p = subprocess.run([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), event],
-                           input=json.dumps(payload), capture_output=True, text=True, encoding="utf-8",
-                           env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws)
+        p = osnorm.run_text([sys.executable, str(self.ws / ".workspace/hooks/hook.py"), event], input=json.dumps(payload), env={**os.environ, "GATE_CLIENT": "dsh"}, cwd=self.ws, errors="strict")
         self.assertEqual(p.returncode, 0, p.stderr)
         out = p.stdout.strip()
         try:
@@ -62,7 +64,7 @@ class DshGate(unittest.TestCase):
 
     def test_d2_read_then_write_allows_and_revision_revokes(self):
         """真实 dsh 形态：file_path + 行号前缀 + (End of file - total N lines) 尾注。"""
-        raw = (self.ws / "AGENT_RULES.md").read_text(encoding="utf-8")
+        raw = osnorm.read_text(self.ws / "AGENT_RULES.md", bom=False, newline="preserve")
         lines = raw.split("\n")
         physical = len(lines) - 1 if raw.endswith("\n") else len(lines)
         numbered = "\n".join(f"{i + 1}: {l}" for i, l in enumerate(lines[:physical]))
@@ -75,8 +77,7 @@ class DshGate(unittest.TestCase):
         out = self.hook("pre_write", session_id="s2", tool_name="write",
                         tool_input={"file_path": str(self.ws / "AGENT_RULES.md"), "content": "x"})
         self.assertNotEqual(out.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
-        with (self.ws / "AGENT_RULES.md").open("a", encoding="utf-8") as fh:
-            fh.write("\n<!-- bump -->\n")
+        osnorm.append_text(self.ws / "AGENT_RULES.md", "\n<!-- bump -->\n")
         out = self.hook("pre_write", session_id="s2", tool_name="write",
                         tool_input={"file_path": str(self.ws / "AGENT_RULES.md"), "content": "x"})
         self.assertEqual(out.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
@@ -100,8 +101,7 @@ class DshGate(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "未安装 node")
     def test_d4_plugin_end_to_end(self):
         harness = ROOT / "tests" / "dsh_harness.mjs"
-        p = subprocess.run(["node", str(harness), str(self.ws), "--json"],
-                           capture_output=True, text=True, encoding="utf-8", timeout=180)
+        p = osnorm.run_text(["node", str(harness), str(self.ws), "--json"], timeout=180, errors="strict")
         if p.returncode == 2:
             self.skipTest(f"环境不满足：{p.stderr.strip()[:120]}")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)

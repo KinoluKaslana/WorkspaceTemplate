@@ -10,6 +10,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 PYENV = ROOT / "scripts" / "pyenv_init.py"
 POLICY = ROOT / "scripts" / "policy_facts.py"
@@ -17,7 +20,7 @@ SOURCE = "https://github.com/KinoluKaslana/WorkspaceTemplate"
 
 
 def git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    return osnorm.run_text(["git", "-C", str(repo), *args], errors="replace")
 
 
 def make_workspace(base: Path, origin: str | None) -> Path:
@@ -34,8 +37,7 @@ def make_workspace(base: Path, origin: str | None) -> Path:
         "template": {"source_repo": SOURCE, "sentinel": "keep"},
         "workspace_id": "11111111-1111-4111-8111-111111111111",
     }
-    (ws / ".workspace" / "bootstrap.json").write_text(
-        json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    osnorm.write_text(ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False, indent=2) + "\n", newline="lf")
     git(ws.parent, "init", "-q", str(ws))
     if origin is not None:
         git(ws, "remote", "add", "origin", origin)
@@ -43,10 +45,8 @@ def make_workspace(base: Path, origin: str | None) -> Path:
 
 
 def apply_mcp(ws: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-B", str(PYENV), "--workspace", str(ws), "--mode", "mcp",
-         "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"],
-        capture_output=True, text=True, encoding="utf-8")
+    return osnorm.run_text([sys.executable, "-B", str(PYENV), "--workspace", str(ws), "--mode", "mcp",
+         "--mcp-server", "test", "--mcp-tool", "python", "--apply", "--json"], errors="strict")
 
 
 @unittest.skipUnless(shutil.which("git"), "需要 git 判定模板正主")
@@ -61,7 +61,7 @@ class TemplateStatusAuthority(unittest.TestCase):
         result = apply_mcp(ws)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         out = json.loads(result.stdout)
-        boot = json.loads((ws / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve"))
         self.assertEqual(boot["workspace_status"], "template")
         self.assertTrue(out.get("template_protected"), out)
         self.assertIn("hint", out)
@@ -101,7 +101,12 @@ class TemplateStatusAuthority(unittest.TestCase):
             "file://localhost:22/tmp/x.git": None,
         }
         existing = self.base.resolve()
-        cases[str(existing)] = str(existing)
+        # 本地绝对路径的 canonical 形（正斜杠 + 盘符大写，段大小写不动）由 osnorm 唯一实现，
+        # 与 `scripts/repo_identity.py::_canonical_local` 是同一个规范形；原生 `str(Path)`
+        # 在 Windows 上是 `C:\a\b`、POSIX 上是 `/a/b`，跨平台比较不成立。
+        canonical = osnorm.canonical_path(existing)
+        cases[str(existing)] = canonical      # 原生写法输入 → canonical
+        cases[canonical] = canonical          # 已 canonical → 幂等
         for value, expected in cases.items():
             with self.subTest(value=value):
                 self.assertEqual(module._repo_identity(value), expected)
@@ -115,7 +120,7 @@ class TemplateStatusAuthority(unittest.TestCase):
                 result = apply_mcp(ws)
                 self.assertNotEqual(result.returncode, 0)
                 out = json.loads(result.stdout)
-                boot = json.loads((ws / ".workspace/bootstrap.json").read_text())
+                boot = json.loads(osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve"))
                 self.assertEqual(boot["workspace_status"], "template")
                 self.assertIn("重跑", out.get("hint", ""))
 
@@ -128,7 +133,7 @@ class TemplateStatusAuthority(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 out = json.loads(result.stdout)
                 boot = json.loads(
-                    (ws / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
+                    osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve"))
                 self.assertEqual(boot["workspace_status"], "template")
                 self.assertIn("无法归一化", out.get("hint", ""))
 
@@ -136,7 +141,7 @@ class TemplateStatusAuthority(unittest.TestCase):
         ws = make_workspace(self.base, "ssh://git@github.com/KinoluKaslana/WorkspaceTemplate.git")
         result = apply_mcp(ws)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        boot = json.loads((ws / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve"))
         self.assertEqual(boot["workspace_status"], "template")
 
     def test_t_a_file_uri_and_path_are_equivalent(self):
@@ -144,19 +149,19 @@ class TemplateStatusAuthority(unittest.TestCase):
         source.mkdir()
         ws = make_workspace(self.base, str(source))
         boot_path = ws / ".workspace/bootstrap.json"
-        boot = json.loads(boot_path.read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(boot_path, bom=False, newline="preserve"))
         boot["template"]["source_repo"] = source.as_uri()
-        boot_path.write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(boot_path, json.dumps(boot), newline="lf")
         result = apply_mcp(ws)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(json.loads(boot_path.read_text())["workspace_status"], "template")
+        self.assertEqual(json.loads(osnorm.read_text(boot_path, bom=False, newline="preserve"))["workspace_status"], "template")
 
     def test_t_b_missing_origin_stays_template(self):
         ws = make_workspace(self.base, None)
         result = apply_mcp(ws)
         self.assertNotEqual(result.returncode, 0)
         out = json.loads(result.stdout)
-        boot = json.loads((ws / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve"))
         self.assertEqual(boot["workspace_status"], "template")
         self.assertIn("origin", out.get("hint", ""))
 
@@ -164,7 +169,7 @@ class TemplateStatusAuthority(unittest.TestCase):
         ws = make_workspace(self.base, "https://example.invalid/owner/derived.git")
         result = apply_mcp(ws)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        boot = json.loads((ws / ".workspace/bootstrap.json").read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve"))
         self.assertEqual(boot["workspace_status"], "active")
 
     def test_t_b_local_path_origins_become_active(self):
@@ -179,7 +184,7 @@ class TemplateStatusAuthority(unittest.TestCase):
                 result = apply_mcp(ws)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 out = json.loads(result.stdout)
-                boot = json.loads((ws / ".workspace/bootstrap.json").read_text())
+                boot = json.loads(osnorm.read_text(ws / ".workspace/bootstrap.json", bom=False, newline="preserve"))
                 self.assertEqual(boot["workspace_status"], "active")
                 self.assertEqual(out.get("local_state", {}).get("status"), "BOUND")
                 self.assertNotIn("hint", out)
@@ -187,10 +192,10 @@ class TemplateStatusAuthority(unittest.TestCase):
     def test_t_c_only_python_workspace_id_status_may_change(self):
         ws = make_workspace(self.base, "git@example.invalid:owner/derived.git")
         path = ws / ".workspace/bootstrap.json"
-        before = json.loads(path.read_text(encoding="utf-8"))
+        before = json.loads(osnorm.read_text(path, bom=False, newline="preserve"))
         result = apply_mcp(ws)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        after = json.loads(path.read_text(encoding="utf-8"))
+        after = json.loads(osnorm.read_text(path, bom=False, newline="preserve"))
         for key in before.keys() | after.keys():
             if key not in {"python", "workspace_id", "workspace_status"}:
                 self.assertEqual(after.get(key), before.get(key), key)
@@ -213,16 +218,16 @@ class TemplateStatusAuthority(unittest.TestCase):
         spec.loader.exec_module(module)
         readme = fixture / "README.md"
         text, n = re.subn(r"policy-v\d+\.\d+\.\d+", "policy-v0.0.1",
-                          readme.read_text(encoding="utf-8"), count=1)
+                          osnorm.read_text(readme, bom=False, newline="preserve"), count=1)
         self.assertEqual(n, 1, "README.md 政策徽章定位失败（徽章版本不该写死）")
-        readme.write_text(text, encoding="utf-8")
+        osnorm.write_text(readme, text, newline="lf")
         boot_path = fixture / ".workspace/bootstrap.json"
-        boot = json.loads(boot_path.read_text(encoding="utf-8"))
+        boot = json.loads(osnorm.read_text(boot_path, bom=False, newline="preserve"))
         boot["workspace_status"] = "active"
-        boot_path.write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(boot_path, json.dumps(boot), newline="lf")
         self.assertFalse(any("README.md" in finding for finding in module.check(fixture)))
         boot["workspace_status"] = "template"
-        boot_path.write_text(json.dumps(boot), encoding="utf-8")
+        osnorm.write_text(boot_path, json.dumps(boot), newline="lf")
         self.assertTrue(any("README.md" in finding for finding in module.check(fixture)))
 
 

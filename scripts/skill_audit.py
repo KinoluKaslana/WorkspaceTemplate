@@ -31,6 +31,18 @@ import re
 import sys
 from pathlib import Path
 
+
+# 文本 I/O 单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被 importlib
+# 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+# stdio 编码契约的单一实现（TTY / 非 TTY 两个分支在 osnorm 内）
+osnorm.configure_stdio()
+
+
 FORCE_PRUNE = False
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / ".workspace" / "skills"
@@ -40,6 +52,8 @@ REGISTRY = ROOT / "skills" / "REGISTRY.md"
 TOOLS = ROOT / "TOOLS.md"
 CLAUSES = ROOT / ".workspace" / "rule-clauses.json"
 PATH_RE = re.compile(r"(?:\.workspace|scripts|notes|docs|tests|skills)/[A-Za-z0-9_./-]+")
+# R46 S10：dev 专属账本在 main/实例侧必须不存在；skill 文档仍可描述该条件路径。
+BRANCH_OPTIONAL_PATHS = {".workspace/release_dev.json"}
 
 # 目录名允许的字符：与 `*/SKILL.md` 的发现能力一致（不窄于发现，否则「磁盘有、正则匹配不到」
 # 会被报成集合不一致，且只能靠改名以外的手段缓解）。
@@ -65,7 +79,7 @@ def frontmatter(text: str) -> dict:
 
 def clause_ids() -> set[str]:
     try:
-        data = json.loads(CLAUSES.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(CLAUSES))
     except Exception:
         return set()
     ids: set[str] = set()
@@ -149,6 +163,7 @@ def contract_findings(name: str, text: str, fm: dict, ids: set[str], require_io:
         p for p in (x.rstrip("/.-") for x in PATH_RE.findall(text))
         # 只把 `name.ext` 当文件；`.local` 这类点目录的 basename 以点开头，不是扩展名
         if re.search(r"[^/\\.]\.[A-Za-z0-9]{1,8}$", p) and not SKIP.search(p)
+        and p not in BRANCH_OPTIONAL_PATHS
         and not (ROOT / p).exists() and "$(" not in p and "<" not in p})
     if missing_paths:
         f.append(f"引用不存在的路径：{','.join(missing_paths[:4])}")
@@ -181,7 +196,7 @@ def local_records() -> list[dict]:
     for area, sub in (("active", SKILLS_LOCAL), ("draft", SKILLS_LOCAL / "_drafts"),
                       ("retired", SKILLS_LOCAL / "_retired")):
         for md in sorted(sub.glob("*/SKILL.md")):
-            text = md.read_text(encoding="utf-8")
+            text = osnorm.read_text(md)
             state = (frontmatter(text).get("status") or "").strip()
             out.append({"skill": md.parent.name, "path": md, "layer": "local",
                         "state": state,
@@ -209,7 +224,7 @@ def audit_local_extra(rec: dict, fm: dict, text: str) -> list[str]:
             f.append("approved 缺 APPROVAL.json（审批证据）")
         else:
             try:
-                ev = json.loads(ap.read_text(encoding="utf-8"))
+                ev = json.loads(osnorm.read_text(ap))
             except Exception:
                 ev = {}
                 f.append("APPROVAL.json 不是合法 JSON")
@@ -304,15 +319,16 @@ def sync_registry(rows: list[dict], local: list[dict]) -> int:
     names = sorted(r["skill"] for r in rows if r.get("layer", "template") == "template")
     if not REGISTRY.is_file():
         REGISTRY.parent.mkdir(parents=True, exist_ok=True)
-        REGISTRY.write_text(
+        osnorm.write_text(
+            REGISTRY,
             "# Skills 路由登记表\n\n"
             "> 本文件只保存路由视图；规范路径、版本/哈希、信任边界与核验日期以 `TOOLS.md` 为准。\n\n"
             "## 已登记 skill roots\n\n"
             "| 命名空间 | Skill root | 根路由/索引 | 路由状态 | TOOLS 登记 |\n|---|---|---|---|---|\n"
             f"| `workspace-skills` | `.workspace/skills/` | 无路由器；每 skill 独立登记 "
             f"| 已登记（{len(names)} 入口：{' / '.join(names)}） | `TOOLS.md` |\n\n"
-            "## Skill 入口\n\n", encoding="utf-8")
-    reg = REGISTRY.read_text(encoding="utf-8")
+            "## Skill 入口\n\n", newline="preserve")
+    reg = osnorm.read_text(REGISTRY)
     old_local = {k for k in _local_table(reg) if not k.startswith("!mismatch:")}
     keep_local = [r for r in local if r["area"] in ("active", "retired")]
     if old_local and not keep_local and not FORCE_PRUNE:
@@ -321,7 +337,7 @@ def sync_registry(rows: list[dict], local: list[dict]) -> int:
               "先恢复目录，或确认后用 --force-prune-local。", file=sys.stderr)
         return 4
 
-    desc = {n: frontmatter((SKILLS / n / "SKILL.md").read_text(encoding="utf-8")).get("description", "").strip().strip('"')
+    desc = {n: frontmatter(osnorm.read_text(SKILLS / n / "SKILL.md")).get("description", "").strip().strip('"')
             for n in names}
     table = ["| 路由 ID | 触发摘要 | 入口 | 所属命名空间 |", "|---|---|---|---|"]
     for name in names:
@@ -335,7 +351,7 @@ def sync_registry(rows: list[dict], local: list[dict]) -> int:
     entries = [r for r in local if r["area"] in ("active", "retired")]
     lt = ["| 路由 ID | 状态 | 触发摘要 | 入口 |", "|---|---|---|---|"]
     for r in sorted(entries, key=lambda x: x["skill"]):
-        text = r["path"].read_text(encoding="utf-8")
+        text = osnorm.read_text(r["path"])
         d = frontmatter(text).get("description", "").strip().strip('"').replace("|", chr(92) + "|")
         sub = "_retired/" if r["area"] == "retired" else ""
         lt.append(f"| {r['skill']} | {r['state'] or 'unknown'} | {d} | `.workspace/skills-local/{sub}{r['skill']}/SKILL.md` |")
@@ -353,7 +369,7 @@ def sync_registry(rows: list[dict], local: list[dict]) -> int:
         else:
             reg = reg.rstrip() + "\n" + row
     reg = re.sub(r"已登记（\d+\s*个本地\s*skill[^）]*）", f"已登记（{len(entries)} 个本地 skill）", reg, count=1)
-    REGISTRY.write_text(reg, encoding="utf-8")
+    osnorm.write_text(REGISTRY, reg, newline="preserve")
     sync_tools_block(entries)
     sync_bootstrap_roots(bool(entries))
     return 0
@@ -363,7 +379,7 @@ def sync_tools_block(entries: list[dict]) -> None:
     """TOOLS.md 的本地层块：与 REGISTRY 同源生成，避免「同名模板行顶替」的假登记。"""
     if not TOOLS.is_file():
         return
-    tools = TOOLS.read_text(encoding="utf-8")
+    tools = osnorm.read_text(TOOLS)
     if not entries and TOOLS_BEGIN not in tools:
         return                                   # 空本地层且没有块：不往模板文档里塞噪声
     lines = [TOOLS_BEGIN, ""]
@@ -380,7 +396,7 @@ def sync_tools_block(entries: list[dict]) -> None:
         tools = tools[:m.start()] + block + tools[m.end():]
     else:
         tools = tools.rstrip() + "\n\n## 本地层 skill 入口（自动生成，勿手改）\n\n" + block + "\n"
-    TOOLS.write_text(tools, encoding="utf-8")
+    osnorm.write_text(TOOLS, tools, newline="preserve")
 
 
 def sync_bootstrap_roots(has_local: bool) -> None:
@@ -388,7 +404,7 @@ def sync_bootstrap_roots(has_local: bool) -> None:
     if not BOOTSTRAP.is_file():
         return
     try:
-        data = json.loads(BOOTSTRAP.read_text(encoding="utf-8-sig"))
+        data = json.loads(osnorm.read_text(BOOTSTRAP, bom=True))
     except Exception:
         return
     roots = data.setdefault("skills", {}).setdefault("registered_roots", [])
@@ -399,7 +415,8 @@ def sync_bootstrap_roots(has_local: bool) -> None:
         roots.remove("workspace-skills-local")
     if roots == before:
         return                                    # 未变不重写，避免无意义 diff
-    BOOTSTRAP.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    osnorm.write_text(BOOTSTRAP, json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                      newline="preserve")
 
 
 def _template_file_list() -> set[str] | None:
@@ -453,14 +470,14 @@ def main(argv: list[str]) -> int:
     FORCE_PRUNE = a.force_prune_local
 
     ids = clause_ids()
-    registry = REGISTRY.read_text(encoding="utf-8") if REGISTRY.is_file() else ""
-    tools = TOOLS.read_text(encoding="utf-8") if TOOLS.is_file() else ""
+    registry = osnorm.read_text(REGISTRY) if REGISTRY.is_file() else ""
+    tools = osnorm.read_text(TOOLS) if TOOLS.is_file() else ""
     local = local_records()
     rows: list[dict] = []
     bad = 0
 
     for rec in template_records() + local:
-        name, text = rec["skill"], rec["path"].read_text(encoding="utf-8")
+        name, text = rec["skill"], osnorm.read_text(rec["path"])
         fm = frontmatter(text)
         f: list[str] = []
         # 退役项：保留 frontmatter / name==目录 / version 校验，只豁免 8 维契约与触发语
@@ -500,7 +517,7 @@ def main(argv: list[str]) -> int:
 
     if a.sync_registry:
         rc = sync_registry(rows, local)
-        after = REGISTRY.read_text(encoding="utf-8") if REGISTRY.is_file() else ""
+        after = osnorm.read_text(REGISTRY) if REGISTRY.is_file() else ""
         problems = registry_invariants(rows, after) + local_registry_invariants(local, after)
         other = [f for r in rows for f in r["findings"]]
         ok = rc == 0 and not problems
@@ -518,7 +535,7 @@ def main(argv: list[str]) -> int:
         entries = [r for r in local if r["area"] in ("active", "retired")]
         if entries and BOOTSTRAP.is_file():
             try:
-                roots = json.loads(BOOTSTRAP.read_text(encoding="utf-8-sig")).get("skills", {}).get("registered_roots", [])
+                roots = json.loads(osnorm.read_text(BOOTSTRAP, bom=True)).get("skills", {}).get("registered_roots", [])
             except Exception:
                 roots = []
             if "workspace-skills-local" not in roots:

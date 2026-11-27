@@ -16,6 +16,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 SRC = Path(__file__).resolve().parent.parent
 
 FULL = """---
@@ -66,27 +69,25 @@ def build(tmp: Path, skills: dict[str, str], declared: int | None = None) -> Pat
     ws = tmp / "ws"
     (ws / "scripts").mkdir(parents=True)
     (ws / "skills").mkdir()
-    (ws / "TOOLS.md").write_text("# tools\n", encoding="utf-8")
+    osnorm.write_text(ws / "TOOLS.md", "# tools\n", newline="lf")
     shutil.copyfile(SRC / "scripts" / "skill_audit.py", ws / "scripts" / "skill_audit.py")
+    # R38e：skill_audit 的文本 I/O 走兄弟模块 osnorm
+    shutil.copyfile(SRC / "scripts" / "osnorm.py", ws / "scripts" / "osnorm.py")
     for name, body in skills.items():
         d = ws / ".workspace" / "skills" / name
         d.mkdir(parents=True)
-        (d / "SKILL.md").write_text(body, encoding="utf-8")
-        (ws / "TOOLS.md").write_text((ws / "TOOLS.md").read_text(encoding="utf-8") + f"| **{name}** | x |\n",
-                                     encoding="utf-8")
+        osnorm.write_text(d / "SKILL.md", body, newline="lf")
+        osnorm.write_text(ws / "TOOLS.md", osnorm.read_text(ws / "TOOLS.md", bom=False, newline="preserve") + f"| **{name}** | x |\n", newline="lf")
     n = len(skills) if declared is None else declared
     rows = "\n".join(f"| {k} | t | `.workspace/skills/{k}/SKILL.md` | workspace-skills |" for k in skills)
-    (ws / "skills" / "REGISTRY.md").write_text(
-        f"# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
+    osnorm.write_text(ws / "skills" / "REGISTRY.md", f"# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
         f"| `workspace-skills` | `.workspace/skills/` | 无 | 已登记（{n} 入口：{' / '.join(skills)}） | TOOLS |\n\n"
-        f"## Skill 入口\n\n| 路由 ID | 触发摘要 | 入口 | 所属命名空间 |\n|---|---|---|---|\n{rows}\n",
-        encoding="utf-8")
+        f"## Skill 入口\n\n| 路由 ID | 触发摘要 | 入口 | 所属命名空间 |\n|---|---|---|---|\n{rows}\n", newline="lf")
     return ws
 
 
 def audit(ws: Path, *args):
-    p = subprocess.run([sys.executable, "-B", "scripts/skill_audit.py", *args],
-                       cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    p = osnorm.run_text([sys.executable, "-B", "scripts/skill_audit.py", *args], cwd=ws, errors="replace")
     return p.returncode, p.stdout
 
 
@@ -106,14 +107,14 @@ class SkillAudit(unittest.TestCase):
         ws = build(self.root, {"demo": FULL.format(name="demo")})
         ref = ws / ".workspace" / "skills" / "demo" / "references"
         ref.mkdir(parents=True)
-        (ref / "notes.md").write_text("x\n", encoding="utf-8")
+        osnorm.write_text(ref / "notes.md", "x\n", newline="lf")
         vr = ws / "scripts" / "verify_rules.py"
-        vr.write_text('TEMPLATE_FILES = [".workspace/skills/demo/SKILL.md"]\n', encoding="utf-8")
+        osnorm.write_text(vr, 'TEMPLATE_FILES = [".workspace/skills/demo/SKILL.md"]\n', newline="lf")
         rc, out = audit(ws)
         self.assertEqual(rc, 1, out)
         self.assertIn("附属文件未进 TEMPLATE_FILES", out)
-        vr.write_text('TEMPLATE_FILES = [".workspace/skills/demo/SKILL.md", '
-                      '".workspace/skills/demo/references/notes.md"]\n', encoding="utf-8")
+        osnorm.write_text(vr, 'TEMPLATE_FILES = [".workspace/skills/demo/SKILL.md", '
+                      '".workspace/skills/demo/references/notes.md"]\n', newline="lf")
         rc2, out2 = audit(ws)
         self.assertEqual(rc2, 0, out2)
 
@@ -133,9 +134,8 @@ class SkillAudit(unittest.TestCase):
     def test_a4_name_mismatch(self):
         ws = build(self.root, {"demo": FULL.format(name="demo")})
         reg = ws / "skills" / "REGISTRY.md"
-        reg.write_text(reg.read_text(encoding="utf-8").replace(
-            "| demo | t | `.workspace/skills/demo/SKILL.md`", "| ghost | t | `.workspace/skills/ghost/SKILL.md`"),
-            encoding="utf-8")
+        osnorm.write_text(reg, osnorm.read_text(reg, bom=False, newline="preserve").replace(
+            "| demo | t | `.workspace/skills/demo/SKILL.md`", "| ghost | t | `.workspace/skills/ghost/SKILL.md`"), newline="lf")
         rc, out = audit(ws)
         self.assertEqual(rc, 1, out)
         self.assertIn("名称集合", out)
@@ -148,7 +148,7 @@ class SkillAudit(unittest.TestCase):
         self.assertEqual(rc2, 0, out2)
         rc3, out3 = audit(ws, "--strict")
         self.assertEqual(rc3, 0, out3)
-        self.assertIn("已登记（1 入口：demo）", (ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8"))
+        self.assertIn("已登记（1 入口：demo）", osnorm.read_text(ws / "skills" / "REGISTRY.md", bom=False, newline="preserve"))
 
 
     def test_a6_sync_registry_handles_non_kebab_names(self):
@@ -161,7 +161,7 @@ class SkillAudit(unittest.TestCase):
         ws = build(self.root, {"Demo": FULL.format(name="Demo")})
         rc, out = audit(ws, "--sync-registry")
         self.assertEqual(rc, 0, out)
-        reg = (ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8")
+        reg = osnorm.read_text(ws / "skills" / "REGISTRY.md", bom=False, newline="preserve")
         self.assertIn("`.workspace/skills/Demo/SKILL.md`", reg)
         rc2, out2 = audit(ws, "--strict")
         self.assertEqual(rc2, 1, out2)          # 只提示约定，不改文件
@@ -172,9 +172,8 @@ class SkillAudit(unittest.TestCase):
         ws = build(self.root, {"demo": FULL.format(name="demo")})
         audit(ws, "--sync-registry")
         reg = ws / "skills" / "REGISTRY.md"
-        text = reg.read_text(encoding="utf-8")
-        reg.write_text(text.replace("## Skill 入口", "正文示例：`.workspace/skills/demo/SKILL.md`\n\n## Skill 入口", 1),
-                       encoding="utf-8")
+        text = osnorm.read_text(reg, bom=False, newline="preserve")
+        osnorm.write_text(reg, text.replace("## Skill 入口", "正文示例：`.workspace/skills/demo/SKILL.md`\n\n## Skill 入口", 1), newline="lf")
         rc, out = audit(ws, "--strict")
         self.assertEqual(rc, 0, out)          # 散文里那次提及不该让计数变成 2
 
@@ -183,9 +182,8 @@ class SkillAudit(unittest.TestCase):
         ws = build(self.root, {"demo": FULL.format(name="demo")})
         audit(ws, "--sync-registry")
         reg = ws / "skills" / "REGISTRY.md"
-        reg.write_text(reg.read_text(encoding="utf-8").replace(
-            ".workspace/skills/demo/SKILL.md", ".workspace/skills/other/SKILL.md", 1),
-            encoding="utf-8")
+        osnorm.write_text(reg, osnorm.read_text(reg, bom=False, newline="preserve").replace(
+            ".workspace/skills/demo/SKILL.md", ".workspace/skills/other/SKILL.md", 1), newline="lf")
         rc, out = audit(ws, "--strict")
         self.assertEqual(rc, 1, out)
         self.assertIn("名称与路径不一致", out)
@@ -197,7 +195,7 @@ class SkillAudit(unittest.TestCase):
         ws = build(self.root, {"demo": body})
         rc, out = audit(ws, "--sync-registry")
         self.assertEqual(rc, 0, out)
-        reg = (ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8")
+        reg = osnorm.read_text(ws / "skills" / "REGISTRY.md", bom=False, newline="preserve")
         self.assertIn("demo \\| pipe", reg)
         rc2, out2 = audit(ws, "--strict")
         self.assertEqual(rc2, 0, out2)
@@ -265,11 +263,11 @@ class LocalLayer(unittest.TestCase):
         (self.ws / "scripts").mkdir(parents=True)
         (self.ws / "skills").mkdir()
         shutil.copyfile(SRC / "scripts" / "skill_audit.py", self.ws / "scripts" / "skill_audit.py")
-        (self.ws / "TOOLS.md").write_text("# tools\n", encoding="utf-8")
-        (self.ws / "skills" / "REGISTRY.md").write_text(
-            "# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
+        shutil.copyfile(SRC / "scripts" / "osnorm.py", self.ws / "scripts" / "osnorm.py")
+        osnorm.write_text(self.ws / "TOOLS.md", "# tools\n", newline="lf")
+        osnorm.write_text(self.ws / "skills" / "REGISTRY.md", "# Skills\n\n| 命名空间 | root | 索引 | 路由状态 | TOOLS |\n|---|---|---|---|---|\n"
             "| `workspace-skills` | `.workspace/skills/` | 无 | 已登记（0 入口） | TOOLS |\n\n"
-            "## Skill 入口\n\n| 路由 ID | 触发摘要 | 入口 | 所属命名空间 |\n|---|---|---|---|\n", encoding="utf-8")
+            "## Skill 入口\n\n| 路由 ID | 触发摘要 | 入口 | 所属命名空间 |\n|---|---|---|---|\n", newline="lf")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -287,14 +285,12 @@ class LocalLayer(unittest.TestCase):
             approval = {"approved_by": "user", "approved_at": "2026-11-10T01:00:00+08:00",
                         "approved_skill_sha256": sha, "approved_directive": "建一个 demo"}
         if approval is not None:
-            (d / "APPROVAL.json").write_text(json.dumps(approval, ensure_ascii=False), encoding="utf-8")
-        (self.ws / "TOOLS.md").write_text(
-            (self.ws / "TOOLS.md").read_text(encoding="utf-8") + f"| **{name}** | x |\n", encoding="utf-8")
+            osnorm.write_text(d / "APPROVAL.json", json.dumps(approval, ensure_ascii=False), newline="lf")
+        osnorm.write_text(self.ws / "TOOLS.md", osnorm.read_text(self.ws / "TOOLS.md", bom=False, newline="preserve") + f"| **{name}** | x |\n", newline="lf")
         return sha
 
     def audit(self, *args):
-        r = subprocess.run([sys.executable, "-B", str(self.ws / "scripts" / "skill_audit.py"), *args],
-                           cwd=self.ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        r = osnorm.run_text([sys.executable, "-B", str(self.ws / "scripts" / "skill_audit.py"), *args], cwd=self.ws, errors="replace")
         return r.returncode, r.stdout + r.stderr
 
     def test_l1_approved_with_evidence_passes(self):
@@ -335,7 +331,7 @@ class LocalLayer(unittest.TestCase):
     def test_l6_sync_writes_local_table(self):
         self.add()
         self.assertEqual(self.audit("--sync-registry")[0], 0)
-        reg = (self.ws / "skills" / "REGISTRY.md").read_text(encoding="utf-8")
+        reg = osnorm.read_text(self.ws / "skills" / "REGISTRY.md", bom=False, newline="preserve")
         self.assertIn("## 本地层入口", reg)
         self.assertIn("| demo-local | approved |", reg)
         self.assertIn("workspace-skills-local", reg)

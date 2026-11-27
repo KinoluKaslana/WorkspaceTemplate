@@ -100,7 +100,10 @@ class FallbackScope(unittest.TestCase):
         """新种子必须先 fsync 文件，再原子发布。"""
         events = []
         real_fsync = self.core.os.fsync
-        real_replace = self.core.os.replace
+        # R41：原子发布改走 osnorm.replace_retry —— 注入点由 `os.replace` 换成 osnorm 的
+        # `_REPLACE`（osnorm.py 明确把它登记为可测性注入点）。判据不变：fsync 先于发布。
+        osnorm_module = self.core._osn(str(self.ws))
+        real_replace = osnorm_module._REPLACE
 
         def tracked_fsync(fd):
             events.append("fsync")
@@ -111,7 +114,7 @@ class FallbackScope(unittest.TestCase):
             return real_replace(src, dst)
 
         with mock.patch.object(self.core.os, "fsync", side_effect=tracked_fsync), \
-             mock.patch.object(self.core.os, "replace", side_effect=tracked_replace):
+             mock.patch.object(osnorm_module, "_REPLACE", side_effect=tracked_replace):
             self.assertTrue(self.core._fallback_seed())
         self.assertIn("replace", events)
         self.assertEqual(events[0], "fsync", events)

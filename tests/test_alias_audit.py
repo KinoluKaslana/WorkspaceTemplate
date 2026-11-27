@@ -16,6 +16,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 SRC = Path(__file__).resolve().parent.parent
 
 
@@ -24,31 +27,29 @@ def build_ws(tmp: Path) -> Path:
     (ws / "docs").mkdir(parents=True)
     (ws / "scripts").mkdir()
     (ws / "tests").mkdir()
-    for f in ("docs_index.py", "docs_hit_report.py", "docs_alias_audit.py"):
+    # osnorm.py：R38e 起 docs_hit_report / docs_alias_audit 的文本 I/O 走它
+    for f in ("docs_index.py", "docs_hit_report.py", "docs_alias_audit.py", "osnorm.py"):
         shutil.copyfile(SRC / "scripts" / f, ws / "scripts" / f)
     shutil.copyfile(SRC / "tests" / "docs_probe.json", ws / "tests" / "docs_probe.json")
-    (ws / "docs" / "a.md").write_text(
-        "# A\n\n## 1. 拒绝码\n\nno-read、no-session、unresolved-target。\n\n"
+    osnorm.write_text(ws / "docs" / "a.md", "# A\n\n## 1. 拒绝码\n\nno-read、no-session、unresolved-target。\n\n"
         "## 2. 审计事件\n\ngate-deny、unobserved、gate-intent。\n\n"
-        "## 3. 活体拒绝腿\n\ntools: Write 的结构性无读定义。\n", encoding="utf-8")
+        "## 3. 活体拒绝腿\n\ntools: Write 的结构性无读定义。\n", newline="lf")
     # 判据集替换成 2 条稳定题，避免依赖真实文档
     probe = {"schema": 1, "cases": [
         {"id": "p1", "title": "拒绝码", "question": "有哪些拒绝码", "expect": ["no-read", "no-session"]},
         {"id": "p2", "title": "审计事件", "question": "有哪些审计事件", "expect": ["gate-deny", "unobserved"]},
     ]}
-    (ws / "tests" / "docs_probe.json").write_text(json.dumps(probe, ensure_ascii=False), encoding="utf-8")
+    osnorm.write_text(ws / "tests" / "docs_probe.json", json.dumps(probe, ensure_ascii=False), newline="lf")
     subprocess.run([sys.executable, "-B", "scripts/docs_index.py", "build"], cwd=ws, capture_output=True)
     return ws
 
 
 def wp(ws: Path, aliases):
-    (ws / "docs" / ".aliases.json").write_text(
-        json.dumps({"schema": 1, "aliases": aliases}, ensure_ascii=False), encoding="utf-8")
+    osnorm.write_text(ws / "docs" / ".aliases.json", json.dumps({"schema": 1, "aliases": aliases}, ensure_ascii=False), newline="lf")
 
 
 def audit(ws: Path, *args):
-    p = subprocess.run([sys.executable, "-B", "scripts/docs_alias_audit.py", *args],
-                       cwd=ws, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    p = osnorm.run_text([sys.executable, "-B", "scripts/docs_alias_audit.py", *args], cwd=ws, errors="replace")
     return p.returncode, p.stdout
 
 
@@ -88,12 +89,12 @@ class AliasAudit(unittest.TestCase):
 
     def test_a5_restore(self):
         snap = self.ws / "docs" / ".aliases.bak.20260101000000.json"
-        snap.write_text(json.dumps({"schema": 1, "aliases": []}), encoding="utf-8")
+        osnorm.write_text(snap, json.dumps({"schema": 1, "aliases": []}), newline="lf")
         wp(self.ws, [{"phrases": ["z"], "path": "docs/a.md", "heading": "9. 不存在",
                       "source": "probe-only"}])
         rc, out = audit(self.ws, "--restore")
         self.assertEqual(rc, 0, out)
-        self.assertEqual(json.loads((self.ws / "docs" / ".aliases.json").read_text(encoding="utf-8", errors="replace"))["aliases"], [])
+        self.assertEqual(json.loads(osnorm.read_text(self.ws / "docs" / ".aliases.json", bom=False, errors="replace", newline="preserve"))["aliases"], [])
 
 
 if __name__ == "__main__":

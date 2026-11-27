@@ -14,6 +14,17 @@ import re
 import sys
 from pathlib import Path
 
+
+# 文本 I/O 与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被
+# importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+osnorm.configure_stdio()
+
+
 ROOT = Path(__file__).resolve().parent.parent
 SKIP_DIRS = {".git", "__pycache__", "node_modules", "venv", "backups"}
 SKIP_PREFIX = (".workspace/backup-",)      # 同步备份是模板层副本，不是工作区内容
@@ -43,7 +54,7 @@ def _ignores(root: Path) -> list[str]:
     if not f.is_file():
         return []
     out = []
-    for line in f.read_text(encoding="utf-8").splitlines():
+    for line in osnorm.read_text(f).splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
             out.append(line.rstrip("/"))
@@ -68,7 +79,8 @@ def scan(root: Path):
         if _skipped(rel, extra):
             continue
         try:
-            text = p.read_text(encoding="utf-8", errors="ignore")
+            # `errors="ignore"` 是调用点语义（二进制/混杂编码文件不参与扫描），不是默认策略
+            text = osnorm.read_text(p, errors="ignore")
         except OSError:
             continue
         if not text or len(text) > 2_000_000:

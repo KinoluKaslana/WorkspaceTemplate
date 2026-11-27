@@ -11,21 +11,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 SRC = Path(__file__).resolve().parent.parent
 SCRIPT = SRC / ".github" / "scripts" / "release_anchor.py"
 
 
 def git(root: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
-                          encoding="utf-8", errors="replace")
+    return osnorm.run_text(["git", "-C", str(root), *args], errors="replace")
 
 
 def make_repo(root: Path) -> None:
     (root / "scripts").mkdir(parents=True)
-    (root / "AGENT_RULES.md").write_text("# rules <!-- id:R1 -->\n\n> **模板政策版本：`1.2.3`。**\n",
-                                         encoding="utf-8")
-    (root / "scripts" / "verify_rules.py").write_text(
-        'TEMPLATE_FILES = ["AGENT_RULES.md"]\n', encoding="utf-8")
+    osnorm.write_text(root / "AGENT_RULES.md", "# rules <!-- id:R1 -->\n\n> **模板政策版本：`1.2.3`。**\n", newline="lf")
+    osnorm.write_text(root / "scripts" / "verify_rules.py", 'TEMPLATE_FILES = ["AGENT_RULES.md"]\n', newline="lf")
     git(root, "init", "-q", "-b", "dev")
     git(root, "config", "user.email", "t@example.com")
     git(root, "config", "user.name", "t")
@@ -34,8 +34,7 @@ def make_repo(root: Path) -> None:
 
 
 def anchor(root: Path) -> tuple[int, dict]:
-    p = subprocess.run([sys.executable, str(SCRIPT), "--assert-tag-identity", "--root", str(root)],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    p = osnorm.run_text([sys.executable, str(SCRIPT), "--assert-tag-identity", "--root", str(root)], errors="replace")
     try:
         return p.returncode, json.loads(p.stdout)
     except json.JSONDecodeError:
@@ -62,8 +61,7 @@ class TagIdentity(unittest.TestCase):
 
     def test_z3_same_version_different_content_fails(self):
         git(self.root, "tag", "v1.2.3")
-        (self.root / "AGENT_RULES.md").write_text(
-            "# rules <!-- id:R1 -->\n\n> **模板政策版本：`1.2.3`。**\n\n新增一行但没升版。\n", encoding="utf-8")
+        osnorm.write_text(self.root / "AGENT_RULES.md", "# rules <!-- id:R1 -->\n\n> **模板政策版本：`1.2.3`。**\n\n新增一行但没升版。\n", newline="lf")
         git(self.root, "commit", "-aqm", "change without bump")
         rc, info = anchor(self.root)
         self.assertEqual(rc, 1, info)
@@ -72,7 +70,7 @@ class TagIdentity(unittest.TestCase):
 
     def test_z4_undistributed_change_passes(self):
         git(self.root, "tag", "v1.2.3")
-        (self.root / "ci.yml").write_text("on: push\n", encoding="utf-8")
+        osnorm.write_text(self.root / "ci.yml", "on: push\n", newline="lf")
         git(self.root, "add", "ci.yml")
         git(self.root, "commit", "-qm", "ci only")
         rc, info = anchor(self.root)

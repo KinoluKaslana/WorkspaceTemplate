@@ -12,13 +12,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import osnorm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY = ROOT / "scripts" / "verify_rules.py"
 
 
 def _mkfile(p: Path, text: str) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(text, encoding="utf-8")
+    osnorm.write_text(p, text, newline="lf")
 
 
 def _git_init(repo: Path) -> None:
@@ -48,9 +51,8 @@ def _fixture(tmp: Path) -> tuple[Path, Path]:
 
 
 def run(ws: Path, tpl: str, env=None):
-    p = subprocess.run([sys.executable, "-B", str(VERIFY), "--workspace", str(ws),
-                        "--vs-template", tpl],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
+    p = osnorm.run_text([sys.executable, "-B", str(VERIFY), "--workspace", str(ws),
+                        "--vs-template", tpl], errors="replace", env=env)
     try:
         return p.returncode, json.loads(p.stdout)
     except Exception:
@@ -67,7 +69,7 @@ class ReadmeExemption(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_t1_replaced_readme_is_info_not_finding(self):
-        (self.ws / "README.md").write_text("# 用户自己的首页\n", encoding="utf-8")
+        osnorm.write_text(self.ws / "README.md", "# 用户自己的首页\n", newline="lf")
         rc, data = run(self.ws, str(self.tpl))
         self.assertEqual(data.get("findings"), [], data)
         self.assertTrue(any("REPLACED README.md" in i for i in data.get("info", [])), data)
@@ -117,8 +119,7 @@ class SyncKeepsDeletedReadmeEn(unittest.TestCase):
         if archive.returncode != 0:
             self.skipTest("git archive 失败（仓库不可用）")
         subprocess.run(["tar", "-x", "-C", str(self.ws)], input=archive.stdout, check=True)
-        self.head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
-                                   capture_output=True, text=True).stdout.strip()
+        self.head = osnorm.run_text(["git", "-C", str(ROOT), "rev-parse", "HEAD"], errors="replace").stdout.strip()
         boot = {
             "workspace_status": "active",
             "python": {"mode": "local-venv", "runtime": {"identifier": ".venv-x"}},
@@ -128,8 +129,7 @@ class SyncKeepsDeletedReadmeEn(unittest.TestCase):
                          "last_synced_commit": self.head},
         }
         (self.ws / ".workspace").mkdir(parents=True, exist_ok=True)
-        (self.ws / ".workspace" / "bootstrap.json").write_text(
-            json.dumps(boot, ensure_ascii=False, indent=2), encoding="utf-8")
+        osnorm.write_text(self.ws / ".workspace" / "bootstrap.json", json.dumps(boot, ensure_ascii=False, indent=2), newline="lf")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -138,12 +138,11 @@ class SyncKeepsDeletedReadmeEn(unittest.TestCase):
         if not (self.ws / "README_EN.md").exists():
             # 模板源本身就没有 README_EN（例如派生实例仓里跑本用例），无法验证「不复活」
             self.skipTest("模板源无 README_EN.md")
-        (self.ws / "README.md").write_text("# 用户自己的首页\n", encoding="utf-8")  # 本地化
+        osnorm.write_text(self.ws / "README.md", "# 用户自己的首页\n", newline="lf")  # 本地化
         (self.ws / "README_EN.md").unlink()
-        r = subprocess.run([sys.executable, "-B", str(ROOT / "scripts" / "template_sync.py"),
+        r = osnorm.run_text([sys.executable, "-B", str(ROOT / "scripts" / "template_sync.py"),
                             "--workspace", str(self.ws), "--template", str(ROOT),
-                            "--ref", self.head, "--apply"],
-                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+                            "--ref", self.head, "--apply"], errors="replace")
         self.assertIn(r.returncode, (0,), r.stdout + r.stderr)
         self.assertFalse((self.ws / "README_EN.md").exists(), "README_EN.md 被装回来了")
         self.assertTrue((self.ws / "README.md").exists())

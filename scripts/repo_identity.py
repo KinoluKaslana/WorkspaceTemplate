@@ -12,6 +12,10 @@ _SCHEMES = {"http": 80, "https": 443, "ssh": 22, "git": 9418}
 _INVISIBLE = {"\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"}
 _DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
 _SCP = re.compile(r"(?P<user>[^@/\\:]+)@(?P<host>[^/\\:]+):(?P<path>.+)")
+# `file:///C:/x` 的 urlsplit 结果：盘符前多出一个 "/"
+_FILE_DRIVE = re.compile(r"^/[A-Za-z]:/")
+# Win32 设备命名空间前缀（`\\?\C:\x` / `\\.\C:\x`）
+_DEVICE = re.compile(r"^\\\\[?.]\\")
 
 
 def normalize_encoding(value: object) -> str | None:
@@ -62,6 +66,10 @@ def _segments(path: str) -> list[str] | None:
     parts = path.split("/")
     if any(not part or part in {".", ".."} or len(part) > 255 for part in parts):
         return None
+    # `C:` 这类裸盘符不能当路径段：否则 `/C:/x/y` 会被当成合法 POSIX 绝对路径
+    # （Windows 上 `Path.as_posix()` 的输出被前置 "/" 时就是这个形态）。
+    if any(re.fullmatch(r"[A-Za-z]:", part) for part in parts):
+        return None
     if any(any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in part) for part in parts):
         return None
     if parts[-1].lower().endswith(".git"):
@@ -69,6 +77,42 @@ def _segments(path: str) -> list[str] | None:
         if not parts[-1] or parts[-1] in {".", ".."}:
             return None
     return parts
+
+
+def _canonical_local(path: str) -> str | None:
+    """已解析的本地绝对路径 → 正斜杠规范形，**保留盘符 / UNC 前缀**。
+
+    为什么单独一层：`convert_format` 的 base 分支拿到的是 `Path.resolve()` 的结果，
+    POSIX 上是 `/a/b`，Windows 上是 `C:/a/b`（`as_posix()`）。旧实现一律
+    `"/" + "/".join(segments)`，在 Windows 上会产出 `/C:/a/b`：既有前导斜杠
+    又保留盘符，两边都不成立（畸形值）。这里按族分开归一：
+      POSIX  `/a/b`        → `/a/b`
+      Drive  `C:/a/b`      → `C:/a/b`（盘符字母大写，斜杠统一）
+      UNC    `//host/share/a` → `//host/share/a`
+    `wsl.localhost` 这类 UNC 与 `//?/C:/...` 设备前缀不走本函数（设备前缀直接拒绝）。
+    """
+    text = path.replace("\\", "/")
+    if not text:
+        return None
+    prefix, rest = "", text
+    if _DRIVE.match(text):
+        prefix, rest = text[0].upper() + ":", text[2:]
+    elif text.startswith("//"):
+        match = re.fullmatch(r"//([^/]+)/([^/]+)(/.*)?", text)
+        if not match:
+            return None
+        host, share, tail = match.group(1), match.group(2), match.group(3) or ""
+        if any(part in {"", ".", "..", "?"} for part in (host, share)):
+            return None
+        if any(any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in part) for part in (host, share)):
+            return None
+        prefix, rest = f"//{host}/{share}", tail
+        if tail in {"", "/"}:
+            return prefix
+    parts = _segments(rest)
+    if not parts:
+        return None
+    return f"{prefix}/{'/'.join(parts)}"
 
 
 def _host(host: str) -> str | None:
@@ -82,19 +126,43 @@ def _host(host: str) -> str | None:
     return host
 
 
+def _windows_local(value: str, exists) -> str | None:
+    """Windows 绝对路径族（`X:\\…` / `\\\\host\\share\\…` / 设备前缀）→ 规范形；不存在则 None。
+
+    为什么必须**存在性把关**：本地路径是「派生身份」的唯一凭据（远程 URL 才是模板正主）。
+    任意字符串只要长得像 `C:\\work\\repo` 就被接纳，等于把「无法证明不是模板正主」的
+    输入升级成合法派生身份——R17-01 明确要求这类输入 fail-closed。所以只接纳**磁盘上
+    真实存在**的路径；不存在的仍然是 None（Linux 上 `C:\\work\\repo` 永远不存在，
+    因此 Ubuntu 侧行为逐条不变）。
+
+    `exists` 是注入点（默认 `os.path.exists`）：判据是纯函数，Windows 族输入可以在
+    Linux 上用 `exists=lambda p: True` 直接测，不依赖 `os.name`。
+    """
+    text = value
+    if _DEVICE.match(text):                       # \\?\C:\x → C:\x
+        text = text[4:]
+    normalized = text.replace("\\", "/")
+    if not (_DRIVE.match(normalized) or normalized.startswith("//")):
+        return None
+    if not exists(value):                         # 用**原始写法**问文件系统（反斜杠是原生的）
+        return None
+    return _canonical_local(text)
+
+
 def convert_format(
-    value: str | None, base: str | os.PathLike[str] | None = None
+    value: str | None, base: str | os.PathLike[str] | None = None,
+    *, exists=None,
 ) -> str | None:
     """把规范字面串按族转换为 canonical；相对路径无 base 时 fail-closed。"""
+    exists = os.path.exists if exists is None else exists
     if not isinstance(value, str) or not value or len(value) > 512:
         return None
     try:
         if _DRIVE.match(value) or value.startswith("\\\\"):
-            return None
+            return _windows_local(value, exists)
         if "://" not in value:
             if value.startswith("/"):
-                parts = _segments(value)
-                return "/" + "/".join(parts) if parts else None
+                return _canonical_local(value)
             match = _SCP.fullmatch(value)
             if match:
                 host = _host(match.group("host"))
@@ -108,8 +176,7 @@ def convert_format(
             candidate = (root / value).resolve(strict=True)
             if not candidate.is_relative_to(root):
                 return None
-            parts = _segments(candidate.as_posix())
-            return "/" + "/".join(parts) if parts else None
+            return _canonical_local(candidate.as_posix())
 
         parsed = urlsplit(value)
         scheme = parsed.scheme.lower()
@@ -120,6 +187,9 @@ def convert_format(
                 return None
             if not parsed.path.startswith("/"):
                 return None
+            # `file:///C:/x` → urlsplit 给 `/C:/x`：盘符路径要按 Windows 族判存在性
+            if _FILE_DRIVE.match(parsed.path):
+                return _windows_local(parsed.path[1:], exists)
             parts = _segments(parsed.path)
             return "/" + "/".join(parts) if parts else None
         if scheme not in _SCHEMES or parsed.query or parsed.fragment or parsed.password:
@@ -136,12 +206,13 @@ def convert_format(
         return None
 
 
-def repair(value: object, base: str | os.PathLike[str] | None = None) -> str | None:
+def repair(value: object, base: str | os.PathLike[str] | None = None, *,
+           exists=None) -> str | None:
     """编码规范化后再转换格式；相对路径仅在显式 base 内解析。"""
     normalized = normalize_encoding(value)
     if normalized is None:
         return None
-    converted = convert_format(normalized, base=base)
+    converted = convert_format(normalized, base=base, exists=exists)
     if converted is not None:
         return converted
     # canonical remote 本身没有 scheme；只接受严格 host/path，避免接纳任意相对路径。
@@ -160,10 +231,12 @@ def classify(
     value: object,
     template_source: object,
     base: str | os.PathLike[str] | None = None,
+    *,
+    exists=None,
 ) -> str | None:
     """模板同源、可证明合法派生（含本地路径）、或不可判；base 只锚定相对路径。"""
-    canonical = repair(value, base=base)
-    template = repair(template_source, base=base)
+    canonical = repair(value, base=base, exists=exists)
+    template = repair(template_source, base=base, exists=exists)
     if canonical is None or template is None:
         return None
     if canonical == template:

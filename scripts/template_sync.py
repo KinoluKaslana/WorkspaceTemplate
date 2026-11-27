@@ -27,16 +27,29 @@ import shutil
 import subprocess
 import sys
 
-# Windows 的控制台/CI 管道常见 cp1252：中文 print 会抛 UnicodeEncodeError，
-# 把真正的失败原因盖掉（Windows CI 上就是这么红的）。改成不可编码字符用替代符，
-# 而不是让脚本在报错路径上再抛一次。
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(errors="replace")      # type: ignore[union-attr]
-    except Exception:
-        pass
+
 import tempfile
 from pathlib import Path
+
+# 文本 I/O 与 stdio 契约的单一实现：osnorm。脚本直跑（sys.path[0]=scripts/）与被
+# importlib 按文件加载两种入口都要能解析兄弟模块，所以先把脚本目录钉进 sys.path。
+_SCRIPT_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+import osnorm  # noqa: E402 - 依赖上面的 sys.path 注入
+
+osnorm.configure_stdio()
+
+
+def _append_text(path: Path, text: str) -> None:
+    """真追加（O_APPEND）：只补行，绝不改写用户既有内容。
+
+    这两个调用点（`.gitignore` 与本脚本 MANIFEST 的 `[pruned]` 段）要的是**追加**语义，
+    不能换成整文件原子覆盖；而行尾必须与文本模式 newline=None 等价（Windows 上把 LF
+    翻译成 CRLF），所以先按 os.linesep 翻译再走字节层追加——编码仍然只有 UTF-8 一处。
+    """
+    with open(os.fspath(path), "ab") as fh:
+        fh.write(text.replace("\n", os.linesep).encode("utf-8"))
 
 
 GIT_BIN = os.environ.get("GIT_BIN") or "git"
@@ -72,6 +85,24 @@ def git(repo: Path, *args: str, check: bool = True) -> str:
     return p.stdout.strip()
 
 
+def _commit_exists(repo: Path, rev: str, *, runner=None) -> bool:
+    """`rev` 在 repo 里能否解析到对象（不 peel、不抛异常）。
+
+    为什么不用 `git cat-file -e <rev>^{commit}`：`^{...}` 是 peel 语法，Windows 上
+    这一步失败时与「rev 不存在」完全同形（同样非零、无 stdout），上层据此判定
+    「上次同步点不可得」→ 用户的 README_EN 删除被当成缺失又装回来。
+    `rev-parse --verify --quiet` 只做解析（失败时 rc=1、静默），语义更窄也更好读。
+    `runner` 只为单测注入，生产路径恒用 `_run`。
+    """
+    run = runner or _run
+    try:
+        proc = run(["-C", str(repo), "rev-parse", "--verify", "--quiet", str(rev)],
+                   capture_output=True)
+    except RuntimeError:                    # git 不可执行：当作「不可得」，由上层 fail-closed
+        return False
+    return getattr(proc, "returncode", 1) == 0
+
+
 def template_files(worktree: Path) -> list[str]:
     """从模板分支的 verify_rules.py 读取 TEMPLATE_FILES（唯一事实源）。"""
     sys.path.insert(0, str(worktree / "scripts"))
@@ -99,7 +130,7 @@ def previous_template_files(tpl: Path, prev_commit: str | None) -> list[str]:
 
 def policy_version(path: Path) -> str:
     try:
-        m = re.search(r"模板政策版本：`([0-9]+\.[0-9]+\.[0-9]+)`", path.read_text(encoding="utf-8"))
+        m = re.search(r"模板政策版本：`([0-9]+\.[0-9]+\.[0-9]+)`", osnorm.read_text(path))
         return m.group(1) if m else "unknown"
     except OSError:
         return "unknown"
@@ -107,7 +138,7 @@ def policy_version(path: Path) -> str:
 
 def clause_ids(registry: Path) -> set[str]:
     try:
-        data = json.loads(registry.read_text(encoding="utf-8"))
+        data = json.loads(osnorm.read_text(registry))
     except Exception:
         return set()
     if isinstance(data, dict):
@@ -120,7 +151,7 @@ def clause_ids(registry: Path) -> set[str]:
 def dangling_custom(ws: Path, new_ids: set[str]) -> list[dict]:
     out = []
     for p in sorted(ws.glob("*.custom.md")):
-        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+        for i, line in enumerate(osnorm.read_text(p).splitlines(), 1):
             for m in re.finditer(r"(overrides|extends)\s*:\s*(R\d+)", line):
                 if m.group(2) not in new_ids:
                     out.append({"file": p.name, "line": i, "ref": m.group(2), "kind": m.group(1)})
@@ -138,7 +169,7 @@ def _registry_has_foreign_namespaces(path: Path) -> bool:
     所以只要表里还有 `| \\`other-ns\\` |` 这样的行，删掉这个文件就再也重建不出来。
     """
     try:
-        text = path.read_text(encoding="utf-8")
+        text = osnorm.read_text(path)
     except OSError:
         return False
     for line in text.splitlines():
@@ -156,14 +187,14 @@ def _registry_has_foreign_namespaces(path: Path) -> bool:
     return False
 
 
-def _rollback(ws: Path, backup: Path, purge_generated: bool = False) -> int:
+def _rollback(ws: Path, backup: Path, purge_generated: bool = False, *, output=None) -> int:
     """按 MANIFEST 回滚：先放回 replaced，再删除 added，最后恢复 preserved。"""
     man = backup / "MANIFEST.txt"
     if not man.is_file():
         print(f"缺少 MANIFEST.txt：{man}", file=sys.stderr)
         return 2
     sec, buf = {}, []
-    for line in man.read_text(encoding="utf-8").splitlines():
+    for line in osnorm.read_text(man).splitlines():
         if line.startswith("[") and line.endswith("]"):
             if sec:
                 pass
@@ -224,16 +255,19 @@ def _rollback(ws: Path, backup: Path, purge_generated: bool = False) -> int:
             while parent != ws and parent.is_dir() and not any(parent.iterdir()):
                 parent.rmdir()
                 parent = parent.parent
-    print(f"回滚完成：放回 {restored}，删除本次新增 {removed}，源 {backup}")
+    print(f"回滚完成：放回 {restored}，删除本次新增 {removed}，源 {backup}", file=output)
     if purged:
-        print("已清除引导期生成（升级前不存在）:", ", ".join(purged))
+        print("已清除引导期生成（升级前不存在）:", ", ".join(purged), file=output)
         if snapshotted:
-            print("  清除前快照:", ", ".join(str(backup / "purged" / r) for r in snapshotted))
-            print("  需要找回: 从上面的快照目录复制回工作区，或按工作区自己的重建流程重生成")
+            print("  清除前快照:", ", ".join(str(backup / "purged" / r) for r in snapshotted),
+                  file=output)
+            print("  需要找回: 从上面的快照目录复制回工作区，或按工作区自己的重建流程重生成",
+                  file=output)
     elif not purge_generated:
-        print("提示：第 3 步生成的工作区自有文件不在 MANIFEST 内；需要一并清除时加 --purge-generated")
+        print("提示：清除 MANIFEST 未记录的引导期生成文件可加 --purge-generated", file=output)
     if kept:
-        print("保留未清除（含工作区自有命名空间，删除会丢用户数据）:", ", ".join(kept))
+        print("保留未清除（含工作区自有命名空间，删除会丢用户数据）:", ", ".join(kept),
+              file=output)
     return 0
 
 
@@ -248,7 +282,7 @@ def ensure_ignore_lines(ws: Path) -> list[str]:
     """
     path = Path(ws) / ".gitignore"
     try:
-        existing = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+        existing = osnorm.read_text(path, errors="replace") if path.is_file() else ""
     except OSError as exc:
         return [], f"读取失败：{exc}"
     lines = {ln.strip() for ln in existing.splitlines()}
@@ -257,11 +291,41 @@ def ensure_ignore_lines(ws: Path) -> list[str]:
         return [], None
     try:
         prefix = "" if (not existing or existing.endswith("\n")) else "\n"
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(prefix + "".join(ln + "\n" for ln in missing))
+        _append_text(path, prefix + "".join(ln + "\n" for ln in missing))
     except OSError as exc:
         return [], f"写入失败：{exc}"
     return missing, None
+
+
+def encoding_report(ws: Path) -> dict | None:
+    """同步收尾的编码自检：只**报告**，绝不改用户文件（一键命令交给用户）。
+
+    `--check --json` 取机器可读结果；脚本不存在（旧工作区）或起不来就返回 None。
+    子进程只给 `capture_output`、自己按 UTF-8 解码字节——被调的是**目标工作区**里那份
+    `encoding_guard.py`（旧工作区可能是旧版本，不一定接受 text/encoding 关键字），所以这里
+    刻意不借用本进程的 osnorm 子进程契约。
+    """
+    guard = ws / "scripts" / "encoding_guard.py"
+    if not guard.is_file():
+        return None
+    try:
+        p = subprocess.run([sys.executable, "-B", str(guard), "--check",
+                            "--root", str(ws), "--json"],
+                           cwd=str(ws), capture_output=True)
+    except OSError:
+        return None
+    raw = (p.stdout or b"").decode("utf-8", "replace")
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    findings = data.get("findings") or []
+    return {
+        "scanned": data.get("scanned"),
+        "files": len(findings),
+        "first": [f.get("path") for f in findings[:5]],
+        "fix": "python3 scripts/encoding_guard.py --fix" if findings else "",
+    }
 
 
 def main(argv: list[str]) -> int:
@@ -301,7 +365,7 @@ def main(argv: list[str]) -> int:
     if a.rollback:
         return _rollback(ws, Path(a.rollback).expanduser().resolve(), a.purge_generated)
 
-    boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
+    boot = json.loads(osnorm.read_text(boot_path, bom=True))
     tpl_sec = boot.get("template") or {}
 
     # 模板克隆：显式参数 > TEMPLATE_DIR > bootstrap 记录的本地克隆 > 默认路径
@@ -357,7 +421,18 @@ def main(argv: list[str]) -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="tplsync-"))
     wt = tmp / "wt"
-    git(tpl, "worktree", "add", "--detach", str(wt), commit)
+    try:
+        git(tpl, "worktree", "add", "--detach", str(wt), commit)
+    except RuntimeError as exc:
+        # 受限沙箱可读模板对象库、但禁止写 `<tpl>/.git/worktrees`。这时在临时目录做
+        # 本地 clone 快照；仍只解析同一 commit，不联网，也不触碰模板工作树。
+        if "read-only file system" not in str(exc).lower():
+            raise
+        shutil.rmtree(wt, ignore_errors=True)
+        p = _run(["clone", "--quiet", "--no-checkout", str(tpl), str(wt)])
+        if p.returncode != 0:
+            raise _git_failure(f"git clone snapshot failed: {p.stderr}") from exc
+        git(wt, "checkout", "--quiet", "--detach", commit)
     try:
         files = template_files(wt)
         before = policy_version(ws / "AGENT_RULES.md")
@@ -368,8 +443,7 @@ def main(argv: list[str]) -> int:
         # README 处置：显式 --keep-readme 恒保留；否则「工作区 README 与上次同步点不同」视为用户首页，保留
         prev_commit = (boot.get("template") or {}).get("last_synced_commit")
         readme_is_local = False
-        if prev_commit and _run(["-C", str(tpl), "cat-file", "-e", f"{prev_commit}^{{commit}}"],
-                                          capture_output=True).returncode == 0:
+        if prev_commit and _commit_exists(tpl, str(prev_commit)):
             for name in ("README.md", "README_EN.md"):
                 cur = ws / name
                 if not cur.is_file():
@@ -427,10 +501,19 @@ def main(argv: list[str]) -> int:
             return 0
 
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup = ws / ".workspace" / f"backup-{stamp}-sync"
-        backup.mkdir(parents=True, exist_ok=True)
+        backup = Path(tempfile.mkdtemp(prefix=f"backup-{stamp}-", suffix="-sync",
+                                      dir=ws / ".workspace"))
         replaced, added = [], []
-        for rel in files:
+        refresh = []
+        generated = []
+        if "scripts/skill_audit.py" in files and (wt / "scripts/skill_audit.py").is_file():
+            refresh.append(("scripts/skill_audit.py", "--sync-registry"))
+            generated.extend(("skills/REGISTRY.md", "TOOLS.md"))
+        if ("scripts/docs_index.py" in files and (wt / "scripts/docs_index.py").is_file()
+                and (wt / "docs").is_dir()):
+            refresh.append(("scripts/docs_index.py", "build"))
+            generated.append("docs/.index.json")
+        for rel in dict.fromkeys([*files, *generated]):
             src_dst = ws / rel
             if src_dst.is_file():
                 (backup / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -446,15 +529,16 @@ def main(argv: list[str]) -> int:
 
         preserved = [x for x in ("AGENT_RULES.custom.md", "HERMES.custom.md",
                                  ".workspace/bootstrap.json") if (backup / x).is_file()]
-        (backup / "MANIFEST.txt").write_text(
+        osnorm.write_text(
+            backup / "MANIFEST.txt",
             "# template_sync backup manifest\n"
             f"# ref={wanted} commit={commit} {before}->{after}\n"
             "[replaced]\n" + "\n".join(replaced) + "\n"
             "[added]\n" + "\n".join(added) + "\n"
-            "[preserved]\n" + "\n".join(preserved) + "\n", encoding="utf-8")
+            "[preserved]\n" + "\n".join(preserved) + "\n", newline="lf")
 
         boot_path = ws / ".workspace" / "bootstrap.json"
-        boot_before = json.loads(boot_path.read_text(encoding="utf-8-sig"))
+        boot_before = json.loads(osnorm.read_text(boot_path, bom=True))
         python_before = json.dumps(boot_before.get("python"), sort_keys=True)
         gate_before = json.dumps(boot_before.get("gate"), sort_keys=True)
 
@@ -491,10 +575,9 @@ def main(argv: list[str]) -> int:
                     dropped.append(rel)
                 report["pruned"] = dropped
                 if dropped:
-                    with (backup / "MANIFEST.txt").open("a", encoding="utf-8") as fh:
-                        fh.write("[pruned]\n" + "\n".join(dropped) + "\n")
+                    _append_text(backup / "MANIFEST.txt", "[pruned]\n" + "\n".join(dropped) + "\n")
 
-            boot = json.loads(boot_path.read_text(encoding="utf-8-sig"))
+            boot = json.loads(osnorm.read_text(boot_path, bom=True))
             tpl_sec = boot.setdefault("template", {})
             tpl_sec["current_policy_version"] = after
             tpl_sec["last_synced_at"] = dt.date.today().isoformat()
@@ -502,14 +585,22 @@ def main(argv: list[str]) -> int:
             if kind in ("commit", "tag"):             # 分支、标签或裸提交：记 requested ref
                 tpl_sec["last_synced_branch"] = wanted
             tpl_sec["last_synced_commit"] = commit
-            boot_path.write_text(json.dumps(boot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            osnorm.write_text(boot_path, json.dumps(boot, ensure_ascii=False, indent=2) + "\n",
+                              newline="lf")
+            for script, option in refresh:
+                result = osnorm.run_text([sys.executable, "-B", str(ws / script), option],
+                                         cwd=ws, errors="replace")
+                if result.returncode != 0:
+                    raise RuntimeError(f"{script} {option} (rc={result.returncode}): "
+                                       f"{(result.stderr or result.stdout).strip()}")
+            report["refreshed"] = [script for script, _ in refresh]
             return done
 
         try:
             copied = _apply_changes()
         except Exception as exc:  # noqa: BLE001 —— 写盘中途失败必须回到同步前
             print(f"同步失败：{exc}", file=sys.stderr)
-            rb = _rollback(ws, backup)
+            rb = _rollback(ws, backup, output=sys.stderr if a.json else None)
             report["auto_rollback"] = {"reason": f"exception: {exc}", "rollback_rc": rb}
             report["copied"] = []
             if a.json:
@@ -520,11 +611,11 @@ def main(argv: list[str]) -> int:
             print(f"已自动回滚（backup={backup}）", file=sys.stderr)
             return 3
 
-        python_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8-sig")).get("python"),
+        python_after = json.dumps(json.loads(osnorm.read_text(boot_path, bom=True)).get("python"),
                                   sort_keys=True)
         report["python_mode_preserved"] = (python_before == python_after)
         # §15：同步不得改写本机的 gate 接线结论（运行期事实不是模板事实）
-        gate_after = json.dumps(json.loads(boot_path.read_text(encoding="utf-8-sig")).get("gate"),
+        gate_after = json.dumps(json.loads(osnorm.read_text(boot_path, bom=True)).get("gate"),
                                 sort_keys=True)
         report["gate_preserved"] = (gate_before == gate_after)
         report.update({"backup": str(backup), "copied": copied,
@@ -544,12 +635,12 @@ def main(argv: list[str]) -> int:
         if a.verify:
             out_json = ws / ".workspace" / ".verify-tmp.json"
             try:
-                p = subprocess.run([sys.executable, str(ws / "scripts" / "verify_rules.py"),
-                                    "--workspace", str(ws), "--vs-template", str(wt),
-                                    "--json", str(out_json)],
-                                   cwd=ws, capture_output=True, text=True)
+                p = osnorm.run_text([sys.executable, "-B", str(ws / "scripts" / "verify_rules.py"),
+                                     "--workspace", str(ws), "--vs-template", str(wt),
+                                     "--json", str(out_json)],
+                                    cwd=ws, errors="replace")
             except Exception as exc:  # noqa: BLE001 —— 校验器本身起不来也算同步失败
-                rb = _rollback(ws, backup)
+                rb = _rollback(ws, backup, output=sys.stderr if a.json else None)
                 report["auto_rollback"] = {"reason": f"verify-exception: {exc}", "rollback_rc": rb}
                 print(f"verify 无法运行：{exc}", file=sys.stderr)
                 if a.json:
@@ -560,7 +651,7 @@ def main(argv: list[str]) -> int:
                 print(f"已自动回滚（backup={backup}）", file=sys.stderr)
                 return 3
             try:
-                verify = json.loads(out_json.read_text(encoding="utf-8"))
+                verify = json.loads(osnorm.read_text(out_json))
             except Exception:
                 verify = {"raw": (p.stdout or p.stderr)[:400]}
             finally:
@@ -568,7 +659,7 @@ def main(argv: list[str]) -> int:
             report["verify"] = {"clean": verify.get("clean"), "findings": verify.get("findings", [])[:10]}
             if not verify.get("clean") and not a.keep_on_fail:
                 # 校验不通过 = 这次同步没有产出可用的工作区：回到同步前，而不是留一套半对的状态
-                rb = _rollback(ws, backup)
+                rb = _rollback(ws, backup, output=sys.stderr if a.json else None)
                 report["auto_rollback"] = {"reason": "verify-not-clean", "rollback_rc": rb}
                 if rb != 0:
                     print(f"verify 未通过且回滚失败（rc={rb}）：按 {backup}/MANIFEST.txt 手工恢复",
@@ -582,15 +673,25 @@ def main(argv: list[str]) -> int:
                     print(json.dumps(report, ensure_ascii=False))
                 return 2
 
+        # 编码收尾：只报告，不改用户文件（§3.1 机械统一：清理权留给用户一条命令）
+        enc = encoding_report(ws)
+        if enc is not None:
+            report["text_encoding"] = enc
+
         if a.json:
             print(json.dumps(report, ensure_ascii=False))
         else:
             print(f"{ref}({kind})@{commit[:8]}  {before} → {after}；替换 {len(copied)} 个文件")
             print("备份:", backup)
+            if report["refreshed"]:
+                print("已刷新:", ", ".join(report["refreshed"]))
             if report["pruned"]:
                 print("已删除上游移除的文件:", ", ".join(report["pruned"]))
             if a.verify:
                 print("verify clean:", (verify or {}).get("clean"))
+            if enc and enc["files"]:
+                print(f"文本编码：{enc['files']} 个文件有 BOM/换行问题（未自动改）→ {enc['fix']}")
+                print("  受影响（前 5）：", ", ".join(enc["first"]))
         return 0 if (not a.verify or (verify or {}).get("clean")) else 2
     finally:
         _run(["-C", str(tpl), "worktree", "remove", "--force", str(wt)],
