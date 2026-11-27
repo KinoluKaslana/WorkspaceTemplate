@@ -258,7 +258,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "4e6514c6ed393c7748ae2bf4cbf701b3145b3f6e78c8bdc27a2505d2b82aad88",
+    "file_sha256": "20474a1eebb89ce253b01385d842e4702cd78446fe70a2a2ff37af9de533c2d0",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -288,7 +288,7 @@
   },
   "tests/test_repo_identity.py": {
     "clauses": {},
-    "file_sha256": "81acc890d779abf1884bb8f9f66c4047f8fbf3f6821d30569af176836537125b",
+    "file_sha256": "1806f8df69ee1146d0e940f4ca2a35ab9e8fa9e1b538e03dc3a131e4d1835ee3",
     "marked": 0
   },
   "tests/test_template_status_authority.py": {
@@ -583,7 +583,7 @@
   },
   "tests/test_gate_status.py": {
     "clauses": {},
-    "file_sha256": "f7eebe093e1302d53cbdc5e895039c2c677c6747f99989ea8a4ffbcaedd2a640",
+    "file_sha256": "5b9da611c8287d3411085cac14a8fd97625721941a6dde1fc567c71a3a4f61a8",
     "marked": 0
   },
   "tests/no_git_runner.py": {
@@ -613,7 +613,7 @@
   },
   "tests/test_gitignore_ensure.py": {
     "clauses": {},
-    "file_sha256": "ff4fd2d0a0a5ffd3e82e63ac9d2c37555567a8b14c5d1e9443348610e5fd3d49",
+    "file_sha256": "988265ac5a9acf5a985e8f2c262f624f0ed2f62da6d6aece8334cdb7a0fbd171",
     "marked": 0
   },
   "tests/test_regression_ledger.py": {
@@ -628,7 +628,7 @@
   },
   "tests/test_osnorm_properties.py": {
     "clauses": {},
-    "file_sha256": "d6337b0ee990269affeb8cad347fa1e9092afebd4108b696cf005d4ea64ee7ba",
+    "file_sha256": "4f68705068f2895acb0d8cf4e3d6e0c7c6c50c1c19f2ed50e49d7d96e82e97f5",
     "marked": 0
   },
   "tests/test_osnorm_single_source.py": {
@@ -663,12 +663,12 @@
   },
   "scripts/sequence_check.py": {
     "clauses": {},
-    "file_sha256": "d0a5d0745ecf1941639f73198bbc5b77575d9ebe82c993f449a6dada1c542b14",
+    "file_sha256": "01ec330815a73c66995705c0ff4fe7848136dde7610e20d1c98df491dc49ee22",
     "marked": 0
   },
   "tests/test_sequence_check.py": {
     "clauses": {},
-    "file_sha256": "2c39078f4fc4addde2333e6ea2ed42ab5b592bf4d3a97f0b8efc0784129bb38f",
+    "file_sha256": "2f87b496b841742f164fb8f964f669842fe24cf4c1afa49d0378b99db98560da",
     "marked": 0
   }
 }

@@ -65,7 +65,7 @@
 
 
 
-### R52 · 发布里程碑（非 dev 轮次）——**已发布 3.8.1**（2026-11-27；main 收尾提交 010611f）
+### R52 · 发布里程碑（非 dev 轮次）——**已发布**（2026-11-27；main 收尾提交 010611f；正式版本见 CHANGELOG）
 - **范围**：D3 — main 重新发版/合并（3.8.1 已 tag/push/合并；_DEV 两件套与计划文件已按 §0 移出 main）
 - **遗留**：main CI 红——`tests.test_check_all` 三个 dev 上下文用例（MainWiring×2 + ReleaseHint）
   在 main 上结构性必红（main 无 _DEV/SEQUENCE）→ 转 R53 hotfix

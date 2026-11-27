@@ -245,7 +245,9 @@ class GateStatus(unittest.TestCase):
         write_text = gs.osnorm.write_text
 
         def fail_cleanup(path, *args, **kwargs):
-            if path == boot:
+            # 比较前都 resolve：`gate_status.main` 先 `Path(--workspace).resolve()`，
+            # Windows CI 的 %TEMP% 是 8.3 短名（RUNNER~1），未展开的 boot 永远等不上（R53）。
+            if Path(path).resolve() == boot.resolve():
                 raise OSError("injected bootstrap write failure")
             return write_text(path, *args, **kwargs)
 

@@ -382,8 +382,8 @@ class AtomicWriteTest(PropertyCase):
         worker = self.tmp / "w.py"
         osnorm.write_text(worker, WRITER)
         target = self.tmp / "s.txt"
-        payloads = [payload_for(mode) for mode in PAYLOAD_MODES]
-        osnorm.write_text(target, payloads[0])
+        payloads = {payload_for(mode) for mode in PAYLOAD_MODES}
+        osnorm.write_text(target, payload_for(PAYLOAD_MODES[0]))
         procs = []
         try:
             for index in range(8):
@@ -397,19 +397,30 @@ class AtomicWriteTest(PropertyCase):
             seen = set()
             deadline = time.monotonic() + 60
             reads = 0
+            concurrent_reads = 0
             share_misses = 0
             # 子进程跑完后再补读到 100 次，保证「读者只见完整载荷」不是空断言
-            while time.monotonic() < deadline and (
-                    reads < 100 or any(p.poll() is None for p in procs)):
+            while time.monotonic() < deadline:
+                # Windows 的普通读句柄阻止 replace。每次读前留出无句柄的窗口，
+                # 避免紧循环让写进程耗尽共享冲突重试预算。
+                if os.name == "nt":
+                    time.sleep(0.001)
+                running = any(p.poll() is None for p in procs)
+                if reads >= 100 and not running:
+                    break
                 try:
                     text = osnorm.read_text(target)
-                except OSError:
+                except OSError as exc:
                     # Windows：写侧正处在 os.replace 的 delete-pending 窗口时，读侧 open 会
                     # 短暂失败。那是共享冲突，不是撕裂读——跳过这一次，不计入 seen。
+                    if os.name != "nt" or not isinstance(exc, (PermissionError, FileNotFoundError)):
+                        raise
                     share_misses += 1
                     continue
                 seen.add(text)
                 reads += 1
+                if running:
+                    concurrent_reads += 1
             for proc in procs:
                 _, err = proc.communicate(timeout=60)
                 self.assertEqual(proc.returncode, 0, err.decode("utf-8", "replace"))
@@ -419,9 +430,12 @@ class AtomicWriteTest(PropertyCase):
                 if proc.poll() is None:  # pragma: no cover - 超时兜底
                     proc.kill()
                     proc.wait(timeout=30)
+                proc.stderr.close()
         self.assertGreaterEqual(reads, 100, "读取次数不足，断言没有覆盖到并发窗口")
-        self.assertTrue(seen <= set(payloads),
-                        f"读者看到了不完整载荷（原子性被破坏；共享冲突跳过 {share_misses} 次）")
+        self.assertGreater(concurrent_reads, 0, "写进程运行期间没有成功读取")
+        self.assertTrue(seen <= payloads,
+                        f"读者读取了非预期载荷（长度：{sorted(map(len, seen - payloads))}；"
+                        f"共享冲突 {share_misses} 次）")
         leftovers = [p.name for p in self.tmp.iterdir() if p.name.endswith(".osnorm.tmp")]
         self.assertEqual(leftovers, [], f"临时文件未清理：{leftovers}")
 

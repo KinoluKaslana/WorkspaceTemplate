@@ -43,6 +43,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
 import unittest
@@ -119,6 +120,30 @@ CONFIRM_OK = ("verified_by=[SOL, GPT-SOL-6, PRO]；verdict=pass；verified_at=20
 TEMPLATE = object()
 
 
+def rmtree(path: Path) -> None:
+    """删目录树——Windows 上 `.git/objects` 是只读（0444），裸 `shutil.rmtree` 会
+    `PermissionError: [WinError 5]`（R53 真机复现）。删除失败时清掉只读位再重试一次；
+    语义不变：整棵 `.git` 必须真的被删掉（no-git 用例的红判据靠这个）。"""
+    if not path.exists():                   # 删已经不存在的树 = no-op（原 ignore_errors 语义）
+        return
+
+    def force_remove(func, target, exc):
+        if isinstance(exc, FileNotFoundError):
+            return
+        if os.name != "nt" or not isinstance(exc, PermissionError):
+            raise exc
+        try:
+            os.chmod(target, stat.S_IWRITE | stat.S_IREAD)
+            func(target)
+        except FileNotFoundError:          # 并发/重试下已被删掉：目标已达成
+            pass
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=force_remove)
+    else:  # pragma: no cover - 项目支持 3.10/3.11
+        shutil.rmtree(path, onerror=lambda func, target, exc_info: force_remove(func, target, exc_info[1]))
+
+
 def ledger_entry(version="44.3.8.0", summary=SUMMARY, round_no=44, commit=None):
     return {"version": version, "round": round_no, "date": "2026-11-23",
             "summary": summary, "commit": commit, "tag": None, "files_sha256": {}}
@@ -175,7 +200,7 @@ class Base(unittest.TestCase):
 
     def restart_history(self, *, keep_files=True):
         """重建 git 历史（可选先把事实文件删掉），返回新的 HEAD sha。"""
-        shutil.rmtree(self.root / ".git", ignore_errors=True)
+        rmtree(self.root / ".git")
         if not keep_files:
             for rel in (SEQ_REL, LEDGER_REL, Path("CHANGELOG_DEV.md"), Path("WORKLIST.md")):
                 (self.root / rel).unlink(missing_ok=True)
@@ -517,22 +542,27 @@ class S5Worklist(Base):
         self.assertEqual(self.status(p)["S5"], "SKIP")
         self.assertIn("WORKLIST.md 未找到", p.stdout)
         self.assertIn("声明为豁免", p.stdout)
-        self.assertIn(str(self.root), p.stdout)          # 注明找过哪些路径
+        self.assertIn(str(self.root.resolve()), p.stdout)  # 注明找过哪些路径（Windows 短路径→长路径）
 
     def test_explicit_worklist_path_typo_is_red(self):
         """B：显式 `--worklist` 指错不许退化成 SKIP（否则拼错就等于关掉 S5）。"""
-        p = self.run_script("--worklist", "WORKLIST.md.typo")
+        explicit = "./WORKLIST.md.typo"
+        p = self.run_script("--worklist", explicit)
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertEqual(self.status(p)["S5"], "FAIL")
         self.assertIn("不存在或不可读", p.stdout)
+        self.assertIn(explicit, p.stdout)
+        self.assertIn(str(self.root.resolve() / "WORKLIST.md.typo"), p.stdout)
         self.assertIn("拼错不许退化成 SKIP", p.stdout)
 
     def test_explicit_worklist_absolute_missing_is_red(self):
         """B：绝对路径形式（`/tmp/does-not-exist`）同样必须红。"""
-        p = self.run_script("--worklist", "/tmp/does-not-exist-r46d")
+        explicit = "/tmp/does-not-exist-r46d"
+        p = self.run_script("--worklist", explicit)
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertEqual(self.status(p)["S5"], "FAIL")
-        self.assertIn("/tmp/does-not-exist-r46d", p.stdout)
+        self.assertIn(explicit, p.stdout)
+        self.assertIn(str(self.root.resolve() / explicit), p.stdout)
 
     @unittest.skipIf(os.name == "nt", "Windows 没有 POSIX 权限位：用目录名覆盖「解析不到」那一路")
     def test_explicit_worklist_unreadable_is_red(self):
@@ -690,7 +720,7 @@ class S8Immutability(Base):
 
     def test_no_git_is_red_not_silently_green(self):
         """没有 git = 锚不可用：不许退化成「当前文件自证」的绿。"""
-        shutil.rmtree(self.root / ".git")
+        rmtree(self.root / ".git")
         p = self.run_script()
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertEqual(self.status(p)["S8"], "FAIL", p.stdout)
@@ -1351,7 +1381,7 @@ class S13Rows(Base):
 
     def test_no_git_is_degraded_not_green(self):
         """没有 git = 没有历史锚：S13 报 DEGRADED，不冒充 PASS。"""
-        shutil.rmtree(self.root / ".git")
+        rmtree(self.root / ".git")
         p = self.run_script()
         self.assertEqual(self.status(p)["S13"], "DEGRADED", p.stdout)
         self.assertIn("没有锚可比", p.stdout)

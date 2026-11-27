@@ -44,12 +44,9 @@ osnorm.configure_stdio()
 def _append_text(path: Path, text: str) -> None:
     """真追加（O_APPEND）：只补行，绝不改写用户既有内容。
 
-    这两个调用点（`.gitignore` 与本脚本 MANIFEST 的 `[pruned]` 段）要的是**追加**语义，
-    不能换成整文件原子覆盖；而行尾必须与文本模式 newline=None 等价（Windows 上把 LF
-    翻译成 CRLF），所以先按 os.linesep 翻译再走字节层追加——编码仍然只有 UTF-8 一处。
+    `.gitignore` 规则与 MANIFEST 的 `[pruned]` 段均以 LF 追加。
     """
-    with open(os.fspath(path), "ab") as fh:
-        fh.write(text.replace("\n", os.linesep).encode("utf-8"))
+    osnorm.append_text(path, text)
 
 
 GIT_BIN = os.environ.get("GIT_BIN") or "git"
