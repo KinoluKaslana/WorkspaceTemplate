@@ -80,5 +80,19 @@
     },
     "iterations": 4,
     "iterations_sha256": "2ae1bf31ccf6b502bdc5c35682798ec00a38dc38270c4233578707a57fd96950"
+  },
+  {
+    "version": "51.3.8.0",
+    "round": 51,
+    "date": "2026-11-27",
+    "summary": "R51 闸门转 blocking（空白名单）：新增违规直接红且逐处定位，allowlist 空白名单，抬 baseline 不可解红。取版 gpt+四轮修补（含 ASTRA 完备性审查四必修）；v63 三席 pass-with-notes；Windows 原生复跑。",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "CHANGELOG_DEV.md": "702ea836cd605a49",
+      "AGENT_RULES.md": "c84751c0a66dfe46"
+    },
+    "iterations": 6,
+    "iterations_sha256": "289940f7c63525b272cd43352e051776bd9bfb668edde731038a3850ea59e36b"
   }
 ]

@@ -18,6 +18,10 @@
 >
 > 账本：`.workspace/release_dev.json`（append-only，字段对齐 `releases.json`，另加 `round`）。
 
+## 51.3.8.0（2026-11-27）
+
+R51 闸门转 blocking（空白名单）：新增违规直接红且逐处定位，allowlist 空白名单，抬 baseline 不可解红。取版 gpt+四轮修补（含 ASTRA 完备性审查四必修）；v63 三席 pass-with-notes；Windows 原生复跑。
+
 ## 50.3.8.0（2026-11-26）
 
 R50 真机闭环+治理单源：C6 Windows 五项真机复验、C10 dsh 双证（gate.log 不参与活跃判断）、C2 bootstrap.gate 可恢复迁移、C3 缺账本语义限定、C4 同步后派生登记、C7 候选列表、C9 归档测试。取版 gpt+汇总席裁决修补；v59 三席 pass；Windows 原生 dsh 端到端（便携 node+dsh 真机会话）。
