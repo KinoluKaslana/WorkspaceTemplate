@@ -46,6 +46,7 @@
 | 49 | `49.3.8.0` | `20ef01c` | R5 语义迁移（账本归零）：15 处迁移（12 normpath_join→交换形态 + 3 relpath_sep_key→新键）、逐项删 structural、比较两侧统一口径、wtarget 无盘契约 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass verified_at=2026-11-26 notes=真 Windows SidecarCompatR48 10/10，双端键集合 11 项逐字相同；二修为测试层自适应（零产品代码） | 迭代日志 it1–it3（R46f 机制） |
 | 50 | `50.3.8.0` | `b1a6e02` | 真机闭环+治理单源：C6 Windows 五项复验、C10 dsh 双证（glob 修复）、C2 bootstrap.gate 化石块可恢复迁移、C3/C4/C7/C9 治理收敛 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass verified_at=2026-11-26 notes=Windows 原生五项+GBK 字节一致复跑，dsh 双证与 Windows 原生 dsh 端到端，三端对照一致，证据归档 ~/.cache/seat-logs/r50-50.3.8.0/ | 迭代日志 it1–it4（R46f 机制） |
 | 51 | `51.3.8.0` | `ee02480` | 闸门转 blocking（空白名单）：新增违规直接红且逐处定位、allowlist 空白名单、抬 baseline 不可解红 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass-with-notes verified_at=2026-11-27 notes=v60/v61/v62/v63 四轮核验+Astra 完备性审查四必修闭环，Windows 原生复跑，守护链边界随裁决入账 | 迭代日志 it1–it6（R46f 机制） |
+| 53 | `53.3.8.2` | `0df25f3` | R53 hotfix：Windows CI 六红归零——no-git 夹具 onexc、gitignore 恒 LF、原子写写侧预算、S5 双拼写、8.3 短名四修、hooks 九项断言对齐 | verified_by=[SOL, GPT-SOL-6, PRO] verdict=pass verified_at=2026-11-28 notes=取版=修补后取 flash；热修锚 dfeca8b、二修 0df25f3；Windows 3.12 同配置全量留 CI 验收 | 迭代日志 it1–it4（R46f 机制） |
 
 > **`verified_by` 取值**：`[SOL, GPT-SOL-6, PRO]`（三席轮次确认）或 `legacy`（机制建立前，S9 豁免但必须注明原因）。
 > 自 R46 起，所有 `landed` 轮次必须是前者。
@@ -65,20 +66,6 @@
 
 
 
-### R52 · 发布里程碑（非 dev 轮次）——**已发布**（2026-11-27；main 收尾提交 010611f；正式版本见 CHANGELOG）
-- **范围**：D3 — main 重新发版/合并（3.8.1 已 tag/push/合并；_DEV 两件套与计划文件已按 §0 移出 main）
-- **遗留**：main CI 红——`tests.test_check_all` 三个 dev 上下文用例（MainWiring×2 + ReleaseHint）
-  在 main 上结构性必红（main 无 _DEV/SEQUENCE）→ 转 R53 hotfix
-- **说明**：正式版本号与 tag/push/合并由用户授权；脚本永不自动 push
-
-### R53 · `53.3.8.2` · hotfix：Windows CI 六红归零（发布闭环）
-- **范围**（条件 skip 方案已作废）：Windows CI 六红归零——no-git 夹具 rmtree WinError 5 ×2 /
-  gitignore CRLF 恒 LF（产品侧）/ ReleaseTests 嵌套 verify（由他条转绿）/ 原子写并发（写侧 replace 预算，无撕裂）/
-  S5 绝对路径口径；外加 CI 8.3 短名四修；取版=修补后取 flash（汇总席裁决）
-- **依赖**：R52（3.8.1 已发布）
-- **判据**：dev 全绿（tests/hooks/check_all/sequence）；main 形态树跑全量 tests 无 FAIL（三用例 skip）；
-  发布 3.8.2 后 main CI 三 workflow 全绿（D3 真正闭环）
-- **说明**：修法经用户裁决（A：条件 skip）；结构化迁移方案顺延 R54
 
 ## 3. 版本号再规划表（SEQUENCE 首次落盘时一次性执行）
 

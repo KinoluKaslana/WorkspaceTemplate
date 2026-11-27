@@ -18,6 +18,10 @@
 >
 > 账本：`.workspace/release_dev.json`（append-only，字段对齐 `releases.json`，另加 `round`）。
 
+## 53.3.8.2（2026-11-28）
+
+R53 hotfix：Windows CI 六红归零——no-git 夹具 onexc（WinError 5 只读对象）、gitignore 恒 LF 追加（产品侧 CRLF 缺陷）、原子写并发定性（写侧 replace 预算耗尽，无撕裂读，原地写负控必红）、S5 显式工作清单双拼写（绝对缺失必红不弱化）、CI 8.3 短名四修、hooks 九项路径断言对齐。取版=修补后取 flash（用户裁决）；热修锚 dfeca8b、二修 0df25f3；v65 三席 pass 必修 0；Windows 3.12 同配置全量留 CI 验收。
+
 ## 51.3.8.0（2026-11-27）
 
 R51 闸门转 blocking（空白名单）：新增违规直接红且逐处定位，allowlist 空白名单，抬 baseline 不可解红。取版 gpt+四轮修补（含 ASTRA 完备性审查四必修）；v63 三席 pass-with-notes；Windows 原生复跑。
