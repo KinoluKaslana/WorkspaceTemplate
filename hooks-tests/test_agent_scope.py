@@ -98,7 +98,7 @@ class AgentScope(unittest.TestCase):
         core.evaluate_pre_write(str(self.ws), "codex", key, [str(target)])
         intents = [e for e in self.events(key) if e.get("type") == "gate-intent"]
         self.assertTrue(intents, "allow 必须落 gate-intent")
-        self.assertEqual(intents[-1]["target"], str(target))
+        self.assertEqual(intents[-1]["target"], target.as_posix())
         self.assertEqual(intents[-1]["base_sha"], base)
 
     # -------------------------------------------------- 3) commit / unobserved
@@ -140,7 +140,7 @@ class AgentScope(unittest.TestCase):
         self.assertTrue(any(r.get("detected_by") == "worktree-diff" for r in recs),
                         f"差集应报 unobserved-write，实际 {recs}")
         flagged = {r.get("target") for r in recs}
-        self.assertIn(str(self.ws / "untracked.txt"), flagged)
+        self.assertIn((self.ws / "untracked.txt").as_posix(), flagged)
 
     # -------------------------------------------------- 5) 端到端：hook 进程带 agent_id
     def test_hook_subprocess_scopes_state_by_agent(self):
