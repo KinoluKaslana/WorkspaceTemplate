@@ -29,6 +29,7 @@ import ntpath
 import os
 import posixpath
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -831,6 +832,69 @@ class BlockingGateTest(unittest.TestCase):
             [], ["unexpected field diagnostic"], self.expected,
         ]), self.assertRaises(AssertionError):
             self.test_workspace_gate_rejects_violations()
+
+    def test_workspace_gate_reports_single_violation(self) -> None:
+        self._prepare_workspace()
+        for source, expected in (
+            ("import sys\nsys.stdout.reconfigure()\n",
+             "scripts/r51_probe.py:2: [R4] .reconfigure (call)"),
+            ("import os\n\nkey = os.path.normpath(os.path.join(base, name))\n",
+             "scripts/r51_probe.py:3: [R5] expr:normpath_join (expr)"),
+        ):
+            with self.subTest(expected=expected):
+                osnorm.write_text(self.probe, source)
+                with self.assertRaises(AssertionError) as failure:
+                    self.run_gate()
+                self.assertEqual(str(failure.exception), expected)
+                osnorm.write_text(self.probe, self.json_control)
+                self.run_gate()
+
+    def _copy_gate_workspace(self) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "scripts").mkdir()
+        (root / "tests").mkdir()
+        for path in (SCRIPTS / "osnorm.py", ROOT / "tests/__init__.py", Path(__file__),
+                     *(ROOT / "tests").glob("*.json")):
+            shutil.copyfile(path, root / path.parent.name / path.name)
+        return root
+
+    def test_workspace_gate_reads_official_ledger_and_rejects_blocking_values(self) -> None:
+        root = self._copy_gate_workspace()
+        ledger = root / "tests/osnorm_allowlist.json"
+        original = osnorm.read_text(ledger)
+        doc = json.loads(original)
+        argv = [sys.executable, "-m", "unittest",
+                "tests.test_osnorm_single_source.WorkspaceBlockingGateTest"]
+        for value in (False, True, None, 0, 1, "", "false", [], [1], {}, {"x": 1}):
+            with self.subTest(blocking=value):
+                osnorm.write_text(ledger, json.dumps(dict(doc, blocking=value)))
+                proc = osnorm.run_text(argv, cwd=root, timeout=60)
+                self.assertEqual(proc.returncode, 1, proc.stderr)
+                self.assertRegex(proc.stderr, r"(?m)^AssertionError: tests/osnorm_allowlist\.json: "
+                                 r"blocking 字段不允许出现\n\n-+\nRan 1 test\b")
+                self.assertIn("FAILED (failures=1)", proc.stderr)
+        osnorm.write_text(ledger, original)
+        restored = osnorm.run_text(argv, cwd=root, timeout=60)
+        self.assertEqual(restored.returncode, 0, restored.stderr)
+        self.assertIn("Ran 1 test ", restored.stderr)
+
+    def test_daily_stage_runs_workspace_gate(self) -> None:
+        import check_all
+
+        root = self._copy_gate_workspace()
+        probe = root / "tests/r51_stage_probe.py"
+        osnorm.write_text(probe, "import sys\nsys.stdout.reconfigure()\n")
+        stages = check_all.select_stages(fix=False, full=False, only=None)
+        stage, = [stage for stage in stages if stage.name == "osnorm_gate"]
+        # unittest 的 -k 只过滤阶段已收集的测试，同时避免递归运行本用例。
+        proc = osnorm.run_text([*stage.argv, "-k", "test_no_unregistered_violation"],
+                               cwd=root, timeout=60)
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertIn("AssertionError: tests/r51_stage_probe.py:2: [R4] .reconfigure (call)",
+                      proc.stderr)
+        self.assertIn("FAILED (failures=1)", proc.stderr)
 
     def test_workspace_gate_reports_each_injected_violation(self) -> None:
         self._prepare_workspace()
