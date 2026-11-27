@@ -439,7 +439,9 @@ class Utf8StdioGuard(unittest.TestCase):
         self.assertEqual(proc.returncode, 2, proc.stderr)
         text = proc.stderr.decode("utf-8")          # 严格解码：不是合法 UTF-8 就红
         self.assertIn("不是目录", text)
-        self.assertIn(str(missing), text)
+        # gate_status 对 workspace 做 `.resolve()`：Windows CI 的 %TEMP% 是 8.3 短名
+        # （RUNNER~1），回显会是长名。两边都按 resolve 后比较（R53）。
+        self.assertIn(str(missing.resolve()), text)
 
 
 if __name__ == "__main__":

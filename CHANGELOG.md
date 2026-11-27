@@ -3,10 +3,24 @@
 > 本文件只记录模板的政策/功能变更历史，供模板开发者与维护者查阅。工作区 Agent 无需读取本文件——实际生效规则以 `AGENT_RULES.md` 及其 custom 文件（`AGENT_RULES.custom.md`）为准。
 > 账本标题格式（不改变历史条目语义）：可识别条目以行首 `##`、空白、`x.y.z` 开始；`x.y.z` 后可接日期或说明，但紧跟字符不得是数字、ASCII 字母、`.` 或 `-`。故 `## 3.7.0（日期，说明）` 可识别，`## 3.6.1beta`、`## 3.6.1.1`、`## 3.6.1-hotfix` 会被 `scripts/policy_facts.py --check` 拒绝；`###` 子标题不参与账本对账。
 
+<<<<<<< HEAD
 **发布收尾（2026-11-27，同版本内）**：main 移除 dev 专属产物——
 `CHANGELOG_DEV.md`、`.workspace/release_dev.json`（S10：_DEV 只属 dev）、
 `.workspace/SEQUENCE.md`（§0：main 缺计划+无 _DEV 残留为合法终态），
 注册表同步摘除两键（verify_rules 不得报 MISSING）。
+=======
+**发布收尾（2026-11-28）**：R53 hotfix 随 3.8.2 合并；main 移出 dev 专属文件与迭代日志，注册表同步摘除 _DEV 两键。
+
+## 3.8.2（2026-11-28）
+
+### R53 hotfix：Windows CI 六红归零（发布闭环）
+
+- 序列检查：显式工作清单缺失时保留原参数与实际查找路径（S5 绝对缺失必红不弱化）。
+- 模板同步以 LF 追加 .gitignore 条目与同步清单裁剪记录（Windows CRLF 缺陷）。
+- Windows 回归：只读 Git 对象删除（onexc 清除只读位）、8.3 短名路径两侧统一 resolve、
+  并发原子写完整载荷断言（写侧 replace 预算，无撕裂读）、hooks 九项路径断言对齐。
+- 发版与治理机制沿用 3.8.1（dev 四段双账本 / 三席编排 / 闸门 blocking）。
+>>>>>>> dev
 
 ## 3.8.1（2026-11-27）
 

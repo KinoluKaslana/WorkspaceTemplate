@@ -138,7 +138,7 @@
       "R135": "## 18. 破坏性目录操作的目标归属（§13 的补充）",
       "R136": "1. **目标归属判定**：本条适用于静态识别的递归目录删除与目录移动源。会话锚定工作区是 `find_workspace(cwd)`；实现**必须**同时比较目标的词法规范路径与解析后路径，任一路径落在锚定工作区内时**必须**按该工作区守门，目录移动**必须**把源作为破坏性目标、目的地作为普通写目标分别判定。锚定工作区外的目标，如其最近工作区同时满足 `workspace_status == \"template\"` 且本机 `mode`（本机状态优先，回退 `bootstrap.python.mode`）缺失或为 `unconfigured`，**可以**只审计不拦；已接管工作区**必须**继续守门。该例外**不得**用于普通文件写、目录新增或改写、移动目的地、含通配符的目标，或目标不可静态确定的操作。PowerShell 变量目标只有在同一工具调用内能由字面量与**未在该命令中被改写**的环境变量求得单一绝对路径时才算静态确定；其余变量目标**必须**拒绝并要求给出可静态解析的目标。"
     },
-    "file_sha256": "51f113978572a2b592db9cc8c4a3e8f53f5fae664bb48ad3004ea1513d3d3afa",
+    "file_sha256": "5b15291bc715f58a8eb921fe9e15a9d7ace382be839b330a74b6caba5f9c5a90",
     "marked": 136
   },
   "LICENSE": {
@@ -173,12 +173,12 @@
   },
   "README.md": {
     "clauses": {},
-    "file_sha256": "10d8c65984cc92a7e1830b5b722e37b9d14b872532d46f9b6851a9987b139a74",
+    "file_sha256": "e3ce70003dbd000e3ce2106e76de1e742315feea2f5260987533b4104fc3f40c",
     "marked": 0
   },
   "README_EN.md": {
     "clauses": {},
-    "file_sha256": "dc56d6c093d178c3947b6e4347ba4153d61d985f3b0accb5a47bd6bd0fc74443",
+    "file_sha256": "fcf0264a2846d9724a4b24f7171661701cb157b8d38b644a2321780970db339d",
     "marked": 0
   },
   "notes/rebuild_index.py": {
@@ -253,7 +253,7 @@
   },
   "scripts/template_sync.py": {
     "clauses": {},
-    "file_sha256": "4e6514c6ed393c7748ae2bf4cbf701b3145b3f6e78c8bdc27a2505d2b82aad88",
+    "file_sha256": "20474a1eebb89ce253b01385d842e4702cd78446fe70a2a2ff37af9de533c2d0",
     "marked": 0
   },
   "scripts/skill_audit.py": {
@@ -283,7 +283,7 @@
   },
   "tests/test_repo_identity.py": {
     "clauses": {},
-    "file_sha256": "81acc890d779abf1884bb8f9f66c4047f8fbf3f6821d30569af176836537125b",
+    "file_sha256": "1806f8df69ee1146d0e940f4ca2a35ab9e8fa9e1b538e03dc3a131e4d1835ee3",
     "marked": 0
   },
   "tests/test_template_status_authority.py": {
@@ -318,7 +318,7 @@
   },
   "docs/architecture.md": {
     "clauses": {},
-    "file_sha256": "81424d509f61342355684e256bc17800fed7c376b442574ecefdfa1c37b272f5",
+    "file_sha256": "543c588cd87afbca4cc3453cc86515997962142d18ac14de345f63c7f287b867",
     "marked": 0
   },
   "docs/skills.md": {
@@ -403,7 +403,7 @@
   },
   ".workspace/releases.json": {
     "clauses": {},
-    "file_sha256": "f850b990d767131c9723f95f5be59561a970411f2cb930c6fa48ae729f02731e",
+    "file_sha256": "6e85bb0ca42039e1a9d32906665aeae499c579a4deed3203b86f01c63ac9b20e",
     "marked": 0
   },
   "tests/test_release.py": {
@@ -573,7 +573,7 @@
   },
   "tests/test_gate_status.py": {
     "clauses": {},
-    "file_sha256": "f7eebe093e1302d53cbdc5e895039c2c677c6747f99989ea8a4ffbcaedd2a640",
+    "file_sha256": "5b9da611c8287d3411085cac14a8fd97625721941a6dde1fc567c71a3a4f61a8",
     "marked": 0
   },
   "tests/no_git_runner.py": {
@@ -603,7 +603,7 @@
   },
   "tests/test_gitignore_ensure.py": {
     "clauses": {},
-    "file_sha256": "ff4fd2d0a0a5ffd3e82e63ac9d2c37555567a8b14c5d1e9443348610e5fd3d49",
+    "file_sha256": "988265ac5a9acf5a985e8f2c262f624f0ed2f62da6d6aece8334cdb7a0fbd171",
     "marked": 0
   },
   "tests/test_regression_ledger.py": {
@@ -618,7 +618,7 @@
   },
   "tests/test_osnorm_properties.py": {
     "clauses": {},
-    "file_sha256": "d6337b0ee990269affeb8cad347fa1e9092afebd4108b696cf005d4ea64ee7ba",
+    "file_sha256": "4f68705068f2895acb0d8cf4e3d6e0c7c6c50c1c19f2ed50e49d7d96e82e97f5",
     "marked": 0
   },
   "tests/test_osnorm_single_source.py": {
@@ -653,12 +653,12 @@
   },
   "scripts/sequence_check.py": {
     "clauses": {},
-    "file_sha256": "d0a5d0745ecf1941639f73198bbc5b77575d9ebe82c993f449a6dada1c542b14",
+    "file_sha256": "01ec330815a73c66995705c0ff4fe7848136dde7610e20d1c98df491dc49ee22",
     "marked": 0
   },
   "tests/test_sequence_check.py": {
     "clauses": {},
-    "file_sha256": "2c39078f4fc4addde2333e6ea2ed42ab5b592bf4d3a97f0b8efc0784129bb38f",
+    "file_sha256": "2f87b496b841742f164fb8f964f669842fe24cf4c1afa49d0378b99db98560da",
     "marked": 0
   }
 }

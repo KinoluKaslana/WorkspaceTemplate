@@ -10,7 +10,7 @@
 
 <!-- gen:policy-facts:begin -->
 <!-- doc-fact:readme-policy-badge -->
-[![Policy](https://img.shields.io/badge/policy-v3.8.1%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
+[![Policy](https://img.shields.io/badge/policy-v3.8.2%20single%20source%20of%20truth-6f42c1)](AGENT_RULES.md)
 <!-- gen:policy-facts:end -->
 [![Integrity](https://img.shields.io/badge/integrity-clause%20IDs%20%2B%20trust%20chain-success)](scripts/verify_rules.py)
 [![Python](https://img.shields.io/badge/Python-local%20venv%20%7C%20MCP-3776AB?logo=python&logoColor=white)](.workspace/bootstrap.json)

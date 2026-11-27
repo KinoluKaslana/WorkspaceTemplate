@@ -53,8 +53,10 @@ class RepoIdentityPipeline(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="identity-relative-") as tmp:
             root = Path(tmp)
             (root / "real/repo").mkdir(parents=True)
+            # 期望值必须走 resolve：Windows CI 的 %TEMP% 是 8.3 短名（RUNNER~1），
+            # repair 内部 `.resolve(strict=True)` 会展开成长名；两边都展开才可比（R53）。
             self.assertEqual(repair("real/repo", base=root),
-                             (root / "real/repo").as_posix())
+                             (root / "real/repo").resolve().as_posix())
 
     def test_relative_paths_require_base_and_cannot_escape(self):
         with tempfile.TemporaryDirectory(prefix="identity-base-") as tmp:

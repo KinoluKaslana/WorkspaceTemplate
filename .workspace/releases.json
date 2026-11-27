@@ -31,5 +31,16 @@
       "AGENT_RULES.md": "51f113978572a2b5",
       "CHANGELOG.md": "84bc17d509070828"
     }
+  },
+  {
+    "version": "3.8.2",
+    "date": "2026-11-28",
+    "summary": "### R53 hotfix：Windows CI 六红归零（发布闭环）\n\n- 序列检查：显式工作清单缺失时保留原参数与实际查找路径（S5 绝对缺失必红不弱化）。\n- 模板同步以 LF 追加 .gitignore 条目与同步清单裁剪记录（Windows CRLF 缺陷）。\n- Windows 回归：只读 Git 对象删除（onexc 清除只读位）、8.3 短名路径两侧统一 resolve、\n  并发原子写完整载荷断言（写侧 replace 预算，无撕裂读）、hooks 九项路径断言对齐。\n- 发版与治理机制沿用 3.8.1（dev 四段双账本 / 三席编排 / 闸门 blocking）。",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "AGENT_RULES.md": "5b15291bc715f58a",
+      "CHANGELOG.md": "2f86c2c96541755f"
+    }
   }
 ]

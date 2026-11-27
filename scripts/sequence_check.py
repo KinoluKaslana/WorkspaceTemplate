@@ -663,9 +663,12 @@ def _first_diff_line(want: str, got: str) -> tuple[int, str, str]:
 def find_worklist(root: Path, explicit: str | None) -> tuple[Path | None, list[str], bool]:
     """返回 (路径, 尝试过的候选, 显式路径是否缺失)。"""
     if explicit:
-        p = Path(explicit)
-        p = p if p.is_absolute() else (root / p)
-        return (p if p.is_file() else None), [str(p)], not p.is_file()
+        # Windows 的盘根相对路径（如 /tmp/x）由工作区的盘符补全。
+        p = root / Path(explicit)
+        found = p.is_file()
+        # 保留用户输入，以便诊断能直接定位传错的参数。
+        tried = [explicit] if str(p) == explicit else [explicit, str(p)]
+        return (p if found else None), tried, not found
     tried: list[str] = []
     for rel in WORKLIST_CANDIDATES:
         p = (root / rel).resolve()

@@ -38,13 +38,13 @@ class PwshTarget(unittest.TestCase):
                "Remove-Item -Recurse -Force $dest")
         res = wtarget.classify_pwsh(cmd, str(ROOT), ["AGENT_RULES.md"])
         self.assertEqual(res["kind"], "write", res)
-        self.assertEqual(res["targets"], [os.path.normpath(os.path.join(env_tmp, "WorkspaceTemplate-sync"))])
+        self.assertEqual(res["targets"], [(Path(env_tmp) / "WorkspaceTemplate-sync").as_posix()])
 
     def test_p2_literal_assignment_resolves(self):
         cmd = "$d = 'C:\\tmp\\ws-sync'\nRemove-Item -Recurse -Force $d"
         res = wtarget.classify_pwsh(cmd, str(ROOT), ["AGENT_RULES.md"])
         self.assertEqual(res["kind"], "write", res)
-        self.assertEqual(res["targets"], [os.path.normpath("C:\\tmp\\ws-sync")])
+        self.assertEqual(res["targets"], [Path("C:\\tmp\\ws-sync").as_posix()])
 
     def test_p3_unknown_variable_still_unresolved(self):
         """不可展开的变量仍 fail-closed，不能因为这次修复放宽成放行。"""
@@ -91,13 +91,13 @@ class TakenOverWorkspace(unittest.TestCase):
         res = wtarget.classify_pwsh("Move-Item -Path 'C:\\a\\src' -Destination 'C:\\b\\dst'",
                                     str(ROOT), ["AGENT_RULES.md"])
         self.assertEqual(res["kind"], "write", res)
-        self.assertIn(os.path.normpath("C:\\a\\src"), res["targets"])
-        self.assertIn(os.path.normpath("C:\\b\\dst"), res["targets"])
+        self.assertIn(Path("C:\\a\\src").as_posix(), res["targets"])
+        self.assertIn(Path("C:\\b\\dst").as_posix(), res["targets"])
 
     def test_p6_exclude_patterns_are_not_targets(self):
         res = wtarget.classify_pwsh("Remove-Item -Recurse -Force 'C:\\a\\dir' -Exclude *.log",
                                     str(ROOT), ["AGENT_RULES.md"])
-        self.assertEqual(res["targets"], [os.path.normpath("C:\\a\\dir")], res)
+        self.assertEqual(res["targets"], [Path("C:\\a\\dir").as_posix()], res)
 
     def test_t1_template_clone_is_not_managed(self):
         res = core.evaluate_pre_write(str(self.ws), "dsh", self.sid(), [str(self.clone / "x.txt")])

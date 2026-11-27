@@ -65,6 +65,18 @@ class EnsureIgnore(unittest.TestCase):
         text = osnorm.read_text(gi, bom=False, newline="preserve")
         self.assertTrue(text.startswith("a.txt\n"), f"粘连了：{text!r}")
 
+    def test_appended_lines_are_lf_not_platform_newline(self):
+        """按字节验收追加的 LF，避免读侧换行规范化掩盖 CRLF。"""
+        gi = self.ws / ".gitignore"
+        osnorm.write_text(gi, "a.txt", newline="lf")
+        added, err = self.ts.ensure_ignore_lines(self.ws)
+        self.assertIsNone(err)
+        self.assertTrue(added)
+        raw = osnorm.read_bytes(gi)
+        self.assertNotIn(b"\r", raw, f"追加行带 CR：{raw!r}")
+        self.assertTrue(raw.startswith(b"a.txt\n"), f"粘连了：{raw!r}")
+        self.assertIn(b"\n.workspace/.hook-state/\n", raw)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

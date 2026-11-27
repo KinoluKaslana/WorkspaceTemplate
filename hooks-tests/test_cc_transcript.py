@@ -188,7 +188,7 @@ class CcTranscript(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertTrue(writes[0]["would_deny"])
         self.assertEqual(writes[0]["read_state"], "partial")
-        self.assertEqual(writes[0]["targets"], [str(self.ws / GATE)])
+        self.assertEqual(writes[0]["targets"], [(self.ws / GATE).as_posix()])
         self.assertNotIn("command", writes[0], "默认不得落命令原文")
         self.assertEqual(res["stats"]["would_deny"], 1)
 
@@ -275,7 +275,7 @@ class CcTranscript(unittest.TestCase):
         res = self.analyze(path)
         write = [e for e in res["events"] if e["type"] == "cc-bash-write"][0]
         self.assertTrue(write["would_deny"], write)
-        self.assertEqual(write["targets"], [str(self.ws / "TEST-GATE.md")])
+        self.assertEqual(write["targets"], [(self.ws / "TEST-GATE.md").as_posix()])
         # 读全该文件后同命令 → 放行（同会话重写转录，从头分析）
         body = (self.ws / "TEST-GATE.md").read_bytes().decode("utf-8")
         lines = body.rstrip("\n").split("\n")
@@ -442,7 +442,7 @@ class CcTranscript(unittest.TestCase):
         res = self.analyze(path)
         gaps = [e for e in res["events"] if e.get("reason") == "changed-but-untargeted"]
         self.assertTrue(gaps, res["events"])
-        self.assertIn(str(self.ws / "probe.txt"), gaps[0]["files"])
+        self.assertIn((self.ws / "probe.txt").as_posix(), gaps[0]["files"])
 
     # ---- 跨 Stop 持久化 / 无 cwd fail-closed ----
 
