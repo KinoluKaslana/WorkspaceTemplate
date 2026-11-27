@@ -20,5 +20,16 @@
       "AGENT_RULES.md": "0ffb5264ca8382d1",
       "CHANGELOG.md": "8dc6ebd0cc8a53ac"
     }
+  },
+  {
+    "version": "3.8.1",
+    "date": "2026-11-27",
+    "summary": "### 1. 发版与治理机制（R45–R46）\n\n- dev 四段版本机制与双账本（release_dev.json 与 releases.json 物理分离），发版前对账。\n- 三席辩论编排 + SEQUENCE.md 与 sequence_check 互校机制（S1–S13，含 S12 迭代日志冻结锚、S13 落地行冻结）。\n\n### 2. 守门语义（R47–R51）\n\n- stdio 三件套（R4 归零）：osnorm read_stdin_text/emit_stdout/emit_stderr，非法字节/空 stdin fail-closed（真 Windows 复验）。\n- R5 语义迁移（账本归零）：15 处路径键迁移为交换形态，sidecar 三段兼容读，比较基准开关与 gate_key oracle 四条，Linux/Windows/dsh 三端决策一致（真机双端键集合逐字相同）。\n- 真机闭环与治理单源：Windows 五项复验、dsh 双证收紧、bootstrap.gate 化石块可恢复迁移、C3/C4/C7/C9 治理收敛。\n- 闸门转 blocking（空白名单）：新增违规直接红且逐处定位，抬 baseline 不可解红；ASTRA 完备性审查四必修闭环，守护链边界随裁决入账。",
+    "commit": null,
+    "tag": null,
+    "files_sha256": {
+      "AGENT_RULES.md": "51f113978572a2b5",
+      "CHANGELOG.md": "84bc17d509070828"
+    }
   }
 ]

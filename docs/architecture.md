@@ -7,7 +7,7 @@
 <!-- doc-fact:arch-template-files -->
 <!-- doc-fact:arch-skills -->
 <!-- doc-fact:arch-scripts -->
-> 当前对应：政策 **3.8.0** · 插件 **1.9.0** · `TEMPLATE_FILES` **108** 项 · skills **10** 个 · scripts **23** 个 · 条款 **R1..R136**。
+> 当前对应：政策 **3.8.1** · 插件 **1.9.0** · `TEMPLATE_FILES` **108** 项 · skills **10** 个 · scripts **23** 个 · 条款 **R1..R136**。
 <!-- gen:policy-facts:end -->
 
 ## 1. 四层模型
