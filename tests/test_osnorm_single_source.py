@@ -537,6 +537,8 @@ def blocking_problems(doc: dict) -> list[str]:
     hits = sorted(iter_repo_violations({}), key=lambda hit: (hit[0], hit[1].line))
     problems = [f"{rel}:{hit.line}: [{hit.rule}] {hit.target} ({hit.line_kind})"
                 for rel, hit in hits]
+    if "blocking" in doc:
+        problems.append("tests/osnorm_allowlist.json: blocking 字段不允许出现")
     for section, empty in (("entries", []), ("structural", []), ("subdomains", {}),
                            ("baseline", {})):
         if doc.get(section) != empty:
@@ -806,6 +808,14 @@ class BlockingGateTest(unittest.TestCase):
                 osnorm.write_text(probe, json_control)
                 gate.test_no_unregistered_violation()
 
+                osnorm.write_text(allowlist, json.dumps(dict(ledger, blocking=False)))
+                with self.assertRaises(AssertionError) as failure:
+                    gate.test_no_unregistered_violation()
+                self.assertEqual(str(failure.exception).splitlines(), [
+                    "tests/osnorm_allowlist.json: blocking 字段不允许出现",
+                ])
+                osnorm.write_text(allowlist, json.dumps(ledger))
+
                 osnorm.write_text(probe, json_control + violations)
                 with self.assertRaises(AssertionError) as failure:
                     gate.test_no_unregistered_violation()
@@ -821,6 +831,7 @@ class BlockingGateTest(unittest.TestCase):
                 with self.assertRaises(AssertionError) as failure:
                     gate.test_no_unregistered_violation()
                 self.assertEqual(str(failure.exception).splitlines(), expected + [
+                    "tests/osnorm_allowlist.json: blocking 字段不允许出现",
                     "tests/osnorm_allowlist.json: structural 必须为 []",
                     "tests/osnorm_allowlist.json: baseline 必须为 {}",
                 ])
