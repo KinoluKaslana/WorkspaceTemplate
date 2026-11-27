@@ -71,13 +71,13 @@
   在 main 上结构性必红（main 无 _DEV/SEQUENCE）→ 转 R53 hotfix
 - **说明**：正式版本号与 tag/push/合并由用户授权；脚本永不自动 push
 
-### R53 · `53.3.8.1` · hotfix：main 上下文条件 skip（发布闭环）
-- **范围**：`tests/test_check_all.py` 三个 dev 上下文用例（test_json_mode_keeps_stdout_machine_readable /
-  test_warn_printed_and_exit_code_unchanged / test_ahead_of_upstream_warns）在 `_DEV` 两件套缺失（main）
-  时**条件 skip**；加 main 形态回归（构造无 _DEV 树 → 三用例 skip 且 rc=0）；dev 上照常判
+### R53 · `53.3.8.2` · hotfix：Windows CI 六红归零（发布闭环）
+- **范围**（条件 skip 方案已作废）：Windows CI 六红归零——no-git 夹具 rmtree WinError 5 ×2 /
+  gitignore CRLF 恒 LF（产品侧）/ ReleaseTests 嵌套 verify（由他条转绿）/ 原子写并发（写侧 replace 预算，无撕裂）/
+  S5 绝对路径口径；外加 CI 8.3 短名四修；取版=修补后取 flash（汇总席裁决）
 - **依赖**：R52（3.8.1 已发布）
 - **判据**：dev 全绿（tests/hooks/check_all/sequence）；main 形态树跑全量 tests 无 FAIL（三用例 skip）；
-  发布 3.8.1.1 后 main CI 三 workflow 全绿（D3 真正闭环）
+  发布 3.8.2 后 main CI 三 workflow 全绿（D3 真正闭环）
 - **说明**：修法经用户裁决（A：条件 skip）；结构化迁移方案顺延 R54
 
 ## 3. 版本号再规划表（SEQUENCE 首次落盘时一次性执行）
