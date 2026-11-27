@@ -633,7 +633,7 @@
   },
   "tests/test_osnorm_single_source.py": {
     "clauses": {},
-    "file_sha256": "9cd314f55cec6b267b913585a7df8b8250309de65884d79ef5b615ffe66ad9e7",
+    "file_sha256": "1374a291d82a81c83ae39aaacdbdad066bfbd4f2d8114a6cd2e2c7a8e6c82283",
     "marked": 0
   },
   "tests/osnorm_allowlist.json": {

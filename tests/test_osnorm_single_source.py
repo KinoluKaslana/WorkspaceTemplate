@@ -778,63 +778,88 @@ class WorkspaceBlockingGateTest(unittest.TestCase):
 
 
 class BlockingGateTest(unittest.TestCase):
-    def test_workspace_gate_reports_each_injected_violation(self) -> None:
+    json_control = 'import json\nprint(json.dumps({"ok": True}))\n'
+    violations = (
+        "import os\n"
+        "import sys\n"
+        "sys.stdout.reconfigure(encoding='utf-8')\n"
+        "sys.stderr.reconfigure(encoding='utf-8')\n"
+        "def joined_key(base, name):\n"
+        "    return os.path.normpath(os.path.join(base, name))\n"
+    )
+    expected = [
+        "scripts/r51_probe.py:5: [R4] .reconfigure (call)",
+        "scripts/r51_probe.py:6: [R4] .reconfigure (call)",
+        "scripts/r51_probe.py:8: [R5] expr:normpath_join (expr)",
+    ]
+
+    def _prepare_workspace(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        scripts = root / "scripts"
+        scripts.mkdir()
+        self.probe = scripts / "r51_probe.py"
+        self.allowlist = root / "osnorm_allowlist.json"
+        patch = mock.patch.multiple(__name__, ROOT=root, ALLOWLIST_PATH=self.allowlist,
+                                    SCAN_ROOTS=(("scripts", scripts),))
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.ledger = {"entries": [], "structural": [], "subdomains": {}, "baseline": {}}
+        osnorm.write_text(self.allowlist, json.dumps(self.ledger))
+        osnorm.write_text(self.probe, self.json_control + self.violations)
         gate = WorkspaceBlockingGateTest("test_no_unregistered_violation")
-        ledger = {"entries": [], "structural": [], "subdomains": {}, "baseline": {}}
-        json_control = 'import json\nprint(json.dumps({"ok": True}))\n'
-        violations = (
-            "import os\n"
-            "import sys\n"
-            "sys.stdout.reconfigure(encoding='utf-8')\n"
-            "sys.stderr.reconfigure(encoding='utf-8')\n"
-            "def joined_key(base, name):\n"
-            "    return os.path.normpath(os.path.join(base, name))\n"
-        )
-        expected = [
-            "scripts/r51_probe.py:5: [R4] .reconfigure (call)",
-            "scripts/r51_probe.py:6: [R4] .reconfigure (call)",
-            "scripts/r51_probe.py:8: [R5] expr:normpath_join (expr)",
+        self.run_gate = gate.test_no_unregistered_violation
+
+    def test_workspace_gate_rejects_violations(self) -> None:
+        self._prepare_workspace()
+        osnorm.write_text(self.probe, self.json_control)
+        self.run_gate()
+        osnorm.write_text(self.allowlist, json.dumps(dict(self.ledger, blocking=False)))
+        with self.assertRaises(AssertionError) as failure:
+            self.run_gate()
+        self.assertEqual(str(failure.exception).splitlines(), [
+            "tests/osnorm_allowlist.json: blocking 字段不允许出现",
+        ])
+        osnorm.write_text(self.allowlist, json.dumps(self.ledger))
+        osnorm.write_text(self.probe, self.json_control + self.violations)
+        with self.assertRaises(AssertionError):
+            self.run_gate()
+
+    def test_wrong_field_diagnostic_is_rejected(self) -> None:
+        with mock.patch(f"{__name__}.blocking_problems", side_effect=[
+            [], ["unexpected field diagnostic"], self.expected,
+        ]), self.assertRaises(AssertionError):
+            self.test_workspace_gate_rejects_violations()
+
+    def test_workspace_gate_reports_each_injected_violation(self) -> None:
+        self._prepare_workspace()
+        with self.assertRaises(AssertionError) as failure:
+            self.run_gate()
+        self.assertEqual(str(failure.exception).splitlines(), self.expected)
+
+    def test_wrong_line_number_is_rejected(self) -> None:
+        wrong = [self.expected[0].replace(":5:", ":99:"), *self.expected[1:]]
+        with mock.patch(f"{__name__}.blocking_problems", return_value=wrong), \
+                self.assertRaises(AssertionError):
+            self.test_workspace_gate_reports_each_injected_violation()
+
+    def test_workspace_gate_reports_raised_ledger_and_violations(self) -> None:
+        self._prepare_workspace()
+        self.ledger["blocking"] = False
+        self.ledger["structural"] = [
+            {"file": "scripts/r51_probe.py", "rule": "R5",
+             "target": "joined_key#1", "expr": "expr:normpath_join"},
         ]
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            scripts = root / "scripts"
-            scripts.mkdir()
-            probe = scripts / "r51_probe.py"
-            allowlist = root / "osnorm_allowlist.json"
-            with mock.patch.multiple(__name__, ROOT=root, ALLOWLIST_PATH=allowlist,
-                                     SCAN_ROOTS=(("scripts", scripts),)):
-                osnorm.write_text(allowlist, json.dumps(ledger))
-                osnorm.write_text(probe, json_control)
-                gate.test_no_unregistered_violation()
-
-                osnorm.write_text(allowlist, json.dumps(dict(ledger, blocking=False)))
-                with self.assertRaises(AssertionError) as failure:
-                    gate.test_no_unregistered_violation()
-                self.assertEqual(str(failure.exception).splitlines(), [
-                    "tests/osnorm_allowlist.json: blocking 字段不允许出现",
-                ])
-                osnorm.write_text(allowlist, json.dumps(ledger))
-
-                osnorm.write_text(probe, json_control + violations)
-                with self.assertRaises(AssertionError) as failure:
-                    gate.test_no_unregistered_violation()
-                self.assertEqual(str(failure.exception).splitlines(), expected)
-
-                ledger["blocking"] = False
-                ledger["structural"] = [
-                    {"file": "scripts/r51_probe.py", "rule": "R5",
-                     "target": "joined_key#1", "expr": "expr:normpath_join"},
-                ]
-                ledger["baseline"] = {"scripts/r51_probe.py": {"R4": 2}}
-                osnorm.write_text(allowlist, json.dumps(ledger))
-                with self.assertRaises(AssertionError) as failure:
-                    gate.test_no_unregistered_violation()
-                self.assertEqual(str(failure.exception).splitlines(), expected + [
-                    "tests/osnorm_allowlist.json: blocking 字段不允许出现",
-                    "tests/osnorm_allowlist.json: structural 必须为 []",
-                    "tests/osnorm_allowlist.json: baseline 必须为 {}",
-                ])
+        self.ledger["baseline"] = {"scripts/r51_probe.py": {"R4": 2}}
+        osnorm.write_text(self.allowlist, json.dumps(self.ledger))
+        with self.assertRaises(AssertionError) as failure:
+            self.run_gate()
+        self.assertEqual(str(failure.exception).splitlines(), self.expected + [
+            "tests/osnorm_allowlist.json: blocking 字段不允许出现",
+            "tests/osnorm_allowlist.json: structural 必须为 []",
+            "tests/osnorm_allowlist.json: baseline 必须为 {}",
+        ])
 
     def test_r51_blocks_r4_and_r5_even_with_raised_ledger(self) -> None:
         empty = {"entries": [], "structural": [], "subdomains": {}, "baseline": {}}
